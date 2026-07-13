@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.log
+
+# Segredo NUNCA no repo (Constituição Art. VI). env.local é gitignored.
+.env
+.env.local
+.env*.local
+
+# macOS / iCloud
+.DS_Store
+next-env.d.ts.timestamp
+tsconfig.tsbuildinfo
