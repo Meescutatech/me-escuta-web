@@ -104,8 +104,8 @@ export function Inbox({
   function enviar() {
     const texto = rascunho.trim();
     if (!texto || !selecionada) return;
-    // Envio humano ainda NÃO persiste (aguarda o evento enviar_mensagem_humana → fila_saida).
-    // Mostra a bolha LOCAL marcada como pendente — honesto: não finge que saiu no WhatsApp.
+    // Emite enviar_mensagem_humana → fila_saida. A bolha fica "aguardando" até o sender projetar
+    // mensagem_enviada quando a msg SAIR de fato (envio real só com o token do WhatsApp).
     const otimista: Mensagem = {
       id: `tmp-${msgs.length}`,
       direcao: "saida",
@@ -118,13 +118,12 @@ export function Inbox({
     setRascunho("");
     startTransition(async () => {
       const r = await enviarMensagem(selecionada.id, texto);
-      if (r.motivo === "pendente_saida") {
-        avisar("Rascunho da Sara pronto — envio real liga quando a fila de saída/WhatsApp estiver plugada.");
-      } else if (!r.ok) {
+      if (r.ok) {
+        avisar("Mensagem da Sara enfileirada — sai no WhatsApp quando o token estiver plugado.");
+        router.refresh();
+      } else {
         setMsgs((p) => p.filter((m) => m.id !== otimista.id));
         avisar(`Falha ao enviar: ${r.motivo ?? "erro"}`);
-      } else {
-        router.refresh();
       }
     });
   }
