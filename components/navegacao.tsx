@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const ROTAS = [
   { href: "/funil", rotulo: "Funil" },
   { href: "/conversas", rotulo: "Conversas" },
+  { href: "/jarvis", rotulo: "@jarvis" },
   { href: "/timeline", rotulo: "Timeline" },
   { href: "/fila", rotulo: "Fila" },
 ];
