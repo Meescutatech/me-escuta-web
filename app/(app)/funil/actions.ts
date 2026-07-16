@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
 
@@ -9,22 +10,26 @@ export interface ResultadoEvento {
 }
 
 /**
- * ÚNICO caminho de escrita da UI para o funil: a porta `api.registrar_evento(jsonb)`.
- * A porta carimba ator=`humano:<uid>` + origem=ui e o projetor materializa na mesma transação
- * (CONTRATO-EVENTOS-MVP). Nada de UPDATE direto em projeção.
- *
- * Assinatura esperada (publicada p/ Trilha B — Agent 2): api.registrar_evento(p_evento jsonb)
- * onde p_evento = { tipo, payload }. Se a função ainda não existe (0009 pendente), devolve
- * ok=false com o motivo — o board em modo mock nem chama isto (move só otimista). TODO(spec).
+ * ÚNICO caminho de escrita da UI: a porta `api.registrar_evento(p jsonb)` (param = `p`).
+ * Envelope EXATO (verificado no corpo da função no remoto):
+ *   { tipo, id_externo:<uuid v4 novo por ação>, versao_payload:1, lead_id?, payload:{...} }
+ * A porta FORÇA ator=`humano:<uid>` + origem=ui — NÃO enviar. Idempotência por (origem, id_externo).
  */
 export async function registrarEventoUI(
   tipo: string,
   payload: Record<string, unknown>,
+  leadId?: string,
 ): Promise<ResultadoEvento> {
   const supabase = criarClienteServidor();
-  const { error } = await supabase.schema("api").rpc("registrar_evento", {
-    p_evento: { tipo, payload },
-  });
+  const envelope: Record<string, unknown> = {
+    tipo,
+    id_externo: randomUUID(),
+    versao_payload: 1,
+    payload,
+  };
+  if (leadId) envelope.lead_id = leadId;
+
+  const { error } = await supabase.schema("api").rpc("registrar_evento", { p: envelope });
   if (error) return { ok: false, motivo: error.message };
 
   revalidatePath("/funil");
@@ -32,15 +37,15 @@ export async function registrarEventoUI(
   return { ok: true };
 }
 
-/** Açúcar p/ o arrastar-card: emite etapa_alterada no shape do contrato. */
+/** Açúcar do arrastar-card: emite etapa_alterada no shape do contrato. */
 export async function moverCardEtapa(
   leadId: string,
   etapaDe: string,
   etapaPara: string,
 ): Promise<ResultadoEvento> {
-  return registrarEventoUI("etapa_alterada", {
-    lead_id: leadId,
-    etapa_de: etapaDe,
-    etapa_para: etapaPara,
-  });
+  return registrarEventoUI(
+    "etapa_alterada",
+    { lead_id: leadId, etapa_de: etapaDe, etapa_para: etapaPara },
+    leadId,
+  );
 }

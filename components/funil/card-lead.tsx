@@ -88,7 +88,7 @@ export function CartaoLead({
 
       <div className="mb-2 flex items-start gap-2">
         <span className="flex-1 text-sm font-semibold leading-tight text-navy">
-          {card.nome}
+          {card.nome ?? <span className="text-mute">Lead sem nome</span>}
           {card.idade != null && <span className="text-xs font-medium text-mute"> · {card.idade}a</span>}
         </span>
       </div>

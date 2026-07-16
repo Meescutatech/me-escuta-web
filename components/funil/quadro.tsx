@@ -33,7 +33,7 @@ function Coluna({
   agora: number;
   onAbrir: (id: string) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `col:${etapa.id}` });
+  const { setNodeRef, isOver } = useDroppable({ id: `col:${etapa.chave}` });
   const soma = somaValor(cards);
   return (
     <div className="flex h-full w-72 shrink-0 flex-col">
@@ -88,13 +88,13 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
     const q = busca.trim().toLowerCase();
     if (!q) return cards;
     return cards.filter(
-      (c) => c.nome.toLowerCase().includes(q) || (c.telefone ?? "").toLowerCase().includes(q),
+      (c) => (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").toLowerCase().includes(q),
     );
   }, [cards, busca]);
 
   const porEtapa = useMemo(() => {
     const m = new Map<string, CardLead[]>();
-    for (const e of dados.etapas) m.set(e.id, []);
+    for (const e of dados.etapas) m.set(e.chave, []);
     for (const c of cardsFiltrados) {
       if (!m.has(c.etapa)) m.set(c.etapa, []);
       m.get(c.etapa)!.push(c);
@@ -104,7 +104,7 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
 
   const totalNegociacao = useMemo(() => somaValor(cards), [cards]);
   const cardArrastado = cards.find((c) => c.lead_id === arrastando) ?? null;
-  const etapaDoArrastado = dados.etapas.find((e) => e.id === cardArrastado?.etapa);
+  const etapaDoArrastado = dados.etapas.find((e) => e.chave === cardArrastado?.etapa);
 
   function onDragStart(ev: DragStartEvent) {
     setArrastando(String(ev.active.id).replace(/^card:/, ""));
@@ -147,6 +147,7 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
   }
 
   const leadAberto = cards.find((c) => c.lead_id === cardAberto) ?? null;
+  const etapaAberta = dados.etapas.find((e) => e.chave === leadAberto?.etapa) ?? null;
 
   return (
     <div className="flex h-[calc(100vh-58px)] flex-col">
@@ -192,9 +193,9 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
         <div className="flex flex-1 gap-4 overflow-x-auto px-6 pb-6 pt-4">
           {dados.etapas.map((etapa) => (
             <Coluna
-              key={etapa.id}
+              key={etapa.chave}
               etapa={etapa}
-              cards={porEtapa.get(etapa.id) ?? []}
+              cards={porEtapa.get(etapa.chave) ?? []}
               agora={agora}
               onAbrir={setCardAberto}
             />
@@ -214,7 +215,7 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
         </DragOverlay>
       </DndContext>
 
-      <DrawerCard lead={leadAberto} fonte={dados.fonte} onFechar={() => setCardAberto(null)} />
+      <DrawerCard lead={leadAberto} etapa={etapaAberta} fonte={dados.fonte} onFechar={() => setCardAberto(null)} />
 
       <div className="pointer-events-none fixed bottom-3 right-6 z-20 rounded-md border border-borda bg-branco px-4 py-2 text-xs text-mute shadow-suave">
         Todo agente <span className="font-semibold text-laranja">propõe</span>; um humano nomeado{" "}
