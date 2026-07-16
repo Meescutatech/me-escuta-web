@@ -27,6 +27,9 @@ const config: Config = {
         borda: { DEFAULT: "#ECE3D6", forte: "#E3D9CA" },
         verde: { DEFAULT: "#2E8B62", bg: "#EAF6EF", bd: "#BFE4CF" },
         vermelho: { DEFAULT: "#C4482E", bg: "#FBEBE4", bd: "#F1CDBF" },
+        amarelo: { DEFAULT: "#B8860B", bg: "#FBF3DF", bd: "#EAD9A6" },
+        roxo: "#7A4CA0",
+        rosa: { DEFAULT: "#B23A6E", bg: "#FBEDF3" },
       },
       fontFamily: {
         sans: ["var(--fonte-inter)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
