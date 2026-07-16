@@ -49,17 +49,35 @@ contornar o PostgREST segfaultando sob Rosetta):
 
 Requer `RUNTIME_DIR` (default `../me-escuta-runtime`) e o me-escuta-db no ar.
 
-## Limitação conhecida (Apple Silicon / Rosetta)
+## Limitação conhecida (Apple Silicon / Rosetta) — contornada pelo remoto
 
 O container do PostgREST (`supabase_rest`) segfaulta sob Rosetta, então o `supabase start` completo cai.
 Contorno local: subir o stack **sem** o PostgREST. Consequência: os componentes da UI que leem via
-PostgREST/RLS e a RPC via PostgREST **não funcionam no browser local** — por isso a evidência e2e é feita
-via SQL (mesmo contrato de porta que a UI usa). Em produção, com PostgREST são (arquitetura x86_64/ARM
-nativa no Supabase gerenciado), a UI funciona normalmente. A UI está construída e com `build`/`typecheck`
-verdes; o que falta é apontar para um projeto com PostgREST vivo.
+PostgREST/RLS e a RPC via PostgREST **não funcionam no browser local** — por isso a evidência e2e local é
+feita via SQL (mesmo contrato de porta que a UI usa).
+
+Isso deixou de bloquear o W1: apontando para o **remoto** `me_escuta_crm` (`rvvpfkdjburdorgegxop`), o
+PostgREST é nativo e a UI lê/escreve normalmente. Ver `.env.local.example`, opção (A).
+
+## Verificação contra o remoto (W1 / RF-7)
+
+Feita em 15/07/2026 contra `me_escuta_crm`. O que ficou provado:
+
+- **não-autenticado bloqueado** — `GET /timeline` e `/fila` ⇒ `307 → /login?proxima=…`; e na camada de
+  dados o anon sem sessão leva `401 permission denied for schema core` (e `…for schema api` na RPC).
+- **timeline lê o ledger remoto** — eventos reais renderizados por `posicao_global` desc.
+- **refetch** — mensagem mock nova, injetada pela porta, aparece no topo sem mexer no banco na mão.
+  Reenviar o mesmo `(origem,id_externo)` ⇒ `duplicado=true` (dedup).
+- **aprovar/rejeitar** — fiação da RPC provada: `api.validar_sugestao` autenticada devolve erro de
+  **domínio** (`sugestão … não encontrada`, `decisão inválida`), não de permissão. A validação com
+  sugestão real fica para o **e2e integrado**, quando o worker (me-escuta-runtime) estiver propondo e o
+  seed A0 (`core.agente`) estiver aplicado.
+
+Pré-requisito operacional descoberto aqui: a Data API do projeto remoto precisa **expor `core` e `api`**
+(`supabase config push` da seção `api`) — senão tudo volta `PGRST106 Invalid schema: core`. `porta`
+segue **não exposta**, como manda o RF-2 (verificado: `PGRST106 Invalid schema: porta`).
 
 ## Falta para ligar em produção (S0 pendente)
 
-CI (build/lint/tsc/gitleaks) + Vercel + apontar `NEXT_PUBLIC_SUPABASE_URL`/anon para o projeto do sistema
-novo (`rvvpfkdjburdorgegxop`) com PostgREST vivo, matriz de perfis RLS (N5 é S7), e criar o(s) usuário(s)
-de acesso. Nada disso é local — depende do aval do Diogo.
+CI (build/lint/tsc/gitleaks) + Vercel, matriz de perfis RLS (N5 é S7) e criar o(s) usuário(s) de acesso
+reais. Nada disso é local — depende do aval do Diogo.
