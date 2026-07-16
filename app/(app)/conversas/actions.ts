@@ -22,21 +22,21 @@ export async function devolverConversa(conversaId: string): Promise<ResultadoEve
 }
 
 /**
- * Envio humano (modo HUMANO, após transbordo). Emite mensagem_enviada → proj_mensagem_saida
- * projeta a bolha de saída no ledger. OBS p/ Agent 1: a entrega REAL no WhatsApp exige enfileirar
- * em fila_saida (sender). Aqui a bolha nasce de evento; casar o enfileiramento do envio humano
- * com a borda é coordenação Trilha A. TODO(coordenar-envio-humano).
+ * Envio humano (modo HUMANO, após transbordo). AINDA NÃO PERSISTE — de propósito.
+ *
+ * Decisão do Orquestrador (16/07): NÃO emitir `mensagem_enviada` direto pela UI — isso "mentiria"
+ * (gravaria envio sem ter saído pelo WhatsApp). O caminho honesto (a definir pelo Agent 2, dono do
+ * laço de saída) é um evento tipo `enviar_mensagem_humana` → fila_saida (sem HITL, Sara envia direto)
+ * → sender (Agent 1) envia de verdade → aí sim `mensagem_enviada`. Envio real depende do access token
+ * do Diogo. Enquanto o shape não é publicado no CONTRATO, o composer só mostra a bolha LOCAL como
+ * pendente (não escreve no ledger). TODO(enviar-mensagem-humana): trocar por api.registrar_evento
+ * com o tipo/shape confirmado.
  */
-export async function enviarMensagem(conversaId: string, corpo: string): Promise<ResultadoEvento> {
+export async function enviarMensagem(_conversaId: string, corpo: string): Promise<ResultadoEvento> {
   const texto = corpo.trim();
   if (!texto) return { ok: false, motivo: "mensagem vazia" };
-  const r = await registrarEventoUI("mensagem_enviada", {
-    conversa_id: conversaId,
-    corpo: texto,
-    tipo_conteudo: "texto",
-  });
-  revalidatePath("/conversas");
-  return r;
+  // Sem persistência (ver nota acima). Sinaliza "pendente de envio" pra UI ser honesta.
+  return { ok: false, motivo: "pendente_saida" };
 }
 
 /**

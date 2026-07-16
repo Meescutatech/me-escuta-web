@@ -104,18 +104,23 @@ export function Inbox({
   function enviar() {
     const texto = rascunho.trim();
     if (!texto || !selecionada) return;
+    // Envio humano ainda NÃO persiste (aguarda o evento enviar_mensagem_humana → fila_saida).
+    // Mostra a bolha LOCAL marcada como pendente — honesto: não finge que saiu no WhatsApp.
     const otimista: Mensagem = {
       id: `tmp-${msgs.length}`,
       direcao: "saida",
       tipo_conteudo: "texto",
       corpo: texto,
       criado_em: new Date().toISOString(),
+      pendente: true,
     };
     setMsgs((p) => [...p, otimista]);
     setRascunho("");
     startTransition(async () => {
       const r = await enviarMensagem(selecionada.id, texto);
-      if (!r.ok) {
+      if (r.motivo === "pendente_saida") {
+        avisar("Rascunho da Sara pronto — envio real liga quando a fila de saída/WhatsApp estiver plugada.");
+      } else if (!r.ok) {
         setMsgs((p) => p.filter((m) => m.id !== otimista.id));
         avisar(`Falha ao enviar: ${r.motivo ?? "erro"}`);
       } else {
@@ -262,7 +267,7 @@ export function Inbox({
                       {m.corpo ?? <span className="italic opacity-70">[{m.tipo_conteudo}]</span>}
                     </div>
                     <div className={cn("mt-1 text-[0.66rem] text-mute", m.direcao === "saida" && "text-right")}>
-                      {hhmm(m.criado_em)}
+                      {m.pendente ? "não enviado · aguardando fila de saída" : hhmm(m.criado_em)}
                     </div>
                   </div>
                 </div>

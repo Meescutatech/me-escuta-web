@@ -28,6 +28,7 @@ export interface Mensagem {
   tipo_conteudo: string;
   corpo: string | null;
   criado_em: string;
+  pendente?: boolean; // bolha local ainda não enviada de fato (envio humano aguardando fila_saida)
 }
 
 export interface SugestaoMensagem {
