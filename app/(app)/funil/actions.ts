@@ -14,6 +14,11 @@ export interface ResultadoEvento {
  * Envelope EXATO (verificado no corpo da função no remoto):
  *   { tipo, id_externo:<uuid v4 novo por ação>, versao_payload:1, lead_id?, payload:{...} }
  * A porta FORÇA ator=`humano:<uid>` + origem=ui — NÃO enviar. Idempotência por (origem, id_externo).
+ *
+ * TODO(spec) D9 — formato de ator diverge entre RPCs da porta: registrar_evento carimba
+ * `humano:<uid>` (auth.uid), enquanto propor/validar_sugestao usam `humano:<email>` (auth.jwt.email).
+ * Ex.: enviar_mensagem_humana → humano:<uid>; prompt_atualizado → humano:<email>. Unificar pós-MVP
+ * (dono do laço = Agent 2). Cosmético; não afeta a demo.
  */
 export async function registrarEventoUI(
   tipo: string,
