@@ -25,29 +25,23 @@ export default async function FilaPage() {
   const sugestoes = (data ?? []) as SugestaoPendente[];
 
   return (
-    <section className="space-y-4">
+    <section className="mx-auto max-w-4xl space-y-4 px-6 py-6">
       <div>
-        <h1 className="text-lg font-semibold">Fila de sugestões pendentes</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="font-serif text-xl font-semibold text-navy">Fila de sugestões pendentes</h1>
+        <p className="text-sm text-suave">
           Propostas dos agentes aguardando validação. Aprovar/rejeitar chama{" "}
-          <code>api.validar_sugestao</code> (RPC-porta).
+          <code className="rounded bg-creme px-1.5 py-0.5 font-mono text-xs">api.validar_sugestao</code>{" "}
+          (RPC-porta).
         </p>
       </div>
 
       {error ? (
         <Card>
-          <CardContent className="text-sm text-destructive">
-            Falha ao ler a fila: {error.message}
-            <p className="mt-1 text-muted-foreground">
-              (Local no Apple Silicon: o PostgREST pode estar fora — ver README/limitação Rosetta.)
-            </p>
-          </CardContent>
+          <CardContent className="text-sm text-vermelho">Falha ao ler a fila: {error.message}</CardContent>
         </Card>
       ) : sugestoes.length === 0 ? (
         <Card>
-          <CardContent className="text-sm text-muted-foreground">
-            Nenhuma sugestão pendente.
-          </CardContent>
+          <CardContent className="text-sm text-suave">Nenhuma sugestão pendente.</CardContent>
         </Card>
       ) : (
         <ul className="space-y-2">
@@ -56,13 +50,13 @@ export default async function FilaPage() {
               <Card>
                 <CardContent className="space-y-3 py-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge>{s.agente}</Badge>
-                    <span className="text-sm font-medium">{s.tipo}</span>
-                    <time className="ml-auto text-xs text-muted-foreground">
+                    <Badge tom="laranja">{s.agente}</Badge>
+                    <span className="text-sm font-semibold text-navy">{s.tipo}</span>
+                    <time className="ml-auto text-xs text-mute">
                       {new Date(s.criado_em).toLocaleString("pt-BR")}
                     </time>
                   </div>
-                  <p className="text-sm">{corpoProposto(s.payload_proposto)}</p>
+                  <p className="text-sm text-texto">{corpoProposto(s.payload_proposto)}</p>
                   <div className="flex gap-2">
                     <form action={validarSugestao}>
                       <input type="hidden" name="id" value={s.id} />
@@ -72,7 +66,7 @@ export default async function FilaPage() {
                     <form action={validarSugestao}>
                       <input type="hidden" name="id" value={s.id} />
                       <input type="hidden" name="decisao" value="rejeitada" />
-                      <Button type="submit" variante="destructive">
+                      <Button type="submit" variante="outline">
                         Rejeitar
                       </Button>
                     </form>

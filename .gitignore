@@ -14,3 +14,7 @@ coverage/
 .DS_Store
 next-env.d.ts.timestamp
 tsconfig.tsbuildinfo
+
+# Backups locais de env (segredo) — nunca versionar
+.env.local.bak*
+.env*.bak*

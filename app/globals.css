@@ -2,42 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  --primary: 222 47% 20%;
-  --primary-foreground: 210 40% 98%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214 32% 91%;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 222 47% 8%;
-    --foreground: 210 40% 96%;
-    --card: 222 47% 11%;
-    --card-foreground: 210 40% 96%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --primary: 210 40% 90%;
-    --primary-foreground: 222 47% 11%;
-    --destructive: 0 63% 40%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 20%;
-  }
-}
+/*
+ * Base visual da Me Escuta — light mode, identidade aprovada 16/07.
+ * As cores/fontes vivem no tailwind.config.ts; aqui só o essencial de base + scrollbar.
+ */
 
 * {
-  border-color: hsl(var(--border));
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 15px;
 }
 
 body {
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
+  background: #f3eee6; /* fundo */
+  color: #3a3a3a; /* texto */
+  font-family: var(--fonte-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
   font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+/* Scrollbar discreta no tom da marca (front-clara-v1) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #e6ddd0;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

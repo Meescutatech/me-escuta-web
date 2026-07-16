@@ -7,7 +7,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 export async function entrar(_prev: string | null, formData: FormData): Promise<string | null> {
   const email = String(formData.get("email") ?? "").trim();
   const senha = String(formData.get("senha") ?? "");
-  const proxima = String(formData.get("proxima") ?? "/timeline") || "/timeline";
+  const proxima = String(formData.get("proxima") ?? "/funil") || "/funil";
 
   if (!email || !senha) return "Informe e-mail e senha.";
 
