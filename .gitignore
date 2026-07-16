@@ -18,3 +18,4 @@ tsconfig.tsbuildinfo
 # Backups locais de env (segredo) — nunca versionar
 .env.local.bak*
 .env*.bak*
+.vercel

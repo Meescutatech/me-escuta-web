@@ -62,6 +62,7 @@ export function DrawerCard({
   const [novaTarefa, setNovaTarefa] = useState("");
   const [addTarefa, setAddTarefa] = useState(false);
   const [levindoStatus, setLevindoStatus] = useState<"pendente" | "aprovada" | "rejeitada">("pendente");
+  const [levindoAberto, setLevindoAberto] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   // (re)sincroniza estado local quando abre outro card
@@ -75,6 +76,7 @@ export function DrawerCard({
       setAddTarefa(false);
       setAba("tarefas");
       setLevindoStatus("pendente");
+      setLevindoAberto(detalhe.levindoRodado);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadId]);
@@ -127,6 +129,14 @@ export function DrawerCard({
     setNovaNota("");
     emitir("anotacao_adicionada", { autor: "humano", texto });
     avisar("Anotação registrada no ledger.");
+  }
+
+  function acionarLevindo() {
+    setLevindoAberto(true);
+    setLevindoStatus("pendente");
+    // real: registra o pedido de análise (o agente levindo propõe via sugestao_ia). TODO(levindo-real).
+    emitir("levindo_acionado", { motivo: "solicitado no card" });
+    avisar("Levindo acionado — análise de crédito proposta (valide as condições).");
   }
 
   function validarLevindo(decisao: "aprovada" | "rejeitada") {
@@ -216,8 +226,27 @@ export function DrawerCard({
 
             {/* body */}
             <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-4">
-              {/* Levindo */}
-              {detalhe.levindo && (
+              {/* Levindo — botão de acionar quando ainda não rodou */}
+              {!levindoAberto && (
+                <button
+                  onClick={acionarLevindo}
+                  className="mb-5 flex w-full items-center gap-3 rounded-lg border border-azul-bd bg-branco px-4 py-3 text-left shadow-suave transition-colors hover:bg-azul-bg"
+                >
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-navy text-sm font-bold text-branco">
+                    L
+                  </span>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold text-navy">Acionar Levindo</div>
+                    <div className="text-xs text-mute">Rodar análise de crédito (Política Comercial v3)</div>
+                  </div>
+                  <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-4 w-4 stroke-laranja-esc" fill="none">
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                </button>
+              )}
+
+              {/* Levindo — bloco de análise (rodado) */}
+              {levindoAberto && (
                 <div className="mb-5 overflow-hidden rounded-lg border border-azul-bd bg-branco shadow-suave">
                   <div className="flex items-center gap-3 border-b border-borda px-4 py-3">
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-navy text-sm font-bold text-branco">

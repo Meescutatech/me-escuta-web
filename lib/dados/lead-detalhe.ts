@@ -64,7 +64,8 @@ export interface DetalheLead {
   anotacoes: Anotacao[];
   anexos: Anexo[];
   historico: EventoHistorico[];
-  levindo: AnaliseLevindo | null;
+  levindo: AnaliseLevindo; // sempre disponível; `levindoRodado` decide auto-exibir vs "Acionar Levindo"
+  levindoRodado: boolean;
 }
 
 // ─────────────────────────────── gerador mock ───────────────────────────────
@@ -84,29 +85,29 @@ export function detalheMock(lead: CardLead): DetalheLead {
   const cidade = CIDADES[Math.abs(hash(lead.lead_id)) % CIDADES.length];
   const primeiroNome = (lead.nome ?? "a paciente").split(/\s+/)[0];
 
-  // Levindo aparece na negociação/proposta (ou quando há proposta do Levindo).
-  const mostraLevindo =
+  // Levindo já rodou (auto-exibe) na negociação/proposta ou quando há proposta do Levindo;
+  // nas demais etapas fica disponível via botão "Acionar Levindo".
+  const levindoRodado =
     lead.etapa === "negociacao" || lead.etapa === "proposta" || lead.proposta?.agente === "lev";
 
-  const levindo: AnaliseLevindo | null = mostraLevindo
-    ? {
-        faixa: "B",
-        score: 72,
-        diagnostico:
-          "Faixa <b>B</b> · score <b>72/100</b>. Bureau limpo, sem restrições. Comportamento de pagamento bom no histórico do DW. <b>Recomenda parcelamento com entrada</b>.",
-        condicoes: [
-          { texto: "<b>Boleto em até 12×</b> com entrada de 20%", ok: true },
-          { texto: "Pix à vista com <b>5% de desconto</b>", ok: true },
-          { texto: "Boleto sem entrada — <b>não autorizado</b> nesta faixa", ok: false },
-        ],
-        validador: resp.nome,
-        rodadoHa: "2h",
-      }
-    : null;
+  const levindo: AnaliseLevindo = {
+    faixa: "B",
+    score: 72,
+    diagnostico:
+      "Faixa <b>B</b> · score <b>72/100</b>. Bureau limpo, sem restrições. Comportamento de pagamento bom no histórico do DW. <b>Recomenda parcelamento com entrada</b>.",
+    condicoes: [
+      { texto: "<b>Boleto em até 12×</b> com entrada de 20%", ok: true },
+      { texto: "Pix à vista com <b>5% de desconto</b>", ok: true },
+      { texto: "Boleto sem entrada — <b>não autorizado</b> nesta faixa", ok: false },
+    ],
+    validador: resp.nome,
+    rodadoHa: "2h",
+  };
 
   return {
     cidade,
     levindo,
+    levindoRodado,
     tarefas: [
       { id: "t1", titulo: "Confirmar condição de pagamento com a paciente", prazo: "hoje, 16h", prazoNivel: "soon", responsavel: resp, concluida: false },
       { id: "t2", titulo: "Enviar link de assinatura do contrato (ClickSign)", prazo: "amanhã", prazoNivel: null, responsavel: resp, concluida: false },
@@ -124,7 +125,7 @@ export function detalheMock(lead: CardLead): DetalheLead {
       { id: "a3", nome: "comprovante_residencia.pdf", tipo: "pdf", meta: "Documento · 210 KB · enviado há 2 dias" },
     ],
     historico: [
-      ...(mostraLevindo ? [{ id: "h0", tipo: "prop" as TipoEvento, titulo: "Levindo propôs análise de crédito", corpo: `Faixa <b>B</b> · score 72 · aguardando validação de ${resp.nome}`, quando: "há 2h" }] : []),
+      ...(levindoRodado ? [{ id: "h0", tipo: "prop" as TipoEvento, titulo: "Levindo propôs análise de crédito", corpo: `Faixa <b>B</b> · score 72 · aguardando validação de ${resp.nome}`, quando: "há 2h" }] : []),
       { id: "h1", tipo: "stage", titulo: "Etapa alterada", corpo: "Proposta enviada <b>→</b> Análise de crédito", quando: "há 2h" },
       { id: "h2", tipo: "out", titulo: "Mensagem enviada", corpo: 'Clara: "Enviei os detalhes do modelo indicado pela fono 💙"', quando: "ontem 15:40" },
       { id: "h3", tipo: "appr", titulo: "Sugestão aprovada", corpo: `${resp.nome} aprovou a proposta de resposta da Clara`, quando: "ontem 15:05" },
