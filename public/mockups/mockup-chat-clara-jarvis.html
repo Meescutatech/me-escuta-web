@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Me Escuta · Clara</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;450;500;600;700&display=swap');
+
+  :root{
+    --laranja:#EC662E; --laranja-esc:#D4541F; --laranja-cl:#FDEEE4; --pessego:#FCE7DB;
+    --navy:#252F63; --azul:#143691;
+    --creme:#FBF9F6; --bg:#F3EEE6; --branco:#FFFFFF;
+    --texto:#3a3a3a; --suave:#6f6c76; --mute:#a3a0a8;
+    --borda:#ECE3D6; --borda-2:#E3D9CA;
+    --verde:#2E8B62; --verde-bg:#EAF6EF; --verde-bd:#BFE4CF;
+    --vermelho:#C4482E; --vermelho-bg:#FBEBE4; --vermelho-bd:#F1CDBF;
+    --azul-bg:#EEF1FB; --azul-bd:#D5DDF3;
+    --sombra-sm:0 1px 3px rgba(37,47,99,.06);
+    --sombra:0 6px 26px rgba(37,47,99,.09);
+    font-size:15px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--texto);background:var(--bg);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .serif{font-family:'Fraunces',Georgia,serif}
+  svg{display:block}
+
+  .app{display:grid;grid-template-rows:auto 1fr;height:100vh}
+
+  /* topbar — minimal: logo + user */
+  .topbar{display:flex;align-items:center;height:58px;padding:0 24px;background:var(--branco);border-bottom:1px solid var(--borda)}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand .mk{width:34px;height:34px;border-radius:50%;background:var(--laranja);color:#fff;display:grid;place-items:center;font-size:1.1rem;box-shadow:0 3px 10px rgba(236,102,46,.3)}
+  .brand .nm{font-family:'Fraunces',serif;font-weight:600;color:var(--navy);font-size:1.18rem}
+  .brand .nm b{color:var(--laranja);font-weight:700}
+  .topbar .sp{flex:1}
+  .userchip{display:flex;align-items:center;gap:10px}
+  .userchip .ui{text-align:right;line-height:1.15}
+  .userchip .ui .n{font-size:.82rem;font-weight:600;color:var(--navy)}
+  .userchip .ui .r{font-size:.68rem;color:var(--mute)}
+  .userchip .ua{width:33px;height:33px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:.76rem;font-weight:700}
+
+  /* 2 areas: chat + activity */
+  .body{display:grid;grid-template-columns:1fr 340px;min-height:0}
+  @media(max-width:860px){.body{grid-template-columns:1fr}.act{display:none}}
+
+  /* ===== chat ===== */
+  .chat{display:flex;flex-direction:column;min-height:0;background:var(--creme)}
+  .chead{flex-shrink:0;display:flex;align-items:center;gap:14px;padding:16px 32px;background:var(--branco);border-bottom:1px solid var(--borda)}
+  .clara-av{width:48px;height:48px;border-radius:50%;flex-shrink:0;position:relative;background:linear-gradient(140deg,#F2803F,#EC662E);color:#fff;display:grid;place-items:center;font-size:1.35rem;box-shadow:0 4px 13px rgba(236,102,46,.3)}
+  .clara-av .on{position:absolute;right:-1px;bottom:-1px;width:12px;height:12px;border-radius:50%;background:#37b26f;border:2.5px solid #fff}
+  .cinfo{flex:1;min-width:0}
+  .cinfo .nm{font-family:'Fraunces',serif;font-weight:600;font-size:1.24rem;color:var(--navy);line-height:1.05}
+  .cinfo .rl{font-size:.8rem;color:var(--suave);margin-top:2px}
+  .cbadges{display:flex;gap:8px;align-items:center}
+  .badge{font-size:.7rem;font-weight:600;padding:5px 11px;border-radius:30px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .badge.motor{background:var(--pessego);color:var(--laranja-esc)}
+  .badge.motor .d{width:6px;height:6px;border-radius:50%;background:var(--laranja)}
+  .badge.ver{background:var(--azul-bg);color:var(--navy);transition:.3s}
+  .badge.ver.up{background:var(--verde-bg);color:var(--verde)}
+
+  .testnote{flex-shrink:0;padding:8px 32px;font-size:.76rem;color:var(--mute);background:var(--creme);border-bottom:1px solid var(--borda)}
+  .testnote b{color:var(--suave);font-weight:600}
+
+  .msgs{flex:1;min-height:0;overflow-y:auto;padding:26px 32px 12px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}
+  .sep{text-align:center;font-size:.71rem;color:var(--mute);margin:0 0 6px}
+  .row{display:flex;gap:10px;max-width:72%;animation:rise .28s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  .row .av{width:30px;height:30px;border-radius:50%;flex-shrink:0;margin-top:auto;display:grid;place-items:center;font-size:.82rem;font-weight:700;color:#fff}
+  .bub{padding:11px 15px;font-size:.93rem;line-height:1.55;position:relative}
+  .stamp{font-size:.67rem;color:var(--mute);margin-top:5px;display:flex;align-items:center;gap:5px}
+
+  .row.clara{align-self:flex-start}
+  .row.clara .av{background:linear-gradient(140deg,#F2803F,#EC662E)}
+  .row.clara .bub{background:#fff;border:1px solid var(--borda-2);color:var(--texto);border-radius:16px 16px 16px 4px;box-shadow:var(--sombra-sm)}
+
+  .row.you{align-self:flex-end;flex-direction:row-reverse}
+  .row.you .av{background:var(--navy)}
+  .row.you .bub{background:var(--laranja);color:#fff;border-radius:16px 16px 4px 16px;box-shadow:0 3px 11px rgba(236,102,46,.24)}
+  .row.you .stamp{justify-content:flex-end}
+  .row.you.sending .bub{opacity:.66}
+
+  .row.cmd{align-self:flex-end;flex-direction:row-reverse}
+  .row.cmd .av{background:var(--navy)}
+  .row.cmd .bub{background:var(--azul-bg);color:var(--navy);border:1px solid var(--azul-bd);border-radius:16px 16px 4px 16px}
+  .row.cmd .bub .mn{color:var(--laranja);font-weight:700}
+  .row.cmd .stamp{justify-content:flex-end}
+
+  .typing{align-self:flex-start;display:flex;gap:10px;align-items:flex-end}
+  .typing .av{width:30px;height:30px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:.82rem;font-weight:700;color:#fff}
+  .typing.c .av{background:linear-gradient(140deg,#F2803F,#EC662E)}
+  .typing.j .av{background:var(--navy)}
+  .typing .dots{background:#fff;border:1px solid var(--borda-2);border-radius:16px 16px 16px 4px;padding:13px 15px;display:flex;gap:4px}
+  .typing .dots i{width:7px;height:7px;border-radius:50%;background:var(--mute);animation:bounce 1.2s infinite}
+  .typing .dots i:nth-child(2){animation-delay:.18s}
+  .typing .dots i:nth-child(3){animation-delay:.36s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-5px);opacity:1}}
+  .clockic{width:10px;height:10px;stroke:currentColor;fill:none}
+
+  /* proposal */
+  .jrow{align-self:center;width:100%;max-width:600px;display:flex;gap:10px;animation:rise .3s ease;margin:2px 0}
+  .jrow .av{width:30px;height:30px;border-radius:50%;flex-shrink:0;margin-top:3px;display:grid;place-items:center;font-size:.78rem;font-weight:700;color:#fff;background:var(--navy)}
+  .prop{flex:1;background:#fff;border:1px solid var(--azul-bd);border-radius:16px;overflow:hidden;box-shadow:var(--sombra)}
+  .prop .ph{display:flex;align-items:baseline;gap:10px;padding:14px 17px 10px}
+  .prop .ph .tag{font-size:.62rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--laranja-esc)}
+  .prop .ph .pt{font-family:'Fraunces',serif;font-weight:600;font-size:1.05rem;color:var(--navy);flex:1;line-height:1.2}
+  .prop .ph .pv{font-size:.7rem;color:var(--mute);white-space:nowrap}
+  .prop .pb{padding:0 17px 16px}
+  .diag{font-size:.88rem;line-height:1.58;color:var(--texto);margin-bottom:14px}
+  .diag b{color:var(--navy);font-weight:600}
+  .diff{font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:.79rem;line-height:1.55;border-radius:10px;overflow:hidden;margin-bottom:13px;border:1px solid var(--borda-2)}
+  .diff .ln{padding:8px 12px;display:flex;gap:8px;white-space:pre-wrap;word-break:break-word}
+  .diff .sg{flex-shrink:0;width:11px;opacity:.7;font-weight:700}
+  .diff .del{background:var(--vermelho-bg);color:#9c3b25}
+  .diff .add{background:var(--verde-bg);color:#1f6b48}
+  .why{font-size:.85rem;line-height:1.58;color:var(--suave);margin-bottom:16px;padding-left:12px;border-left:2px solid var(--laranja-cl)}
+  .why b{color:var(--navy)}
+  .pacts{display:flex;gap:10px;align-items:center}
+  .btn{font-family:'Inter',sans-serif;font-size:.86rem;font-weight:600;padding:10px 18px;border-radius:10px;border:none;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px}
+  .btn.ok{background:var(--laranja);color:#fff;box-shadow:0 3px 11px rgba(236,102,46,.26)}
+  .btn.ok:hover{background:var(--laranja-esc)}
+  .btn.no{background:#fff;color:var(--suave);border:1.5px solid var(--borda-2)}
+  .btn.no:hover{background:var(--creme);color:var(--navy)}
+  .pacts .vd{font-size:.72rem;color:var(--mute);margin-left:auto}
+  .pacts .vd b{color:var(--suave)}
+  .prop.done .pb{opacity:.5}
+  .rbanner{font-size:.83rem;font-weight:600;padding:12px 17px;border-top:1px solid var(--borda)}
+  .rbanner.y{background:var(--verde-bg);color:var(--verde)}
+  .rbanner.n{background:var(--vermelho-bg);color:var(--vermelho)}
+
+  .comp-wrap{flex-shrink:0;padding:12px 32px 16px;background:var(--branco);border-top:1px solid var(--borda)}
+  .comp-hint{font-size:.75rem;color:var(--mute);margin-bottom:9px;padding:0 3px}
+  .comp-hint code{background:var(--azul-bg);color:var(--navy);padding:2px 7px;border-radius:6px;font-family:ui-monospace,monospace;font-size:.73rem;font-weight:600}
+  .comp-hint code .mn{color:var(--laranja)}
+  .comp{display:flex;align-items:flex-end;gap:10px;background:var(--creme);border:1.5px solid var(--borda-2);border-radius:15px;padding:7px 7px 7px 16px;transition:.15s}
+  .comp:focus-within{border-color:var(--laranja);background:#fff;box-shadow:0 0 0 3px rgba(236,102,46,.1)}
+  .comp.jmode{border-color:var(--navy);background:#fff;box-shadow:0 0 0 3px rgba(37,47,99,.1)}
+  .comp textarea{flex:1;background:none;border:none;color:var(--texto);resize:none;font-family:'Inter',sans-serif;font-size:.94rem;line-height:1.5;max-height:110px;padding:7px 0;outline:none}
+  .comp textarea::placeholder{color:var(--mute)}
+  .comp .flag{align-self:center;font-size:.65rem;font-weight:700;color:var(--navy);background:var(--azul-bg);padding:4px 9px;border-radius:7px;white-space:nowrap;opacity:0;transition:.15s}
+  .comp.jmode .flag{opacity:1}
+  .comp .send{width:40px;height:40px;border-radius:11px;border:none;cursor:pointer;flex-shrink:0;background:var(--laranja);color:#fff;display:grid;place-items:center;transition:.15s}
+  .comp .send:hover{background:var(--laranja-esc)}
+  .comp .send svg{width:18px;height:18px;stroke:#fff;fill:none}
+
+  .principle{flex-shrink:0;text-align:center;padding:9px;background:var(--branco);border-top:1px solid var(--borda);font-size:.75rem;color:var(--mute)}
+  .principle .k{color:var(--laranja);font-weight:600}
+  .principle .v{color:var(--navy);font-weight:600}
+  .principle .e{color:var(--azul);font-weight:600}
+
+  /* ===== right: activity (event source, minimal) ===== */
+  .act{background:var(--branco);border-left:1px solid var(--borda);display:flex;flex-direction:column;min-height:0}
+  .act-head{flex-shrink:0;padding:18px 22px 14px;display:flex;align-items:baseline;gap:9px}
+  .act-head .t{font-family:'Fraunces',serif;font-weight:600;font-size:1.08rem;color:var(--navy)}
+  .act-head .live{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:.68rem;font-weight:500;color:var(--verde)}
+  .act-head .live .p{width:7px;height:7px;border-radius:50%;background:var(--verde);animation:pulse 1.8s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(55,178,111,.4)}70%{box-shadow:0 0 0 7px rgba(55,178,111,0)}100%{box-shadow:0 0 0 0 rgba(55,178,111,0)}}
+  .act-sub{flex-shrink:0;padding:0 22px 10px;font-size:.7rem;color:var(--mute);font-family:ui-monospace,monospace}
+  .act-list{flex:1;min-height:0;overflow-y:auto;padding:4px 12px 20px}
+
+  .ev{padding:11px 12px 12px;border-left:2px solid var(--borda-2);margin-left:4px;position:relative}
+  .ev.fresh{animation:evin .5s ease}
+  @keyframes evin{from{opacity:0;transform:translateX(8px)}to{opacity:1}}
+  .ev.msg-in{border-left-color:var(--laranja)}
+  .ev.msg-out{border-left-color:var(--navy)}
+  .ev.prop{border-left-color:var(--azul)}
+  .ev.appr{border-left-color:var(--verde)}
+  .ev.rej{border-left-color:var(--vermelho)}
+  .ev.cfg{border-left-color:var(--laranja-esc)}
+  .ev .top{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
+  .ev .type{font-family:ui-monospace,monospace;font-size:.73rem;font-weight:600}
+  .ev.msg-in .type{color:var(--laranja-esc)}
+  .ev.msg-out .type{color:var(--navy)}
+  .ev.prop .type{color:var(--azul)}
+  .ev.appr .type{color:var(--verde)}
+  .ev.rej .type{color:var(--vermelho)}
+  .ev.cfg .type{color:var(--laranja-esc)}
+  .ev .tm{margin-left:auto;font-size:.66rem;color:var(--mute);font-family:ui-monospace,monospace}
+  .ev .payload{font-size:.83rem;color:var(--texto);line-height:1.42;margin-bottom:3px}
+  .ev .payload b{color:var(--navy);font-weight:600}
+  .ev .meta{font-size:.68rem;color:var(--mute)}
+  .es-foot{flex-shrink:0;padding:10px 22px;border-top:1px solid var(--borda);font-size:.68rem;color:var(--mute);font-family:ui-monospace,monospace}
+  .es-foot b{color:var(--suave)}
+
+  .tz{position:fixed;bottom:22px;left:calc(50% - 170px);z-index:60;display:flex;flex-direction:column;gap:10px;align-items:center}
+  .toast{background:#fff;border:1px solid var(--verde-bd);border-left:4px solid var(--verde);padding:12px 18px;border-radius:12px;box-shadow:0 12px 38px rgba(37,47,99,.18);display:flex;align-items:center;gap:11px;font-size:.88rem;max-width:420px;animation:tin .3s ease}
+  @keyframes tin{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:none}}
+  .toast .ic{width:27px;height:27px;border-radius:50%;background:var(--verde);color:#fff;display:grid;place-items:center;flex-shrink:0}
+  .toast b{color:var(--navy)}
+  .toast small{display:block;color:var(--suave);font-size:.75rem;margin-top:2px}
+
+  ::-webkit-scrollbar{width:8px}
+  ::-webkit-scrollbar-thumb{background:#e6ddd0;border-radius:8px}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand"><span class="mk">👂</span><span class="nm serif">me <b>escuta</b></span></div>
+    <div class="sp"></div>
+    <div class="userchip"><div class="ui"><div class="n">Diogo Tambasco</div><div class="r">produto · tech</div></div><div class="ua">DT</div></div>
+  </div>
+
+  <div class="body">
+
+    <!-- CHAT (protagonista) -->
+    <section class="chat">
+      <div class="chead">
+        <div class="clara-av">C<span class="on"></span></div>
+        <div class="cinfo">
+          <div class="nm">Clara</div>
+          <div class="rl">Assistente de pré-venda · atende no WhatsApp</div>
+        </div>
+        <div class="cbadges">
+          <span class="badge motor"><span class="d"></span>motor Mastra</span>
+          <span class="badge ver" id="verBadge">prompt v1</span>
+        </div>
+      </div>
+
+      <div class="testnote">Modo teste — você conversa <b>como se fosse um paciente</b>. Mencione <b>@jarvis</b> para propor uma melhoria na Clara.</div>
+
+      <div class="msgs" id="msgs">
+        <div class="sep">Conversa de teste · hoje</div>
+        <div class="row you"><div class="av">DT</div><div><div class="bub">Oi, vi vocês no Instagram. Minha mãe tá ouvindo mal, queria entender como funciona antes de decidir.</div><div class="stamp">você · 14:02</div></div></div>
+        <div class="row clara"><div class="av">C</div><div><div class="bub">Oi! Que bom que você está cuidando disso pra sua mãe 💛 Aqui na Me Escuta a avaliação é feita por uma fonoaudióloga, por videochamada, sem ela precisar sair de casa. Me conta um pouquinho: ela costuma pedir pra repetir as coisas, ou deixa a TV bem alta?</div><div class="stamp">Clara · 14:02</div></div></div>
+        <div class="row you"><div class="av">DT</div><div><div class="bub">As duas coisas, sim. Ela tem 68 anos. Nunca fez exame nenhum.</div><div class="stamp">você · 14:03</div></div></div>
+        <div class="row clara"><div class="av">C</div><div><div class="bub">Entendi. Sem audiometria a gente resolve: encontro uma clínica perto de vocês pro exame e, com o resultado, já agendo a teleconsulta com a fono. Você prefere que eu comece pela clínica ou pela teleconsulta?</div><div class="stamp">Clara · 14:03</div></div></div>
+        <div class="row you"><div class="av">DT</div><div><div class="bub">Tá, e quanto custa o aparelho no fim das contas?</div><div class="stamp">você · 14:05</div></div></div>
+        <div class="row clara"><div class="av">C</div><div><div class="bub">O valor é definido pela fono depois da avaliação. Qual cidade?</div><div class="stamp">Clara · 14:05</div></div></div>
+      </div>
+
+      <div class="comp-wrap">
+        <div class="comp-hint">💬 Responda à Clara — ou peça uma melhoria com <code><span class="mn">@jarvis</span> ela foi seca demais aqui, melhora o tom</code></div>
+        <div class="comp" id="comp">
+          <textarea id="input" rows="1" placeholder="Escreva como se fosse o paciente… ou mencione @jarvis para melhorar a Clara"></textarea>
+          <span class="flag">modo @jarvis · vai propor melhoria</span>
+          <button class="send" id="send" title="Enviar"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+        </div>
+      </div>
+
+      <div class="principle">Todo agente <span class="k">propõe</span>; um humano nomeado <span class="v">valida</span>; só então vira <span class="e">evento</span>.</div>
+    </section>
+
+    <!-- ACTIVITY (event source, minimal) -->
+    <aside class="act">
+      <div class="act-head">
+        <span class="t">Atividade</span>
+        <span class="live"><span class="p"></span>ao vivo</span>
+      </div>
+      <div class="act-sub">core.evento · append-only</div>
+      <div class="act-list" id="esList"></div>
+      <div class="es-foot"><b id="esCount">6</b> eventos nesta sessão</div>
+    </aside>
+
+  </div>
+</div>
+
+<div class="tz" id="tz"></div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const input=$('input'),send=$('send'),comp=$('comp'),msgs=$('msgs');
+  const esList=$('esList'),esCount=$('esCount'),verBadge=$('verBadge'),tz=$('tz');
+
+  let promptVersion=1,pos=0;
+  const clock={h:14,m:6};
+  const nextTime=()=>{clock.m+=Math.floor(Math.random()*2)+1;if(clock.m>=60){clock.m-=60;clock.h++;}return String(clock.h).padStart(2,'0')+':'+String(clock.m).padStart(2,'0');};
+  const bottom=()=>{requestAnimationFrame(()=>{msgs.scrollTop=msgs.scrollHeight;});};
+  const esBottom=()=>{esList.scrollTop=esList.scrollHeight;};
+
+  const TYPES={'msg-in':'mensagem.recebida','msg-out':'mensagem.enviada','prop':'sugestao_ia.criada','appr':'sugestao_ia.aprovada','rej':'sugestao_ia.rejeitada','cfg':'prompt.atualizado'};
+  function addEvent(kind,payload,meta,time){
+    pos++;
+    const el=document.createElement('div');
+    el.className='ev '+kind+' fresh';
+    el.innerHTML=`<div class="top"><span class="type">${TYPES[kind]}</span><span class="tm">${time||nextTime()}</span></div><div class="payload">${payload}</div><div class="meta">${meta}</div>`;
+    esList.appendChild(el);
+    esCount.textContent=pos;esBottom();
+    setTimeout(()=>el.classList.remove('fresh'),600);
+  }
+  // seed
+  addEvent('msg-in','Paciente iniciou conversa: aparelho pra mãe','paciente(teste) · whatsapp','14:02');
+  addEvent('msg-out','Clara acolheu e qualificou','clara · motor Mastra','14:02');
+  addEvent('msg-in','Idade 68 · sem audiometria','paciente(teste) · whatsapp','14:03');
+  addEvent('msg-out','Clara propôs encaminhar ao exame','clara · motor Mastra','14:03');
+  addEvent('msg-in','Perguntou preço do aparelho','paciente(teste) · whatsapp','14:05');
+  addEvent('msg-out','Clara desviou de preço · pediu cidade','clara · motor Mastra','14:05');
+
+  const PLAYBOOK=[
+    {match:/sec[ao]|fri[ao]|curt[ao]|robotic|rispid|grossa|tom|distante|impessoal|acolhed/i,
+     title:'Aquecer o tom quando o assunto é sensível',
+     diag:'Você reparou certo: a Clara respondeu <b>"O valor é definido pela fono. Qual cidade?"</b> — correto, mas seco. Logo após uma pergunta sobre preço (momento de insegurança), um tom mais caloroso segura melhor a conversa.',
+     del:'Se perguntarem preço, informe que o valor é definido pela fono e siga para a próxima etapa.',
+     add:'Se perguntarem preço, acolha a preocupação ("super entendo querer se planejar"), explique que o valor é individual (definido pela fono após a avaliação) e conduza com gentileza ao próximo passo.',
+     why:'Mesmo conteúdo, <b>tom acolhedor</b> — a cara da Me Escuta com público 55+. Reduz abandono logo após a objeção de preço.'},
+    {match:/pre[çc]o|valor|custa|caro|quanto|dinheiro/i,
+     title:'Blindar o desvio de preço',
+     diag:'A Clara desviou do preço, mas sem acolher a intenção por trás da pergunta. O ideal é reconhecer o motivo, reforçar que preço é sempre da fono e reconduzir sem deixar brecha para faixa de valor.',
+     del:'Informe que o valor é definido pela fono e pergunte a cidade.',
+     add:'Reconheça a preocupação com o custo, explique que o valor é individual e definido pela fono após a avaliação (sem citar faixas), e conduza ao próximo passo com acolhimento.',
+     why:'Preço/negociação <b>nunca é autônomo</b> (regra da casa). Menos brecha = menos expectativa errada lá na frente.'},
+    {match:/insist|follow ?up|lembrete|persist|apress|corr(e|endo)|r[áa]pid|pressa/i,
+     title:'Respeitar o ritmo do paciente',
+     diag:'A Clara está conduzindo rápido demais para a próxima etapa. Com um familiar decidindo por um idoso, vale dar espaço para a pessoa processar antes de empurrar o agendamento.',
+     del:'Após qualificar, ofereça imediatamente as opções de agendamento.',
+     add:'Após qualificar, confirme se a pessoa quer avançar agora ou prefere pensar; respeite o ritmo antes de propor agendamento.',
+     why:'Público sênior responde a <b>confiança, não a pressa</b>. Um passo mais leve reduz o abandono no topo.'}
+  ];
+  const GENERIC={title:'Ajuste no jeito da Clara',
+    diag:'Analisei a conversa à luz do que você apontou e encontrei um trecho do comportamento da Clara que dá pra afinar.',
+    del:'Instrução atual, mais genérica, sem tratar o ponto que você levantou.',
+    add:'Instrução ajustada conforme seu pedido — mantendo tom acolhedor, PT-BR e a regra de nunca cravar preço.',
+    why:'É <b>config do prompt</b>, não código. Aplica na hora e fica registrado na atividade.'};
+  const pick=t=>{for(const p of PLAYBOOK)if(p.match.test(t))return p;return GENERIC;};
+
+  function toast(t,s){const el=document.createElement('div');el.className='toast';el.innerHTML=`<span class="ic">✓</span><div><b>${t}</b><small>${s}</small></div>`;tz.appendChild(el);setTimeout(()=>{el.style.transition='opacity .4s';el.style.opacity='0';setTimeout(()=>el.remove(),400);},4400);}
+
+  function clockIcon(){return '<svg class="clockic" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>';}
+  function addYou(text,cb){
+    const el=document.createElement('div');el.className='row you sending';
+    el.innerHTML=`<div class="av">DT</div><div><div class="bub"></div><div class="stamp">${clockIcon()} enviando…</div></div>`;
+    el.querySelector('.bub').textContent=text;
+    msgs.appendChild(el);bottom();
+    setTimeout(()=>{el.classList.remove('sending');el.querySelector('.stamp').textContent='você · agora';
+      addEvent('msg-in','Você (paciente teste): "'+text.slice(0,40)+(text.length>40?'…':'')+'"','paciente(teste) · whatsapp');cb&&cb();},620);
+  }
+  function typing(cls){const el=document.createElement('div');el.className='typing '+cls;el.innerHTML=`<div class="av">${cls==='c'?'C':'J'}</div><div class="dots"><i></i><i></i><i></i></div>`;msgs.appendChild(el);bottom();return el;}
+  function addClara(html){const el=document.createElement('div');el.className='row clara';el.innerHTML=`<div class="av">C</div><div><div class="bub">${html}</div><div class="stamp">Clara · agora</div></div>`;msgs.appendChild(el);bottom();addEvent('msg-out','Clara respondeu (motor Mastra)','clara · motor Mastra');}
+  function addCmd(text){const el=document.createElement('div');el.className='row cmd';el.innerHTML=`<div class="av">DT</div><div><div class="bub">${text.replace(/@jarvis/gi,'<span class="mn">@jarvis</span>')}</div><div class="stamp">você → @jarvis · agora</div></div>`;msgs.appendChild(el);bottom();}
+
+  function addProposal(userText){
+    const p=pick(userText),fromV=promptVersion,toV=promptVersion+1;
+    const ty=typing('j');
+    setTimeout(()=>{
+      ty.remove();
+      addEvent('prop','@jarvis propõe: <b>'+p.title+'</b>','jarvis · motor Mastra · pendente');
+      const wrap=document.createElement('div');wrap.className='jrow';
+      wrap.innerHTML=`<div class="av">J</div><div class="prop">
+        <div class="ph"><span class="tag">@jarvis propõe</span><span class="pt">${p.title}</span><span class="pv">v${fromV}→v${toV}</span></div>
+        <div class="pb">
+          <div class="diag">${p.diag}</div>
+          <div class="diff"><div class="ln del"><span class="sg">−</span><span>${p.del}</span></div><div class="ln add"><span class="sg">+</span><span>${p.add}</span></div></div>
+          <div class="why">${p.why}</div>
+          <div class="pacts"><button class="btn ok">✓ Aprovar melhoria</button><button class="btn no">Rejeitar</button><span class="vd">valida <b>Diogo</b></span></div>
+        </div></div>`;
+      msgs.appendChild(wrap);bottom();
+      const card=wrap.querySelector('.prop');
+      card.querySelector('.ok').addEventListener('click',()=>resolve(card,true,p,toV));
+      card.querySelector('.no').addEventListener('click',()=>resolve(card,false,p,toV));
+    },1100);
+  }
+  function resolve(card,approved,p,toV){
+    card.classList.add('done');card.querySelector('.pacts').remove();
+    const b=document.createElement('div');
+    if(approved){
+      promptVersion=toV;verBadge.textContent='prompt v'+promptVersion;verBadge.classList.add('up');
+      b.className='rbanner y';b.innerHTML=`✓ Aprovada por humano:diogo · Clara agora na v${promptVersion}`;card.appendChild(b);
+      addEvent('appr','Proposta <b>"'+p.title+'"</b> aprovada','humano:diogo · painel');
+      addEvent('cfg','Prompt da Clara: v'+(promptVersion-1)+' → <b>v'+promptVersion+'</b>','sistema · config · sem deploy');
+      toast('Prompt da Clara atualizado pra v'+promptVersion,'Sem deploy — é config. Já vale na próxima conversa.');
+    }else{
+      b.className='rbanner n';b.innerHTML=`✕ Rejeitada por humano:diogo · Clara segue na v${promptVersion}`;card.appendChild(b);
+      addEvent('rej','Proposta <b>"'+p.title+'"</b> rejeitada','humano:diogo · painel');
+    }
+  }
+
+  const isJ=()=>/^\s*@jarvis\b/i.test(input.value);
+  function upd(){comp.classList.toggle('jmode',isJ());input.style.height='auto';input.style.height=Math.min(input.scrollHeight,110)+'px';}
+  input.addEventListener('input',upd);
+  function submit(){
+    const t=input.value.trim();if(!t)return;
+    if(/^@jarvis\b/i.test(t)){addCmd(t);input.value='';upd();addProposal(t);}
+    else{addYou(t,()=>{const ty=typing('c');setTimeout(()=>{ty.remove();addClara('Obrigada! (resposta simulada da Clara neste teste 💛) Para ajustar o jeito dela, mencione <b>@jarvis</b> na conversa.');},1000);});input.value='';upd();}
+  }
+  send.addEventListener('click',submit);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit();}});
+})();
+</script>
+</body>
+</html>

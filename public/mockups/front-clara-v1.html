@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Me Escuta · Clara (front v1)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;450;500;600;700&display=swap');
+
+  :root{
+    --laranja:#EC662E; --laranja-esc:#D4541F; --laranja-cl:#FDEEE4; --pessego:#FCE7DB;
+    --navy:#252F63; --azul:#143691;
+    --creme:#FBF9F6; --bg:#F3EEE6; --branco:#FFFFFF;
+    --texto:#3a3a3a; --suave:#6f6c76; --mute:#a3a0a8;
+    --borda:#ECE3D6; --borda-2:#E3D9CA;
+    --verde:#2E8B62; --verde-bg:#EAF6EF; --verde-bd:#BFE4CF;
+    --vermelho:#C4482E; --vermelho-bg:#FBEBE4; --vermelho-bd:#F1CDBF;
+    --azul-bg:#EEF1FB; --azul-bd:#D5DDF3;
+    --sombra-sm:0 1px 3px rgba(37,47,99,.06);
+    --sombra:0 6px 26px rgba(37,47,99,.09);
+    font-size:15px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--texto);background:var(--bg);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .serif{font-family:'Fraunces',Georgia,serif}
+  svg{display:block}
+
+  .app{display:grid;grid-template-rows:auto 1fr;height:100vh}
+
+  .topbar{display:flex;align-items:center;height:58px;padding:0 24px;background:var(--branco);border-bottom:1px solid var(--borda)}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand .mk{width:34px;height:34px;border-radius:50%;background:var(--laranja);color:#fff;display:grid;place-items:center;font-size:1.1rem;box-shadow:0 3px 10px rgba(236,102,46,.3)}
+  .brand .nm{font-family:'Fraunces',serif;font-weight:600;color:var(--navy);font-size:1.18rem}
+  .brand .nm b{color:var(--laranja);font-weight:700}
+  .brand .env{margin-left:10px;font-size:.62rem;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--laranja-esc);background:var(--laranja-cl);padding:3px 8px;border-radius:20px}
+  .topbar .sp{flex:1}
+  .userchip{display:flex;align-items:center;gap:10px}
+  .userchip .ui{text-align:right;line-height:1.15}
+  .userchip .ui .n{font-size:.82rem;font-weight:600;color:var(--navy)}
+  .userchip .ui .r{font-size:.68rem;color:var(--mute)}
+  .userchip .ua{width:33px;height:33px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:.76rem;font-weight:700}
+
+  .body{display:grid;grid-template-columns:1fr 340px;min-height:0}
+  @media(max-width:860px){.body{grid-template-columns:1fr}.act{display:none}}
+
+  .chat{display:flex;flex-direction:column;min-height:0;background:var(--creme)}
+  .chead{flex-shrink:0;display:flex;align-items:center;gap:14px;padding:16px 32px;background:var(--branco);border-bottom:1px solid var(--borda)}
+  .clara-av{width:48px;height:48px;border-radius:50%;flex-shrink:0;position:relative;background:linear-gradient(140deg,#F2803F,#EC662E);color:#fff;display:grid;place-items:center;font-size:1.35rem;box-shadow:0 4px 13px rgba(236,102,46,.3)}
+  .clara-av .on{position:absolute;right:-1px;bottom:-1px;width:12px;height:12px;border-radius:50%;background:#37b26f;border:2.5px solid #fff;transition:.3s}
+  .clara-av .on.off{background:var(--mute)}
+  .cinfo{flex:1;min-width:0}
+  .cinfo .nm{font-family:'Fraunces',serif;font-weight:600;font-size:1.24rem;color:var(--navy);line-height:1.05}
+  .cinfo .rl{font-size:.8rem;color:var(--suave);margin-top:2px}
+  .restart{display:inline-flex;align-items:center;gap:6px;font-family:'Inter',sans-serif;font-size:.78rem;font-weight:600;color:var(--suave);background:#fff;border:1.5px solid var(--borda-2);border-radius:10px;padding:8px 13px;cursor:pointer;transition:.15s}
+  .restart svg{width:15px;height:15px;stroke:currentColor;fill:none}
+  .restart:hover{color:var(--laranja-esc);border-color:#f6cdb6;background:var(--laranja-cl)}
+  .restart:disabled{opacity:.5;cursor:default}
+  .cbadges{display:flex;gap:8px;align-items:center}
+  .badge{font-size:.7rem;font-weight:600;padding:5px 11px;border-radius:30px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .badge.motor{background:var(--pessego);color:var(--laranja-esc)}
+  .badge.motor .d{width:6px;height:6px;border-radius:50%;background:var(--laranja)}
+  .badge.ver{background:var(--azul-bg);color:var(--navy);transition:.3s}
+  .badge.ver.up{background:var(--verde-bg);color:var(--verde)}
+
+  .testnote{flex-shrink:0;padding:8px 32px;font-size:.76rem;color:var(--mute);background:var(--creme);border-bottom:1px solid var(--borda)}
+  .testnote b{color:var(--suave);font-weight:600}
+
+  .msgs{flex:1;min-height:0;overflow-y:auto;padding:26px 32px 12px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}
+  .sep{text-align:center;font-size:.71rem;color:var(--mute);margin:0 0 6px}
+  .empty{margin:auto;text-align:center;color:var(--mute);max-width:340px;padding:20px}
+  .empty .ei{width:46px;height:46px;border-radius:50%;background:var(--laranja-cl);display:grid;place-items:center;margin:0 auto 12px;font-size:1.3rem}
+  .empty .et{font-family:'Fraunces',serif;font-size:1.05rem;color:var(--navy);margin-bottom:5px}
+  .empty .es{font-size:.83rem;line-height:1.5}
+  .row{display:flex;gap:10px;max-width:72%;animation:rise .28s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  .row .av{width:30px;height:30px;border-radius:50%;flex-shrink:0;margin-top:auto;display:grid;place-items:center;font-size:.82rem;font-weight:700;color:#fff}
+  .bub{padding:11px 15px;font-size:.93rem;line-height:1.55;position:relative;white-space:pre-wrap;word-break:break-word}
+  .stamp{font-size:.67rem;color:var(--mute);margin-top:5px;display:flex;align-items:center;gap:5px}
+
+  .row.clara{align-self:flex-start}
+  .row.clara .av{background:linear-gradient(140deg,#F2803F,#EC662E)}
+  .row.clara .bub{background:#fff;border:1px solid var(--borda-2);color:var(--texto);border-radius:16px 16px 16px 4px;box-shadow:var(--sombra-sm)}
+
+  .row.you{align-self:flex-end;flex-direction:row-reverse}
+  .row.you .av{background:var(--navy)}
+  .row.you .bub{background:var(--laranja);color:#fff;border-radius:16px 16px 4px 16px;box-shadow:0 3px 11px rgba(236,102,46,.24)}
+  .row.you .stamp{justify-content:flex-end}
+  .row.you.sending .bub{opacity:.66}
+  .row.you.erro .bub{background:var(--vermelho)}
+
+  .row.cmd{align-self:flex-end;flex-direction:row-reverse}
+  .row.cmd .av{background:var(--navy)}
+  .row.cmd .bub{background:var(--azul-bg);color:var(--navy);border:1px solid var(--azul-bd);border-radius:16px 16px 4px 16px}
+  .row.cmd .bub .mn{color:var(--laranja);font-weight:700}
+  .row.cmd .stamp{justify-content:flex-end}
+
+  .typing{align-self:flex-start;display:flex;gap:10px;align-items:flex-end}
+  .typing .av{width:30px;height:30px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:.82rem;font-weight:700;color:#fff}
+  .typing.c .av{background:linear-gradient(140deg,#F2803F,#EC662E)}
+  .typing.j .av{background:var(--navy)}
+  .typing .dots{background:#fff;border:1px solid var(--borda-2);border-radius:16px 16px 16px 4px;padding:13px 15px;display:flex;gap:4px}
+  .typing .dots i{width:7px;height:7px;border-radius:50%;background:var(--mute);animation:bounce 1.2s infinite}
+  .typing .dots i:nth-child(2){animation-delay:.18s}
+  .typing .dots i:nth-child(3){animation-delay:.36s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-5px);opacity:1}}
+  .clockic{width:10px;height:10px;stroke:currentColor;fill:none}
+  .twait{font-size:.7rem;color:var(--mute);margin-top:5px;padding-left:2px;max-width:280px;line-height:1.4}
+
+  .jrow{align-self:center;width:100%;max-width:600px;display:flex;gap:10px;animation:rise .3s ease;margin:2px 0}
+  .jrow .av{width:30px;height:30px;border-radius:50%;flex-shrink:0;margin-top:3px;display:grid;place-items:center;font-size:.78rem;font-weight:700;color:#fff;background:var(--navy)}
+  .prop{flex:1;background:#fff;border:1px solid var(--azul-bd);border-radius:16px;overflow:hidden;box-shadow:var(--sombra)}
+  .prop .ph{display:flex;align-items:baseline;gap:10px;padding:14px 17px 10px}
+  .prop .ph .tag{font-size:.62rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--laranja-esc)}
+  .prop .ph .pt{font-family:'Fraunces',serif;font-weight:600;font-size:1.05rem;color:var(--navy);flex:1;line-height:1.2}
+  .prop .ph .pv{font-size:.7rem;color:var(--mute);white-space:nowrap}
+  .prop .pb{padding:0 17px 16px}
+  .diag{font-size:.88rem;line-height:1.58;color:var(--texto);margin-bottom:14px}
+  .diag b{color:var(--navy);font-weight:600}
+  .diff{font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:.79rem;line-height:1.55;border-radius:10px;overflow:hidden;margin-bottom:13px;border:1px solid var(--borda-2)}
+  .diff .ln{padding:8px 12px;display:flex;gap:8px;white-space:pre-wrap;word-break:break-word}
+  .diff .sg{flex-shrink:0;width:11px;opacity:.7;font-weight:700}
+  .diff .del{background:var(--vermelho-bg);color:#9c3b25}
+  .diff .add{background:var(--verde-bg);color:#1f6b48}
+  .dlabel{font-size:.66rem;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);font-weight:600;margin:0 0 7px}
+  .ancora{font-family:ui-monospace,Menlo,monospace;font-size:.68rem;color:var(--suave);margin:9px 0 4px;font-weight:600}
+  .ancora:first-of-type{margin-top:0}
+  .promptbox{font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:.78rem;line-height:1.55;color:#1f6b48;background:var(--verde-bg);border:1px solid var(--verde-bd);border-left:3px solid var(--verde);border-radius:10px;padding:10px 12px;margin-bottom:14px;max-height:190px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+  .aviso{font-size:.79rem;line-height:1.5;color:var(--laranja-esc);background:var(--laranja-cl);border-radius:9px;padding:10px 12px;margin-bottom:14px}
+  .why{font-size:.85rem;line-height:1.58;color:var(--suave);margin-bottom:16px;padding-left:12px;border-left:2px solid var(--laranja-cl)}
+  .why b{color:var(--navy)}
+  .pacts{display:flex;gap:10px;align-items:center}
+  .btn{font-family:'Inter',sans-serif;font-size:.86rem;font-weight:600;padding:10px 18px;border-radius:10px;border:none;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ok{background:var(--laranja);color:#fff;box-shadow:0 3px 11px rgba(236,102,46,.26)}
+  .btn.ok:hover:not(:disabled){background:var(--laranja-esc)}
+  .btn.no{background:#fff;color:var(--suave);border:1.5px solid var(--borda-2)}
+  .btn.no:hover:not(:disabled){background:var(--creme);color:var(--navy)}
+  .pacts .vd{font-size:.72rem;color:var(--mute);margin-left:auto}
+  .pacts .vd b{color:var(--suave)}
+  .prop.done .pb{opacity:.5}
+  .rbanner{font-size:.83rem;font-weight:600;padding:12px 17px;border-top:1px solid var(--borda)}
+  .rbanner.y{background:var(--verde-bg);color:var(--verde)}
+  .rbanner.n{background:var(--vermelho-bg);color:var(--vermelho)}
+
+  .comp-wrap{flex-shrink:0;padding:12px 32px 16px;background:var(--branco);border-top:1px solid var(--borda)}
+  .comp-hint{font-size:.75rem;color:var(--mute);margin-bottom:9px;padding:0 3px}
+  .comp-hint code{background:var(--azul-bg);color:var(--navy);padding:2px 7px;border-radius:6px;font-family:ui-monospace,monospace;font-size:.73rem;font-weight:600}
+  .comp-hint code .mn{color:var(--laranja)}
+  .comp{display:flex;align-items:flex-end;gap:10px;background:var(--creme);border:1.5px solid var(--borda-2);border-radius:15px;padding:7px 7px 7px 16px;transition:.15s}
+  .comp:focus-within{border-color:var(--laranja);background:#fff;box-shadow:0 0 0 3px rgba(236,102,46,.1)}
+  .comp.jmode{border-color:var(--navy);background:#fff;box-shadow:0 0 0 3px rgba(37,47,99,.1)}
+  .comp.busy{opacity:.6;pointer-events:none}
+  .comp textarea{flex:1;background:none;border:none;color:var(--texto);resize:none;font-family:'Inter',sans-serif;font-size:.94rem;line-height:1.5;max-height:110px;padding:7px 0;outline:none}
+  .comp textarea::placeholder{color:var(--mute)}
+  .comp .flag{align-self:center;font-size:.65rem;font-weight:700;color:var(--navy);background:var(--azul-bg);padding:4px 9px;border-radius:7px;white-space:nowrap;opacity:0;transition:.15s}
+  .comp.jmode .flag{opacity:1}
+  .comp .send{width:40px;height:40px;border-radius:11px;border:none;cursor:pointer;flex-shrink:0;background:var(--laranja);color:#fff;display:grid;place-items:center;transition:.15s}
+  .comp .send:hover{background:var(--laranja-esc)}
+  .comp .send svg{width:18px;height:18px;stroke:#fff;fill:none}
+  .spin{width:17px;height:17px;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .principle{flex-shrink:0;text-align:center;padding:9px;background:var(--branco);border-top:1px solid var(--borda);font-size:.75rem;color:var(--mute)}
+  .principle .k{color:var(--laranja);font-weight:600}
+  .principle .v{color:var(--navy);font-weight:600}
+  .principle .e{color:var(--azul);font-weight:600}
+
+  .act{background:var(--branco);border-left:1px solid var(--borda);display:flex;flex-direction:column;min-height:0}
+  .act-head{flex-shrink:0;padding:18px 22px 14px;display:flex;align-items:baseline;gap:9px}
+  .act-head .t{font-family:'Fraunces',serif;font-weight:600;font-size:1.08rem;color:var(--navy)}
+  .act-head .live{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:.68rem;font-weight:500;color:var(--verde)}
+  .act-head .live .p{width:7px;height:7px;border-radius:50%;background:var(--verde);animation:pulse 1.8s infinite}
+  .act-head .live.off{color:var(--mute)}
+  .act-head .live.off .p{background:var(--mute);animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(55,178,111,.4)}70%{box-shadow:0 0 0 7px rgba(55,178,111,0)}100%{box-shadow:0 0 0 0 rgba(55,178,111,0)}}
+  .act-sub{flex-shrink:0;padding:0 22px 10px;font-size:.7rem;color:var(--mute);font-family:ui-monospace,monospace}
+  .act-list{flex:1;min-height:0;overflow-y:auto;padding:4px 12px 20px}
+  .act-empty{margin:30px 16px;text-align:center;color:var(--mute);font-size:.8rem;line-height:1.5}
+  .act-empty .aei{font-size:1.4rem;margin-bottom:8px}
+
+  .ev{padding:11px 12px 12px;border-left:2px solid var(--borda-2);margin-left:4px;position:relative}
+  .ev.fresh{animation:evin .5s ease}
+  @keyframes evin{from{opacity:0;transform:translateX(8px)}to{opacity:1}}
+  .ev.msg-in{border-left-color:var(--laranja)}
+  .ev.msg-out{border-left-color:var(--navy)}
+  .ev.prop{border-left-color:var(--azul)}
+  .ev.appr{border-left-color:var(--verde)}
+  .ev.rej{border-left-color:var(--vermelho)}
+  .ev.cfg{border-left-color:var(--laranja-esc)}
+  .ev .top{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
+  .ev .type{font-family:ui-monospace,monospace;font-size:.73rem;font-weight:600}
+  .ev.msg-in .type{color:var(--laranja-esc)}
+  .ev.msg-out .type{color:var(--navy)}
+  .ev.prop .type{color:var(--azul)}
+  .ev.appr .type{color:var(--verde)}
+  .ev.rej .type{color:var(--vermelho)}
+  .ev.cfg .type{color:var(--laranja-esc)}
+  .ev .tm{margin-left:auto;font-size:.66rem;color:var(--mute);font-family:ui-monospace,monospace}
+  .ev .payload{font-size:.83rem;color:var(--texto);line-height:1.42;margin-bottom:3px}
+  .ev .payload b{color:var(--navy);font-weight:600}
+  .ev .meta{font-size:.68rem;color:var(--mute)}
+  .es-foot{flex-shrink:0;padding:10px 22px;border-top:1px solid var(--borda);font-size:.68rem;color:var(--mute);font-family:ui-monospace,monospace}
+  .es-foot b{color:var(--suave)}
+
+  .tz{position:fixed;bottom:22px;left:calc(50% - 170px);z-index:60;display:flex;flex-direction:column;gap:10px;align-items:center}
+  .toast{background:#fff;border:1px solid var(--verde-bd);border-left:4px solid var(--verde);padding:12px 18px;border-radius:12px;box-shadow:0 12px 38px rgba(37,47,99,.18);display:flex;align-items:center;gap:11px;font-size:.88rem;max-width:440px;animation:tin .3s ease}
+  .toast.err{border-color:var(--vermelho-bd);border-left-color:var(--vermelho)}
+  .toast.err .ic{background:var(--vermelho)}
+  @keyframes tin{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:none}}
+  .toast .ic{width:27px;height:27px;border-radius:50%;background:var(--verde);color:#fff;display:grid;place-items:center;flex-shrink:0}
+  .toast b{color:var(--navy)}
+  .toast small{display:block;color:var(--suave);font-size:.75rem;margin-top:2px}
+  .toast .retry{margin-left:6px;font-size:.78rem;font-weight:600;color:var(--laranja-esc);background:var(--laranja-cl);border:none;padding:6px 12px;border-radius:8px;cursor:pointer}
+
+  ::-webkit-scrollbar{width:8px}
+  ::-webkit-scrollbar-thumb{background:#e6ddd0;border-radius:8px}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand"><span class="mk">👂</span><span class="nm serif">me <b>escuta</b></span><span class="env">front v1 · motor real</span></div>
+    <div class="sp"></div>
+    <div class="userchip"><div class="ui"><div class="n">Diogo Tambasco</div><div class="r">produto · tech</div></div><div class="ua">DT</div></div>
+  </div>
+
+  <div class="body">
+
+    <section class="chat">
+      <div class="chead">
+        <div class="clara-av">C<span class="on" id="claraDot"></span></div>
+        <div class="cinfo">
+          <div class="nm">Clara</div>
+          <div class="rl">Assistente de pré-venda · atende no WhatsApp</div>
+        </div>
+        <button class="restart" id="restart" title="Limpa a conversa e restaura o prompt original da Clara">
+          <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          Reiniciar
+        </button>
+        <div class="cbadges">
+          <span class="badge motor"><span class="d"></span>motor Mastra</span>
+          <span class="badge ver" id="verBadge">prompt v1</span>
+        </div>
+      </div>
+
+      <div class="testnote">Modo teste — você conversa <b>como se fosse um paciente</b>. Mencione <b>@jarvis</b> para propor uma melhoria na Clara.</div>
+
+      <div class="msgs" id="msgs">
+        <div class="empty" id="chatEmpty">
+          <div class="ei">💬</div>
+          <div class="et">Comece a conversa</div>
+          <div class="es">Escreva abaixo como se fosse um paciente. A Clara responde pelo motor Mastra. Para melhorá-la, mencione <b>@jarvis</b>.</div>
+        </div>
+      </div>
+
+      <div class="comp-wrap">
+        <div class="comp-hint">💬 Responda à Clara — ou peça uma melhoria com <code><span class="mn">@jarvis</span> ela foi seca demais aqui, melhora o tom</code></div>
+        <div class="comp" id="comp">
+          <textarea id="input" rows="1" placeholder="Escreva como se fosse o paciente… ou mencione @jarvis para melhorar a Clara"></textarea>
+          <span class="flag">modo @jarvis · vai propor melhoria</span>
+          <button class="send" id="send" title="Enviar"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+        </div>
+      </div>
+
+      <div class="principle">Todo agente <span class="k">propõe</span>; um humano nomeado <span class="v">valida</span>; só então vira <span class="e">evento</span>.</div>
+    </section>
+
+    <aside class="act">
+      <div class="act-head">
+        <span class="t">Atividade</span>
+        <span class="live off" id="liveInd"><span class="p"></span><span id="liveTxt">conectando…</span></span>
+      </div>
+      <div class="act-sub">core.evento · append-only</div>
+      <div class="act-list" id="esList">
+        <div class="act-empty" id="actEmpty"><div class="aei">🧾</div>Aguardando eventos do ledger…</div>
+      </div>
+      <div class="es-foot"><b id="esCount">0</b> eventos nesta sessão</div>
+    </aside>
+
+  </div>
+</div>
+
+<div class="tz" id="tz"></div>
+
+<script>
+(function(){
+  // ===================================================================
+  //  FRONT V1 — ligado à bridge local do motor (Mastra + ledger).
+  //  Ajuste BASE_URL para a porta que a bridge do Agent 1 publicar em
+  //  ~/Developer/me-escuta/me-escuta-runtime/docs/CONTRATO-BRIDGE.md
+  // ===================================================================
+  const BASE_URL = 'http://127.0.0.1:4599';        // bridge cola-preview (CONTRATO-BRIDGE.md)
+  const POLL_MS  = 3000;                            // intervalo do GET /eventos
+
+  const $=id=>document.getElementById(id);
+  const input=$('input'),send=$('send'),comp=$('comp'),msgs=$('msgs');
+  const esList=$('esList'),esCount=$('esCount'),verBadge=$('verBadge'),tz=$('tz');
+  const liveInd=$('liveInd'),liveTxt=$('liveTxt'),claraDot=$('claraDot');
+  const chatEmpty=$('chatEmpty'),actEmpty=$('actEmpty');
+
+  // histórico enviado à Clara (formato do contrato: {papel, texto})
+  const historico=[];
+  let promptVersion=1;
+  let ultimaPos=0;          // maior posicao_global já renderizada
+  let eventosVistos=0;
+  let busy=false;
+  let baseline=true;        // 1ª carga: só fixa o marco, não despeja histórico do ledger
+
+  // ---------- helpers ----------
+  const bottom=()=>requestAnimationFrame(()=>{msgs.scrollTop=msgs.scrollHeight;});
+  const esBottom=()=>{esList.scrollTop=esList.scrollHeight;};
+  const hhmm=d=>{try{const s=String(d).replace(/([+-]\d{2})$/,'$1:00');const x=new Date(s);if(isNaN(x))return '';return String(x.getHours()).padStart(2,'0')+':'+String(x.getMinutes()).padStart(2,'0');}catch(e){return '';}};
+  const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const EMPTY_HTML='<div class="empty" id="chatEmpty"><div class="ei">💬</div><div class="et">Comece a conversa</div><div class="es">Escreva abaixo como se fosse um paciente. A Clara responde pelo motor Mastra. Para melhorá-la, mencione <b>@jarvis</b>.</div></div>';
+  function hideChatEmpty(){const e=document.getElementById('chatEmpty');if(e)e.remove();}
+  function mostrarEmpty(){if(!document.getElementById('chatEmpty'))msgs.innerHTML=EMPTY_HTML;}
+
+  function setBusy(b){busy=b;comp.classList.toggle('busy',b);input.disabled=b;send.disabled=b;send.innerHTML=b?'<span class="spin"></span>':'<svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;stroke:#fff;fill:none"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';}
+
+  function setLive(online){
+    liveInd.classList.toggle('off',!online);
+    liveTxt.textContent=online?'ao vivo':'offline';
+    claraDot.classList.toggle('off',!online);
+  }
+
+  function toast(t,s,isErr,onRetry){
+    const el=document.createElement('div');el.className='toast'+(isErr?' err':'');
+    el.innerHTML=`<span class="ic">${isErr?'!':'✓'}</span><div><b>${esc(t)}</b><small>${esc(s)}</small></div>`;
+    if(onRetry){const r=document.createElement('button');r.className='retry';r.textContent='Tentar de novo';r.onclick=()=>{el.remove();onRetry();};el.appendChild(r);}
+    tz.appendChild(el);
+    if(!onRetry)setTimeout(()=>{el.style.transition='opacity .4s';el.style.opacity='0';setTimeout(()=>el.remove(),400);},isErr?5000:4400);
+  }
+
+  async function api(path,opts,timeoutMs){
+    const ctrl=new AbortController();
+    const to=setTimeout(()=>ctrl.abort(),timeoutMs||15000);
+    try{
+      const r=await fetch(BASE_URL+path,Object.assign({signal:ctrl.signal,headers:{'Content-Type':'application/json'}},opts||{}));
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const ct=r.headers.get('content-type')||'';
+      return ct.includes('json')?await r.json():await r.text();
+    }finally{clearTimeout(to);}
+  }
+
+  // ---------- message rendering ----------
+  function clockIcon(){return '<svg class="clockic" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>';}
+  function addYou(text){
+    hideChatEmpty();
+    const el=document.createElement('div');el.className='row you sending';
+    el.innerHTML=`<div class="av">DT</div><div><div class="bub"></div><div class="stamp">${clockIcon()} enviando…</div></div>`;
+    el.querySelector('.bub').textContent=text;
+    msgs.appendChild(el);bottom();return el;
+  }
+  function addCmd(text){
+    hideChatEmpty();
+    const el=document.createElement('div');el.className='row cmd';
+    el.innerHTML=`<div class="av">DT</div><div><div class="bub">${esc(text).replace(/@jarvis/gi,'<span class="mn">@jarvis</span>')}</div><div class="stamp">você → @jarvis · agora</div></div>`;
+    msgs.appendChild(el);bottom();
+  }
+  function typing(cls,aviso){const el=document.createElement('div');el.className='typing '+cls;el.innerHTML=`<div class="av">${cls==='c'?'C':'J'}</div><div><div class="dots"><i></i><i></i><i></i></div>${aviso?`<div class="twait">${esc(aviso)}</div>`:''}</div>`;msgs.appendChild(el);bottom();return el;}
+  function addClara(text){
+    const el=document.createElement('div');el.className='row clara';
+    el.innerHTML=`<div class="av">C</div><div><div class="bub"></div><div class="stamp">Clara · agora</div></div>`;
+    el.querySelector('.bub').textContent=text;
+    msgs.appendChild(el);bottom();
+  }
+
+  // ---------- event source (GET /eventos?desde=N → {eventos:[...]} DESC) ----------
+  const KINDMAP=[
+    [/receb/i,'msg-in'],
+    [/enviar_msg|enviar_mensagem|envi/i,'msg-out'],
+    [/propor|sugest.*(cri|propos|pend)/i,'prop'],
+    [/sugest.*aprov|aprovad/i,'appr'],
+    [/rejeit|recus/i,'rej'],
+    [/prompt.*(atualiz|version|nova)/i,'cfg']
+  ];
+  const ROTULO={
+    prompt_atualizado:'Prompt atualizado',
+    enviar_mensagem:'Mensagem enviada',
+    receber_mensagem:'Mensagem recebida',
+    mensagem_recebida:'Mensagem recebida',
+    mensagem_enviada:'Mensagem enviada',
+    propor_atualizacao_prompt:'Proposta de prompt criada',
+    sugestao_criada:'Proposta criada',
+    sugestao_aprovada:'Proposta aprovada',
+    sugestao_rejeitada:'Proposta rejeitada'
+  };
+  function kindOf(tipo){for(const[re,k]of KINDMAP)if(re.test(tipo||''))return k;return 'msg-out';}
+  function rotulo(tipo){return ROTULO[tipo]||String(tipo||'evento').replace(/_/g,' ').replace(/^\w/,c=>c.toUpperCase());}
+  function renderEvento(ev){
+    const tipo=ev.tipo||ev.type||'evento';
+    const kind=kindOf(tipo);
+    const ator=ev.ator||'';
+    const origem=ev.origem||'';
+    const meta=[ator,origem].filter(Boolean).join(' · ');
+    const tm=hhmm(ev.criado_em||ev.criadoEm||Date.now());
+    if(actEmpty&&actEmpty.parentNode)actEmpty.remove();
+    const el=document.createElement('div');el.className='ev '+kind+' fresh';
+    el.innerHTML=`<div class="top"><span class="type">${esc(tipo)}</span><span class="tm">${tm}</span></div><div class="payload">${esc(rotulo(tipo))}</div>${meta?`<div class="meta">${esc(meta)}</div>`:''}`;
+    esList.appendChild(el);esBottom();
+    setTimeout(()=>el.classList.remove('fresh'),600);
+  }
+  async function pollEventos(){
+    try{
+      const data=await api('/eventos?desde='+ultimaPos,{method:'GET'},8000);
+      const lista=Array.isArray(data)?data:(data.eventos||[]);
+      setLive(true);
+      // a bridge devolve DESC (mais recente primeiro); rendemos em ordem crescente
+      const asc=lista.slice().sort((a,b)=>(a.posicao_global||0)-(b.posicao_global||0));
+      if(baseline){
+        // fixa o marco no topo atual do ledger, sem renderizar o histórico
+        asc.forEach(ev=>{if((ev.posicao_global||0)>ultimaPos)ultimaPos=ev.posicao_global;});
+        baseline=false;return;
+      }
+      asc.forEach(ev=>{
+        const pos=ev.posicao_global||0;
+        if(pos&&pos<=ultimaPos)return;
+        renderEvento(ev);
+        eventosVistos++;esCount.textContent=eventosVistos;
+        if(pos>ultimaPos)ultimaPos=pos;
+      });
+    }catch(e){setLive(false);}
+  }
+
+  // ---------- send message ----------
+  async function enviarMensagem(text){
+    const bub=addYou(text);
+    historico.push({papel:'cliente',corpo:text});
+    setBusy(true);
+    const ty=typing('c');
+    try{
+      const data=await api('/chat/clara',{method:'POST',body:JSON.stringify({conversa:historico})},60000);
+      ty.remove();
+      const resposta=data.corpo||data.texto||'';
+      bub.classList.remove('sending');bub.querySelector('.stamp').textContent='você · agora';
+      addClara(resposta);
+      historico.push({papel:'clara',corpo:resposta});
+    }catch(e){
+      ty.remove();
+      bub.classList.add('erro');bub.querySelector('.stamp').textContent='falhou ao enviar';
+      historico.pop();
+      toast('Sem resposta da Clara','A bridge do motor não respondeu ('+e.message+').',true,()=>{bub.remove();enviarMensagem(text);});
+    }finally{setBusy(false);}
+  }
+
+  // ---------- @jarvis ----------
+  function pedirJarvis(text){addCmd(text);avaliarJarvis(text);}   // o comando fica no fio; retry só re-avalia
+  async function avaliarJarvis(text){
+    setBusy(true);
+    const ty=typing('j','Jarvis analisando a conversa e propondo edições no prompt da Clara… ~30s.');
+    try{
+      const data=await api('/jarvis/avaliar',{method:'POST',body:JSON.stringify({conversa:historico,pedido:text})},120000);
+      ty.remove();
+      renderProposta(data);
+    }catch(e){
+      ty.remove();
+      const msg=/abort/i.test(e.message)?'demorou demais pra responder':e.message;
+      toast('@jarvis não respondeu','A avaliação '+msg+'. Sua conversa está salva.',true,()=>avaliarJarvis(text));
+    }finally{setBusy(false);}
+  }
+  function renderProposta(d){
+    const prop=d.proposta||d;
+    const pers=d.persistencia||{};
+    const sugId=pers.sugestao_id||pers.sugestaoId||d.sugestao_id||null;
+    const diag=prop.diagnostico||'';
+    const promptNovo=prop.prompt_novo||prop.promptNovo||'';
+    const edicoes=Array.isArray(prop.edicoes)?prop.edicoes:null;
+    const justif=prop.justificativa||'';
+    const fromV=promptVersion,toV=promptVersion+1;
+    const persistiu=pers.ok!==false && !!sugId;
+
+    // prioriza as EDIÇÕES cirúrgicas (diff real texto_antigo→texto_novo);
+    // se o jarvis mandou o prompt inteiro (edicoes=null), mostra o bloco rolável.
+    let promptHtml='';
+    if(edicoes&&edicoes.length){
+      promptHtml='<div class="dlabel">O que muda no prompt</div>'+edicoes.map(ed=>{
+        const anc=ed.secao_ancora||ed.secao||'';
+        const ant=ed.texto_antigo||'', nov=ed.texto_novo||'';
+        return `${anc?`<div class="ancora">${esc(anc)}</div>`:''}<div class="diff">${ant?`<div class="ln del"><span class="sg">−</span><span>${esc(ant)}</span></div>`:''}${nov?`<div class="ln add"><span class="sg">+</span><span>${esc(nov)}</span></div>`:''}</div>`;
+      }).join('');
+    }else if(promptNovo){
+      promptHtml=`<div class="dlabel">Prompt proposto para a Clara</div><div class="promptbox">${esc(promptNovo)}</div>`;
+    }
+    const avisoHtml=persistiu?'':`<div class="aviso">⚠ Proposta gerada mas não persistida no ledger (${esc(pers.motivo||'migration 0007 pendente')}). Aprovação indisponível.</div>`;
+
+    const wrap=document.createElement('div');wrap.className='jrow';
+    wrap.innerHTML=`<div class="av">J</div><div class="prop">
+      <div class="ph"><span class="tag">@jarvis propõe</span><span class="pt">Novo prompt para a Clara</span><span class="pv">v${fromV}→v${toV}</span></div>
+      <div class="pb">
+        ${diag?`<div class="diag">${esc(diag)}</div>`:''}
+        ${promptHtml}
+        ${justif?`<div class="why">${esc(justif)}</div>`:''}
+        ${avisoHtml}
+        <div class="pacts"><button class="btn ok"${persistiu?'':' disabled'}>✓ Aprovar melhoria</button><button class="btn no">Rejeitar</button><span class="vd">valida <b>Diogo</b></span></div>
+      </div></div>`;
+    msgs.appendChild(wrap);bottom();
+    const card=wrap.querySelector('.prop');
+    card.querySelector('.ok').addEventListener('click',()=>{if(persistiu)validar(card,'aprovada',sugId,toV);});
+    card.querySelector('.no').addEventListener('click',()=>validar(card,'rejeitada',sugId,toV));
+  }
+
+  // ---------- aprovar / rejeitar ----------
+  async function validar(card,acao,sugId,toV){
+    const okBtn=card.querySelector('.ok'),noBtn=card.querySelector('.no');
+    if(okBtn)okBtn.disabled=true;if(noBtn)noBtn.disabled=true;
+    try{
+      await api('/sugestao/validar',{method:'POST',body:JSON.stringify({sugestao_id:sugId,acao:acao})},30000);
+      card.classList.add('done');
+      const acts=card.querySelector('.pacts');if(acts)acts.remove();
+      const b=document.createElement('div');
+      if(acao==='aprovada'){
+        promptVersion=toV;
+        verBadge.textContent='prompt v'+promptVersion;verBadge.classList.add('up');
+        b.className='rbanner y';b.innerHTML=`✓ Aprovada por humano:diogo · Clara agora na v${promptVersion}`;card.appendChild(b);
+        toast('Prompt da Clara atualizado pra v'+promptVersion,'Sem deploy — vale já na próxima mensagem (a bridge relê o agente).');
+      }else{
+        b.className='rbanner n';b.innerHTML=`✕ Rejeitada por humano:diogo · Clara segue na v${promptVersion}`;card.appendChild(b);
+      }
+      pollEventos(); // puxa o prompt_atualizado gerado pela aprovação
+    }catch(e){
+      if(okBtn)okBtn.disabled=false;if(noBtn)noBtn.disabled=false;
+      toast('Falha ao validar','A bridge não confirmou a ação ('+e.message+').',true);
+    }
+  }
+
+  // ---------- input ----------
+  const isJ=()=>/^\s*@jarvis\b/i.test(input.value);
+  function upd(){comp.classList.toggle('jmode',isJ());input.style.height='auto';input.style.height=Math.min(input.scrollHeight,110)+'px';}
+  input.addEventListener('input',upd);
+  function submit(){
+    if(busy)return;
+    const t=input.value.trim();if(!t)return;
+    input.value='';upd();
+    if(/^@jarvis\b/i.test(t))pedirJarvis(t);
+    else enviarMensagem(t);
+  }
+  send.addEventListener('click',submit);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit();}});
+
+  // ---------- reiniciar conversa + restaurar prompt ----------
+  const restart=$('restart');
+  async function reiniciarConversa(){
+    if(busy)return;
+    // 1) limpa a conversa sempre (local)
+    historico.length=0;
+    msgs.innerHTML=EMPTY_HTML;
+    restart.disabled=true;
+    // 2) tenta restaurar o prompt original na bridge
+    try{
+      const data=await api('/prompt/restaurar',{method:'POST',body:JSON.stringify({agente:'clara'})},30000);
+      promptVersion=data.versao_nova||data.versao||promptVersion;
+      verBadge.textContent='prompt v'+promptVersion;verBadge.classList.remove('up');
+      if(data.ja_era_baseline){
+        toast('Conversa reiniciada','A Clara já estava no prompt original (v'+promptVersion+').');
+      }else{
+        verBadge.classList.add('up');
+        toast('Conversa e prompt restaurados','A Clara voltou ao prompt original (v'+promptVersion+') — registrado no ledger.');
+      }
+    }catch(e){
+      // degrade elegante: conversa limpa, mas restauração de prompt indisponível
+      toast('Conversa reiniciada','Prompt: restauração indisponível no momento — a conversa foi limpa.');
+    }finally{restart.disabled=false;}
+  }
+  restart.addEventListener('click',reiniciarConversa);
+
+  // ---------- boot: poll ledger ----------
+  pollEventos();
+  setInterval(pollEventos,POLL_MS);
+
+  // hook de QA (uso interno): permite injetar uma resposta real da bridge p/ inspecionar o card
+  window.__qa={renderProposta:renderProposta,enviar:enviarMensagem,jarvis:pedirJarvis,hideEmpty:hideChatEmpty};
+})();
+</script>
+</body>
+</html>
