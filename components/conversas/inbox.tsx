@@ -380,11 +380,12 @@ export function Inbox({
             </div>
 
             {/* fila de aprovação (só no modo Clara) */}
-            {modoClara &&
-              props_.map((s) => {
-                const emEdicao = editando?.id === s.id;
-                return (
-                  <div key={s.id} className="flex-shrink-0 px-6 pb-1">
+            {modoClara && props_.length > 0 && (
+              <div className="max-h-[42vh] flex-shrink-0 overflow-y-auto">
+                {props_.map((s) => {
+                  const emEdicao = editando?.id === s.id;
+                  return (
+                    <div key={s.id} className="px-6 pb-1">
                     <div className="overflow-hidden rounded-lg border border-azul-bd border-l-[3px] border-l-laranja bg-branco shadow-forte">
                       <div className="flex items-center gap-2.5 px-4 pb-2 pt-3">
                         <span className="grid h-[26px] w-[26px] place-items-center rounded-full bg-gradient-to-br from-[#F2803F] to-[#EC662E] text-[0.7rem] font-bold text-branco">
@@ -453,8 +454,10 @@ export function Inbox({
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            )}
 
             {/* composer */}
             <div className="flex-shrink-0 border-t border-borda bg-branco px-6 py-3">

@@ -165,12 +165,15 @@ export async function lerSugestoesConversa(
       .order("criado_em", { ascending: false })
       .limit(10);
     if (error || !data) return [];
-    return data.map((s: any) => ({
-      id: String(s.id),
-      corpo: String(s.payload_proposto?.corpo ?? s.payload_proposto?.texto ?? ""),
-      criado_em: s.criado_em,
-      payload: (s.payload_proposto ?? {}) as Record<string, unknown>,
-    }));
+    return data
+      .map((s: any) => ({
+        id: String(s.id),
+        corpo: String(s.payload_proposto?.corpo ?? s.payload_proposto?.texto ?? "").trim(),
+        criado_em: s.criado_em,
+        payload: (s.payload_proposto ?? {}) as Record<string, unknown>,
+      }))
+      .filter((s) => s.corpo.length > 0) // ignora propostas de teste sem texto (ruído de webhook)
+      .slice(0, 3); // no máximo as 3 mais recentes com texto — evita empilhar
   } catch {
     return [];
   }
