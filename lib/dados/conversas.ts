@@ -29,12 +29,14 @@ export interface Mensagem {
   corpo: string | null;
   criado_em: string;
   pendente?: boolean; // bolha local ainda não enviada de fato (envio humano aguardando fila_saida)
+  autor?: "clara" | "sara"; // bolha de saída: Clara (laranja) vs Sara (roxo). Histórico → Clara.
 }
 
 export interface SugestaoMensagem {
   id: string;
   corpo: string;
   criado_em: string;
+  payload: Record<string, unknown>; // payload_proposto completo (p/ aprovar com edição = 'corrigida')
 }
 
 export interface DadosConversas {
@@ -73,7 +75,12 @@ const MENSAGENS_MOCK: Record<string, Mensagem[]> = {
 
 const SUGESTOES_MOCK: Record<string, SugestaoMensagem[]> = {
   "c-mock-1": [
-    { id: "sm1", corpo: "Entendo! Ambiente com ruído é um dos maiores desafios mesmo. A boa notícia é que os modelos que trabalhamos têm redução de ruído justamente pra isso. Posso agendar uma avaliação auditiva gratuita por teleconsulta com nossa fono pra ela? 💙", criado_em: minsAtras(2) },
+    {
+      id: "sm1",
+      corpo: "Entendo! Ambiente com ruído é um dos maiores desafios mesmo. A boa notícia é que os modelos que trabalhamos têm redução de ruído justamente pra isso. Posso agendar uma avaliação auditiva gratuita por teleconsulta com nossa fono pra ela? 💙",
+      criado_em: minsAtras(2),
+      payload: { corpo: "Entendo! Ambiente com ruído é um dos maiores desafios mesmo. A boa notícia é que os modelos que trabalhamos têm redução de ruído justamente pra isso. Posso agendar uma avaliação auditiva gratuita por teleconsulta com nossa fono pra ela? 💙" },
+    },
   ],
 };
 
@@ -162,6 +169,7 @@ export async function lerSugestoesConversa(
       id: String(s.id),
       corpo: String(s.payload_proposto?.corpo ?? s.payload_proposto?.texto ?? ""),
       criado_em: s.criado_em,
+      payload: (s.payload_proposto ?? {}) as Record<string, unknown>,
     }));
   } catch {
     return [];

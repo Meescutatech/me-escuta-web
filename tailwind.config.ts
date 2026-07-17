@@ -28,7 +28,7 @@ const config: Config = {
         verde: { DEFAULT: "#2E8B62", bg: "#EAF6EF", bd: "#BFE4CF" },
         vermelho: { DEFAULT: "#C4482E", bg: "#FBEBE4", bd: "#F1CDBF" },
         amarelo: { DEFAULT: "#B8860B", bg: "#FBF3DF", bd: "#EAD9A6" },
-        roxo: "#7A4CA0",
+        roxo: { DEFAULT: "#7A4CA0", bg: "#F3EDF9", bd: "#E0D0EE" },
         rosa: { DEFAULT: "#B23A6E", bg: "#FBEDF3" },
       },
       fontFamily: {

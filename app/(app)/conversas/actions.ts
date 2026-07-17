@@ -38,18 +38,20 @@ export async function enviarMensagem(conversaId: string, corpo: string): Promise
 }
 
 /**
- * Aprova/rejeita a proposta de resposta da Clara (sugestao_ia tipo='enviar_mensagem') via a
- * RPC-porta api.validar_sugestao. Aprovar → projetor empurra pra fila_saida → sender (A) envia.
+ * Aprova/edita/rejeita a proposta de resposta da Clara (sugestao_ia tipo='enviar_mensagem') via a
+ * RPC-porta api.validar_sugestao. Aprovar/editar → projetor empurra pra fila_saida → sender (A) envia.
+ * Editar = decisão 'corrigida' com o payload corrigido (a porta usa payload_aprovado no lugar do proposto).
  */
 export async function validarSugestaoMensagem(
   sugestaoId: string,
-  decisao: "aprovada" | "rejeitada",
+  decisao: "aprovada" | "rejeitada" | "corrigida",
+  payloadAprovado?: Record<string, unknown> | null,
 ): Promise<ResultadoEvento> {
   const supabase = criarClienteServidor();
   const { error } = await supabase.schema("api").rpc("validar_sugestao", {
     p_sugestao_id: sugestaoId,
     p_decisao: decisao,
-    p_payload_aprovado: null,
+    p_payload_aprovado: decisao === "corrigida" ? (payloadAprovado ?? null) : null,
   });
   if (error) return { ok: false, motivo: error.message };
   revalidatePath("/conversas");
