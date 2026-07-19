@@ -64,7 +64,7 @@ function ChipResp({ nome, tipo }: { nome: string; tipo: "dm" | "sara" | "fono" }
       title={nome}
       className={cn(
         "grid h-[19px] w-[19px] shrink-0 place-items-center rounded-full text-[0.62rem] font-semibold text-branco",
-        ia ? "bg-laranja" : "bg-[#3E4C8A]", // laranja = IA · navy = humano (spec da legenda de chips)
+        ia ? "bg-laranja" : "bg-navy", // laranja = IA · navy = humano (um único navy — spec da legenda)
       )}
     >
       {ia ? "C" : tipo === "fono" ? "F" : iniciais(nome)}
@@ -125,9 +125,16 @@ export function CartaoLead({
       {...attributes}
       {...listeners}
       onClick={() => onAbrir(card.lead_id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onAbrir(card.lead_id);
+        }
+      }}
       title={titulo || undefined}
       className={cn(
         "relative cursor-grab touch-none select-none rounded-[9px] border bg-branco px-[11px] pb-[9px] pt-[10px] transition-all",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50",
         selecionado ? "border-linha-forte" : "border-linha hover:border-linha-forte hover:shadow-[0_1px_6px_rgba(37,47,99,.06)]",
         isDragging && "opacity-40",
       )}
@@ -143,7 +150,7 @@ export function CartaoLead({
       <div className="flex items-start gap-2">
         <div
           className={cn(
-            "flex-1 text-[0.9rem] font-semibold leading-[1.25] text-navy",
+            "min-w-0 flex-1 truncate text-[0.9rem] font-semibold leading-[1.25] text-navy",
             ruim && "tabular-nums",
           )}
         >
@@ -168,12 +175,24 @@ export function CartaoLead({
                 "inline-flex min-w-0 items-center gap-1.5 truncate text-[0.74rem] text-suave",
               )}
             >
-              <span className={cn("h-[5px] w-[5px] shrink-0 rounded-full", sinalAds ? "bg-[#B4B7BD]" : "bg-mute")} />
+              <span className={cn("h-[5px] w-[5px] shrink-0 rounded-full", sinalAds ? "bg-pt-ads" : "bg-mute")} />
               {sinal}
             </span>
           )}
           {timer && (
-            <span className={cn("ml-auto shrink-0 whitespace-nowrap text-[0.72rem]", velho ? "text-timer-velho" : "text-mute")}>
+            <span
+              className={cn(
+                "ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-[0.72rem]",
+                velho ? "font-bold text-timer-velho" : "text-mute", // peso 700 + ícone: canal não-cor (WCAG 1.4.1)
+              )}
+              title={velho ? "Lead parado há muitos dias" : undefined}
+            >
+              {velho && (
+                <svg viewBox="0 0 24 24" strokeWidth={2.4} className="h-3 w-3 stroke-current" fill="none">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 8v4l2.5 1.5" strokeLinecap="round" />
+                </svg>
+              )}
               {timer}
             </span>
           )}
@@ -192,7 +211,7 @@ export function CartaoLead({
             type="button"
             onClick={(e) => resolver(e, "aprovada")}
             title="Aprovar sugestão"
-            className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md bg-laranja-cl text-laranja-esc transition-colors hover:bg-laranja hover:text-branco"
+            className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md bg-laranja-cl text-laranja-esc transition-colors hover:bg-laranja hover:text-branco focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50"
           >
             <svg viewBox="0 0 24 24" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px] stroke-current" fill="none">
               <path d="M20 6 9 17l-5-5" />
@@ -202,7 +221,7 @@ export function CartaoLead({
             type="button"
             onClick={(e) => resolver(e, "descartada")}
             title="Descartar"
-            className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-mute transition-colors hover:bg-hover hover:text-suave"
+            className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-mute transition-colors hover:bg-hover hover:text-suave focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50"
           >
             <svg viewBox="0 0 24 24" strokeWidth={2.4} strokeLinecap="round" className="h-3 w-3 stroke-current" fill="none">
               <path d="M18 6 6 18M6 6l12 12" />

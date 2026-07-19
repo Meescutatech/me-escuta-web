@@ -100,12 +100,18 @@ const MAPA_ORIGEM: Record<string, Origem> = {
   meta: "meta", "meta ads": "meta", facebook: "meta", ind: "ind", indicacao: "ind", "indicação": "ind",
 };
 
-/** Deriva um responsável exibível do campo único `dono` (humano:<uid> | nome | null). */
+/**
+ * Deriva um responsável exibível do campo `dono`. Regra do spec (legenda de chips): o chip é um
+ * ATOR REAL atribuído (IA=Clara | humano nomeado). Artefato de import (`kommo:<id>`), `humano:<uid>`
+ * sem nome legível, ou null → SEM chip (não inventar ator — feedback 19/07).
+ */
 function donoParaResponsavel(dono: string | null): { tipo: TipoResp; nome: string } | null {
   if (!dono) return null;
-  const nome = dono.startsWith("humano:") ? "Responsável" : dono;
-  const tipo: TipoResp = /sara/i.test(nome) ? "sara" : /fono/i.test(nome) ? "fono" : "dm";
-  return { tipo, nome };
+  const d = dono.trim();
+  if (/^kommo:/i.test(d) || /^humano:/i.test(d) || /^sistema$/i.test(d) || /^bot$/i.test(d)) return null;
+  if (/clara|jarvis|\bia\b/i.test(d)) return { tipo: "dm", nome: "Clara" }; // cor decidida por respEhIA
+  const tipo: TipoResp = /sara/i.test(d) ? "sara" : /fono/i.test(d) ? "fono" : "dm";
+  return { tipo, nome: d };
 }
 
 async function lerEtapasReais(): Promise<EtapaFunil[] | null> {

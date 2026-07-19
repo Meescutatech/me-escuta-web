@@ -46,6 +46,7 @@ function Coluna({
   cards,
   agora,
   selecionadoId,
+  arrastando,
   onAbrir,
   onRecolher,
   onResolverSugestao,
@@ -54,16 +55,18 @@ function Coluna({
   cards: CardLead[];
   agora: number;
   selecionadoId: string | null;
+  arrastando: boolean;
   onAbrir: (id: string) => void;
   onRecolher: (chave: string) => void;
   onResolverSugestao: (leadId: string, decisao: "aprovada" | "descartada") => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${etapa.chave}` });
   const soma = somaValor(cards);
+  const vazia = cards.length === 0;
   return (
     <div className="flex h-full w-coluna shrink-0 flex-col">
       <div className="group flex items-center gap-2 px-1.5 pb-2.5">
-        <span className="text-[0.82rem] font-semibold tracking-[0.01em] text-tinta">{etapa.nome}</span>
+        <span className="truncate text-[0.82rem] font-semibold tracking-[0.01em] text-tinta">{etapa.nome}</span>
         <span className="font-serif text-[0.86rem] font-medium tabular-nums text-mute">{cards.length}</span>
         <div className="ml-auto flex items-center gap-2">
           {soma > 0 && <span className="text-[0.74rem] tabular-nums text-mute">{brl(soma)}</span>}
@@ -71,7 +74,8 @@ function Coluna({
             type="button"
             onClick={() => onRecolher(etapa.chave)}
             title="Recolher etapa"
-            className="grid h-5 w-5 place-items-center rounded text-mute opacity-0 transition-all hover:bg-hover hover:text-suave group-hover:opacity-100"
+            aria-label={`Recolher etapa ${etapa.nome}`}
+            className="grid h-5 w-5 place-items-center rounded text-mute opacity-0 transition-all hover:bg-hover hover:text-suave focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50 group-hover:opacity-100"
           >
             <svg viewBox="0 0 24 24" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 stroke-current" fill="none">
               <path d="m11 17-5-5 5-5M18 17l-5-5 5-5" />
@@ -83,7 +87,7 @@ function Coluna({
         ref={setNodeRef}
         className={cn(
           "flex min-h-0 flex-1 flex-col gap-[7px] overflow-y-auto rounded-[9px] pb-10 pr-1 pt-px transition-colors",
-          isOver && "bg-laranja-cl shadow-[inset_0_0_0_2px_#f4c4a8]",
+          isOver && "bg-hover", // coluna-alvo ganha fundo --hover enquanto o card paira (spec A6)
         )}
       >
         {cards.map((c) => (
@@ -96,9 +100,16 @@ function Coluna({
             onResolverSugestao={onResolverSugestao}
           />
         ))}
+        {/* placeholder de drop: retângulo tracejado na altura do card (spec A6) */}
+        {isOver && arrastando && (
+          <div className="h-16 shrink-0 rounded-[9px] border border-dashed border-linha-forte" aria-hidden />
+        )}
+        {vazia && !isOver && (
+          <p className="px-2 pt-1 text-[0.74rem] text-mute">Nenhum lead nesta etapa</p>
+        )}
         <button
           type="button"
-          className="mt-px flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.8rem] text-mute transition-colors hover:bg-hover hover:text-suave"
+          className="mt-px flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.8rem] text-mute transition-colors hover:bg-hover hover:text-suave focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50"
         >
           <svg viewBox="0 0 24 24" strokeWidth={2.2} strokeLinecap="round" className="h-3.5 w-3.5 stroke-current" fill="none">
             <path d="M12 5v14M5 12h14" />
@@ -130,6 +141,7 @@ function MiniColuna({
       title={`${etapa.nome} · ${quantidade} leads — etapa recolhida (clique p/ expandir)`}
       className={cn(
         "flex h-full w-trilho shrink-0 cursor-pointer flex-col items-center gap-[11px] rounded-[9px] border bg-branco py-[11px] transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50",
         isOver ? "border-laranja bg-laranja-cl" : "border-linha hover:border-linha-forte hover:bg-hover",
       )}
     >
@@ -340,6 +352,7 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
                 cards={porEtapa.get(etapa.chave) ?? []}
                 agora={agora}
                 selecionadoId={selecionadoId}
+                arrastando={arrastando != null}
                 onAbrir={abrirCard}
                 onRecolher={alternarRecolhida}
                 onResolverSugestao={resolverSugestao}
@@ -347,9 +360,10 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
             ),
           )}
         </div>
+        {/* card fantasma no arraste: opacity .5, sombra forte, rotação ~1.5° (spec A6) */}
         <DragOverlay>
           {cardArrastado ? (
-            <div className="w-coluna rotate-2 opacity-90">
+            <div className="w-coluna rotate-[1.5deg] opacity-50 shadow-[0_14px_40px_rgba(37,47,99,.22)]">
               <CartaoLead card={cardArrastado} agora={agora} selecionado={false} onAbrir={() => {}} />
             </div>
           ) : null}
@@ -363,12 +377,6 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
           {toast}
         </div>
       )}
-
-      <div className="pointer-events-none fixed bottom-3 right-6 z-20 rounded-md border border-linha bg-branco px-4 py-2 text-xs text-mute shadow-suave">
-        Todo agente <span className="font-semibold text-laranja">propõe</span>; um humano nomeado{" "}
-        <span className="font-semibold text-navy">valida</span>; só então vira{" "}
-        <span className="font-semibold text-azul">evento</span>.
-      </div>
     </div>
   );
 }
