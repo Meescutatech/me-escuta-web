@@ -20,6 +20,17 @@ export interface ConversaResumo {
   dono_atual: string | null;
   status: string | null;
   atualizado_em: string | null;
+  // enriquecimento p/ a lista (prévia) + painel de contexto do redesign (conversa-v2).
+  lead_id?: string | null;
+  etapa?: string | null; // chave
+  etapa_nome?: string | null; // rótulo de exibição
+  entrou_etapa_em?: string | null;
+  valor?: number | null;
+  origem?: string | null;
+  idade?: number | null; // 0011 — null por ora
+  previa?: string | null; // corpo da última mensagem
+  previa_saida?: boolean; // última msg foi de saída (Você/Clara)
+  nao_lida?: boolean; // proxy: última msg foi do cliente (entrada), sem resposta
 }
 
 export interface Mensagem {
@@ -51,9 +62,9 @@ function minsAtras(m: number): string {
 }
 
 const CONVERSAS_MOCK: ConversaResumo[] = [
-  { id: "c-mock-1", telefone: "5531988776655", nome: "Terezinha de Jesus", mode: "IA", dono_atual: null, status: "nova", atualizado_em: minsAtras(3) },
-  { id: "c-mock-2", telefone: "5521991450087", nome: "João Batista Neves", mode: "HUMANO", dono_atual: "humano:sara", status: "em_atendimento", atualizado_em: minsAtras(25) },
-  { id: "c-mock-3", telefone: "5531983307712", nome: null, mode: "IA", dono_atual: null, status: "aguardando", atualizado_em: minsAtras(140) },
+  { id: "c-mock-1", telefone: "5531988776655", nome: "Terezinha de Jesus", mode: "IA", dono_atual: null, status: "nova", atualizado_em: minsAtras(3), etapa: "qualificando", etapa_nome: "Qualificação", entrou_etapa_em: minsAtras(1440), valor: null, origem: "meta", idade: 63, previa: "Primeiro. Ela tem dificuldade principalmente quando tem barulho", previa_saida: false, nao_lida: true },
+  { id: "c-mock-2", telefone: "5521991450087", nome: "João Batista Neves", mode: "HUMANO", dono_atual: "humano:sara", status: "em_atendimento", atualizado_em: minsAtras(25), etapa: "negociacao", etapa_nome: "Negociação", entrou_etapa_em: minsAtras(2880), valor: 11400, origem: "wa", previa: "Oi! Aqui é a Sara, assumi pra te explicar direitinho.", previa_saida: true, nao_lida: false },
+  { id: "c-mock-3", telefone: "5531983307712", nome: null, mode: "IA", dono_atual: null, status: "aguardando", atualizado_em: minsAtras(140), etapa: "novo", etapa_nome: "Novo lead", entrou_etapa_em: minsAtras(140), valor: null, origem: "meta", previa: null, previa_saida: false, nao_lida: true },
 ];
 
 const MENSAGENS_MOCK: Record<string, Mensagem[]> = {
@@ -97,27 +108,77 @@ export async function lerConversas(): Promise<DadosConversas> {
       .limit(50);
     if (error || !data || data.length === 0) return { conversas: CONVERSAS_MOCK, fonte: "mock" };
 
-    // resolve nome pelo lead_id (quando houver) via v_lead_card
+    // dados do lead (nome/etapa/valor/origem) pelo lead_id via v_lead_card
     const leadIds = data.map((c: any) => c.lead_id).filter(Boolean);
-    const nomes = new Map<string, string>();
+    const leadInfo = new Map<string, any>();
     if (leadIds.length) {
       const { data: cards } = await supabase
         .schema("core")
         .from("v_lead_card")
-        .select("lead_id,nome")
+        .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em")
         .in("lead_id", leadIds);
-      for (const r of cards ?? []) if (r.nome) nomes.set(String(r.lead_id), String(r.nome));
+      for (const r of cards ?? []) leadInfo.set(String(r.lead_id), r);
     }
 
-    const conversas: ConversaResumo[] = data.map((c: any) => ({
-      id: String(c.id),
-      telefone: c.telefone ?? null,
-      nome: c.lead_id ? nomes.get(String(c.lead_id)) ?? null : null,
-      mode: (c.mode ?? "IA") as ModoConversa,
-      dono_atual: c.dono_atual ?? null,
-      status: c.status ?? null,
-      atualizado_em: c.atualizado_em ?? null,
-    }));
+    // rótulo de exibição da etapa (chave → nome) via config vigente do funil
+    const etapaNome = new Map<string, string>();
+    try {
+      const { data: cfg } = await supabase
+        .schema("core")
+        .from("v_config_vigente")
+        .select("payload")
+        .eq("nome", "funil_vendas")
+        .maybeSingle();
+      for (const e of ((cfg?.payload as any)?.etapas ?? []) as any[]) {
+        if (e?.chave) etapaNome.set(String(e.chave), String(e.nome ?? e.chave));
+      }
+    } catch {
+      /* sem config — usa a própria chave */
+    }
+
+    // prévia = última mensagem por conversa (1 query, reduzido no cliente)
+    const ids = data.map((c: any) => String(c.id));
+    const previa = new Map<string, { corpo: string | null; saida: boolean }>();
+    try {
+      const { data: msgs } = await supabase
+        .schema("core")
+        .from("mensagem")
+        .select("conversa_id,direcao,corpo,criado_em")
+        .in("conversa_id", ids)
+        .order("criado_em", { ascending: false })
+        .limit(800);
+      for (const m of msgs ?? []) {
+        const k = String(m.conversa_id);
+        if (!previa.has(k)) previa.set(k, { corpo: m.corpo ?? null, saida: m.direcao === "saida" });
+      }
+    } catch {
+      /* sem prévia — lista degrada pro rótulo de origem */
+    }
+
+    const conversas: ConversaResumo[] = data.map((c: any) => {
+      const info = c.lead_id ? leadInfo.get(String(c.lead_id)) : null;
+      const p = previa.get(String(c.id));
+      const etapaChave = info?.etapa ? String(info.etapa) : null;
+      return {
+        id: String(c.id),
+        telefone: c.telefone ?? null,
+        nome: info?.nome ?? null,
+        mode: (c.mode ?? "IA") as ModoConversa,
+        dono_atual: c.dono_atual ?? null,
+        status: c.status ?? null,
+        atualizado_em: c.atualizado_em ?? null,
+        lead_id: c.lead_id ?? null,
+        etapa: etapaChave,
+        etapa_nome: etapaChave ? etapaNome.get(etapaChave) ?? null : null,
+        entrou_etapa_em: info?.entrou_etapa_em ?? null,
+        valor: info?.valor != null ? Number(info.valor) : null,
+        origem: info?.origem ? String(info.origem) : null,
+        idade: null,
+        previa: p?.corpo ?? null,
+        previa_saida: p?.saida ?? false,
+        nao_lida: p ? !p.saida : false,
+      };
+    });
     return { conversas, fonte: "real" };
   } catch {
     return { conversas: CONVERSAS_MOCK, fonte: "mock" };

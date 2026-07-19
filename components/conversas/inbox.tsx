@@ -9,29 +9,83 @@ import {
   enviarMensagem,
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
+import { diasNaEtapa } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
+
+/*
+ * /conversas — redesign "Kommo minimalista" (fase 2). Spec: Product_Management/Design/conversa-v2.html.
+ * 3 zonas: lista (302px) · thread · contexto do lead (288px, colapsável, auto-recolhe <1180px).
+ * Overdose de laranja removida: bolhas neutras, posse como pill discreta, sugestão em card branco
+ * com acento só na borda esquerda + ÚNICO CTA sólido (Aprovar e enviar). Lógica de dados INTOCADA
+ * (assumir/devolver/enviar/validar_sugestao seguem as mesmas actions/RPC-porta).
+ */
+
+const ORIGEM_ROTULO: Record<string, string> = {
+  wa: "WhatsApp", whatsapp: "WhatsApp", ig: "Instagram", instagram: "Instagram",
+  meta: "Meta Ads", "meta ads": "Meta Ads", facebook: "Meta Ads", ind: "Indicação", indicacao: "Indicação",
+};
 
 function fmtTelefone(t: string | null): string {
   if (!t) return "—";
-  const d = t.replace(/\D/g, "");
-  const n = d.startsWith("55") ? d.slice(2) : d;
-  if (n.length >= 10) {
-    const ddd = n.slice(0, 2);
-    const resto = n.slice(2);
-    const meio = resto.length > 8 ? resto.slice(0, 5) : resto.slice(0, 4);
-    const fim = resto.length > 8 ? resto.slice(5) : resto.slice(4);
-    return `(${ddd}) ${meio}-${fim}`;
-  }
+  let d = t.replace(/\D/g, "");
+  if (d.length > 11 && d.startsWith("55")) d = d.slice(2);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return t;
 }
 function iniciais(nome: string): string {
-  const p = nome.trim().split(/\s+/);
-  return (p[0][0] + (p[1] ? p[1][0] : "")).toUpperCase();
+  const p = nome.replace(/→|·/g, " ").trim().split(/\s+/);
+  return ((p[0]?.[0] ?? "?") + (p[1] ? p[1][0] : "")).toUpperCase();
+}
+/** nome null / lixo de anúncio → usa o telefone como título (mesma regra do funil). */
+function nomeRuim(nome: string | null): boolean {
+  if (!nome) return true;
+  const n = nome.trim();
+  if (n.length < 2) return true;
+  if (/^(facebook|instagram|meta|whats?app|lead|cliente|contato|novo lead|sem nome)\b/i.test(n)) return true;
+  if (/n[º°o]\s*\d/i.test(n)) return true;
+  if (!/[a-zà-ú]/i.test(n)) return true;
+  return false;
 }
 function hhmm(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
+const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+/** Hora da lista: hoje→hh:mm · ontem→"ontem" · <7d→dia da semana · senão dd/mm. */
+function tempoLista(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const agora = new Date();
+  const hoje0 = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
+  const dia0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const difDias = Math.round((hoje0 - dia0) / 86400000);
+  if (difDias <= 0) return hhmm(iso);
+  if (difDias === 1) return "ontem";
+  if (difDias < 7) return DIAS[d.getDay()];
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+function diaLabel(iso: string): string {
+  const d = new Date(iso);
+  const agora = new Date();
+  const hoje0 = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
+  const dia0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dif = Math.round((hoje0 - dia0) / 86400000);
+  if (dif <= 0) return "hoje";
+  if (dif === 1) return "ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
+}
+function moeda(v: number | null | undefined): string {
+  return v == null ? "" : "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+}
+function textoNaEtapa(iso: string | null | undefined): string {
+  const dd = diasNaEtapa(iso ?? null, Date.now());
+  if (dd == null) return "—";
+  return dd === 0 ? "hoje" : dd === 1 ? "1 dia" : `${dd} dias`;
+}
+
+type Aba = "todas" | "minhas" | "nao_lidas";
 
 export function Inbox({
   conversas,
@@ -55,8 +109,10 @@ export function Inbox({
   const [mode, setMode] = useState<ModoConversa>(selecionada?.mode ?? "IA");
   const [rascunho, setRascunho] = useState("");
   const [busca, setBusca] = useState("");
+  const [aba, setAba] = useState<Aba>("todas");
   const [editando, setEditando] = useState<{ id: string; texto: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [ctxColapsado, setCtxColapsado] = useState(false);
   const fimRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,18 +127,34 @@ export function Inbox({
     fimRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs.length, props_.length]);
 
+  // painel de contexto auto-recolhe em tela estreita (thread respira) — spec §2
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 1180) setCtxColapsado(true);
+  }, []);
+
   function avisar(m: string) {
     setToast(m);
     setTimeout(() => setToast(null), 3500);
   }
 
-  const conversasFiltradas = useMemo(() => {
+  const contagens = useMemo(
+    () => ({
+      todas: conversas.length,
+      minhas: conversas.filter((c) => c.mode === "HUMANO").length,
+      nao_lidas: conversas.filter((c) => c.nao_lida).length,
+    }),
+    [conversas],
+  );
+
+  const conversasVisiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    if (!q) return conversas;
-    return conversas.filter(
-      (c) => (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").includes(q),
-    );
-  }, [conversas, busca]);
+    return conversas.filter((c) => {
+      if (aba === "minhas" && c.mode !== "HUMANO") return false;
+      if (aba === "nao_lidas" && !c.nao_lida) return false;
+      if (!q) return true;
+      return (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").includes(q);
+    });
+  }, [conversas, busca, aba]);
 
   function abrir(id: string) {
     router.push(`/conversas?c=${id}`);
@@ -176,304 +248,264 @@ export function Inbox({
     });
   }
 
-  const titulo = selecionada?.nome ?? fmtTelefone(selecionada?.telefone ?? null);
   const modoClara = mode === "IA";
+  const titulo = selecionada
+    ? nomeRuim(selecionada.nome)
+      ? fmtTelefone(selecionada.telefone)
+      : selecionada.nome!
+    : "";
+  const origemLabel = selecionada?.origem ? ORIGEM_ROTULO[selecionada.origem.toLowerCase()] ?? selecionada.origem : null;
+
+  // agrupa mensagens por dia p/ separador
+  const blocos = useMemo(() => {
+    const out: { dia: string; itens: Mensagem[] }[] = [];
+    for (const m of msgs) {
+      const dia = diaLabel(m.criado_em);
+      const ult = out[out.length - 1];
+      if (ult && ult.dia === dia) ult.itens.push(m);
+      else out.push({ dia, itens: [m] });
+    }
+    return out;
+  }, [msgs]);
 
   return (
-    <div className="flex h-[calc(100vh-58px)]">
-      {/* ─── inbox list ─── */}
-      <aside className="flex w-[308px] shrink-0 flex-col border-r border-borda bg-branco">
-        <div className="px-4 pb-3 pt-4">
-          <div className="font-serif text-lg font-semibold text-navy">Conversas</div>
-          <div className="mt-0.5 text-xs text-mute">
-            WhatsApp · {conversas.length} abertas
-            {fonte === "mock" && " · exemplo"}
-          </div>
+    <div className="flex h-[calc(100vh-58px)] bg-board">
+      {/* ═══════════ ZONA 1 · LISTA ═══════════ */}
+      <aside className="flex w-[302px] shrink-0 flex-col border-r border-linha bg-branco">
+        <div className="px-4 pb-2.5 pt-3.5">
+          <h1 className="mb-2.5 font-serif text-[1.24rem] font-semibold leading-none text-navy">Conversas</h1>
+          <label className="flex items-center gap-2 rounded-lg border border-linha bg-board px-2.5 py-1.5 focus-within:border-linha-forte">
+            <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-[14px] w-[14px] shrink-0 stroke-mute" fill="none">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar conversa, telefone…"
+              className="w-full bg-transparent text-[0.82rem] text-tinta outline-none placeholder:text-mute"
+            />
+          </label>
         </div>
-        <label className="mx-3.5 mb-2 flex items-center gap-2 rounded-md border-[1.5px] border-borda-forte bg-creme px-3 py-2 focus-within:border-laranja focus-within:bg-branco">
-          <svg viewBox="0 0 24 24" strokeWidth={2} className="h-3.5 w-3.5 shrink-0 stroke-mute" fill="none">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
-          <input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar conversa…"
-            className="w-full bg-transparent text-sm outline-none placeholder:text-mute"
-          />
-        </label>
-        <div className="flex-1 overflow-y-auto px-2 pb-4">
-          {conversasFiltradas.map((c) => {
+        <div className="flex gap-3.5 px-4 pb-1.5 pt-2.5">
+          {([
+            ["todas", `Todas · ${contagens.todas}`],
+            ["minhas", `Minhas · ${contagens.minhas}`],
+            ["nao_lidas", `Não lidas · ${contagens.nao_lidas}`],
+          ] as [Aba, string][]).map(([k, rot]) => (
+            <button
+              key={k}
+              onClick={() => setAba(k)}
+              className={cn(
+                "border-b-[1.5px] pb-1.5 text-[0.8rem] transition-colors focus-visible:outline-none",
+                aba === k ? "border-navy font-semibold text-navy" : "border-transparent text-mute hover:text-tinta",
+              )}
+            >
+              {rot}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-2 pb-4 pt-0.5">
+          {conversasVisiveis.length === 0 && (
+            <p className="px-3 pt-6 text-center text-[0.8rem] text-mute">Nenhuma conversa aqui.</p>
+          )}
+          {conversasVisiveis.map((c) => {
             const ativa = c.id === selecionadaId;
-            const rotulo = c.nome ?? fmtTelefone(c.telefone);
-            const sara = c.mode === "HUMANO";
+            const ia = c.mode === "IA";
+            const ruim = nomeRuim(c.nome);
+            const rotulo = ruim ? fmtTelefone(c.telefone) : c.nome!;
+            const org = c.origem ? ORIGEM_ROTULO[c.origem.toLowerCase()] ?? c.origem : null;
+            const prev = c.previa
+              ? (c.previa_saida ? "Você: " : "") + c.previa
+              : org
+                ? `Lead · ${org}`
+                : "—";
             return (
               <button
                 key={c.id}
                 onClick={() => abrir(c.id)}
                 className={cn(
-                  "relative flex w-full gap-3 rounded-lg px-3 py-3 text-left transition-colors",
-                  ativa ? "bg-laranja-cl" : "hover:bg-creme",
+                  "relative flex w-full gap-2.5 rounded-[9px] p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
+                  ativa ? "bg-hover" : "hover:bg-hover",
                 )}
               >
-                {ativa && <span className="absolute inset-y-2.5 left-0 w-[3px] rounded bg-laranja" />}
+                {ativa && <span className="absolute inset-y-[9px] left-0 w-[2px] rounded bg-laranja" />}
                 <span
                   className={cn(
-                    "grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-bold text-branco",
-                    sara ? "bg-roxo" : "bg-navy",
+                    "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full text-[0.72rem] font-semibold text-branco",
+                    ia ? "bg-laranja" : "bg-navy",
                   )}
+                  title={ia ? "Clara (IA)" : "Humano"}
                 >
-                  {c.nome ? iniciais(c.nome) : "👤"}
+                  {ia ? "C" : c.nome ? iniciais(c.nome) : "S"}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="truncate text-sm font-semibold text-navy">{rotulo}</span>
-                    {c.atualizado_em && (
-                      <span className="ml-auto shrink-0 text-[0.66rem] text-mute">{hhmm(c.atualizado_em)}</span>
-                    )}
+                  <div className="flex items-baseline gap-2">
+                    <span className={cn("flex-1 truncate text-[0.86rem] font-semibold text-navy", ruim && "tabular-nums")}>
+                      {rotulo}
+                    </span>
+                    <span className="shrink-0 text-[0.72rem] text-mute">{tempoLista(c.atualizado_em)}</span>
                   </div>
-                  <span
-                    className={cn(
-                      "mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.62rem] font-bold",
-                      sara ? "bg-roxo-bg text-roxo" : "bg-pessego text-laranja-esc",
-                    )}
-                  >
-                    <span className={cn("h-1.5 w-1.5 rounded-full", sara ? "bg-roxo" : "bg-laranja")} />
-                    {sara ? "Sara assumiu" : "Clara conduz"}
-                  </span>
+                  <div className={cn("mt-0.5 truncate text-[0.78rem]", c.previa ? "text-suave" : "text-mute")}>
+                    {prev}
+                  </div>
                 </div>
+                {c.nao_lida && <span className="mt-3 h-[7px] w-[7px] shrink-0 self-start rounded-full bg-laranja" />}
               </button>
             );
           })}
         </div>
       </aside>
 
-      {/* ─── chat ─── */}
-      <section className="flex min-w-0 flex-1 flex-col bg-creme">
+      {/* ═══════════ ZONA 2 · THREAD ═══════════ */}
+      <section className="flex min-w-0 flex-1 flex-col bg-board">
         {!selecionada ? (
-          <div className="m-auto text-center text-sm text-mute">Selecione uma conversa.</div>
+          <div className="m-auto text-center text-sm text-mute">
+            Selecione uma conversa.
+            {fonte === "mock" && <div className="mt-1 text-xs">dados de exemplo</div>}
+          </div>
         ) : (
           <>
-            {/* header + toggle segmentado */}
-            <div className="flex flex-shrink-0 items-center gap-3.5 border-b border-borda bg-branco px-6 py-3">
-              <span
-                className={cn(
-                  "grid h-11 w-11 shrink-0 place-items-center rounded-full text-sm font-bold text-branco",
-                  modoClara ? "bg-navy" : "bg-navy",
-                )}
-              >
-                {selecionada.nome ? iniciais(selecionada.nome) : "👤"}
-              </span>
+            {/* header + posse */}
+            <div className="flex flex-shrink-0 items-center gap-3.5 border-b border-linha bg-branco px-5 py-2.5">
               <div className="min-w-0">
-                <div className="font-serif text-lg font-semibold leading-tight text-navy">{titulo}</div>
-                <div className="flex items-center gap-1.5 text-xs text-suave">
-                  <span className="h-1.5 w-1.5 rounded-full bg-verde" />
+                <div className="truncate text-[0.98rem] font-semibold leading-tight text-navy">{titulo}</div>
+                <div className="mt-px truncate text-[0.76rem] text-suave">
                   {fmtTelefone(selecionada.telefone)}
+                  {selecionada.etapa_nome && ` · ${selecionada.etapa_nome}`}
+                  {` · ${modoClara ? "Clara" : "Sara"}`}
                 </div>
               </div>
-              <div className="ml-auto flex items-center gap-3">
-                <div className="text-right text-[0.7rem] leading-tight text-mute">
-                  quem responde
-                  <b className="block text-[0.76rem] text-navy">{modoClara ? "Clara (IA)" : "Sara (você)"}</b>
-                </div>
-                <div className="flex gap-0.5 rounded-lg border-[1.5px] border-borda-forte bg-creme p-0.5">
-                  <button
-                    onClick={() => trocarModo("IA")}
-                    disabled={pending}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-60",
-                      modoClara ? "bg-branco text-laranja-esc shadow-suave" : "text-suave hover:text-navy",
-                    )}
-                  >
-                    <span className={cn("grid h-5 w-5 place-items-center rounded-full bg-gradient-to-br from-[#F2803F] to-[#EC662E] text-[0.62rem] font-bold text-branco", !modoClara && "opacity-60 grayscale")}>
-                      C
-                    </span>
-                    Clara
-                  </button>
-                  <button
-                    onClick={() => trocarModo("HUMANO")}
-                    disabled={pending}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-60",
-                      !modoClara ? "bg-branco text-roxo shadow-suave" : "text-suave hover:text-navy",
-                    )}
-                  >
-                    <span className={cn("grid h-5 w-5 place-items-center rounded-full bg-roxo text-[0.62rem] font-bold text-branco", modoClara && "opacity-60 grayscale")}>
-                      S
-                    </span>
-                    Sara
-                  </button>
-                </div>
+              <div className="ml-auto flex shrink-0 items-center gap-2.5">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border border-linha bg-board px-3 py-1 text-[0.78rem] text-suave",
+                  )}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full", modoClara ? "bg-laranja" : "bg-navy")} />
+                  {modoClara ? "Clara conduz" : "Sara conduz"}
+                </span>
+                <button
+                  onClick={() => trocarModo(modoClara ? "HUMANO" : "IA")}
+                  disabled={pending}
+                  className="rounded-lg border border-linha-forte px-3 py-1.5 text-[0.78rem] font-semibold text-navy transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40 disabled:opacity-60"
+                >
+                  {modoClara ? "Assumir" : "Devolver à Clara"}
+                </button>
               </div>
-            </div>
-
-            {/* ribbon */}
-            <div
-              className={cn(
-                "flex flex-shrink-0 items-center gap-2.5 border-b border-borda px-6 py-2 text-[0.77rem]",
-                modoClara ? "bg-laranja-cl text-laranja-esc" : "bg-roxo-bg text-roxo",
-              )}
-            >
-              <span className={cn("h-2 w-2 rounded-full", modoClara ? "bg-laranja" : "bg-roxo")} />
-              {modoClara ? (
-                <span>
-                  <b className="font-bold">Clara está conduzindo</b> — as respostas dela entram na fila e você
-                  aprova antes de enviar. Assuma a qualquer momento.
-                </span>
-              ) : (
-                <span>
-                  <b className="font-bold">Você assumiu esta conversa</b> — a Clara está pausada e não responde.
-                  Escreva direto pela Sara.
-                </span>
-              )}
             </div>
 
             {/* mensagens */}
-            <div className="flex-1 space-y-3 overflow-y-auto px-6 py-6">
-              {msgs.length === 0 && (
-                <div className="mx-auto max-w-sm py-10 text-center text-sm text-mute">
-                  Sem mensagens ainda nesta conversa.
-                </div>
+            <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-6 py-5">
+              {msgs.length === 0 && props_.length === 0 && (
+                <div className="m-auto max-w-sm text-center text-sm text-mute">Sem mensagens ainda nesta conversa.</div>
               )}
-              {msgs.map((m) => {
-                const sara = m.direcao === "saida" && m.autor === "sara";
-                const clara = m.direcao === "saida" && !sara;
-                return (
-                  <div key={m.id} className={cn("flex", m.direcao === "saida" ? "justify-end" : "justify-start")}>
-                    <div className="max-w-[74%]">
-                      <div
-                        className={cn(
-                          "whitespace-pre-wrap break-words px-3.5 py-2.5 text-sm leading-relaxed shadow-suave",
-                          m.direcao === "entrada" && "rounded-[16px_16px_16px_4px] border border-borda-forte bg-branco text-texto",
-                          clara && "rounded-[16px_16px_4px_16px] bg-laranja text-branco",
-                          sara && "rounded-[16px_16px_4px_16px] bg-roxo text-branco",
-                        )}
-                      >
-                        {m.corpo ?? <span className="italic opacity-70">[{m.tipo_conteudo}]</span>}
-                      </div>
-                      <div className={cn("mt-1 text-[0.66rem] text-mute", m.direcao === "saida" && "text-right")}>
-                        {m.pendente
-                          ? sara
-                            ? "não enviado · aguardando fila de saída"
-                            : "✓ aprovada · aguardando envio"
-                          : hhmm(m.criado_em)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* nota de sistema quando Sara assumiu */}
-              {!modoClara && (
-                <div className="mx-auto flex max-w-[80%] items-center gap-2 rounded-lg border border-roxo-bd bg-roxo-bg px-3.5 py-2 text-center text-xs text-roxo">
-                  <svg viewBox="0 0 24 24" strokeWidth={2} className="h-3.5 w-3.5 shrink-0 stroke-current" fill="none">
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                  </svg>
-                  <span>
-                    <b className="font-bold">Sara assumiu a conversa</b> · Clara pausada
+              {blocos.map((bloco, bi) => (
+                <div key={bi} className="flex flex-col gap-2.5">
+                  <span className="my-1 self-center rounded-full border border-linha bg-branco px-3 py-0.5 text-[0.71rem] text-mute">
+                    {bloco.dia}
                   </span>
+                  {bloco.itens.map((m) => {
+                    const saida = m.direcao === "saida";
+                    const autor = saida ? (m.autor === "sara" ? "Você" : "Clara") : null;
+                    return (
+                      <div key={m.id} className={cn("flex max-w-[66%] flex-col", saida ? "self-end items-end" : "self-start items-start")}>
+                        <div
+                          className={cn(
+                            "whitespace-pre-wrap break-words px-3.5 py-2.5 text-[0.88rem] leading-relaxed",
+                            saida
+                              ? "rounded-[13px] rounded-br-[5px] border border-linha bg-bolha-out text-tinta"
+                              : "rounded-[13px] rounded-bl-[5px] bg-bolha-in text-tinta",
+                          )}
+                        >
+                          {m.corpo ?? <span className="italic opacity-70">[{m.tipo_conteudo}]</span>}
+                        </div>
+                        <div className="mt-[3px] px-1 text-[0.68rem] tabular-nums text-mute">
+                          {m.pendente ? (
+                            saida && m.autor === "sara" ? "não enviado · aguardando fila" : "✓ aprovada · aguardando envio"
+                          ) : (
+                            <>
+                              {autor === "Clara" && <b className="font-medium text-laranja">Clara</b>}
+                              {autor === "Você" && <b className="font-medium text-navy">Você</b>}
+                              {autor ? " · " : ""}
+                              {hhmm(m.criado_em)}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-              <div ref={fimRef} />
-            </div>
+              ))}
 
-            {/* fila de aprovação (só no modo Clara) */}
-            {modoClara && props_.length > 0 && (
-              <div className="max-h-[42vh] flex-shrink-0 overflow-y-auto">
-                {props_.map((s) => {
+              {/* sugestão da Clara — card branco, acento na borda esquerda (só no modo Clara) */}
+              {modoClara &&
+                props_.map((s) => {
                   const emEdicao = editando?.id === s.id;
                   return (
-                    <div key={s.id} className="px-6 pb-1">
-                    <div className="overflow-hidden rounded-lg border border-azul-bd border-l-[3px] border-l-laranja bg-branco shadow-forte">
-                      <div className="flex items-center gap-2.5 px-4 pb-2 pt-3">
-                        <span className="grid h-[26px] w-[26px] place-items-center rounded-full bg-gradient-to-br from-[#F2803F] to-[#EC662E] text-[0.7rem] font-bold text-branco">
-                          C
-                        </span>
-                        <span className="text-sm font-semibold text-navy">Clara sugere responder</span>
-                        <span className="ml-auto rounded-full bg-laranja-cl px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-laranja-esc">
-                          propõe · aprove p/ enviar
-                        </span>
+                    <div
+                      key={s.id}
+                      className="self-stretch rounded-[11px] border border-linha border-l-[3px] border-l-laranja bg-branco px-4 py-3.5 shadow-[0_1px_6px_rgba(37,47,99,.05)]"
+                    >
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <span className="text-[0.76rem] font-semibold text-laranja-esc">Clara sugere</span>
+                        <span className="text-[0.72rem] text-mute">· resposta ao paciente · não enviada</span>
                       </div>
                       {emEdicao ? (
-                        <div className="px-4 pb-1">
-                          <textarea
-                            autoFocus
-                            value={editando!.texto}
-                            onChange={(e) => setEditando({ id: s.id, texto: e.target.value })}
-                            rows={4}
-                            className="w-full resize-none rounded-md border border-borda-forte bg-creme px-3 py-2 text-sm outline-none focus:border-laranja focus:bg-branco"
-                          />
-                        </div>
+                        <textarea
+                          autoFocus
+                          value={editando!.texto}
+                          onChange={(e) => setEditando({ id: s.id, texto: e.target.value })}
+                          rows={4}
+                          className="w-full resize-none rounded-md border border-linha-forte bg-board px-3 py-2 text-[0.9rem] leading-relaxed text-navy outline-none focus:border-foco-comp focus:bg-branco"
+                        />
                       ) : (
-                        <div className="relative mx-4 mb-5 rounded-[14px_14px_14px_4px] bg-laranja px-3.5 py-2.5 text-sm leading-relaxed text-branco">
-                          {s.corpo}
-                          <span className="absolute -bottom-4 right-2 text-[0.63rem] text-mute">
-                            prévia — ainda não enviada
-                          </span>
-                        </div>
+                        <p className="text-[0.9rem] leading-relaxed text-navy">{s.corpo}</p>
                       )}
-                      <div className="flex items-center gap-2 px-4 pb-3.5 pt-1.5">
+                      <div className="mt-3 flex items-center gap-2">
                         <button
                           onClick={() => aprovar(s, emEdicao ? editando!.texto : s.corpo)}
                           disabled={pending}
-                          className="inline-flex items-center gap-1.5 rounded-md bg-laranja px-4 py-2 text-sm font-semibold text-branco shadow-laranja hover:bg-laranja-esc disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-laranja px-4 py-2 text-[0.82rem] font-semibold text-branco transition-colors hover:bg-laranja-esc focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50 disabled:opacity-50"
                         >
-                          <svg viewBox="0 0 24 24" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-current" fill="none">
-                            <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                          <svg viewBox="0 0 24 24" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 stroke-current" fill="none">
+                            <path d="M20 6 9 17l-5-5" />
                           </svg>
-                          Aprovar e enviar
+                          {emEdicao ? "Salvar e enviar" : "Aprovar e enviar"}
                         </button>
                         {emEdicao ? (
                           <button
                             onClick={() => setEditando(null)}
-                            className="rounded-md border-[1.5px] border-borda-forte bg-branco px-4 py-2 text-sm font-semibold text-suave hover:bg-creme"
+                            className="rounded-lg px-3 py-2 text-[0.82rem] font-medium text-suave transition-colors hover:bg-hover hover:text-tinta"
                           >
                             Cancelar
                           </button>
                         ) : (
                           <button
                             onClick={() => setEditando({ id: s.id, texto: s.corpo })}
-                            className="inline-flex items-center gap-1.5 rounded-md border-[1.5px] border-borda-forte bg-branco px-4 py-2 text-sm font-semibold text-navy hover:bg-creme"
+                            className="rounded-lg px-3 py-2 text-[0.82rem] font-medium text-suave transition-colors hover:bg-hover hover:text-tinta"
                           >
-                            <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-current" fill="none">
-                              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-                            </svg>
                             Editar
                           </button>
                         )}
                         <button
                           onClick={() => descartar(s)}
                           disabled={pending}
-                          className="rounded-md px-2 py-2 text-sm font-semibold text-mute hover:text-vermelho disabled:opacity-50"
+                          className="rounded-lg px-3 py-2 text-[0.82rem] font-medium text-suave transition-colors hover:bg-hover hover:text-tinta disabled:opacity-50"
                         >
                           Descartar
                         </button>
-                        <span className="ml-auto text-xs text-mute">valida <b className="text-suave">você (Sara)</b></span>
                       </div>
                     </div>
-                  </div>
                   );
                 })}
-              </div>
-            )}
+              <div ref={fimRef} />
+            </div>
 
-            {/* composer */}
-            <div className="flex-shrink-0 border-t border-borda bg-branco px-6 py-3">
-              <div className="mb-2 text-xs text-mute">
-                {modoClara ? (
-                  <span>💬 A Clara está no controle — aprove a sugestão acima, ou escreva aqui para <b className="text-suave">assumir a conversa</b>.</span>
-                ) : (
-                  <span>🙋‍♀️ Você assumiu — escrevendo como <b className="text-suave">Sara</b>. A Clara volta quando você devolver.</span>
-                )}
-              </div>
-              <div
-                className={cn(
-                  "flex items-end gap-2 rounded-lg border-[1.5px] bg-creme py-2 pl-4 pr-2 focus-within:bg-branco",
-                  modoClara ? "border-borda-forte focus-within:border-laranja" : "border-borda-forte focus-within:border-roxo",
-                )}
-              >
+            {/* composer sensível ao modo */}
+            <div className="flex-shrink-0 bg-board px-4 pb-4 pt-3">
+              <div className="flex items-end gap-2.5 rounded-xl border border-linha-forte bg-branco py-2 pl-3.5 pr-2 focus-within:border-foco-comp">
                 <textarea
                   rows={1}
                   value={rascunho}
@@ -485,31 +517,130 @@ export function Inbox({
                     }
                   }}
                   placeholder={modoClara ? "Escreva para assumir a conversa…" : "Escreva como Sara…"}
-                  className="max-h-28 flex-1 resize-none bg-transparent py-1.5 text-sm outline-none placeholder:text-mute"
+                  className="max-h-28 flex-1 resize-none bg-transparent py-1 text-[0.9rem] leading-relaxed text-tinta outline-none placeholder:text-mute"
                 />
                 <button
                   onClick={enviar}
                   disabled={pending || !rascunho.trim()}
-                  className={cn(
-                    "grid h-9 w-9 shrink-0 place-items-center rounded-md text-branco disabled:opacity-50",
-                    modoClara ? "bg-laranja hover:bg-laranja-esc" : "bg-roxo hover:opacity-90",
-                  )}
+                  title="Enviar"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-navy text-branco transition-colors hover:bg-navy-esc focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/40 disabled:opacity-50"
                 >
                   <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-current" fill="none">
-                    <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                    <path d="M22 2 11 13" />
+                    <path d="M22 2 15 22l-4-9-9-4 20-7z" />
                   </svg>
                 </button>
               </div>
+              <p className="mt-2 text-center text-[0.72rem] text-mute">
+                {modoClara ? (
+                  <>
+                    A Clara está conduzindo — <b className="font-medium text-suave">ao enviar, você assume a conversa</b>. Ou aprove a sugestão acima.
+                  </>
+                ) : (
+                  <>
+                    Você assumiu — escrevendo como <b className="font-medium text-suave">Sara</b>. A Clara volta quando você devolver.
+                  </>
+                )}
+              </p>
             </div>
           </>
         )}
+      </section>
 
-        {toast && (
-          <div className="pointer-events-none fixed bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-md border border-verde-bd bg-branco px-4 py-2.5 text-sm text-navy shadow-forte">
-            {toast}
+      {/* ═══════════ ZONA 3 · CONTEXTO DO LEAD ═══════════ */}
+      <aside
+        className={cn(
+          "flex shrink-0 flex-col border-l border-linha bg-branco transition-[width] duration-150",
+          ctxColapsado ? "w-[46px]" : "w-[288px]",
+        )}
+      >
+        <div className={cn("flex items-center gap-2 border-b border-linha px-4 py-3", ctxColapsado && "justify-center px-0")}>
+          {!ctxColapsado && <span className="text-[0.8rem] font-semibold text-tinta">Contexto do lead</span>}
+          <button
+            onClick={() => setCtxColapsado((v) => !v)}
+            title={ctxColapsado ? "Expandir" : "Recolher"}
+            aria-label={ctxColapsado ? "Expandir contexto" : "Recolher contexto"}
+            className={cn(
+              "grid h-[26px] w-[26px] place-items-center rounded-md text-mute transition-colors hover:bg-hover hover:text-suave focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
+              !ctxColapsado && "ml-auto",
+            )}
+          >
+            <svg viewBox="0 0 24 24" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-current" fill="none">
+              <path d={ctxColapsado ? "m11 17-5-5 5-5M18 17l-5-5 5-5" : "m13 17 5-5-5-5M6 17l5-5-5-5"} />
+            </svg>
+          </button>
+        </div>
+
+        {!ctxColapsado && selecionada && (
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="font-serif text-[1.16rem] font-semibold leading-tight text-navy">{titulo}</div>
+            <div className="mt-0.5 text-[0.82rem] tabular-nums text-suave">{fmtTelefone(selecionada.telefone)}</div>
+
+            <div className="mt-[18px] flex flex-col">
+              <LinhaCtx k="Etapa">
+                {selecionada.etapa_nome ? (
+                  <span className="inline-flex items-center gap-1.5 font-medium text-navy">
+                    <span className="h-1.5 w-1.5 rounded-full bg-laranja" />
+                    {selecionada.etapa_nome}
+                  </span>
+                ) : (
+                  <span className="text-mute">—</span>
+                )}
+              </LinhaCtx>
+              <LinhaCtx k="Na etapa há">{textoNaEtapa(selecionada.entrou_etapa_em)}</LinhaCtx>
+              <LinhaCtx k="Valor estimado">
+                {selecionada.valor != null ? moeda(selecionada.valor) : <span className="font-normal text-mute">a definir</span>}
+              </LinhaCtx>
+              <LinhaCtx k="Origem">{origemLabel ?? <span className="font-normal text-mute">—</span>}</LinhaCtx>
+              <LinhaCtx k="Idade">
+                {selecionada.idade != null ? selecionada.idade : <span className="font-normal text-mute">—</span>}
+              </LinhaCtx>
+            </div>
+
+            <p className="mt-[18px] border-t border-linha pt-3 text-[0.78rem] leading-relaxed text-mute">
+              Sinais e anotações aparecem aqui quando registrados na conversa.
+            </p>
+
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                onClick={() => router.push(`/funil${selecionada.lead_id ? `?lead=${selecionada.lead_id}` : ""}`)}
+                className="flex items-center gap-2.5 rounded-[9px] border border-linha bg-board px-3 py-2.5 text-[0.83rem] font-semibold text-navy transition-colors hover:border-linha-forte hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+              >
+                <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-suave" fill="none">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M3 9h18M9 21V9" />
+                </svg>
+                Abrir card no funil
+              </button>
+              <button
+                onClick={() => router.push(`/funil${selecionada.lead_id ? `?lead=${selecionada.lead_id}` : ""}`)}
+                className="flex items-center gap-2.5 rounded-[9px] border border-linha bg-board px-3 py-2.5 text-[0.83rem] font-semibold text-navy transition-colors hover:border-linha-forte hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+              >
+                <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-suave" fill="none">
+                  <path d="M3 3v18h18" />
+                  <path d="m7 14 4-4 3 3 5-6" />
+                </svg>
+                Analisar crédito (Levindo)
+              </button>
+            </div>
           </div>
         )}
-      </section>
+      </aside>
+
+      {toast && (
+        <div className="pointer-events-none fixed bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-md border border-linha-forte bg-branco px-4 py-2.5 text-sm text-navy shadow-[0_6px_26px_rgba(37,47,99,.12)]">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LinhaCtx({ k, children }: { k: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 py-[5px] text-[0.83rem] text-tinta">
+      <span className="text-suave">{k}</span>
+      <span className="ml-auto font-medium tabular-nums">{children}</span>
     </div>
   );
 }
