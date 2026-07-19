@@ -12,11 +12,14 @@ const ROTAS = [
   { href: "/fila", rotulo: "Fila" },
 ];
 
-/** Navegação principal com destaque da rota ativa (client — usa usePathname). */
+/**
+ * Navegação principal — texto puro, sem pills (redesign Notion-minimalista, fase 1).
+ * Item ativo se distingue por PESO + cor navy, não por cápsula (spec §2 do kanban-v2.html).
+ */
 export function Navegacao() {
   const pathname = usePathname();
   return (
-    <nav className="flex items-center gap-1">
+    <nav className="flex items-center gap-0.5">
       {ROTAS.map((r) => {
         const ativa = pathname === r.href || pathname.startsWith(r.href + "/");
         return (
@@ -24,8 +27,10 @@ export function Navegacao() {
             key={r.href}
             href={r.href}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              ativa ? "bg-laranja-cl text-laranja-esc" : "text-suave hover:bg-creme hover:text-navy",
+              "rounded-md px-2.5 py-1.5 text-sm transition-colors",
+              ativa
+                ? "font-semibold text-navy"
+                : "font-normal text-suave hover:bg-hover hover:text-tinta",
             )}
           >
             {r.rotulo}
