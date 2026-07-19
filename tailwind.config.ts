@@ -14,9 +14,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        laranja: { DEFAULT: "#EC662E", esc: "#D4541F", cl: "#FDEEE4" },
+        laranja: { DEFAULT: "#EC662E", esc: "#D4541F", cl: "#FCEEE6" },
         pessego: "#FCE7DB",
         navy: "#252F63",
+        // ── Redesign "Notion-minimalista" (fase 1, aprovado 19/07). Fonte da verdade:
+        // Product_Management/Design/kanban-v2.html (spec block "TOKENS FINAIS"). Additivo:
+        // não sobrescreve os tokens do front-clara-v1 usados pelas outras telas (fase 2).
+        board: "#FAFAF9", // fundo do board
+        tinta: "#2C2E33", // texto padrão do redesign
+        linha: { DEFAULT: "#ECEBE7", forte: "#E4E2DD" }, // bordas hairline (linha / linha-2)
+        hover: "#F5F4F2", // fundo de hover de itens clicáveis
+        "timer-velho": "#B67A5B", // ESTADO: lead parado há muitos dias (único warm fora do laranja)
         azul: { DEFAULT: "#143691", bg: "#EEF1FB", bd: "#D5DDF3" },
         creme: "#FBF9F6",
         fundo: "#F3EEE6",
@@ -30,6 +38,12 @@ const config: Config = {
         amarelo: { DEFAULT: "#B8860B", bg: "#FBF3DF", bd: "#EAD9A6" },
         roxo: { DEFAULT: "#7A4CA0", bg: "#F3EDF9", bd: "#E0D0EE" },
         rosa: { DEFAULT: "#B23A6E", bg: "#FBEDF3" },
+      },
+      spacing: {
+        // Constantes de layout do redesign (spec block "FORMA / ESPAÇO" do kanban-v2.html).
+        coluna: "264px", // largura da coluna aberta
+        trilho: "44px", // largura do trilho recolhido
+        topbar: "50px",
       },
       fontFamily: {
         sans: ["var(--fonte-inter)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
