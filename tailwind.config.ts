@@ -16,22 +16,25 @@ const config: Config = {
       colors: {
         laranja: { DEFAULT: "#EC662E", esc: "#D4541F", cl: "#FCEEE6" },
         pessego: "#FCE7DB",
-        navy: "#252F63",
-        // ── Redesign "Notion-minimalista" (fase 1, aprovado 19/07). Fonte da verdade:
-        // Product_Management/Design/kanban-v2.html (spec block "TOKENS FINAIS"). Additivo:
-        // não sobrescreve os tokens do front-clara-v1 usados pelas outras telas (fase 2).
+        navy: { DEFAULT: "#252F63", esc: "#1C2450" }, // navy-esc = hover do enviar (conversa-v2)
+        // ── Redesign "Notion-minimalista" (fase 1/2). Fonte da verdade: kanban-v2.html +
+        // conversa-v2.html (spec blocks "TOKENS FINAIS", re-sync da revisão de acessibilidade 19/07).
         board: "#FAFAF9", // fundo do board
-        tinta: "#2C2E33", // texto padrão do redesign
+        tinta: "#2C2E33", // texto padrão do redesign · 13.6:1
         linha: { DEFAULT: "#ECEBE7", forte: "#E4E2DD" }, // bordas hairline (linha / linha-2)
         hover: "#F5F4F2", // fundo de hover de itens clicáveis
-        "timer-velho": "#B67A5B", // ESTADO: lead parado há muitos dias (único warm fora do laranja)
+        "scroll-h": "#CFCDC7", // hover da scrollbar
+        "timer-velho": "#9E5A38", // ESTADO lead parado · 4.5:1 (AA) — sempre com peso 700 + ícone
+        "pt-ads": "#B4B7BD", // micro-ponto do sinal "Meta Ads" (decorativo)
+        "foco-comp": "#D9C4B6", // borda do composer em foco (conversa-v2)
+        bolha: { in: "#F1F0ED", out: "#FBFAF8" }, // bolhas neutras do thread (conversa-v2)
         azul: { DEFAULT: "#143691", bg: "#EEF1FB", bd: "#D5DDF3" },
         creme: "#FBF9F6",
         fundo: "#F3EEE6",
         branco: "#FFFFFF",
         texto: "#3a3a3a",
         suave: "#6f6c76",
-        mute: "#a3a0a8",
+        mute: "#6E727A", // re-sync 19/07: terciário AA (4.83:1) — carrega info real (timer/contagem/valor)
         borda: { DEFAULT: "#ECE3D6", forte: "#E3D9CA" },
         verde: { DEFAULT: "#2E8B62", bg: "#EAF6EF", bd: "#BFE4CF" },
         vermelho: { DEFAULT: "#C4482E", bg: "#FBEBE4", bd: "#F1CDBF" },
