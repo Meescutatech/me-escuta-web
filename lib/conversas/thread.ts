@@ -119,3 +119,33 @@ export function motivoErroPermanente(codigo: string | null | undefined): string 
   if (!codigo) return null;
   return ERRO_PERMANENTE[codigo] ?? null;
 }
+
+/**
+ * RF-28/32 — quando a mensagem falhada ganha o botão "Tentar de novo": tem corpo E a falha é
+ * local (a action recusou o enfileiramento) OU a projeção confirmou 'falhou' com erro NÃO
+ * permanente. Sem janela de tempo: falha retriável continua retriável — o conserto que
+ * destrava o reenvio (ex.: sender corrigido pro 131030) pode chegar dias depois da falha.
+ * O retry emite evento NOVO na porta (novo dedup_id); a falhada fica no ledger como está.
+ */
+export function podeTentarDeNovo(m: Mensagem): boolean {
+  if (!m.corpo) return false;
+  if (m.falha_local) return true;
+  return m.status_entrega === "falhou" && !motivoErroPermanente(m.erro_codigo);
+}
+
+/**
+ * RF-32 — reconciliação das bolhas otimistas: a pendente some quando a projeção confirma uma
+ * mensagem de saída com o mesmo corpo. Linha 'falhou' do servidor NÃO confirma pendente
+ * nenhuma — senão a falhada antiga engole o reenvio do mesmo texto e o clique fica invisível.
+ */
+export function pendentesVivas(pendentes: Mensagem[], servidor: Mensagem[]): Mensagem[] {
+  return pendentes.filter(
+    (p) =>
+      !servidor.some(
+        (m) =>
+          m.direcao === "saida" &&
+          m.status_entrega !== "falhou" &&
+          (m.corpo ?? "").trim() === (p.corpo ?? "").trim(),
+      ),
+  );
+}

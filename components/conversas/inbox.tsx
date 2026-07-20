@@ -11,7 +11,13 @@ import {
 } from "@/app/(app)/conversas/actions";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
 import { useConversaViva } from "@/components/conversas/tempo-real";
-import { fronteiraNaoLidas, montarBlocos, motivoErroPermanente } from "@/lib/conversas/thread";
+import {
+  fronteiraNaoLidas,
+  montarBlocos,
+  motivoErroPermanente,
+  pendentesVivas,
+  podeTentarDeNovo,
+} from "@/lib/conversas/thread";
 import { diasNaEtapa } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 
@@ -140,15 +146,10 @@ export function Inbox({
   }, [selecionadaId]);
 
   // mensagens visíveis = servidor + pendentes ainda não confirmadas pela projeção
-  const visiveis = useMemo(() => {
-    const vivos = pendentes.filter(
-      (p) =>
-        !mensagens.some(
-          (m) => m.direcao === "saida" && (m.corpo ?? "").trim() === (p.corpo ?? "").trim(),
-        ),
-    );
-    return [...mensagens, ...vivos];
-  }, [mensagens, pendentes]);
+  const visiveis = useMemo(
+    () => [...mensagens, ...pendentesVivas(pendentes, mensagens)],
+    [mensagens, pendentes],
+  );
 
   const blocos = useMemo(() => montarBlocos(visiveis), [visiveis]);
 
@@ -270,6 +271,24 @@ export function Inbox({
     if (!texto || !selecionada) return;
     setRascunho("");
     despachar(texto);
+  }
+
+  /**
+   * RF-28: reenvio de mensagem que a PROJEÇÃO marcou 'falhou' — evento NOVO na porta com o
+   * mesmo corpo (a porta gera novo dedup_id; a falhada fica no ledger, imutável). Sem bolha
+   * otimista aqui: a verdade é a nova linha da projeção, que o refresh traz como 'na_fila'.
+   */
+  function reenviar(m: Mensagem) {
+    if (!selecionada || !m.corpo) return;
+    startTransition(async () => {
+      const r = await enviarMensagem(selecionada.id, m.corpo!);
+      if (r.ok) {
+        avisar("Reenviado — nova tentativa na fila.");
+        router.refresh();
+      } else {
+        avisar(`Falha ao reenviar: ${r.motivo ?? "erro"}`);
+      }
+    });
   }
 
   function aprovar(sug: SugestaoMensagem, textoFinal: string) {
@@ -498,8 +517,7 @@ export function Inbox({
                             const ultima = mi === grupo.itens.length - 1;
                             const falhou = m.status_entrega === "falhou" || m.falha_local;
                             const motivo = motivoErroPermanente(m.erro_codigo);
-                            const recente = Date.now() - new Date(m.criado_em).getTime() < 86400000;
-                            const podeRetry = !!m.corpo && recente && (m.falha_local || (m.status_entrega === "falhou" && !motivo));
+                            const podeRetry = podeTentarDeNovo(m);
                             return (
                               <div key={m.id} className={cn("flex flex-col", saida ? "items-end" : "items-start")}>
                                 <div
@@ -522,7 +540,7 @@ export function Inbox({
                                     </span>
                                     {podeRetry && (
                                       <button
-                                        onClick={() => despachar(m.corpo!, m.falha_local ? m.id : undefined)}
+                                        onClick={() => (m.falha_local ? despachar(m.corpo!, m.id) : reenviar(m))}
                                         disabled={pending}
                                         className="font-semibold underline underline-offset-2 hover:text-tinta disabled:opacity-50"
                                       >
