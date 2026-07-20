@@ -123,13 +123,18 @@ const SUGESTOES_MOCK: Record<string, SugestaoMensagem[]> = {
 export async function lerConversas(): Promise<DadosConversas> {
   try {
     const supabase = criarClienteServidor();
+    // Contrato 0025 (Trilha A): o inbox lista core.v_conversa WHERE visivel_inbox — conversa só
+    // aparece quando satisfaz o filtro (inbound real). Lista vazia é estado HONESTO, não mock;
+    // mock só se a query falhar (dev sem banco).
     const { data, error } = await supabase
       .schema("core")
-      .from("conversa")
+      .from("v_conversa")
       .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em")
+      .eq("visivel_inbox", true)
       .order("atualizado_em", { ascending: false, nullsFirst: false })
       .limit(50);
-    if (error || !data || data.length === 0) return { conversas: CONVERSAS_MOCK, fonte: "mock" };
+    if (error) return { conversas: CONVERSAS_MOCK, fonte: "mock" };
+    if (!data || data.length === 0) return { conversas: [], fonte: "real" };
 
     // dados do lead (nome/etapa/valor/origem) pelo lead_id via v_lead_card
     const leadIds = data.map((c: any) => c.lead_id).filter(Boolean);

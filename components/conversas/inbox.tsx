@@ -367,7 +367,9 @@ export function Inbox({
 
         <div className="flex-1 overflow-y-auto px-2 pb-4 pt-0.5">
           {conversasVisiveis.length === 0 && (
-            <p className="px-3 pt-6 text-center text-[0.8rem] text-mute">Nenhuma conversa aqui.</p>
+            <p className="px-3 pt-6 text-center text-[0.8rem] text-mute">
+              {conversas.length === 0 ? "Nenhuma conversa ainda." : "Nenhuma conversa aqui."}
+            </p>
           )}
           {conversasVisiveis.map((c) => {
             const ativa = c.id === selecionadaId;
@@ -427,7 +429,9 @@ export function Inbox({
       <section className="flex min-w-0 flex-1 flex-col bg-board">
         {!selecionada ? (
           <div className="m-auto text-center text-sm text-mute">
-            Selecione uma conversa.
+            {conversas.length === 0
+              ? "Nenhuma conversa ainda — a primeira mensagem recebida no WhatsApp abre aqui."
+              : "Selecione uma conversa."}
             {fonte === "mock" && <div className="mt-1 text-xs">dados de exemplo</div>}
           </div>
         ) : (
