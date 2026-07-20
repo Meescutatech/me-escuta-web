@@ -26,27 +26,26 @@ export default async function TimelinePage() {
   const eventos = (data ?? []) as EventoLedger[];
 
   return (
-    <section className="space-y-4">
+    <section className="mx-auto max-w-4xl space-y-4 px-6 py-6">
       <div>
-        <h1 className="text-lg font-semibold">Timeline do ledger</h1>
-        <p className="text-sm text-muted-foreground">
-          Últimos eventos por <code>posicao_global</code> (desc). Leitura via RLS, direto no{" "}
-          <code>core.evento</code>.
+        <h1 className="font-serif text-xl font-semibold text-navy">Timeline do ledger</h1>
+        <p className="text-sm text-suave">
+          Últimos eventos por{" "}
+          <code className="rounded bg-creme px-1.5 py-0.5 font-mono text-xs">posicao_global</code> (desc).
+          Leitura via RLS, direto no{" "}
+          <code className="rounded bg-creme px-1.5 py-0.5 font-mono text-xs">core.evento</code>.
         </p>
       </div>
 
       {error ? (
         <Card>
-          <CardContent className="text-sm text-destructive">
+          <CardContent className="text-sm text-vermelho">
             Falha ao ler o ledger: {error.message}
-            <p className="mt-1 text-muted-foreground">
-              (Local no Apple Silicon: o PostgREST pode estar fora — ver README/limitação Rosetta.)
-            </p>
           </CardContent>
         </Card>
       ) : eventos.length === 0 ? (
         <Card>
-          <CardContent className="text-sm text-muted-foreground">Nenhum evento ainda.</CardContent>
+          <CardContent className="text-sm text-suave">Nenhum evento ainda.</CardContent>
         </Card>
       ) : (
         <ul className="space-y-2">
@@ -56,15 +55,17 @@ export default async function TimelinePage() {
                 <CardContent className="flex items-start justify-between gap-4 py-3">
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge>#{ev.posicao_global}</Badge>
-                      <span className="text-sm font-medium">{ev.tipo}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <Badge tom="navy" className="font-mono">
+                        #{ev.posicao_global}
+                      </Badge>
+                      <span className="text-sm font-semibold text-navy">{ev.tipo}</span>
+                      <span className="text-xs text-mute">
                         origem={ev.origem} · ator={ev.ator}
                       </span>
                     </div>
-                    <p className="truncate text-sm text-muted-foreground">{resumoPayload(ev.payload)}</p>
+                    <p className="truncate text-sm text-suave">{resumoPayload(ev.payload)}</p>
                   </div>
-                  <time className="shrink-0 text-xs text-muted-foreground">
+                  <time className="shrink-0 text-xs text-mute">
                     {new Date(ev.criado_em).toLocaleString("pt-BR")}
                   </time>
                 </CardContent>

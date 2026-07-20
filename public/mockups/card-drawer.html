@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Me Escuta · Card do lead</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;450;500;600;700&display=swap');
+
+  :root{
+    --laranja:#EC662E; --laranja-esc:#D4541F; --laranja-cl:#FDEEE4; --pessego:#FCE7DB;
+    --navy:#252F63; --azul:#143691;
+    --creme:#FBF9F6; --bg:#F3EEE6; --branco:#FFFFFF;
+    --texto:#3a3a3a; --suave:#6f6c76; --mute:#a3a0a8;
+    --borda:#ECE3D6; --borda-2:#E3D9CA;
+    --verde:#2E8B62; --verde-bg:#EAF6EF; --verde-bd:#BFE4CF;
+    --vermelho:#C4482E; --vermelho-bg:#FBEBE4; --vermelho-bd:#F1CDBF;
+    --amarelo:#B8860B; --amarelo-bg:#FBF3DF; --amarelo-bd:#EAD9A6;
+    --azul-bg:#EEF1FB; --azul-bd:#D5DDF3;
+    --sombra-sm:0 1px 3px rgba(37,47,99,.06);
+    --sombra:0 6px 26px rgba(37,47,99,.09);
+    --sombra-drawer:-18px 0 50px rgba(37,47,99,.18);
+    font-size:15px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--texto);background:var(--bg);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .serif{font-family:'Fraunces',Georgia,serif}
+  svg{display:block}
+
+  /* ---------- board backdrop (dimmed, contexto) ---------- */
+  .backdrop{position:fixed;inset:0;display:flex;gap:16px;padding:80px 24px 24px;overflow:hidden;filter:saturate(.9)}
+  .backdrop::before{content:'';position:fixed;inset:0;background:rgba(37,47,99,.28);backdrop-filter:blur(1.5px);z-index:5}
+  .bcol{width:288px;flex-shrink:0}
+  .bcol .bh{height:14px;width:120px;border-radius:20px;background:#d9cebd;margin-bottom:16px}
+  .bcard{height:96px;border-radius:14px;background:var(--branco);opacity:.75;margin-bottom:11px;box-shadow:var(--sombra-sm)}
+  .btop{position:fixed;top:0;left:0;right:0;height:58px;background:var(--branco);border-bottom:1px solid var(--borda);display:flex;align-items:center;padding:0 24px;z-index:6}
+  .btop .mk{width:34px;height:34px;border-radius:50%;background:var(--laranja);color:#fff;display:grid;place-items:center;font-size:1.1rem}
+  .btop .nm{font-family:'Fraunces',serif;font-weight:600;color:var(--navy);font-size:1.18rem;margin-left:10px}
+  .btop .nm b{color:var(--laranja);font-weight:700}
+
+  /* ---------- drawer ---------- */
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:472px;max-width:96vw;background:var(--creme);box-shadow:var(--sombra-drawer);z-index:10;display:flex;flex-direction:column}
+
+  .d-head{flex-shrink:0;background:var(--branco);border-bottom:1px solid var(--borda);padding:15px 22px 0}
+  .d-crumb{display:flex;align-items:center;gap:10px;margin-bottom:15px}
+  .stage-chip{display:inline-flex;align-items:center;gap:7px;font-size:.74rem;font-weight:600;color:var(--amarelo);background:var(--amarelo-bg);border:1px solid var(--amarelo-bd);padding:5px 11px;border-radius:20px}
+  .stage-chip .sd{width:7px;height:7px;border-radius:50%;background:var(--amarelo)}
+  .d-crumb .sp{flex:1}
+  .d-crumb .goconv{display:inline-flex;align-items:center;gap:6px;font-size:.76rem;font-weight:600;color:var(--laranja-esc);background:var(--laranja-cl);border:none;border-radius:9px;padding:7px 12px;cursor:pointer;transition:.15s}
+  .d-crumb .goconv:hover{background:var(--pessego)}
+  .d-crumb .goconv svg{width:14px;height:14px;stroke:currentColor;fill:none}
+  .d-close{width:32px;height:32px;border-radius:9px;border:none;background:var(--creme);color:var(--suave);cursor:pointer;display:grid;place-items:center;transition:.15s}
+  .d-close:hover{background:var(--borda);color:var(--navy)}
+  .d-close svg{width:17px;height:17px;stroke:currentColor;fill:none}
+
+  .d-patient{display:flex;align-items:center;gap:14px;padding-bottom:16px}
+  .d-av{width:56px;height:56px;border-radius:50%;flex-shrink:0;background:linear-gradient(140deg,#3a4788,#252F63);color:#fff;display:grid;place-items:center;font-size:1.3rem;font-weight:700;box-shadow:0 4px 13px rgba(37,47,99,.25)}
+  .d-pinfo{flex:1;min-width:0}
+  .d-pinfo .pn{font-family:'Fraunces',serif;font-weight:600;font-size:1.4rem;color:var(--navy);line-height:1.1}
+  .d-pinfo .pm{font-size:.82rem;color:var(--suave);margin-top:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .d-pinfo .pm .dotmid{color:var(--mute)}
+
+  .d-facts{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--borda);border-top:1px solid var(--borda)}
+  .fact{background:var(--branco);padding:11px 22px}
+  .fact .fl{font-size:.68rem;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);font-weight:600;margin-bottom:3px}
+  .fact .fv{font-size:.9rem;color:var(--navy);font-weight:600;display:flex;align-items:center;gap:6px}
+  .fact .fv svg{width:13px;height:13px;stroke:var(--laranja);fill:none}
+  .fact .fv .wa{width:8px;height:8px;border-radius:50%;background:var(--verde)}
+
+  /* ---------- scroll body ---------- */
+  .d-body{flex:1;min-height:0;overflow-y:auto;padding:18px 22px 30px}
+
+  /* Levindo credit block (propõe→valida) */
+  .lev{background:var(--branco);border:1px solid var(--azul-bd);border-radius:15px;overflow:hidden;margin-bottom:20px;box-shadow:var(--sombra-sm)}
+  .lev-h{display:flex;align-items:center;gap:11px;padding:14px 16px 12px;border-bottom:1px solid var(--borda)}
+  .lev-h .la{width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:700;font-size:.9rem;flex-shrink:0}
+  .lev-h .lt{flex:1}
+  .lev-h .lt .n{font-weight:600;color:var(--navy);font-size:.95rem}
+  .lev-h .lt .s{font-size:.72rem;color:var(--mute)}
+  .faixa{font-family:'Fraunces',serif;font-weight:700;font-size:1.05rem;color:#fff;background:var(--verde);width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
+  .lev-b{padding:13px 16px 15px}
+  .lev-diag{font-size:.86rem;line-height:1.55;color:var(--texto);margin-bottom:12px}
+  .lev-diag b{color:var(--navy);font-weight:600}
+  .cond{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+  .cond .ci{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--texto)}
+  .cond .ci .ck{width:17px;height:17px;border-radius:50%;background:var(--verde-bg);display:grid;place-items:center;flex-shrink:0}
+  .cond .ci .ck svg{width:11px;height:11px;stroke:var(--verde);fill:none}
+  .cond .ci.no .ck{background:var(--vermelho-bg)}
+  .cond .ci.no .ck svg{stroke:var(--vermelho)}
+  .cond .ci b{color:var(--navy);font-weight:600}
+  .lev-acts{display:flex;gap:9px;align-items:center;padding-top:12px;border-top:1px solid var(--borda)}
+  .btn{font-family:'Inter',sans-serif;font-size:.84rem;font-weight:600;padding:9px 16px;border-radius:10px;border:none;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px}
+  .btn.ok{background:var(--laranja);color:#fff;box-shadow:0 3px 11px rgba(236,102,46,.26)}
+  .btn.ok:hover{background:var(--laranja-esc)}
+  .btn.no{background:#fff;color:var(--suave);border:1.5px solid var(--borda-2)}
+  .btn.no:hover{background:var(--creme);color:var(--navy)}
+  .lev-acts .vd{font-size:.72rem;color:var(--mute);margin-left:auto}
+  .lev-acts .vd b{color:var(--suave)}
+
+  /* ---------- tabs ---------- */
+  .tabs{display:flex;gap:4px;border-bottom:1.5px solid var(--borda);margin-bottom:16px}
+  .tab{font-size:.85rem;font-weight:600;color:var(--suave);background:none;border:none;padding:10px 13px;cursor:pointer;position:relative;transition:.15s;display:flex;align-items:center;gap:7px}
+  .tab:hover{color:var(--navy)}
+  .tab.on{color:var(--laranja-esc)}
+  .tab.on::after{content:'';position:absolute;left:8px;right:8px;bottom:-1.5px;height:2.5px;background:var(--laranja);border-radius:3px}
+  .tab .cnt{font-size:.68rem;font-weight:700;background:var(--borda);color:var(--suave);border-radius:20px;padding:1px 7px;min-width:19px;text-align:center}
+  .tab.on .cnt{background:var(--laranja-cl);color:var(--laranja-esc)}
+
+  .pane{display:none}
+  .pane.on{display:block}
+
+  /* tarefas */
+  .task{display:flex;align-items:flex-start;gap:11px;background:var(--branco);border:1px solid var(--borda);border-radius:12px;padding:12px 14px;margin-bottom:9px;transition:.15s}
+  .task:hover{border-color:var(--borda-2);box-shadow:var(--sombra-sm)}
+  .task .box{width:19px;height:19px;border-radius:6px;border:2px solid var(--borda-2);flex-shrink:0;margin-top:1px;cursor:pointer;display:grid;place-items:center;transition:.15s}
+  .task .box:hover{border-color:var(--laranja)}
+  .task.done .box{background:var(--verde);border-color:var(--verde)}
+  .task .box svg{width:11px;height:11px;stroke:#fff;fill:none;opacity:0}
+  .task.done .box svg{opacity:1}
+  .task .tinfo{flex:1;min-width:0}
+  .task .tt{font-size:.88rem;font-weight:500;color:var(--navy);line-height:1.35}
+  .task.done .tt{text-decoration:line-through;color:var(--mute)}
+  .task .tmeta{display:flex;align-items:center;gap:9px;margin-top:5px;font-size:.73rem;color:var(--suave)}
+  .task .tmeta .due{display:inline-flex;align-items:center;gap:4px;font-weight:600}
+  .task .tmeta .due svg{width:11px;height:11px;stroke:currentColor;fill:none}
+  .task .tmeta .due.late{color:var(--vermelho)}
+  .task .tmeta .due.soon{color:var(--amarelo)}
+  .task .tav{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:.58rem;font-weight:700;color:#fff}
+  .add-line{display:flex;align-items:center;gap:9px;color:var(--mute);font-size:.84rem;font-weight:500;padding:11px 14px;border:1.5px dashed var(--borda-2);border-radius:12px;cursor:pointer;transition:.15s;margin-top:3px}
+  .add-line:hover{border-color:var(--laranja);color:var(--laranja-esc)}
+  .add-line svg{width:15px;height:15px;stroke:currentColor;fill:none}
+
+  /* anotações */
+  .note{background:var(--branco);border:1px solid var(--borda);border-left:3px solid var(--laranja-cl);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .note .nh{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .note .nav{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:.6rem;font-weight:700;color:#fff}
+  .note .nn{font-size:.8rem;font-weight:600;color:var(--navy)}
+  .note .nt{font-size:.7rem;color:var(--mute);margin-left:auto}
+  .note .nb{font-size:.86rem;line-height:1.55;color:var(--texto)}
+  .note .nb b{color:var(--navy)}
+  .note.ia{border-left-color:var(--azul-bd);background:linear-gradient(180deg,#fbfcff,#fff)}
+  .note.ia .nav{background:linear-gradient(140deg,#F2803F,#EC662E)}
+  .note-comp{display:flex;gap:9px;align-items:flex-end;background:var(--branco);border:1.5px solid var(--borda-2);border-radius:13px;padding:8px 8px 8px 14px;margin-top:4px}
+  .note-comp textarea{flex:1;border:none;outline:none;resize:none;font-family:'Inter',sans-serif;font-size:.86rem;line-height:1.5;color:var(--texto);padding:5px 0;max-height:90px}
+  .note-comp textarea::placeholder{color:var(--mute)}
+  .note-comp .snd{width:36px;height:36px;border-radius:10px;border:none;background:var(--laranja);color:#fff;cursor:pointer;display:grid;place-items:center;flex-shrink:0}
+  .note-comp .snd svg{width:16px;height:16px;stroke:#fff;fill:none}
+
+  /* anexos */
+  .anexo{display:flex;align-items:center;gap:12px;background:var(--branco);border:1px solid var(--borda);border-radius:11px;padding:11px 14px;margin-bottom:9px;transition:.15s}
+  .anexo:hover{border-color:var(--borda-2);box-shadow:var(--sombra-sm)}
+  .anexo .ai{width:38px;height:38px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;font-size:.64rem;font-weight:700;color:#fff}
+  .anexo .ai.pdf{background:#C4482E} .anexo .ai.img{background:#7A4CA0} .anexo .ai.aud{background:#2E8B62}
+  .anexo .anf{flex:1;min-width:0}
+  .anexo .anf .an{font-size:.86rem;font-weight:600;color:var(--navy)}
+  .anexo .anf .am{font-size:.72rem;color:var(--mute);margin-top:2px}
+  .anexo .adl{color:var(--mute);cursor:pointer;padding:6px}
+  .anexo .adl:hover{color:var(--laranja-esc)}
+  .anexo .adl svg{width:16px;height:16px;stroke:currentColor;fill:none}
+
+  /* histórico (ledger) */
+  .ev{padding:2px 0 14px 18px;position:relative;margin-left:6px}
+  .ev::before{content:'';position:absolute;left:0;top:5px;bottom:-8px;width:2px;background:var(--borda-2)}
+  .ev:last-child::before{display:none}
+  .ev .dotev{position:absolute;left:-4px;top:4px;width:10px;height:10px;border-radius:50%;border:2px solid var(--creme)}
+  .ev.in .dotev{background:var(--laranja)} .ev.out .dotev{background:var(--navy)}
+  .ev.prop .dotev{background:var(--azul)} .ev.appr .dotev{background:var(--verde)}
+  .ev.stage .dotev{background:var(--amarelo)}
+  .ev .etop{display:flex;align-items:baseline;gap:8px}
+  .ev .etype{font-size:.82rem;font-weight:600;color:var(--navy)}
+  .ev .etm{margin-left:auto;font-size:.68rem;color:var(--mute);font-family:ui-monospace,Menlo,monospace}
+  .ev .ebody{font-size:.8rem;color:var(--suave);line-height:1.45;margin-top:3px}
+  .ev .ebody b{color:var(--texto)}
+
+  ::-webkit-scrollbar{width:8px}
+  ::-webkit-scrollbar-thumb{background:#e6ddd0;border-radius:8px}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+
+<!-- board backdrop (contexto) -->
+<div class="btop"><span class="mk">👂</span><span class="nm serif">me <b>escuta</b></span></div>
+<div class="backdrop">
+  <div class="bcol"><div class="bh"></div><div class="bcard"></div><div class="bcard"></div><div class="bcard"></div></div>
+  <div class="bcol"><div class="bh"></div><div class="bcard"></div><div class="bcard"></div></div>
+  <div class="bcol"><div class="bh"></div><div class="bcard"></div><div class="bcard"></div><div class="bcard"></div></div>
+  <div class="bcol"><div class="bh"></div><div class="bcard"></div><div class="bcard"></div></div>
+</div>
+
+<!-- drawer -->
+<aside class="drawer">
+  <div class="d-head">
+    <div class="d-crumb">
+      <span class="stage-chip"><span class="sd"></span>Análise de crédito</span>
+      <span class="sp"></span>
+      <button class="goconv"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Abrir conversa</button>
+      <button class="d-close"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="d-patient">
+      <div class="d-av">AG</div>
+      <div class="d-pinfo">
+        <div class="pn">Aparecida Gomes</div>
+        <div class="pm">66 anos · paciente <span class="dotmid">·</span> Belo Horizonte/MG</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-facts">
+    <div class="fact"><div class="fl">Telefone</div><div class="fv"><span class="wa"></span>(31) 99012-7788</div></div>
+    <div class="fact"><div class="fl">Origem</div><div class="fv">WhatsApp · Meta Ads</div></div>
+    <div class="fact"><div class="fl">Responsável</div><div class="fv">Diogo ME</div></div>
+    <div class="fact"><div class="fl">Valor estimado</div><div class="fv">R$ 9.800</div></div>
+  </div>
+
+  <div class="d-body">
+
+    <!-- Levindo (crédito) — propõe, humano valida -->
+    <div class="lev">
+      <div class="lev-h">
+        <div class="la">L</div>
+        <div class="lt"><div class="n">Levindo · análise de crédito</div><div class="s">Política Comercial v3 · rodado há 2h</div></div>
+        <div class="faixa">B</div>
+      </div>
+      <div class="lev-b">
+        <div class="lev-diag">Faixa <b>B</b> · score <b>72/100</b>. Bureau limpo, sem restrições. Comportamento de pagamento bom no histórico do DW. <b>Recomenda parcelamento com entrada</b>.</div>
+        <div class="cond">
+          <div class="ci"><span class="ck"><svg viewBox="0 0 24 24" stroke-width="3" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></span><b>Boleto em até 12×</b> com entrada de 20%</div>
+          <div class="ci"><span class="ck"><svg viewBox="0 0 24 24" stroke-width="3" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></span>Pix à vista com <b>5% de desconto</b></div>
+          <div class="ci no"><span class="ck"><svg viewBox="0 0 24 24" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>Boleto sem entrada — <b>não autorizado</b> nesta faixa</div>
+        </div>
+        <div class="lev-acts">
+          <button class="btn ok"><svg viewBox="0 0 24 24" stroke-width="2.4" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>Aprovar condições</button>
+          <button class="btn no">Rejeitar</button>
+          <span class="vd">valida <b>Diogo ME</b></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- tabs -->
+    <div class="tabs">
+      <button class="tab on" data-p="tarefas">Tarefas <span class="cnt">3</span></button>
+      <button class="tab" data-p="notas">Anotações <span class="cnt">4</span></button>
+      <button class="tab" data-p="anexos">Anexos <span class="cnt">3</span></button>
+      <button class="tab" data-p="hist">Histórico</button>
+    </div>
+
+    <!-- tarefas -->
+    <div class="pane on" data-pane="tarefas">
+      <div class="task">
+        <div class="box"><svg viewBox="0 0 24 24" stroke-width="3" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <div class="tinfo">
+          <div class="tt">Confirmar condição de pagamento com a paciente</div>
+          <div class="tmeta"><span class="due soon"><svg viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>hoje, 16h</span><span class="tav" style="background:var(--navy)">DM</span> Diogo ME</div>
+        </div>
+      </div>
+      <div class="task">
+        <div class="box"><svg viewBox="0 0 24 24" stroke-width="3" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <div class="tinfo">
+          <div class="tt">Enviar link de assinatura do contrato (ClickSign)</div>
+          <div class="tmeta"><span class="due"><svg viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>amanhã</span><span class="tav" style="background:var(--navy)">DM</span> Diogo ME</div>
+        </div>
+      </div>
+      <div class="task done">
+        <div class="box"><svg viewBox="0 0 24 24" stroke-width="3" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <div class="tinfo">
+          <div class="tt">Realizar teleconsulta com a fono</div>
+          <div class="tmeta"><span class="due">concluída ontem</span><span class="tav" style="background:#2E8B62">F</span> Fono Ana</div>
+        </div>
+      </div>
+      <div class="add-line"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova tarefa</div>
+    </div>
+
+    <!-- anotações -->
+    <div class="pane" data-pane="notas">
+      <div class="note ia">
+        <div class="nh"><span class="nav">C</span><span class="nn">Clara · resumo automático</span><span class="nt">propõe · valide</span></div>
+        <div class="nb">Paciente relatou <b>dificuldade de escuta em ambientes com ruído</b> e uso de aparelho antigo há 6 anos. Demonstrou interesse e perguntou sobre parcelamento. Bom perfil para fechamento.</div>
+      </div>
+      <div class="note">
+        <div class="nh"><span class="nav" style="background:#2E8B62">F</span><span class="nn">Fono Ana</span><span class="nt">ontem, 14:20</span></div>
+        <div class="nb">Perda auditiva <b>moderada bilateral</b>. Indicado par de AASI intra-auricular. Paciente adaptável, mora com a filha que ajuda no manuseio.</div>
+      </div>
+      <div class="note">
+        <div class="nh"><span class="nav" style="background:var(--navy)">DM</span><span class="nn">Diogo ME</span><span class="nt">ontem, 15:05</span></div>
+        <div class="nb">Filha (Juliana) é o contato de decisão. Pediu pra falar sobre valores só depois da consulta. Sensível a preço.</div>
+      </div>
+      <div class="note">
+        <div class="nh"><span class="nav" style="background:#7A4CA0">S</span><span class="nn">Sara</span><span class="nt">3 dias atrás</span></div>
+        <div class="nb">Assumi da Clara pra tirar dúvida sobre garantia. Respondida, devolvi pra régua.</div>
+      </div>
+      <div class="note-comp">
+        <textarea rows="1" placeholder="Escrever anotação para a equipe…"></textarea>
+        <button class="snd"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+      </div>
+    </div>
+
+    <!-- anexos -->
+    <div class="pane" data-pane="anexos">
+      <div class="anexo">
+        <div class="ai aud">AUD</div>
+        <div class="anf"><div class="an">audiometria_aparecida.pdf</div><div class="am">Exame · 480 KB · enviado pela Fono Ana ontem</div></div>
+        <span class="adl"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></span>
+      </div>
+      <div class="anexo">
+        <div class="ai img">RG</div>
+        <div class="anf"><div class="an">documento_identidade.jpg</div><div class="am">Imagem · 1,2 MB · enviado pela paciente há 2 dias</div></div>
+        <span class="adl"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></span>
+      </div>
+      <div class="anexo">
+        <div class="ai pdf">PDF</div>
+        <div class="anf"><div class="an">comprovante_residencia.pdf</div><div class="am">Documento · 210 KB · enviado há 2 dias</div></div>
+        <span class="adl"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></span>
+      </div>
+      <div class="add-line"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Anexar arquivo</div>
+    </div>
+
+    <!-- histórico (ledger) -->
+    <div class="pane" data-pane="hist">
+      <div class="ev prop"><span class="dotev"></span>
+        <div class="etop"><span class="etype">Levindo propôs análise de crédito</span><span class="etm">há 2h</span></div>
+        <div class="ebody">Faixa <b>B</b> · score 72 · aguardando validação de Diogo ME</div>
+      </div>
+      <div class="ev stage"><span class="dotev"></span>
+        <div class="etop"><span class="etype">Etapa alterada</span><span class="etm">há 2h</span></div>
+        <div class="ebody">Proposta enviada <b>→</b> Análise de crédito · por Diogo ME</div>
+      </div>
+      <div class="ev out"><span class="dotev"></span>
+        <div class="etop"><span class="etype">Mensagem enviada</span><span class="etm">ontem 15:40</span></div>
+        <div class="ebody">Clara: "Enviei os detalhes do modelo indicado pela fono 💙"</div>
+      </div>
+      <div class="ev appr"><span class="dotev"></span>
+        <div class="etop"><span class="etype">Sugestão aprovada</span><span class="etm">ontem 15:05</span></div>
+        <div class="ebody">Diogo ME aprovou a proposta de resposta da Clara</div>
+      </div>
+      <div class="ev in"><span class="dotev"></span>
+        <div class="etop"><span class="etype">Mensagem recebida</span><span class="etm">ontem 14:52</span></div>
+        <div class="ebody">Paciente: "E dá pra parcelar? Minha filha vai me ajudar"</div>
+      </div>
+      <div class="ev stage"><span class="dotev"></span>
+        <div class="etop"><span class="etype">Teleconsulta realizada</span><span class="etm">ontem 14:20</span></div>
+        <div class="ebody">Fono Ana · perda moderada bilateral · par de AASI indicado</div>
+      </div>
+      <div class="ev in"><span class="dotev"></span>
+        <div class="etop"><span class="etype">Lead recebido</span><span class="etm">3 dias atrás</span></div>
+        <div class="ebody">Entrada via WhatsApp · campanha Meta Ads "Escuta melhor"</div>
+      </div>
+    </div>
+
+  </div>
+</aside>
+
+<script>
+(function(){
+  const tabs=[...document.querySelectorAll('.tab')];
+  const panes=[...document.querySelectorAll('.pane')];
+  tabs.forEach(t=>t.addEventListener('click',()=>{
+    tabs.forEach(x=>x.classList.remove('on'));
+    panes.forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+    document.querySelector(`.pane[data-pane="${t.dataset.p}"]`).classList.add('on');
+  }));
+  // toggle task done
+  document.querySelectorAll('.task .box').forEach(b=>b.addEventListener('click',()=>b.closest('.task').classList.toggle('done')));
+  // textarea auto-grow
+  document.querySelectorAll('textarea').forEach(ta=>ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,90)+'px';}));
+  // close/goconv are visual (mockup)
+})();
+</script>
+</body>
+</html>

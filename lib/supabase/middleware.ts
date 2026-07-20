@@ -47,7 +47,7 @@ export async function atualizarSessao(request: NextRequest): Promise<NextRespons
 
   if (user && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/timeline";
+    url.pathname = "/funil";
     url.search = "";
     return NextResponse.redirect(url);
   }
