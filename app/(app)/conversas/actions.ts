@@ -29,10 +29,21 @@ export async function devolverConversa(conversaId: string): Promise<ResultadoEve
  * pra não "mentir"). O envio real só sai com o access token do Diogo; sem token, a bolha fica
  * "aguardando". Idempotência (dedup_id) casada com o Agent 1.
  */
-export async function enviarMensagem(conversaId: string, corpo: string): Promise<ResultadoEvento> {
+export async function enviarMensagem(
+  conversaId: string,
+  corpo: string,
+  chaveIdem?: string,
+): Promise<ResultadoEvento> {
   const texto = corpo.trim();
   if (!texto) return { ok: false, motivo: "mensagem vazia" };
-  const r = await registrarEventoUI("enviar_mensagem_humana", { conversa_id: conversaId, corpo: texto });
+  // chaveIdem = id da bolha otimista: "Tentar de novo" da mesma bolha reusa a chave e o dedupe da
+  // porta absorve (se a 1ª chamada gravou mas a resposta se perdeu, não sai duplicado no WhatsApp).
+  const r = await registrarEventoUI(
+    "enviar_mensagem_humana",
+    { conversa_id: conversaId, corpo: texto },
+    undefined,
+    chaveIdem,
+  );
   revalidatePath("/conversas");
   return r;
 }
