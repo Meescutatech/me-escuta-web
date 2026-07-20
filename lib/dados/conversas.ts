@@ -12,6 +12,15 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 export type ModoConversa = "IA" | "HUMANO";
 export type Direcao = "entrada" | "saida";
 
+/**
+ * Estado de entrega da mensagem de SAÍDA — contrato SPEC-PIPELINE-MENSAGENS RF-5 (máquina
+ * monotônica projetada pela Trilha A em core.mensagem: status_entrega/status_em/erro_codigo).
+ * Enquanto a projeção não existir no banco, lerMensagens degrada para o select base e o campo
+ * fica undefined — a UI então NÃO mostra check nenhum (fallback honesto, nunca check mentiroso).
+ */
+export type EstadoEntrega = "na_fila" | "enviando" | "enviado" | "entregue" | "lido" | "falhou";
+export type AutorSaida = "clara" | "sara";
+
 export interface ConversaResumo {
   id: string;
   telefone: string | null;
@@ -31,6 +40,7 @@ export interface ConversaResumo {
   previa?: string | null; // corpo da última mensagem
   previa_saida?: boolean; // última msg foi de saída (Você/Clara)
   nao_lida?: boolean; // proxy: última msg foi do cliente (entrada), sem resposta
+  nao_lidas_qtd?: number; // proxy: qtde de mensagens de entrada após a última saída (RF-30/31)
 }
 
 export interface Mensagem {
@@ -40,7 +50,10 @@ export interface Mensagem {
   corpo: string | null;
   criado_em: string;
   pendente?: boolean; // bolha local ainda não enviada de fato (envio humano aguardando fila_saida)
-  autor?: "clara" | "sara"; // bolha de saída: Clara (laranja) vs Sara (roxo). Histórico → Clara.
+  autor?: AutorSaida; // bolha de saída: Clara vs Sara. Sem coluna no banco ainda → Clara (histórico).
+  status_entrega?: EstadoEntrega | null; // projeção RF-5 (Trilha A); undefined = sem status (check some)
+  erro_codigo?: string | null; // código Meta quando status_entrega='falhou' (ex.: 131047, 131026)
+  falha_local?: boolean; // envio otimista que a action recusou — tentar de novo refaz a intenção
 }
 
 export interface SugestaoMensagem {
@@ -61,23 +74,33 @@ function minsAtras(m: number): string {
   return new Date(Date.now() - m * 60000).toISOString();
 }
 
+function segsAtras(s: number): string {
+  return new Date(Date.now() - s * 1000).toISOString();
+}
+
 const CONVERSAS_MOCK: ConversaResumo[] = [
-  { id: "c-mock-1", telefone: "5531988776655", nome: "Terezinha de Jesus", mode: "IA", dono_atual: null, status: "nova", atualizado_em: minsAtras(3), etapa: "qualificando", etapa_nome: "Qualificação", entrou_etapa_em: minsAtras(1440), valor: null, origem: "meta", idade: 63, previa: "Primeiro. Ela tem dificuldade principalmente quando tem barulho", previa_saida: false, nao_lida: true },
-  { id: "c-mock-2", telefone: "5521991450087", nome: "João Batista Neves", mode: "HUMANO", dono_atual: "humano:sara", status: "em_atendimento", atualizado_em: minsAtras(25), etapa: "negociacao", etapa_nome: "Negociação", entrou_etapa_em: minsAtras(2880), valor: 11400, origem: "wa", previa: "Oi! Aqui é a Sara, assumi pra te explicar direitinho.", previa_saida: true, nao_lida: false },
-  { id: "c-mock-3", telefone: "5531983307712", nome: null, mode: "IA", dono_atual: null, status: "aguardando", atualizado_em: minsAtras(140), etapa: "novo", etapa_nome: "Novo lead", entrou_etapa_em: minsAtras(140), valor: null, origem: "meta", previa: null, previa_saida: false, nao_lida: true },
+  { id: "c-mock-1", telefone: "5531988776655", nome: "Terezinha de Jesus", mode: "IA", dono_atual: null, status: "nova", atualizado_em: minsAtras(3), etapa: "qualificando", etapa_nome: "Qualificação", entrou_etapa_em: minsAtras(1440), valor: null, origem: "meta", idade: 63, previa: "Primeiro. Ela tem dificuldade principalmente quando tem barulho", previa_saida: false, nao_lida: true, nao_lidas_qtd: 3 },
+  { id: "c-mock-2", telefone: "5521991450087", nome: "João Batista Neves", mode: "HUMANO", dono_atual: "humano:sara", status: "em_atendimento", atualizado_em: minsAtras(25), etapa: "negociacao", etapa_nome: "Negociação", entrou_etapa_em: minsAtras(2880), valor: 11400, origem: "wa", previa: "Oi! Aqui é a Sara, assumi pra te explicar direitinho.", previa_saida: true, nao_lida: false, nao_lidas_qtd: 0 },
+  { id: "c-mock-3", telefone: "5531983307712", nome: null, mode: "IA", dono_atual: null, status: "aguardando", atualizado_em: minsAtras(140), etapa: "novo", etapa_nome: "Novo lead", entrou_etapa_em: minsAtras(140), valor: null, origem: "meta", previa: null, previa_saida: false, nao_lida: true, nao_lidas_qtd: 1 },
 ];
 
 const MENSAGENS_MOCK: Record<string, Mensagem[]> = {
   "c-mock-1": [
+    // dia anterior → separador de dia
+    { id: "mm0", direcao: "entrada", tipo_conteudo: "text", corpo: "Boa noite", criado_em: minsAtras(60 * 26) },
     { id: "mm1", direcao: "entrada", tipo_conteudo: "text", corpo: "Oi, vi o anúncio de vocês sobre aparelho auditivo", criado_em: minsAtras(30) },
-    { id: "mm2", direcao: "saida", tipo_conteudo: "text", corpo: "Olá! Que bom te ver por aqui 💙 Sou a Clara, da Me Escuta. Posso te fazer algumas perguntinhas pra entender como te ajudar?", criado_em: minsAtras(29) },
+    { id: "mm2", direcao: "saida", tipo_conteudo: "text", corpo: "Olá! Que bom te ver por aqui 💙 Sou a Clara, da Me Escuta. Posso te fazer algumas perguntinhas pra entender como te ajudar?", criado_em: minsAtras(29), autor: "clara", status_entrega: "lido" },
     { id: "mm3", direcao: "entrada", tipo_conteudo: "text", corpo: "Pode sim. É pra minha mãe, ela tem 75 anos", criado_em: minsAtras(20) },
-    { id: "mm4", direcao: "saida", tipo_conteudo: "text", corpo: "Perfeito! E ela já usou algum aparelho antes, ou seria o primeiro?", criado_em: minsAtras(19) },
-    { id: "mm5", direcao: "entrada", tipo_conteudo: "text", corpo: "Primeiro. Ela tem dificuldade principalmente quando tem barulho", criado_em: minsAtras(3) },
+    { id: "mm4", direcao: "saida", tipo_conteudo: "text", corpo: "Perfeito! E ela já usou algum aparelho antes, ou seria o primeiro?", criado_em: minsAtras(19), autor: "clara", status_entrega: "entregue" },
+    // rajada da cliente (mesmo autor, <60s) → agrupa numa fala só
+    { id: "mm5", direcao: "entrada", tipo_conteudo: "text", corpo: "Primeiro. Ela tem dificuldade principalmente quando tem barulho", criado_em: segsAtras(200) },
+    { id: "mm5b", direcao: "entrada", tipo_conteudo: "text", corpo: "na igreja ela não escuta o padre", criado_em: segsAtras(185) },
+    { id: "mm5c", direcao: "entrada", tipo_conteudo: "audio", corpo: null, criado_em: segsAtras(170) },
   ],
   "c-mock-2": [
     { id: "mm6", direcao: "entrada", tipo_conteudo: "text", corpo: "Queria saber da garantia", criado_em: minsAtras(40) },
-    { id: "mm7", direcao: "saida", tipo_conteudo: "text", corpo: "Oi! Aqui é a Sara, assumi pra te explicar direitinho. A garantia é de 1 ano contra defeitos + 90 dias de adaptação.", criado_em: minsAtras(25) },
+    { id: "mm7", direcao: "saida", tipo_conteudo: "text", corpo: "Oi! Aqui é a Sara, assumi pra te explicar direitinho. A garantia é de 1 ano contra defeitos + 90 dias de adaptação.", criado_em: minsAtras(25), autor: "sara", status_entrega: "enviado" },
+    { id: "mm7b", direcao: "saida", tipo_conteudo: "text", corpo: "Consegue falar agora? Posso te ligar.", criado_em: minsAtras(24), autor: "sara", status_entrega: "falhou", erro_codigo: "131047" },
   ],
   "c-mock-3": [
     { id: "mm8", direcao: "entrada", tipo_conteudo: "text", corpo: "Bom dia", criado_em: minsAtras(140) },
@@ -136,9 +159,11 @@ export async function lerConversas(): Promise<DadosConversas> {
       /* sem config — usa a própria chave */
     }
 
-    // prévia = última mensagem por conversa (1 query, reduzido no cliente)
+    // prévia = última mensagem por conversa + contagem de não-lidas (proxy RF-30/31: mensagens de
+    // entrada após a última saída — sem rastreio de leitura no banco ainda, é o proxy honesto)
     const ids = data.map((c: any) => String(c.id));
     const previa = new Map<string, { corpo: string | null; saida: boolean }>();
+    const naoLidas = new Map<string, number>();
     try {
       const { data: msgs } = await supabase
         .schema("core")
@@ -147,9 +172,14 @@ export async function lerConversas(): Promise<DadosConversas> {
         .in("conversa_id", ids)
         .order("criado_em", { ascending: false })
         .limit(800);
+      const fechada = new Set<string>(); // conversa já encontrou uma saída — para de contar
       for (const m of msgs ?? []) {
         const k = String(m.conversa_id);
         if (!previa.has(k)) previa.set(k, { corpo: m.corpo ?? null, saida: m.direcao === "saida" });
+        if (!fechada.has(k)) {
+          if (m.direcao === "saida") fechada.add(k);
+          else naoLidas.set(k, (naoLidas.get(k) ?? 0) + 1);
+        }
       }
     } catch {
       /* sem prévia — lista degrada pro rótulo de origem */
@@ -177,6 +207,7 @@ export async function lerConversas(): Promise<DadosConversas> {
         previa: p?.corpo ?? null,
         previa_saida: p?.saida ?? false,
         nao_lida: p ? !p.saida : false,
+        nao_lidas_qtd: naoLidas.get(String(c.id)) ?? 0,
       };
     });
     return { conversas, fonte: "real" };
@@ -185,24 +216,40 @@ export async function lerConversas(): Promise<DadosConversas> {
   }
 }
 
+/** Colunas da projeção de entrega (Trilha A, migrations 0017-0029) — contrato SPEC RF-5. */
+const COLUNAS_BASE = "id,direcao,tipo_conteudo,corpo,criado_em";
+const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor`;
+
 export async function lerMensagens(conversaId: string, fonte: "real" | "mock"): Promise<Mensagem[]> {
   if (fonte === "mock") return MENSAGENS_MOCK[conversaId] ?? [];
   try {
     const supabase = criarClienteServidor();
-    const { data, error } = await supabase
-      .schema("core")
-      .from("mensagem")
-      .select("id,direcao,tipo_conteudo,corpo,criado_em")
-      .eq("conversa_id", conversaId)
-      .order("criado_em", { ascending: true })
-      .limit(500);
+    // Ordenação RF-6: timestamp de origem + id como desempate dentro do mesmo segundo.
+    const buscar = (colunas: string) =>
+      supabase
+        .schema("core")
+        .from("mensagem")
+        .select(colunas)
+        .eq("conversa_id", conversaId)
+        .order("criado_em", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(500);
+
+    // Tenta o contrato completo (com projeção de status da Trilha A); se as colunas ainda não
+    // existirem no banco, degrada pro select base — a UI fica sem checks, nunca com check falso.
+    let { data, error } = await buscar(COLUNAS_COM_STATUS);
+    if (error) ({ data, error } = await buscar(COLUNAS_BASE));
     if (error || !data) return [];
-    return data.map((m: any) => ({
+
+    return (data as any[]).map((m: any) => ({
       id: String(m.id),
       direcao: (m.direcao ?? "entrada") as Direcao,
       tipo_conteudo: m.tipo_conteudo ?? "text",
       corpo: m.corpo ?? null,
       criado_em: m.criado_em,
+      autor: m.autor === "sara" ? "sara" : m.autor === "clara" ? "clara" : undefined,
+      status_entrega: (m.status_entrega as EstadoEntrega | null | undefined) ?? undefined,
+      erro_codigo: m.erro_codigo ?? undefined,
     }));
   } catch {
     return [];
