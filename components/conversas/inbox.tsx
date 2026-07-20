@@ -9,15 +9,19 @@ import {
   enviarMensagem,
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
+import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
+import { useConversaViva } from "@/components/conversas/tempo-real";
+import { fronteiraNaoLidas, montarBlocos, motivoErroPermanente } from "@/lib/conversas/thread";
 import { diasNaEtapa } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 
 /*
- * /conversas — redesign "Kommo minimalista" (fase 2). Spec: Product_Management/Design/conversa-v2.html.
- * 3 zonas: lista (302px) · thread · contexto do lead (288px, colapsável, auto-recolhe <1180px).
- * Overdose de laranja removida: bolhas neutras, posse como pill discreta, sugestão em card branco
- * com acento só na borda esquerda + ÚNICO CTA sólido (Aprovar e enviar). Lógica de dados INTOCADA
- * (assumir/devolver/enviar/validar_sugestao seguem as mesmas actions/RPC-porta).
+ * /conversas — redesign "Kommo minimalista" (fase 2) + thread real (rodada 4, SPEC RF-27..33).
+ * Spec visual: Product_Management/Design/conversa-v2.html (3 zonas, tokens). Comportamento:
+ * SPEC-PIPELINE-MENSAGENS — agrupamento de rajada 60s, checks de entrega da projeção da Trilha A
+ * (check SOME quando não há status — nunca check mentiroso), separador de dia sticky, divider de
+ * não-lidas + pill sem roubar scroll, lista viva, Realtime como dica + refetch como verdade,
+ * optimistic UI que preserva o texto na falha. Lógica de escrita INTOCADA (actions/RPC-porta).
  */
 
 const ORIGEM_ROTULO: Record<string, string> = {
@@ -66,16 +70,6 @@ function tempoLista(iso: string | null): string {
   if (difDias < 7) return DIAS[d.getDay()];
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
-function diaLabel(iso: string): string {
-  const d = new Date(iso);
-  const agora = new Date();
-  const hoje0 = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
-  const dia0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const dif = Math.round((hoje0 - dia0) / 86400000);
-  if (dif <= 0) return "hoje";
-  if (dif === 1) return "ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
-}
 function moeda(v: number | null | undefined): string {
   return v == null ? "" : "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
@@ -85,7 +79,7 @@ function textoNaEtapa(iso: string | null | undefined): string {
   return dd === 0 ? "hoje" : dd === 1 ? "1 dia" : `${dd} dias`;
 }
 
-type Aba = "todas" | "minhas" | "nao_lidas";
+type Aba = "todas" | "clara" | "humano" | "nao_lidas";
 
 export function Inbox({
   conversas,
@@ -104,7 +98,9 @@ export function Inbox({
   const [pending, startTransition] = useTransition();
   const selecionada = conversas.find((c) => c.id === selecionadaId) ?? null;
 
-  const [msgs, setMsgs] = useState<Mensagem[]>(mensagens);
+  // pendentes = bolhas otimistas locais (RF-32); a lista do servidor é sempre a verdade e a
+  // reconciliação remove a pendente quando a projeção confirma a mensagem (match por corpo).
+  const [pendentes, setPendentes] = useState<Mensagem[]>([]);
   const [props_, setProps] = useState<SugestaoMensagem[]>(sugestoes);
   const [mode, setMode] = useState<ModoConversa>(selecionada?.mode ?? "IA");
   const [rascunho, setRascunho] = useState("");
@@ -113,19 +109,77 @@ export function Inbox({
   const [editando, setEditando] = useState<{ id: string; texto: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [ctxColapsado, setCtxColapsado] = useState(false);
-  const fimRef = useRef<HTMLDivElement>(null);
+  const [novas, setNovas] = useState(0); // pill "N novas" quando o scroll está lá em cima (RF-30)
+  const [fronteira, setFronteira] = useState<{ primeiraId: string; qtd: number } | null>(null);
 
+  const rolagemRef = useRef<HTMLDivElement>(null);
+  const fimRef = useRef<HTMLDivElement>(null);
+  const divisorRef = useRef<HTMLDivElement>(null);
+  const noFimRef = useRef(true);
+  const totalAnteriorRef = useRef(-1); // -1 = próxima renderização é abertura de conversa
+
+  // Realtime (dica) + polling (fallback) → refetch das projeções (RF-9/32)
+  useConversaViva(selecionadaId, fonte === "real");
+
+  // cada refetch re-sincroniza com o servidor (a verdade é a projeção; o rascunho/edição ficam)
   useEffect(() => {
-    setMsgs(mensagens);
     setProps(sugestoes);
     setMode(selecionada?.mode ?? "IA");
-    setEditando(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selecionadaId, mensagens, sugestoes]);
+  }, [sugestoes, selecionada?.mode]);
 
+  // troca de conversa: zera estado local e calcula a fronteira de não-lidas UMA vez (RF-30)
   useEffect(() => {
+    setPendentes([]);
+    setEditando(null);
+    setNovas(0);
+    setFronteira(fronteiraNaoLidas(mensagens));
+    noFimRef.current = true;
+    totalAnteriorRef.current = -1;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selecionadaId]);
+
+  // mensagens visíveis = servidor + pendentes ainda não confirmadas pela projeção
+  const visiveis = useMemo(() => {
+    const vivos = pendentes.filter(
+      (p) =>
+        !mensagens.some(
+          (m) => m.direcao === "saida" && (m.corpo ?? "").trim() === (p.corpo ?? "").trim(),
+        ),
+    );
+    return [...mensagens, ...vivos];
+  }, [mensagens, pendentes]);
+
+  const blocos = useMemo(() => montarBlocos(visiveis), [visiveis]);
+
+  // abertura → âncora no divider de não-lidas (ou no fim); mensagem nova → rola só se já estava
+  // no fim, senão vira contador na pill — NUNCA rouba o scroll da Sara (RF-30)
+  useEffect(() => {
+    const total = visiveis.length;
+    if (totalAnteriorRef.current === -1) {
+      const alvo = divisorRef.current ?? fimRef.current;
+      const centro = !!divisorRef.current;
+      requestAnimationFrame(() => alvo?.scrollIntoView({ block: centro ? "center" : "end" }));
+    } else if (total > totalAnteriorRef.current) {
+      if (noFimRef.current) fimRef.current?.scrollIntoView({ behavior: "smooth" });
+      else setNovas((v) => v + (total - totalAnteriorRef.current));
+    }
+    totalAnteriorRef.current = total;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visiveis.length]);
+
+  function aoRolar() {
+    const el = rolagemRef.current;
+    if (!el) return;
+    const nf = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    noFimRef.current = nf;
+    if (nf) setNovas(0);
+  }
+
+  function irProFim() {
     fimRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs.length, props_.length]);
+    setNovas(0);
+  }
 
   // painel de contexto auto-recolhe em tela estreita (thread respira) — spec §2
   useEffect(() => {
@@ -137,10 +191,12 @@ export function Inbox({
     setTimeout(() => setToast(null), 3500);
   }
 
+  // filtros da lista (RF-31): Todas · Clara conduz · Humano conduz · Não lidas
   const contagens = useMemo(
     () => ({
       todas: conversas.length,
-      minhas: conversas.filter((c) => c.mode === "HUMANO").length,
+      clara: conversas.filter((c) => c.mode === "IA").length,
+      humano: conversas.filter((c) => c.mode === "HUMANO").length,
       nao_lidas: conversas.filter((c) => c.nao_lida).length,
     }),
     [conversas],
@@ -149,7 +205,8 @@ export function Inbox({
   const conversasVisiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return conversas.filter((c) => {
-      if (aba === "minhas" && c.mode !== "HUMANO") return false;
+      if (aba === "clara" && c.mode !== "IA") return false;
+      if (aba === "humano" && c.mode !== "HUMANO") return false;
       if (aba === "nao_lidas" && !c.nao_lida) return false;
       if (!q) return true;
       return (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").includes(q);
@@ -176,37 +233,50 @@ export function Inbox({
     });
   }
 
-  function enviar() {
-    const texto = rascunho.trim();
-    if (!texto || !selecionada) return;
-    const otimista: Mensagem = {
-      id: `tmp-${Date.now()}`,
-      direcao: "saida",
-      tipo_conteudo: "texto",
-      corpo: texto,
-      criado_em: new Date().toISOString(),
-      pendente: true,
-      autor: mode === "HUMANO" ? "sara" : "clara",
-    };
-    setMsgs((p) => [...p, otimista]);
-    setRascunho("");
+  /** Despacha texto pro backend com bolha otimista; falha NÃO descarta o texto (RF-32). */
+  function despachar(texto: string, idPendente?: string) {
+    if (!selecionada) return;
+    const id = idPendente ?? `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (idPendente) {
+      setPendentes((p) => p.map((m) => (m.id === id ? { ...m, falha_local: false } : m)));
+    } else {
+      setPendentes((p) => [
+        ...p,
+        {
+          id,
+          direcao: "saida",
+          tipo_conteudo: "texto",
+          corpo: texto,
+          criado_em: new Date().toISOString(),
+          pendente: true,
+          autor: mode === "HUMANO" ? "sara" : "clara",
+        },
+      ]);
+      requestAnimationFrame(() => fimRef.current?.scrollIntoView({ behavior: "smooth" }));
+    }
     startTransition(async () => {
       const r = await enviarMensagem(selecionada.id, texto);
       if (r.ok) {
-        avisar("Mensagem enfileirada — sai no WhatsApp quando o token estiver plugado.");
         router.refresh();
       } else {
-        setMsgs((p) => p.filter((m) => m.id !== otimista.id));
+        setPendentes((p) => p.map((m) => (m.id === id ? { ...m, falha_local: true } : m)));
         avisar(`Falha ao enviar: ${r.motivo ?? "erro"}`);
       }
     });
+  }
+
+  function enviar() {
+    const texto = rascunho.trim();
+    if (!texto || !selecionada) return;
+    setRascunho("");
+    despachar(texto);
   }
 
   function aprovar(sug: SugestaoMensagem, textoFinal: string) {
     const editado = textoFinal.trim() !== sug.corpo.trim();
     setProps((p) => p.filter((s) => s.id !== sug.id));
     setEditando(null);
-    setMsgs((p) => [
+    setPendentes((p) => [
       ...p,
       {
         id: `apv-${sug.id}`,
@@ -227,7 +297,7 @@ export function Inbox({
         router.refresh();
       } else {
         setProps((p) => [sug, ...p]);
-        setMsgs((p) => p.filter((m) => m.id !== `apv-${sug.id}`));
+        setPendentes((p) => p.filter((m) => m.id !== `apv-${sug.id}`));
         avisar(`Falha ao validar: ${r.motivo ?? "erro"}`);
       }
     });
@@ -256,18 +326,6 @@ export function Inbox({
     : "";
   const origemLabel = selecionada?.origem ? ORIGEM_ROTULO[selecionada.origem.toLowerCase()] ?? selecionada.origem : null;
 
-  // agrupa mensagens por dia p/ separador
-  const blocos = useMemo(() => {
-    const out: { dia: string; itens: Mensagem[] }[] = [];
-    for (const m of msgs) {
-      const dia = diaLabel(m.criado_em);
-      const ult = out[out.length - 1];
-      if (ult && ult.dia === dia) ult.itens.push(m);
-      else out.push({ dia, itens: [m] });
-    }
-    return out;
-  }, [msgs]);
-
   return (
     <div className="flex h-[calc(100vh-58px)] bg-board">
       {/* ═══════════ ZONA 1 · LISTA ═══════════ */}
@@ -287,10 +345,11 @@ export function Inbox({
             />
           </label>
         </div>
-        <div className="flex gap-3.5 px-4 pb-1.5 pt-2.5">
+        <div className="flex gap-3 px-4 pb-1.5 pt-2.5">
           {([
             ["todas", `Todas · ${contagens.todas}`],
-            ["minhas", `Minhas · ${contagens.minhas}`],
+            ["clara", `Clara · ${contagens.clara}`],
+            ["humano", `Humano · ${contagens.humano}`],
             ["nao_lidas", `Não lidas · ${contagens.nao_lidas}`],
           ] as [Aba, string][]).map(([k, rot]) => (
             <button
@@ -351,7 +410,13 @@ export function Inbox({
                     {prev}
                   </div>
                 </div>
-                {c.nao_lida && <span className="mt-3 h-[7px] w-[7px] shrink-0 self-start rounded-full bg-laranja" />}
+                {(c.nao_lidas_qtd ?? 0) > 0 ? (
+                  <span className="mt-2.5 grid h-[17px] min-w-[17px] shrink-0 place-items-center self-start rounded-full bg-laranja px-1 text-[0.66rem] font-semibold leading-none text-branco">
+                    {c.nao_lidas_qtd! > 9 ? "9+" : c.nao_lidas_qtd}
+                  </span>
+                ) : c.nao_lida ? (
+                  <span className="mt-3 h-[7px] w-[7px] shrink-0 self-start rounded-full bg-laranja" />
+                ) : null}
               </button>
             );
           })}
@@ -396,42 +461,94 @@ export function Inbox({
               </div>
             </div>
 
-            {/* mensagens */}
-            <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-6 py-5">
-              {msgs.length === 0 && props_.length === 0 && (
+            {/* mensagens — thread real (RF-27..33) */}
+            <div className="relative flex min-h-0 flex-1 flex-col">
+            <div ref={rolagemRef} onScroll={aoRolar} className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-6 py-5">
+              {visiveis.length === 0 && props_.length === 0 && (
                 <div className="m-auto max-w-sm text-center text-sm text-mute">Sem mensagens ainda nesta conversa.</div>
               )}
               {blocos.map((bloco, bi) => (
-                <div key={bi} className="flex flex-col gap-2.5">
-                  <span className="my-1 self-center rounded-full border border-linha bg-branco px-3 py-0.5 text-[0.71rem] text-mute">
+                <div key={bi} className="flex flex-col gap-3.5">
+                  {/* separador de dia — chip sticky durante o scroll (RF-29) */}
+                  <span className="sticky top-0 z-10 my-1 self-center rounded-full border border-linha bg-branco px-3 py-0.5 text-[0.71rem] text-mute shadow-suave">
                     {bloco.dia}
                   </span>
-                  {bloco.itens.map((m) => {
-                    const saida = m.direcao === "saida";
-                    const autor = saida ? (m.autor === "sara" ? "Você" : "Clara") : null;
+                  {bloco.grupos.map((grupo, gi) => {
+                    const saida = grupo.falante !== "cliente";
+                    const comDivisor = fronteira && grupo.itens[0]?.id === fronteira.primeiraId;
                     return (
-                      <div key={m.id} className={cn("flex max-w-[66%] flex-col", saida ? "self-end items-end" : "self-start items-start")}>
-                        <div
-                          className={cn(
-                            "whitespace-pre-wrap break-words px-3.5 py-2.5 text-[0.88rem] leading-relaxed",
-                            saida
-                              ? "rounded-[13px] rounded-br-[5px] border border-linha bg-bolha-out text-tinta"
-                              : "rounded-[13px] rounded-bl-[5px] bg-bolha-in text-tinta",
-                          )}
-                        >
-                          {m.corpo ?? <span className="italic opacity-70">[{m.tipo_conteudo}]</span>}
-                        </div>
-                        <div className="mt-[3px] px-1 text-[0.68rem] tabular-nums text-mute">
-                          {m.pendente ? (
-                            saida && m.autor === "sara" ? "não enviado · aguardando fila" : "✓ aprovada · aguardando envio"
-                          ) : (
-                            <>
-                              {autor === "Clara" && <b className="font-medium text-laranja">Clara</b>}
-                              {autor === "Você" && <b className="font-medium text-navy">Você</b>}
-                              {autor ? " · " : ""}
-                              {hhmm(m.criado_em)}
-                            </>
-                          )}
+                      <div key={gi} className="flex flex-col gap-3.5">
+                        {comDivisor && (
+                          <div ref={divisorRef} className="my-1 flex items-center gap-3" aria-label="início das não lidas">
+                            <span className="h-px flex-1 bg-linha-forte" />
+                            <span className="rounded-full bg-laranja-cl px-3 py-0.5 text-[0.7rem] font-semibold text-laranja-esc">
+                              {fronteira.qtd === 1 ? "1 não lida" : `${fronteira.qtd} não lidas`}
+                            </span>
+                            <span className="h-px flex-1 bg-linha-forte" />
+                          </div>
+                        )}
+                        {/* grupo de rajada: mesmo falante + 60s → bolhas coladas (3px), meta só na última (RF-27) */}
+                        <div className={cn("flex max-w-[66%] flex-col gap-[3px]", saida ? "self-end items-end" : "self-start items-start")}>
+                          {grupo.itens.map((m, mi) => {
+                            const primeira = mi === 0;
+                            const ultima = mi === grupo.itens.length - 1;
+                            const falhou = m.status_entrega === "falhou" || m.falha_local;
+                            const motivo = motivoErroPermanente(m.erro_codigo);
+                            const recente = Date.now() - new Date(m.criado_em).getTime() < 86400000;
+                            const podeRetry = !!m.corpo && recente && (m.falha_local || (m.status_entrega === "falhou" && !motivo));
+                            return (
+                              <div key={m.id} className={cn("flex flex-col", saida ? "items-end" : "items-start")}>
+                                <div
+                                  className={cn(
+                                    "whitespace-pre-wrap break-words px-3.5 py-2.5 text-[0.88rem] leading-relaxed",
+                                    saida
+                                      ? "rounded-[13px] rounded-br-[5px] border border-linha bg-bolha-out text-tinta"
+                                      : "rounded-[13px] rounded-bl-[5px] bg-bolha-in text-tinta",
+                                    saida && !primeira && "rounded-tr-[5px]",
+                                    !saida && !primeira && "rounded-tl-[5px]",
+                                    falhou && "border border-vermelho-bd bg-vermelho-bg",
+                                  )}
+                                >
+                                  <ConteudoBolha m={m} />
+                                </div>
+                                {falhou ? (
+                                  <div className="mt-[3px] flex items-center gap-2 px-1 text-[0.7rem] text-vermelho">
+                                    <span>
+                                      não entregue{motivo ? ` — ${motivo}` : m.falha_local ? " — falha ao enfileirar" : m.erro_codigo ? ` — erro ${m.erro_codigo}` : ""}
+                                    </span>
+                                    {podeRetry && (
+                                      <button
+                                        onClick={() => despachar(m.corpo!, m.falha_local ? m.id : undefined)}
+                                        disabled={pending}
+                                        className="font-semibold underline underline-offset-2 hover:text-tinta disabled:opacity-50"
+                                      >
+                                        Tentar de novo
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : ultima ? (
+                                  <div className="mt-[3px] px-1 text-[0.68rem] tabular-nums text-mute">
+                                    {saida && grupo.falante === "clara" && <b className="font-medium text-laranja">Clara</b>}
+                                    {saida && grupo.falante === "sara" && <b className="font-medium text-navy">Você</b>}
+                                    {saida ? " · " : ""}
+                                    {hhmm(m.criado_em)}
+                                    {saida && (
+                                      <span className="ml-1.5">
+                                        {m.pendente ? (
+                                          <>
+                                            <EstadoEntregaIcone estado="na_fila" />
+                                            <span className="ml-1">aguardando fila</span>
+                                          </>
+                                        ) : (
+                                          <EstadoEntregaIcone estado={m.status_entrega} />
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -501,6 +618,20 @@ export function Inbox({
                   );
                 })}
               <div ref={fimRef} />
+            </div>
+
+            {/* pill de novas mensagens — aparece quando o scroll está lá em cima; clique desce (RF-30) */}
+            {novas > 0 && (
+              <button
+                onClick={irProFim}
+                className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 rounded-full bg-navy px-3.5 py-2 text-[0.78rem] font-semibold text-branco shadow-forte transition-colors hover:bg-navy-esc focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/40"
+              >
+                <svg viewBox="0 0 24 24" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 stroke-current" fill="none">
+                  <path d="M12 5v14m0 0-6-6m6 6 6-6" />
+                </svg>
+                {novas === 1 ? "1 nova" : `${novas} novas`}
+              </button>
+            )}
             </div>
 
             {/* composer sensível ao modo */}
@@ -642,5 +773,62 @@ function LinhaCtx({ k, children }: { k: string; children: React.ReactNode }) {
       <span className="text-suave">{k}</span>
       <span className="ml-auto font-medium tabular-nums">{children}</span>
     </div>
+  );
+}
+
+/**
+ * Conteúdo da bolha por tipo (RF-33, degradação HONESTA): a pipeline de mídia (container
+ * me-escuta-midia) ainda não existe — áudio/imagem/documento aparecem nomeados, com a
+ * transcrição/visualização anunciada como pendente em vez de player quebrado ou URL da Meta.
+ */
+function ConteudoBolha({ m }: { m: Mensagem }) {
+  const tipo = (m.tipo_conteudo ?? "text").toLowerCase();
+  if (tipo === "text" || tipo === "texto") {
+    return m.corpo ? <>{m.corpo}</> : <span className="italic opacity-70">[mensagem vazia]</span>;
+  }
+  if (tipo === "audio" || tipo === "voice" || tipo === "ptt") {
+    return (
+      <span className="flex flex-col gap-1">
+        <span className="flex items-center gap-2 font-medium">
+          <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 stroke-suave" fill="none">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 10a7 7 0 0 0 14 0M12 17v4" />
+          </svg>
+          Mensagem de voz
+        </span>
+        {m.corpo ? (
+          <span className="text-[0.84rem] text-suave">“{m.corpo}”</span>
+        ) : (
+          <span className="text-[0.76rem] italic text-mute">transcrição e player chegam com a pipeline de mídia</span>
+        )}
+      </span>
+    );
+  }
+  const rotulo =
+    tipo === "image" || tipo === "imagem"
+      ? "Foto recebida"
+      : tipo === "document" || tipo === "documento"
+        ? "Documento recebido"
+        : tipo === "video"
+          ? "Vídeo recebido"
+          : tipo === "sticker"
+            ? "Figurinha"
+            : `Mensagem (${tipo})`;
+  return (
+    <span className="flex flex-col gap-1">
+      <span className="flex items-center gap-2 font-medium">
+        <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 stroke-suave" fill="none">
+          <path d="M21 15V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3z" />
+          <circle cx="9" cy="9" r="2" />
+          <path d="m21 15-4.5-4.5L7 20" />
+        </svg>
+        {rotulo}
+      </span>
+      {m.corpo ? (
+        <span className="text-[0.84rem] text-suave">{m.corpo}</span>
+      ) : (
+        <span className="text-[0.76rem] italic text-mute">visualização chega com a pipeline de mídia</span>
+      )}
+    </span>
   );
 }
