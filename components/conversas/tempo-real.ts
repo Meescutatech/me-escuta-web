@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { criarClienteBrowser } from "@/lib/supabase/client";
 
 /**
@@ -34,30 +35,39 @@ export function useConversaViva(conversaId: string | null, ativo: boolean) {
     };
 
     const supabase = criarClienteBrowser();
-    const canais = [
-      supabase
-        .channel("conversas")
-        .on("broadcast", { event: "*" }, atualizar)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "core", table: "conversa" },
-          atualizar,
-        )
-        .subscribe(),
-    ];
-    if (conversaId) {
+    const canais: RealtimeChannel[] = [];
+    let cancelado = false;
+    // Broadcast from Database publica em canal PRIVADO (realtime.send private=true) — a assinatura
+    // precisa de { private: true } E do JWT do usuário no Realtime (setAuth), senão a dica nunca chega.
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (cancelado) return;
+      if (data.session?.access_token) supabase.realtime.setAuth(data.session.access_token);
       canais.push(
         supabase
-          .channel(`conversa:${conversaId}`)
+          .channel("conversas", { config: { private: true } })
           .on("broadcast", { event: "*" }, atualizar)
           .on(
             "postgres_changes",
-            { event: "*", schema: "core", table: "mensagem", filter: `conversa_id=eq.${conversaId}` },
+            { event: "*", schema: "core", table: "conversa" },
             atualizar,
           )
           .subscribe(),
       );
-    }
+      if (conversaId) {
+        canais.push(
+          supabase
+            .channel(`conversa:${conversaId}`, { config: { private: true } })
+            .on("broadcast", { event: "*" }, atualizar)
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "core", table: "mensagem", filter: `conversa_id=eq.${conversaId}` },
+              atualizar,
+            )
+            .subscribe(),
+        );
+      }
+    })();
 
     // fallback: polling só com a aba visível + refetch ao voltar o foco
     const tick = setInterval(() => {
@@ -68,6 +78,7 @@ export function useConversaViva(conversaId: string | null, ativo: boolean) {
     document.addEventListener("visibilitychange", aoFocar);
 
     return () => {
+      cancelado = true;
       clearInterval(tick);
       window.removeEventListener("focus", aoFocar);
       document.removeEventListener("visibilitychange", aoFocar);

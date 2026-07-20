@@ -79,7 +79,7 @@ function textoNaEtapa(iso: string | null | undefined): string {
   return dd === 0 ? "hoje" : dd === 1 ? "1 dia" : `${dd} dias`;
 }
 
-type Aba = "todas" | "minhas" | "nao_lidas";
+type Aba = "todas" | "clara" | "humano" | "nao_lidas";
 
 export function Inbox({
   conversas,
@@ -191,10 +191,12 @@ export function Inbox({
     setTimeout(() => setToast(null), 3500);
   }
 
+  // filtros da lista (RF-31): Todas · Clara conduz · Humano conduz · Não lidas
   const contagens = useMemo(
     () => ({
       todas: conversas.length,
-      minhas: conversas.filter((c) => c.mode === "HUMANO").length,
+      clara: conversas.filter((c) => c.mode === "IA").length,
+      humano: conversas.filter((c) => c.mode === "HUMANO").length,
       nao_lidas: conversas.filter((c) => c.nao_lida).length,
     }),
     [conversas],
@@ -203,7 +205,8 @@ export function Inbox({
   const conversasVisiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return conversas.filter((c) => {
-      if (aba === "minhas" && c.mode !== "HUMANO") return false;
+      if (aba === "clara" && c.mode !== "IA") return false;
+      if (aba === "humano" && c.mode !== "HUMANO") return false;
       if (aba === "nao_lidas" && !c.nao_lida) return false;
       if (!q) return true;
       return (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").includes(q);
@@ -342,10 +345,11 @@ export function Inbox({
             />
           </label>
         </div>
-        <div className="flex gap-3.5 px-4 pb-1.5 pt-2.5">
+        <div className="flex gap-3 px-4 pb-1.5 pt-2.5">
           {([
             ["todas", `Todas · ${contagens.todas}`],
-            ["minhas", `Minhas · ${contagens.minhas}`],
+            ["clara", `Clara · ${contagens.clara}`],
+            ["humano", `Humano · ${contagens.humano}`],
             ["nao_lidas", `Não lidas · ${contagens.nao_lidas}`],
           ] as [Aba, string][]).map(([k, rot]) => (
             <button

@@ -216,15 +216,14 @@ export async function lerConversas(): Promise<DadosConversas> {
   }
 }
 
-/** Colunas da projeção de entrega (Trilha A, migrations 0017-0029) — contrato SPEC RF-5. */
+/** Colunas da projeção de entrega (Trilha A, migration 0024 — contrato fechado, SPEC RF-5/6). */
 const COLUNAS_BASE = "id,direcao,tipo_conteudo,corpo,criado_em";
-const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor`;
+const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor,timestamp_origem`;
 
 export async function lerMensagens(conversaId: string, fonte: "real" | "mock"): Promise<Mensagem[]> {
   if (fonte === "mock") return MENSAGENS_MOCK[conversaId] ?? [];
   try {
     const supabase = criarClienteServidor();
-    // Ordenação RF-6: timestamp de origem + id como desempate dentro do mesmo segundo.
     const buscar = (colunas: string) =>
       supabase
         .schema("core")
@@ -235,22 +234,31 @@ export async function lerMensagens(conversaId: string, fonte: "real" | "mock"): 
         .order("id", { ascending: true })
         .limit(500);
 
-    // Tenta o contrato completo (com projeção de status da Trilha A); se as colunas ainda não
-    // existirem no banco, degrada pro select base — a UI fica sem checks, nunca com check falso.
+    // Tenta o contrato completo (projeção da Trilha A, 0024); se as colunas ainda não existirem
+    // no banco, degrada pro select base — a UI fica sem checks, nunca com check falso.
     let { data, error } = await buscar(COLUNAS_COM_STATUS);
     if (error) ({ data, error } = await buscar(COLUNAS_BASE));
     if (error || !data) return [];
 
-    return (data as any[]).map((m: any) => ({
+    const linhas: Mensagem[] = (data as any[]).map((m: any) => ({
       id: String(m.id),
       direcao: (m.direcao ?? "entrada") as Direcao,
       tipo_conteudo: m.tipo_conteudo ?? "text",
+      // RF-6: a hora da mensagem é a do EVENTO DE ORIGEM (timestamp da Meta no inbound), com
+      // fallback pra hora de processamento enquanto a coluna não existe — ordenação, agrupamento
+      // e separadores de dia derivam todos desta.
+      criado_em: m.timestamp_origem ?? m.criado_em,
       corpo: m.corpo ?? null,
-      criado_em: m.criado_em,
       autor: m.autor === "sara" ? "sara" : m.autor === "clara" ? "clara" : undefined,
       status_entrega: (m.status_entrega as EstadoEntrega | null | undefined) ?? undefined,
       erro_codigo: m.erro_codigo ?? undefined,
     }));
+    // reordena por timestamp de origem + id como desempate (webhook atrasado não entra fora de lugar)
+    return linhas.sort((a, b) => {
+      const ta = new Date(a.criado_em).getTime();
+      const tb = new Date(b.criado_em).getTime();
+      return ta !== tb ? ta - tb : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
   } catch {
     return [];
   }
