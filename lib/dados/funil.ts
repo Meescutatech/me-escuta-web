@@ -1,4 +1,5 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { TETO_CARDS, chavesDoBoard, houveCorte } from "./funil-calculos";
 
 /**
  * Camada de leitura do FUNIL. Casada com o schema real (Agent 2, migrations 0009+0010) —
@@ -49,6 +50,8 @@ export interface CardLead {
 export interface DadosFunil {
   etapas: EtapaFunil[];
   cards: CardLead[];
+  /** Leitura bateu no TETO_CARDS — a UI avisa que o board mostra os mais recentes, nunca finge completude. */
+  corte: boolean;
 }
 
 // ─────────────── etapas padrão (espelho do funil_vendas v2 real) ───────────────
@@ -106,15 +109,21 @@ export async function lerEtapasReais(): Promise<EtapaFunil[] | null> {
     .sort((a, b) => a.ordem - b.ordem);
 }
 
-async function lerCardsReais(): Promise<CardLead[]> {
+async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[]; corte: boolean }> {
   const supabase = criarClienteServidor();
+  // Só etapas do board (config vigente) — 'arquivado' etc. NUNCA entram nem roubam vaga do
+  // teto. Order determinístico (mais recentes primeiro + lead_id de desempate): se o volume
+  // passar do teto, o corte é estável entre reloads e a UI avisa (flag `corte`).
   const { data, error } = await supabase
     .schema("core")
     .from("v_lead_card")
     .select("lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,tags,kommo_lead_id")
-    .limit(500);
-  if (error || !data) return []; // leitura indisponível → board vazio honesto
-  return data.map((r: any) => {
+    .in("etapa", chavesEtapas)
+    .order("entrou_etapa_em", { ascending: false, nullsFirst: false })
+    .order("lead_id", { ascending: true })
+    .limit(TETO_CARDS);
+  if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
+  const cards = data.map((r: any) => {
     const origemRaw = r.origem ? String(r.origem).toLowerCase() : null;
     return {
       lead_id: String(r.lead_id),
@@ -130,14 +139,16 @@ async function lerCardsReais(): Promise<CardLead[]> {
       kommo_lead_id: r.kommo_lead_id ?? null,
     } as CardLead;
   });
+  return { cards, corte: houveCorte(cards.length, TETO_CARDS) };
 }
 
 /** Fonte única do board. Etapas reais (senão padrão estrutural); cards só reais — vazio é vazio. */
 export async function lerFunil(): Promise<DadosFunil> {
   try {
-    const [etapasReais, cards] = await Promise.all([lerEtapasReais(), lerCardsReais()]);
-    return { etapas: etapasReais ?? ETAPAS_PADRAO, cards };
+    const etapas = (await lerEtapasReais()) ?? ETAPAS_PADRAO; // cards filtram pelas chaves da config
+    const { cards, corte } = await lerCardsReais(chavesDoBoard(etapas));
+    return { etapas, cards, corte };
   } catch {
-    return { etapas: ETAPAS_PADRAO, cards: [] };
+    return { etapas: ETAPAS_PADRAO, cards: [], corte: false };
   }
 }

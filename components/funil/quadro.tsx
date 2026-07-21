@@ -317,6 +317,14 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
               className="w-full bg-transparent text-[0.84rem] text-tinta outline-none placeholder:text-mute"
             />
           </label>
+          {dados.corte && (
+            <span
+              className="rounded-full bg-laranja-cl px-3 py-1 text-xs font-semibold text-laranja-esc"
+              title="O board bateu no teto de leitura — paginação vem em rodada futura."
+            >
+              mostrando os {dados.cards.length} leads mais recentes
+            </span>
+          )}
           {aviso && (
             <span className="rounded-full bg-vermelho-bg px-3 py-1 text-xs font-semibold text-vermelho">{aviso}</span>
           )}

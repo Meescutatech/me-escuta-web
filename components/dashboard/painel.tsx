@@ -194,7 +194,7 @@ export function PainelDashboard({ dados }: { dados: DadosDashboard }) {
               valor={formatarDuracaoMin(primeiraResposta.medianaMin)}
               rotulo={
                 primeiraResposta.amostra > 0
-                  ? `mediana · ${n(primeiraResposta.amostra)} conversas nos últimos 7 dias`
+                  ? `mediana · ${n(primeiraResposta.amostra)} conversas nos últimos 7 dias${primeiraResposta.parcial ? " · amostra parcial" : ""}`
                   : "sem conversas com resposta nos últimos 7 dias"
               }
             />

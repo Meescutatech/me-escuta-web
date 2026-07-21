@@ -52,6 +52,7 @@ export interface DadosDashboard {
   primeiraResposta: {
     medianaMin: number | null;
     amostra: number; // conversas dos últimos 7d com par entrada→saída
+    parcial: boolean; // leitura bateu num dos tetos → mediana sobre amostra parcial (a UI avisa)
   };
   valorNegociacao: {
     total: number; // soma dos `valor` não-null em etapas abertas
@@ -86,20 +87,28 @@ async function lerUltimoEvento(supabase: Supabase): Promise<string | null> {
   return error || !data ? null : (data.criado_em as string);
 }
 
+// Tetos da amostra da 1ª resposta (hoje: ~86 conversas / ~410 mensagens em 7d — folga larga).
+// Bater no teto NÃO pode virar mediana silenciosamente parcial: a flag `parcial` acende e a
+// UI avisa "amostra parcial".
+const TETO_CONVERSAS_7D = 300;
+const TETO_MENSAGENS_7D = 5000;
+
 async function lerPrimeiraResposta(
   supabase: Supabase,
   inicio7dIso: string,
-): Promise<{ medianaMin: number | null; amostra: number }> {
+): Promise<{ medianaMin: number | null; amostra: number; parcial: boolean }> {
   // Conjunto limitado pela JANELA (7d), não pelo volume de leads: conversas novas do período…
   const { data: convs, error } = await supabase
     .schema("core")
     .from("conversa")
     .select("id")
     .gte("criado_em", inicio7dIso)
-    .limit(300);
-  if (error || !convs || convs.length === 0) return { medianaMin: null, amostra: 0 };
+    .limit(TETO_CONVERSAS_7D);
+  if (error || !convs || convs.length === 0) return { medianaMin: null, amostra: 0, parcial: false };
 
   // …e só 3 colunas das mensagens delas (o cálculo do par entrada→saída precisa da ordem).
+  // Follow-up declarado no PR: o .in() com até 300 UUIDs (~11KB de querystring) funciona, mas
+  // filtrar por janela de tempo na própria mensagem é mais robusto quando o volume crescer.
   const ids = convs.map((c: any) => String(c.id));
   const { data: msgs, error: erroMsgs } = await supabase
     .schema("core")
@@ -107,11 +116,12 @@ async function lerPrimeiraResposta(
     .select("conversa_id,direcao,criado_em")
     .in("conversa_id", ids)
     .order("criado_em", { ascending: true })
-    .limit(5000);
-  if (erroMsgs || !msgs) return { medianaMin: null, amostra: 0 };
+    .limit(TETO_MENSAGENS_7D);
+  if (erroMsgs || !msgs) return { medianaMin: null, amostra: 0, parcial: false };
 
   const tempos = minutosPrimeiraResposta(msgs as MensagemMinima[]);
-  return { medianaMin: mediana(tempos), amostra: tempos.length };
+  const parcial = convs.length >= TETO_CONVERSAS_7D || msgs.length >= TETO_MENSAGENS_7D;
+  return { medianaMin: mediana(tempos), amostra: tempos.length, parcial };
 }
 
 async function lerValorNegociacao(
