@@ -8,7 +8,7 @@ export default async function ConversasPage({
 }: {
   searchParams: { c?: string; lead?: string };
 }) {
-  const { conversas, fonte } = await lerConversas();
+  const conversas = await lerConversas();
 
   // conversa selecionada: ?c explícito, senão a primeira do inbox
   const selecionadaId =
@@ -17,16 +17,12 @@ export default async function ConversasPage({
     null;
 
   const [mensagens, sugestoes] = selecionadaId
-    ? await Promise.all([
-        lerMensagens(selecionadaId, fonte),
-        lerSugestoesConversa(selecionadaId, fonte),
-      ])
+    ? await Promise.all([lerMensagens(selecionadaId), lerSugestoesConversa(selecionadaId)])
     : [[], []];
 
   return (
     <Inbox
       conversas={conversas}
-      fonte={fonte}
       selecionadaId={selecionadaId}
       mensagens={mensagens}
       sugestoes={sugestoes}

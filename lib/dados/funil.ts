@@ -9,9 +9,9 @@ import { criarClienteServidor } from "@/lib/supabase/server";
  *            dono, tags, kommo_lead_id}  (dono = um campo; nome/telefone/valor podem ser NULL;
  *            idade/paciente entram na 0011 — não contar com eles ainda)
  *
- * Prefere o real. Se a leitura real falhar OU não houver cards, cai num MOCK rico
- * (fonte='mock' → aviso) pra o board nunca ficar vazio na demo. As etapas do mock usam as
- * MESMAS chaves reais. Visual segue Design/kanban.html (Croqui).
+ * Só dado real (Rodada 7, D3): sem cards, o board mostra o estado vazio honesto. As ETAPAS_PADRAO
+ * são estrutura de config (espelho do funil_vendas), não dado de lead — valem só como fallback
+ * estrutural se a config não puder ser lida.
  */
 
 export type Origem = "wa" | "ig" | "meta" | "ind";
@@ -42,14 +42,13 @@ export interface CardLead {
   valor: number | null;
   origem: Origem | null;
   responsavel: { tipo: TipoResp; nome: string } | null; // derivado de `dono`
-  proposta: PropostaPendente | null; // não vem da view (só mock por ora)
+  proposta: PropostaPendente | null; // não vem da view ainda — null até o laço de sugestões chegar no card
   kommo_lead_id?: string | null;
 }
 
 export interface DadosFunil {
   etapas: EtapaFunil[];
   cards: CardLead[];
-  fonte: "real" | "mock";
 }
 
 // ─────────────── etapas padrão (espelho do funil_vendas v2 real) ───────────────
@@ -64,36 +63,7 @@ export const ETAPAS_PADRAO: EtapaFunil[] = [
   { chave: "perdido", nome: "Perdido", cor: "#f87171", tipo: "perdido", ordem: 91 },
 ];
 
-// ─────────────── MOCK rico (fallback; chaves = reais) ───────────────
-
-function diasAtras(d: number): string {
-  return new Date(Date.now() - d * 86400_000).toISOString();
-}
-const R_SARA = { tipo: "sara" as TipoResp, nome: "Sara" };
-const R_DM = { tipo: "dm" as TipoResp, nome: "Diogo ME" };
-const R_FONO_A = { tipo: "fono" as TipoResp, nome: "Fono Ana" };
-const R_FONO_L = { tipo: "fono" as TipoResp, nome: "Fono Léo" };
-
-const CARDS_MOCK: CardLead[] = [
-  { lead_id: "m1", nome: "Maria Aparecida Souza", idade: 68, telefone: "(31) 98812-4471", etapa: "novo", entrou_etapa_em: diasAtras(0), valor: null, origem: "wa", responsavel: R_SARA, proposta: null },
-  { lead_id: "m2", nome: "João Batista Neves", idade: 72, telefone: "(21) 99145-0087", etapa: "novo", entrou_etapa_em: diasAtras(1), valor: null, origem: "meta", responsavel: R_SARA, proposta: null },
-  { lead_id: "m3", nome: "Célia Ramos", idade: 64, telefone: "(31) 98330-7712", etapa: "novo", entrou_etapa_em: diasAtras(0), valor: null, origem: "ig", responsavel: R_SARA, proposta: null },
-  { lead_id: "m5", nome: "Terezinha de Jesus", idade: 75, telefone: "(31) 99622-1180", etapa: "qualificando", entrou_etapa_em: diasAtras(1), valor: 8900, origem: "wa", responsavel: { tipo: "sara", nome: "Clara → Sara" }, proposta: { agente: "clara", texto: "avançar p/ <b>avaliação auditiva</b> — lead qualificado" } },
-  { lead_id: "m6", nome: "Sebastião Ferreira", idade: 69, telefone: "(31) 98014-5567", etapa: "qualificando", entrou_etapa_em: diasAtras(3), valor: 6400, origem: "ind", responsavel: R_SARA, proposta: null },
-  { lead_id: "m8", nome: "Raimundo Nonato", idade: 71, telefone: "(85) 98450-1123", etapa: "qualificando", entrou_etapa_em: diasAtras(5), valor: 7200, origem: "meta", responsavel: R_SARA, proposta: null },
-  { lead_id: "m9", nome: "Vera Lúcia Andrade", idade: 63, telefone: "(31) 99771-6690", etapa: "avaliacao", entrou_etapa_em: diasAtras(1), valor: 8900, origem: "wa", responsavel: R_FONO_A, proposta: null },
-  { lead_id: "m10", nome: "Geraldo Magela", idade: 74, telefone: "(31) 98220-4418", etapa: "avaliacao", entrou_etapa_em: diasAtras(2), valor: 11400, origem: "ind", responsavel: R_FONO_A, proposta: null },
-  { lead_id: "m12", nome: "Osvaldo Pereira", idade: 70, telefone: "(31) 98115-2203", etapa: "proposta", entrou_etapa_em: diasAtras(1), valor: 12800, origem: "wa", responsavel: R_DM, proposta: null },
-  { lead_id: "m14", nome: "Djalma Rodrigues", idade: 73, telefone: "(31) 99440-1187", etapa: "proposta", entrou_etapa_em: diasAtras(2), valor: 11400, origem: "wa", responsavel: R_DM, proposta: null },
-  { lead_id: "m15", nome: "Conceição Alves", idade: 68, telefone: "(71) 98620-4410", etapa: "proposta", entrou_etapa_em: diasAtras(6), valor: 8900, origem: "ind", responsavel: R_DM, proposta: null },
-  { lead_id: "m17", nome: "Aparecida Gomes", idade: 66, telefone: "(31) 99012-7788", etapa: "negociacao", entrou_etapa_em: diasAtras(1), valor: 9800, origem: "wa", responsavel: R_DM, proposta: { agente: "lev", texto: "faixa <b>B</b> — aprovar <b>boleto 12×</b> com entrada" } },
-  { lead_id: "m18", nome: "Benedito Farias", idade: 72, telefone: "(27) 98330-5561", etapa: "negociacao", entrou_etapa_em: diasAtras(2), valor: 11400, origem: "meta", responsavel: R_DM, proposta: { agente: "lev", texto: "faixa <b>D</b> — recomenda <b>Pix à vista</b> (risco alto)" } },
-  { lead_id: "m19", nome: "Lourdes Bittencourt", idade: 70, telefone: "(31) 99880-2214", etapa: "ganho", entrou_etapa_em: diasAtras(0), valor: 12800, origem: "wa", responsavel: R_DM, proposta: null },
-  { lead_id: "m20", nome: "Hélio Vasconcelos", idade: 67, telefone: "(85) 98110-6643", etapa: "ganho", entrou_etapa_em: diasAtras(1), valor: 9800, origem: "ind", responsavel: R_DM, proposta: null },
-  { lead_id: "m11", nome: "Marlene Costa", idade: 67, telefone: "(62) 99630-8871", etapa: "avaliacao", entrou_etapa_em: diasAtras(4), valor: 8900, origem: "wa", responsavel: R_FONO_L, proposta: null },
-];
-
-// ─────────────── leitura real + fallback ───────────────
+// ─────────────── leitura real ───────────────
 
 const MAPA_ORIGEM: Record<string, Origem> = {
   whatsapp: "wa", wa: "wa", instagram: "ig", ig: "ig",
@@ -114,7 +84,7 @@ function donoParaResponsavel(dono: string | null): { tipo: TipoResp; nome: strin
   return { tipo, nome: d };
 }
 
-async function lerEtapasReais(): Promise<EtapaFunil[] | null> {
+export async function lerEtapasReais(): Promise<EtapaFunil[] | null> {
   const supabase = criarClienteServidor();
   const { data, error } = await supabase
     .schema("core")
@@ -136,14 +106,14 @@ async function lerEtapasReais(): Promise<EtapaFunil[] | null> {
     .sort((a, b) => a.ordem - b.ordem);
 }
 
-async function lerCardsReais(): Promise<CardLead[] | null> {
+async function lerCardsReais(): Promise<CardLead[]> {
   const supabase = criarClienteServidor();
   const { data, error } = await supabase
     .schema("core")
     .from("v_lead_card")
     .select("lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,tags,kommo_lead_id")
     .limit(500);
-  if (error || !data) return null; // view/coluna ausente → fallback
+  if (error || !data) return []; // leitura indisponível → board vazio honesto
   return data.map((r: any) => {
     const origemRaw = r.origem ? String(r.origem).toLowerCase() : null;
     return {
@@ -162,17 +132,12 @@ async function lerCardsReais(): Promise<CardLead[] | null> {
   });
 }
 
-/**
- * Fonte única do board. Etapas reais (senão padrão). Cards reais quando houver ≥1;
- * senão MOCK rico (fonte='mock' aciona o aviso "dados de exemplo").
- */
+/** Fonte única do board. Etapas reais (senão padrão estrutural); cards só reais — vazio é vazio. */
 export async function lerFunil(): Promise<DadosFunil> {
   try {
-    const [etapasReais, cardsReais] = await Promise.all([lerEtapasReais(), lerCardsReais()]);
-    const etapas = etapasReais ?? ETAPAS_PADRAO;
-    if (cardsReais && cardsReais.length > 0) return { etapas, cards: cardsReais, fonte: "real" };
-    return { etapas, cards: CARDS_MOCK, fonte: "mock" };
+    const [etapasReais, cards] = await Promise.all([lerEtapasReais(), lerCardsReais()]);
+    return { etapas: etapasReais ?? ETAPAS_PADRAO, cards };
   } catch {
-    return { etapas: ETAPAS_PADRAO, cards: CARDS_MOCK, fonte: "mock" };
+    return { etapas: ETAPAS_PADRAO, cards: [] };
   }
 }

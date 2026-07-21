@@ -1,29 +1,36 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { CardLead, EtapaFunil, Origem } from "@/lib/dados/funil";
-import {
-  detalheMock,
-  type Anotacao,
-  type Tarefa,
-  type TipoAnexo,
-  type TipoEvento,
-  type TipoResp,
-} from "@/lib/dados/lead-detalhe";
+import type { CardLead, EtapaFunil, Origem, TipoResp } from "@/lib/dados/funil";
 import { registrarEventoUI } from "@/app/(app)/funil/actions";
 import { cn } from "@/lib/utils";
 
+/*
+ * Drawer do card — versão HONESTA (Rodada 7, D3): mostra só o que existe de verdade no card
+ * (facts da v_lead_card) e o que o usuário criar NESTA sessão (tarefa/anotação viram eventos
+ * reais no ledger pela porta). Sem detalhe sintetizado: nada de cidade, análise do Levindo,
+ * anexos ou histórico inventados. Leitura real do histórico por lead (core.evento) e projeção
+ * de tarefas/anotações são rodadas futuras (0009+).
+ */
+
 const RESP_COR: Record<TipoResp, string> = { dm: "bg-navy", sara: "bg-roxo", fono: "bg-verde" };
 const ORIGEM_TXT: Record<Origem, string> = { wa: "WhatsApp", ig: "Instagram", meta: "Meta Ads", ind: "Indicação" };
-const ANEXO_COR: Record<TipoAnexo, string> = { pdf: "bg-vermelho", img: "bg-roxo", aud: "bg-verde" };
-const EV_COR: Record<TipoEvento, string> = {
-  in: "bg-laranja",
-  out: "bg-navy",
-  prop: "bg-azul",
-  appr: "bg-verde",
-  stage: "bg-amarelo",
-};
+
+interface Tarefa {
+  id: string;
+  titulo: string;
+  responsavel: { tipo: TipoResp; nome: string };
+  concluida: boolean;
+}
+
+interface Anotacao {
+  id: string;
+  autor: string;
+  autorTipo: TipoResp;
+  texto: string;
+  quando: string;
+}
 
 function iniciais(nome: string): string {
   const p = nome.replace(/→|·/g, " ").trim().split(/\s+/);
@@ -32,28 +39,20 @@ function iniciais(nome: string): string {
 function moeda(v: number | null): string {
   return v == null ? "—" : "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
-function faixaCor(faixa: string): string {
-  if (faixa === "A" || faixa === "B") return "bg-verde";
-  if (faixa === "C") return "bg-amarelo";
-  return "bg-vermelho";
-}
 
-type Aba = "tarefas" | "notas" | "anexos" | "hist";
+type Aba = "tarefas" | "notas" | "hist";
 
 export function DrawerCard({
   lead,
   etapa,
-  fonte,
   onFechar,
 }: {
   lead: CardLead | null;
   etapa: EtapaFunil | null;
-  fonte: "real" | "mock";
   onFechar: () => void;
 }) {
   const router = useRouter();
   const aberto = !!lead;
-  const detalhe = useMemo(() => (lead ? detalheMock(lead) : null), [lead]);
 
   const [aba, setAba] = useState<Aba>("tarefas");
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
@@ -61,24 +60,19 @@ export function DrawerCard({
   const [novaNota, setNovaNota] = useState("");
   const [novaTarefa, setNovaTarefa] = useState("");
   const [addTarefa, setAddTarefa] = useState(false);
-  const [levindoStatus, setLevindoStatus] = useState<"pendente" | "aprovada" | "rejeitada">("pendente");
-  const [levindoAberto, setLevindoAberto] = useState(false);
+  const [levindoSolicitado, setLevindoSolicitado] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   // (re)sincroniza estado local quando abre outro card
   const leadId = lead?.lead_id;
   useEffect(() => {
-    if (detalhe) {
-      setTarefas(detalhe.tarefas);
-      setAnotacoes(detalhe.anotacoes);
-      setNovaNota("");
-      setNovaTarefa("");
-      setAddTarefa(false);
-      setAba("tarefas");
-      setLevindoStatus("pendente");
-      setLevindoAberto(detalhe.levindoRodado);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setTarefas([]);
+    setAnotacoes([]);
+    setNovaNota("");
+    setNovaTarefa("");
+    setAddTarefa(false);
+    setAba("tarefas");
+    setLevindoSolicitado(false);
   }, [leadId]);
 
   function avisar(msg: string) {
@@ -87,14 +81,12 @@ export function DrawerCard({
   }
 
   function emitir(tipo: string, payload: Record<string, unknown>) {
-    if (fonte === "real" && leadId) void registrarEventoUI(tipo, { lead_id: leadId, ...payload }, leadId);
+    if (leadId) void registrarEventoUI(tipo, { lead_id: leadId, ...payload }, leadId);
   }
 
   function toggleTarefa(id: string) {
-    setTarefas((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, concluida: !t.concluida } : t)),
-    );
     const t = tarefas.find((x) => x.id === id);
+    setTarefas((prev) => prev.map((x) => (x.id === id ? { ...x, concluida: !x.concluida } : x)));
     if (t && !t.concluida) emitir("tarefa_concluida", { titulo: t.titulo, resultado: "concluída" });
   }
 
@@ -104,8 +96,7 @@ export function DrawerCard({
     const t: Tarefa = {
       id: `t-${titulo.length}-${tarefas.length}`,
       titulo,
-      prazo: null,
-      responsavel: lead?.responsavel ?? { tipo: "dm", nome: "Diogo ME" },
+      responsavel: lead?.responsavel ?? { tipo: "dm", nome: "Você" },
       concluida: false,
     };
     setTarefas((prev) => [t, ...prev]);
@@ -132,20 +123,9 @@ export function DrawerCard({
   }
 
   function acionarLevindo() {
-    setLevindoAberto(true);
-    setLevindoStatus("pendente");
-    // real: registra o pedido de análise (o agente levindo propõe via sugestao_ia). TODO(levindo-real).
+    setLevindoSolicitado(true);
     emitir("levindo_acionado", { motivo: "solicitado no card" });
-    avisar("Levindo acionado — análise de crédito proposta (valide as condições).");
-  }
-
-  function validarLevindo(decisao: "aprovada" | "rejeitada") {
-    setLevindoStatus(decisao);
-    avisar(
-      decisao === "aprovada"
-        ? "Condições de crédito aprovadas (HITL)."
-        : "Análise do Levindo rejeitada.",
-    );
+    avisar("Solicitação registrada no ledger.");
   }
 
   return (
@@ -163,7 +143,7 @@ export function DrawerCard({
           aberto ? "translate-x-0" : "translate-x-full",
         )}
       >
-        {lead && detalhe && (
+        {lead && (
           <>
             {/* header */}
             <div className="flex-shrink-0 border-b border-borda bg-branco px-5 pt-4">
@@ -205,10 +185,7 @@ export function DrawerCard({
                   <div className="font-serif text-2xl font-semibold leading-tight text-navy">
                     {lead.nome ?? "Lead sem nome"}
                   </div>
-                  <div className="mt-1 text-sm text-suave">
-                    {lead.idade != null && `${lead.idade} anos · `}paciente
-                    {detalhe.cidade && <span className="text-mute"> · {detalhe.cidade}</span>}
-                  </div>
+                  {lead.idade != null && <div className="mt-1 text-sm text-suave">{lead.idade} anos</div>}
                 </div>
               </div>
             </div>
@@ -221,13 +198,13 @@ export function DrawerCard({
               </Fato>
               <Fato rotulo="Origem">{lead.origem ? ORIGEM_TXT[lead.origem] : "—"}</Fato>
               <Fato rotulo="Responsável">{lead.responsavel?.nome ?? "—"}</Fato>
-              <Fato rotulo="Valor estimado">{moeda(lead.valor)}</Fato>
+              <Fato rotulo="Valor">{moeda(lead.valor)}</Fato>
             </div>
 
             {/* body */}
             <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-4">
-              {/* Levindo — botão de acionar quando ainda não rodou */}
-              {!levindoAberto && (
+              {/* Levindo — o pedido é um evento real; a análise chega como sugestão (rodada futura) */}
+              {!levindoSolicitado ? (
                 <button
                   onClick={acionarLevindo}
                   className="mb-5 flex w-full items-center gap-3 rounded-lg border border-azul-bd bg-branco px-4 py-3 text-left shadow-suave transition-colors hover:bg-azul-bg"
@@ -237,76 +214,22 @@ export function DrawerCard({
                   </span>
                   <div className="flex-1">
                     <div className="text-sm font-semibold text-navy">Acionar Levindo</div>
-                    <div className="text-xs text-mute">Rodar análise de crédito (Política Comercial v3)</div>
+                    <div className="text-xs text-mute">Solicitar análise de crédito (Política Comercial v3)</div>
                   </div>
                   <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-4 w-4 stroke-laranja-esc" fill="none">
                     <path d="M5 12h14M13 6l6 6-6 6" />
                   </svg>
                 </button>
-              )}
-
-              {/* Levindo — bloco de análise (rodado) */}
-              {levindoAberto && (
-                <div className="mb-5 overflow-hidden rounded-lg border border-azul-bd bg-branco shadow-suave">
-                  <div className="flex items-center gap-3 border-b border-borda px-4 py-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-navy text-sm font-bold text-branco">
-                      L
-                    </span>
-                    <div className="flex-1">
-                      <div className="text-sm font-semibold text-navy">Levindo · análise de crédito</div>
-                      <div className="text-xs text-mute">Política Comercial v3 · rodado há {detalhe.levindo.rodadoHa}</div>
+              ) : (
+                <div className="mb-5 flex items-center gap-3 rounded-lg border border-azul-bd bg-branco px-4 py-3 shadow-suave">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-navy text-sm font-bold text-branco">
+                    L
+                  </span>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold text-navy">Análise solicitada</div>
+                    <div className="text-xs text-mute">
+                      Pedido registrado no ledger — o resultado chega como sugestão pra você validar.
                     </div>
-                    <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-md font-serif text-lg font-bold text-branco", faixaCor(detalhe.levindo.faixa))}>
-                      {detalhe.levindo.faixa}
-                    </span>
-                  </div>
-                  <div className="px-4 py-3.5">
-                    <p className="mb-3 text-sm leading-relaxed text-texto" dangerouslySetInnerHTML={{ __html: detalhe.levindo.diagnostico }} />
-                    <div className="mb-3.5 flex flex-col gap-2">
-                      {detalhe.levindo.condicoes.map((c, i) => (
-                        <div key={i} className="flex items-center gap-2.5 text-sm text-texto">
-                          <span className={cn("grid h-[17px] w-[17px] shrink-0 place-items-center rounded-full", c.ok ? "bg-verde-bg" : "bg-vermelho-bg")}>
-                            <svg viewBox="0 0 24 24" strokeWidth={3} strokeLinecap="round" className={cn("h-2.5 w-2.5", c.ok ? "stroke-verde" : "stroke-vermelho")} fill="none">
-                              {c.ok ? <path d="M20 6 9 17l-5-5" /> : <path d="M18 6 6 18M6 6l12 12" />}
-                            </svg>
-                          </span>
-                          <span dangerouslySetInnerHTML={{ __html: c.texto }} />
-                        </div>
-                      ))}
-                    </div>
-                    {levindoStatus === "pendente" ? (
-                      <div className="flex items-center gap-2.5 border-t border-borda pt-3">
-                        <button
-                          onClick={() => validarLevindo("aprovada")}
-                          className="inline-flex items-center gap-1.5 rounded-md bg-laranja px-4 py-2 text-sm font-semibold text-branco shadow-laranja hover:bg-laranja-esc"
-                        >
-                          <svg viewBox="0 0 24 24" strokeWidth={2.4} strokeLinecap="round" className="h-4 w-4 stroke-current" fill="none">
-                            <path d="M20 6 9 17l-5-5" />
-                          </svg>
-                          Aprovar condições
-                        </button>
-                        <button
-                          onClick={() => validarLevindo("rejeitada")}
-                          className="rounded-md border-[1.5px] border-borda-forte bg-branco px-4 py-2 text-sm font-semibold text-suave hover:bg-creme hover:text-navy"
-                        >
-                          Rejeitar
-                        </button>
-                        <span className="ml-auto text-xs text-mute">
-                          valida <b className="text-suave">{detalhe.levindo.validador}</b>
-                        </span>
-                      </div>
-                    ) : (
-                      <div
-                        className={cn(
-                          "rounded-md border-t px-3 py-2.5 text-sm font-semibold",
-                          levindoStatus === "aprovada" ? "bg-verde-bg text-verde" : "bg-vermelho-bg text-vermelho",
-                        )}
-                      >
-                        {levindoStatus === "aprovada"
-                          ? `✓ Condições aprovadas por ${detalhe.levindo.validador}`
-                          : `✕ Análise rejeitada por ${detalhe.levindo.validador}`}
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -315,13 +238,15 @@ export function DrawerCard({
               <div className="mb-4 flex gap-1 border-b-[1.5px] border-borda">
                 <AbaBtn ativa={aba === "tarefas"} onClick={() => setAba("tarefas")} rotulo="Tarefas" cnt={tarefas.length} />
                 <AbaBtn ativa={aba === "notas"} onClick={() => setAba("notas")} rotulo="Anotações" cnt={anotacoes.length} />
-                <AbaBtn ativa={aba === "anexos"} onClick={() => setAba("anexos")} rotulo="Anexos" cnt={detalhe.anexos.length} />
                 <AbaBtn ativa={aba === "hist"} onClick={() => setAba("hist")} rotulo="Histórico" />
               </div>
 
               {/* tarefas */}
               {aba === "tarefas" && (
                 <div>
+                  {tarefas.length === 0 && !addTarefa && (
+                    <p className="mb-2 text-sm text-mute">Nenhuma tarefa pra este lead ainda.</p>
+                  )}
                   {tarefas.map((t) => (
                     <div key={t.id} className="mb-2 flex items-start gap-3 rounded-lg border border-borda bg-branco px-3.5 py-3 hover:border-borda-forte hover:shadow-suave">
                       <button
@@ -340,11 +265,6 @@ export function DrawerCard({
                           {t.titulo}
                         </div>
                         <div className="mt-1.5 flex items-center gap-2 text-xs text-suave">
-                          {t.prazo && (
-                            <span className={cn("inline-flex items-center gap-1 font-semibold", t.prazoNivel === "late" ? "text-vermelho" : t.prazoNivel === "soon" ? "text-amarelo" : "")}>
-                              {t.prazo}
-                            </span>
-                          )}
                           <span className={cn("grid h-5 w-5 place-items-center rounded-full text-[0.58rem] font-bold text-branco", RESP_COR[t.responsavel.tipo])}>
                             {t.responsavel.tipo === "fono" ? "F" : iniciais(t.responsavel.nome)}
                           </span>
@@ -384,22 +304,22 @@ export function DrawerCard({
               {/* anotações */}
               {aba === "notas" && (
                 <div>
+                  {anotacoes.length === 0 && (
+                    <p className="mb-2 text-sm text-mute">Nenhuma anotação ainda.</p>
+                  )}
                   {anotacoes.map((n) => (
                     <div
                       key={n.id}
-                      className={cn(
-                        "mb-2.5 rounded-md border border-borda border-l-[3px] bg-branco px-3.5 py-3",
-                        n.ia ? "border-l-azul-bd bg-gradient-to-b from-[#fbfcff] to-branco" : "border-l-laranja-cl",
-                      )}
+                      className="mb-2.5 rounded-md border border-borda border-l-[3px] border-l-laranja-cl bg-branco px-3.5 py-3"
                     >
                       <div className="mb-1.5 flex items-center gap-2">
-                        <span className={cn("grid h-[22px] w-[22px] place-items-center rounded-full text-[0.6rem] font-bold text-branco", n.ia ? "bg-gradient-to-br from-[#F2803F] to-[#EC662E]" : RESP_COR[(n.autorTipo as TipoResp) ?? "dm"])}>
-                          {n.ia ? "C" : iniciais(n.autor)}
+                        <span className={cn("grid h-[22px] w-[22px] place-items-center rounded-full text-[0.6rem] font-bold text-branco", RESP_COR[n.autorTipo])}>
+                          {iniciais(n.autor)}
                         </span>
                         <span className="text-xs font-semibold text-navy">{n.autor}</span>
                         <span className="ml-auto text-xs text-mute">{n.quando}</span>
                       </div>
-                      <p className="text-sm leading-relaxed text-texto" dangerouslySetInnerHTML={{ __html: n.texto }} />
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-texto">{n.texto}</p>
                     </div>
                   ))}
                   <div className="mt-1 flex items-end gap-2 rounded-lg border-[1.5px] border-borda-forte bg-branco py-2 pl-3.5 pr-2">
@@ -425,46 +345,12 @@ export function DrawerCard({
                 </div>
               )}
 
-              {/* anexos */}
-              {aba === "anexos" && (
-                <div>
-                  {detalhe.anexos.map((a) => (
-                    <div key={a.id} className="mb-2 flex items-center gap-3 rounded-lg border border-borda bg-branco px-3.5 py-3 hover:border-borda-forte hover:shadow-suave">
-                      <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-md text-[0.64rem] font-bold text-branco", ANEXO_COR[a.tipo])}>
-                        {a.tipo.toUpperCase()}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-navy">{a.nome}</div>
-                        <div className="mt-0.5 text-xs text-mute">{a.meta}</div>
-                      </div>
-                    </div>
-                  ))}
-                  <button className="mt-1 flex w-full items-center gap-2 rounded-lg border-[1.5px] border-dashed border-borda-forte px-3.5 py-3 text-sm font-medium text-mute hover:border-laranja hover:text-laranja-esc">
-                    <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-4 w-4 stroke-current" fill="none">
-                      <path d="M12 5v14M5 12h14" />
-                    </svg>
-                    Anexar arquivo
-                  </button>
-                </div>
-              )}
-
-              {/* histórico */}
+              {/* histórico — leitura real de core.evento por lead chega em rodada futura */}
               {aba === "hist" && (
-                <div className="pl-1.5">
-                  {detalhe.historico.map((ev, i) => (
-                    <div key={ev.id} className="relative ml-1.5 py-0.5 pb-3.5 pl-[18px]">
-                      {i < detalhe.historico.length - 1 && (
-                        <span className="absolute bottom-[-8px] left-0 top-1.5 w-0.5 bg-borda-forte" />
-                      )}
-                      <span className={cn("absolute left-[-4px] top-1 h-2.5 w-2.5 rounded-full border-2 border-creme", EV_COR[ev.tipo])} />
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-sm font-semibold text-navy">{ev.titulo}</span>
-                        <span className="ml-auto font-mono text-xs text-mute">{ev.quando}</span>
-                      </div>
-                      <p className="mt-0.5 text-xs leading-relaxed text-suave" dangerouslySetInnerHTML={{ __html: ev.corpo }} />
-                    </div>
-                  ))}
-                </div>
+                <p className="text-sm text-mute">
+                  O histórico deste lead vive no ledger. A leitura por card ainda não foi ligada —
+                  enquanto isso, a <b className="text-suave">Timeline</b> mostra o ledger completo.
+                </p>
               )}
             </div>
 

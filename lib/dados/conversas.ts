@@ -5,7 +5,8 @@ import { criarClienteServidor } from "@/lib/supabase/server";
  *  - core.conversa: id, telefone, lead_id, mode(IA|HUMANO), dono_atual, status, atualizado_em
  *  - core.mensagem: id, conversa_id, direcao(entrada|saida), tipo_conteudo, corpo, criado_em
  *  - core.sugestao_ia: propostas tipo='enviar_mensagem' pendentes (o laço da Clara)
- * Prefere real; cai em MOCK só se não houver conversa (nunca inbox vazio na demo). fonte='mock'→aviso.
+ * Só dado real (Rodada 7, D3): inbox sem conversa = estado vazio honesto; falha de leitura
+ * também degrada pra lista vazia, nunca pra dado inventado.
  * Visual das bolhas segue Design/front-clara-v1.html (Croqui).
  */
 
@@ -67,69 +68,13 @@ export interface SugestaoMensagem {
   payload: Record<string, unknown>; // payload_proposto completo (p/ aprovar com edição = 'corrigida')
 }
 
-export interface DadosConversas {
-  conversas: ConversaResumo[];
-  fonte: "real" | "mock";
-}
-
-// ─────────────── MOCK (fallback) ───────────────
-
-function minsAtras(m: number): string {
-  return new Date(Date.now() - m * 60000).toISOString();
-}
-
-function segsAtras(s: number): string {
-  return new Date(Date.now() - s * 1000).toISOString();
-}
-
-const CONVERSAS_MOCK: ConversaResumo[] = [
-  { id: "c-mock-1", telefone: "5531988776655", nome: "Terezinha de Jesus", mode: "IA", dono_atual: null, status: "nova", atualizado_em: minsAtras(3), etapa: "qualificando", etapa_nome: "Qualificação", entrou_etapa_em: minsAtras(1440), valor: null, origem: "meta", idade: 63, previa: "Primeiro. Ela tem dificuldade principalmente quando tem barulho", previa_saida: false, nao_lida: true, nao_lidas_qtd: 3 },
-  { id: "c-mock-2", telefone: "5521991450087", nome: "João Batista Neves", mode: "HUMANO", dono_atual: "humano:sara", status: "em_atendimento", atualizado_em: minsAtras(25), etapa: "negociacao", etapa_nome: "Negociação", entrou_etapa_em: minsAtras(2880), valor: 11400, origem: "wa", previa: "Oi! Aqui é a Sara, assumi pra te explicar direitinho.", previa_saida: true, nao_lida: false, nao_lidas_qtd: 0 },
-  { id: "c-mock-3", telefone: "5531983307712", nome: null, mode: "IA", dono_atual: null, status: "aguardando", atualizado_em: minsAtras(140), etapa: "novo", etapa_nome: "Novo lead", entrou_etapa_em: minsAtras(140), valor: null, origem: "meta", previa: null, previa_saida: false, nao_lida: true, nao_lidas_qtd: 1 },
-];
-
-const MENSAGENS_MOCK: Record<string, Mensagem[]> = {
-  "c-mock-1": [
-    // dia anterior → separador de dia
-    { id: "mm0", direcao: "entrada", tipo_conteudo: "text", corpo: "Boa noite", criado_em: minsAtras(60 * 26) },
-    { id: "mm1", direcao: "entrada", tipo_conteudo: "text", corpo: "Oi, vi o anúncio de vocês sobre aparelho auditivo", criado_em: minsAtras(30) },
-    { id: "mm2", direcao: "saida", tipo_conteudo: "text", corpo: "Olá! Que bom te ver por aqui 💙 Sou a Clara, da Me Escuta. Posso te fazer algumas perguntinhas pra entender como te ajudar?", criado_em: minsAtras(29), autor: "clara", status_entrega: "lido" },
-    { id: "mm3", direcao: "entrada", tipo_conteudo: "text", corpo: "Pode sim. É pra minha mãe, ela tem 75 anos", criado_em: minsAtras(20) },
-    { id: "mm4", direcao: "saida", tipo_conteudo: "text", corpo: "Perfeito! E ela já usou algum aparelho antes, ou seria o primeiro?", criado_em: minsAtras(19), autor: "clara", status_entrega: "entregue" },
-    // rajada da cliente (mesmo autor, <60s) → agrupa numa fala só
-    { id: "mm5", direcao: "entrada", tipo_conteudo: "text", corpo: "Primeiro. Ela tem dificuldade principalmente quando tem barulho", criado_em: segsAtras(200) },
-    { id: "mm5b", direcao: "entrada", tipo_conteudo: "text", corpo: "na igreja ela não escuta o padre", criado_em: segsAtras(185) },
-    { id: "mm5c", direcao: "entrada", tipo_conteudo: "audio", corpo: null, criado_em: segsAtras(170) },
-  ],
-  "c-mock-2": [
-    { id: "mm6", direcao: "entrada", tipo_conteudo: "text", corpo: "Queria saber da garantia", criado_em: minsAtras(40) },
-    { id: "mm7", direcao: "saida", tipo_conteudo: "text", corpo: "Oi! Aqui é a Sara, assumi pra te explicar direitinho. A garantia é de 1 ano contra defeitos + 90 dias de adaptação.", criado_em: minsAtras(25), autor: "sara", status_entrega: "enviado" },
-    { id: "mm7b", direcao: "saida", tipo_conteudo: "text", corpo: "Consegue falar agora? Posso te ligar.", criado_em: minsAtras(24), autor: "sara", status_entrega: "falhou", erro_codigo: "131047" },
-  ],
-  "c-mock-3": [
-    { id: "mm8", direcao: "entrada", tipo_conteudo: "text", corpo: "Bom dia", criado_em: minsAtras(140) },
-  ],
-};
-
-const SUGESTOES_MOCK: Record<string, SugestaoMensagem[]> = {
-  "c-mock-1": [
-    {
-      id: "sm1",
-      corpo: "Entendo! Ambiente com ruído é um dos maiores desafios mesmo. A boa notícia é que os modelos que trabalhamos têm redução de ruído justamente pra isso. Posso agendar uma avaliação auditiva gratuita por teleconsulta com nossa fono pra ela? 💙",
-      criado_em: minsAtras(2),
-      payload: { corpo: "Entendo! Ambiente com ruído é um dos maiores desafios mesmo. A boa notícia é que os modelos que trabalhamos têm redução de ruído justamente pra isso. Posso agendar uma avaliação auditiva gratuita por teleconsulta com nossa fono pra ela? 💙" },
-    },
-  ],
-};
-
 // ─────────────── leitura real ───────────────
 
-export async function lerConversas(): Promise<DadosConversas> {
+export async function lerConversas(): Promise<ConversaResumo[]> {
   try {
     const supabase = criarClienteServidor();
     // Contrato 0025 (Trilha A): o inbox lista core.v_conversa WHERE visivel_inbox — conversa só
-    // aparece quando satisfaz o filtro (inbound real). Lista vazia é estado HONESTO, não mock;
-    // mock só se a query falhar (dev sem banco).
+    // aparece quando satisfaz o filtro (inbound real). Lista vazia é estado HONESTO.
     const { data, error } = await supabase
       .schema("core")
       .from("v_conversa")
@@ -137,8 +82,7 @@ export async function lerConversas(): Promise<DadosConversas> {
       .eq("visivel_inbox", true)
       .order("atualizado_em", { ascending: false, nullsFirst: false })
       .limit(50);
-    if (error) return { conversas: CONVERSAS_MOCK, fonte: "mock" };
-    if (!data || data.length === 0) return { conversas: [], fonte: "real" };
+    if (error || !data || data.length === 0) return [];
 
     // dados do lead (nome/etapa/valor/origem) pelo lead_id via v_lead_card
     const leadIds = data.map((c: any) => c.lead_id).filter(Boolean);
@@ -194,7 +138,7 @@ export async function lerConversas(): Promise<DadosConversas> {
       /* sem prévia — lista degrada pro rótulo de origem */
     }
 
-    const conversas: ConversaResumo[] = data.map((c: any) => {
+    return data.map((c: any) => {
       const info = c.lead_id ? leadInfo.get(String(c.lead_id)) : null;
       const p = previa.get(String(c.id));
       const etapaChave = info?.etapa ? String(info.etapa) : null;
@@ -219,9 +163,8 @@ export async function lerConversas(): Promise<DadosConversas> {
         nao_lidas_qtd: naoLidas.get(String(c.id)) ?? 0,
       };
     });
-    return { conversas, fonte: "real" };
   } catch {
-    return { conversas: CONVERSAS_MOCK, fonte: "mock" };
+    return [];
   }
 }
 
@@ -231,8 +174,7 @@ const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor,tim
 /** + colunas da pipeline de mídia (contrato rodada 5, migration em paralelo). */
 const COLUNAS_COM_MIDIA = `${COLUNAS_COM_STATUS},midia_caminho,midia_mime`;
 
-export async function lerMensagens(conversaId: string, fonte: "real" | "mock"): Promise<Mensagem[]> {
-  if (fonte === "mock") return MENSAGENS_MOCK[conversaId] ?? [];
+export async function lerMensagens(conversaId: string): Promise<Mensagem[]> {
   try {
     const supabase = criarClienteServidor();
     const buscar = (colunas: string) =>
@@ -280,11 +222,7 @@ export async function lerMensagens(conversaId: string, fonte: "real" | "mock"): 
   }
 }
 
-export async function lerSugestoesConversa(
-  conversaId: string,
-  fonte: "real" | "mock",
-): Promise<SugestaoMensagem[]> {
-  if (fonte === "mock") return SUGESTOES_MOCK[conversaId] ?? [];
+export async function lerSugestoesConversa(conversaId: string): Promise<SugestaoMensagem[]> {
   try {
     const supabase = criarClienteServidor();
     const { data, error } = await supabase
