@@ -247,7 +247,13 @@ export function Inbox({
   /** Despacha texto pro backend com bolha otimista; falha NÃO descarta o texto (RF-32). */
   function despachar(texto: string, idPendente?: string) {
     if (!selecionada) return;
-    const id = idPendente ?? `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // o id da bolha é também a chave de idempotência do evento (id_externo): retry da MESMA bolha
+    // reusa a chave e a porta deduplica — nunca sai duplicado no WhatsApp por retry de rede.
+    const id =
+      idPendente ??
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     if (idPendente) {
       setPendentes((p) => p.map((m) => (m.id === id ? { ...m, falha_local: false } : m)));
     } else {
@@ -266,7 +272,7 @@ export function Inbox({
       requestAnimationFrame(() => fimRef.current?.scrollIntoView({ behavior: "smooth" }));
     }
     startTransition(async () => {
-      const r = await enviarMensagem(selecionada.id, texto);
+      const r = await enviarMensagem(selecionada.id, texto, id);
       if (r.ok) {
         router.refresh();
       } else {
@@ -836,6 +842,7 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
       </span>
     );
   }
+  // tipos em PT-BR = contrato do ingestor (parser TIPO_PT); os em EN cobrem mock/histórico
   const rotulo =
     tipo === "image" || tipo === "imagem"
       ? "Foto recebida"
@@ -843,9 +850,15 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
         ? "Documento recebido"
         : tipo === "video"
           ? "Vídeo recebido"
-          : tipo === "sticker"
+          : tipo === "sticker" || tipo === "figurinha"
             ? "Figurinha"
-            : `Mensagem (${tipo})`;
+            : tipo === "location" || tipo === "localizacao"
+              ? "Localização recebida"
+              : tipo === "contacts" || tipo === "contato"
+                ? "Contato recebido"
+                : tipo === "reaction" || tipo === "reacao"
+                  ? "Reação"
+                  : `Mensagem (${tipo})`;
   return (
     <span className="flex flex-col gap-1">
       <span className="flex items-center gap-2 font-medium">

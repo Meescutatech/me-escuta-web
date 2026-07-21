@@ -24,11 +24,14 @@ export async function registrarEventoUI(
   tipo: string,
   payload: Record<string, unknown>,
   leadId?: string,
+  idExterno?: string,
 ): Promise<ResultadoEvento> {
   const supabase = criarClienteServidor();
   const envelope: Record<string, unknown> = {
     tipo,
-    id_externo: randomUUID(),
+    // idExterno estável (ex.: id da bolha otimista) ⇒ retry da MESMA ação cai no dedupe
+    // UNIQUE(origem,id_externo) da porta em vez de gravar evento novo. Ausente ⇒ uuid por ação.
+    id_externo: idExterno ?? randomUUID(),
     versao_payload: 1,
     payload,
   };
