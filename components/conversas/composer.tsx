@@ -168,7 +168,8 @@ export function Composer({
         .storage.from("midia-whatsapp")
         .upload(caminho, anexo.blob, { contentType: anexo.mime, upsert: false });
       if (error) {
-        avisar(`Falha ao subir o anexo: ${error.message}`);
+        console.error("upload do anexo falhou:", error.message);
+        avisar("não deu pra subir o anexo — tente de novo");
         return; // anexo e legenda ficam — dá pra tentar de novo
       }
       const legenda = anexo.categoria === "imagem" ? rascunho.trim() || null : null;

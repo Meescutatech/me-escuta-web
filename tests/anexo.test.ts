@@ -44,17 +44,20 @@ test("gif/heic/pdf não passam como imagem", () => {
 
 // ─────────── validarAnexo — áudio (D3: 16MB; webm do gravador passa, D1) ───────────
 
-test("áudio aceito (mp3/m4a/ogg/aac) com extensão certa", () => {
-  const casos: [string, string][] = [
-    ["audio/mpeg", "mp3"],
-    ["audio/mp4", "m4a"],
-    ["audio/x-m4a", "m4a"],
-    ["audio/ogg", "ogg"],
-    ["audio/aac", "aac"],
+test("áudio aceito (mp3/m4a/ogg/aac) devolve mime CANÔNICO + extensão certa", () => {
+  // entrada → [canônico, ext]: o sender só conhece o conjunto canônico da Meta — alias cru
+  // (x-m4a, mp3) propagado viraria falha PERMANENTE lá; a normalização é daqui.
+  const casos: [string, string, string][] = [
+    ["audio/mpeg", "audio/mpeg", "mp3"],
+    ["audio/mp3", "audio/mpeg", "mp3"],
+    ["audio/mp4", "audio/mp4", "m4a"],
+    ["audio/x-m4a", "audio/mp4", "m4a"],
+    ["audio/ogg", "audio/ogg", "ogg"],
+    ["audio/aac", "audio/aac", "aac"],
   ];
-  for (const [mime, ext] of casos) {
-    const r = validarAnexo({ type: mime, size: 1024 });
-    assert.deepEqual(r, { ok: true, categoria: "audio", mime, ext }, mime);
+  for (const [entrada, canonico, ext] of casos) {
+    const r = validarAnexo({ type: entrada, size: 1024 });
+    assert.deepEqual(r, { ok: true, categoria: "audio", mime: canonico, ext }, entrada);
   }
 });
 

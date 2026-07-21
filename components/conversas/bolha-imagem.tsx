@@ -92,6 +92,10 @@ export function BolhaImagem({ m }: { m: Mensagem }) {
           <img
             src={url}
             alt={m.corpo ? `Foto: ${m.corpo}` : "Foto da conversa"}
+            onError={() => {
+              setAmpliada(false);
+              setErro(true);
+            }}
             className="max-h-full max-w-full rounded-lg shadow-forte"
           />
         </span>

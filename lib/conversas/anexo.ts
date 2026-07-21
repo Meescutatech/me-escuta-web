@@ -10,21 +10,26 @@ export type CategoriaAnexo = "imagem" | "audio";
 export const LIMITE_IMAGEM_BYTES = 5 * 1024 * 1024;
 export const LIMITE_AUDIO_BYTES = 16 * 1024 * 1024;
 
-/** mime aceito → extensão do objeto em `saida/<uuid>.<ext>` (D5). */
-const MIME_IMAGEM: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
+/**
+ * mime aceito → {mime CANÔNICO, extensão do objeto em `saida/<uuid>.<ext>`} (D5).
+ * O canônico é o que vai no contentType do upload e no midia_mime do evento: o sender (Trilha A)
+ * só conhece o conjunto canônico da Meta ({aac, mp4, mpeg, amr, ogg} + webm do gravador) e trata
+ * alias cru (audio/x-m4a, audio/mp3) como falha PERMANENTE — a normalização acontece AQUI.
+ */
+const MIME_IMAGEM: Record<string, { canonico: string; ext: string }> = {
+  "image/jpeg": { canonico: "image/jpeg", ext: "jpg" },
+  "image/png": { canonico: "image/png", ext: "png" },
+  "image/webp": { canonico: "image/webp", ext: "webp" },
 };
 
-const MIME_AUDIO: Record<string, string> = {
-  "audio/mpeg": "mp3",
-  "audio/mp3": "mp3",
-  "audio/mp4": "m4a",
-  "audio/x-m4a": "m4a",
-  "audio/ogg": "ogg",
-  "audio/aac": "aac",
-  "audio/webm": "webm", // gravador do Chrome — remux é do sender (D1)
+const MIME_AUDIO: Record<string, { canonico: string; ext: string }> = {
+  "audio/mpeg": { canonico: "audio/mpeg", ext: "mp3" },
+  "audio/mp3": { canonico: "audio/mpeg", ext: "mp3" }, // alias comum → canônico
+  "audio/mp4": { canonico: "audio/mp4", ext: "m4a" },
+  "audio/x-m4a": { canonico: "audio/mp4", ext: "m4a" }, // .m4a no Chrome/macOS → canônico
+  "audio/ogg": { canonico: "audio/ogg", ext: "ogg" },
+  "audio/aac": { canonico: "audio/aac", ext: "aac" },
+  "audio/webm": { canonico: "audio/webm", ext: "webm" }, // gravador do Chrome — remux é do sender (D1)
 };
 
 /** `audio/webm;codecs=opus` → `audio/webm` (o MediaRecorder devolve mime com parâmetros). */
@@ -35,7 +40,7 @@ export function mimeBase(mime: string | null | undefined): string {
 export interface AnexoValido {
   ok: true;
   categoria: CategoriaAnexo;
-  mime: string; // mime base normalizado (sem ;codecs=…)
+  mime: string; // mime CANÔNICO (alias e ;codecs=… normalizados) — é o que sobe e vai no evento
   ext: string;
 }
 
@@ -56,22 +61,22 @@ function fmtMB(bytes: number): string {
  */
 export function validarAnexo(a: { type: string; size: number }): ResultadoAnexo {
   const mime = mimeBase(a.type);
-  const extImagem = MIME_IMAGEM[mime];
-  const extAudio = MIME_AUDIO[mime];
+  const imagem = MIME_IMAGEM[mime];
+  const audio = MIME_AUDIO[mime];
 
-  if (extImagem) {
+  if (imagem) {
     if (a.size <= 0) return { ok: false, motivo: "arquivo vazio" };
     if (a.size > LIMITE_IMAGEM_BYTES) {
       return { ok: false, motivo: `imagem passa de ${fmtMB(LIMITE_IMAGEM_BYTES)} — o WhatsApp não aceita` };
     }
-    return { ok: true, categoria: "imagem", mime, ext: extImagem };
+    return { ok: true, categoria: "imagem", mime: imagem.canonico, ext: imagem.ext };
   }
-  if (extAudio) {
+  if (audio) {
     if (a.size <= 0) return { ok: false, motivo: "arquivo vazio" };
     if (a.size > LIMITE_AUDIO_BYTES) {
       return { ok: false, motivo: `áudio passa de ${fmtMB(LIMITE_AUDIO_BYTES)} — o WhatsApp não aceita` };
     }
-    return { ok: true, categoria: "audio", mime, ext: extAudio };
+    return { ok: true, categoria: "audio", mime: audio.canonico, ext: audio.ext };
   }
   return {
     ok: false,
