@@ -9,7 +9,9 @@ import {
   enviarMensagem,
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
+import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
+import { ehAudio } from "@/lib/conversas/midia";
 import { useConversaViva } from "@/components/conversas/tempo-real";
 import { fronteiraNaoLidas, montarBlocos, motivoErroPermanente } from "@/lib/conversas/thread";
 import { diasNaEtapa } from "@/lib/tempo";
@@ -790,23 +792,9 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
   if (tipo === "text" || tipo === "texto") {
     return m.corpo ? <>{m.corpo}</> : <span className="italic opacity-70">[mensagem vazia]</span>;
   }
-  if (tipo === "audio" || tipo === "voice" || tipo === "ptt") {
-    return (
-      <span className="flex flex-col gap-1">
-        <span className="flex items-center gap-2 font-medium">
-          <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 stroke-suave" fill="none">
-            <rect x="9" y="2" width="6" height="12" rx="3" />
-            <path d="M5 10a7 7 0 0 0 14 0M12 17v4" />
-          </svg>
-          Mensagem de voz
-        </span>
-        {m.corpo ? (
-          <span className="text-[0.84rem] text-suave">“{m.corpo}”</span>
-        ) : (
-          <span className="text-[0.76rem] italic text-mute">transcrição e player chegam com a pipeline de mídia</span>
-        )}
-      </span>
-    );
+  if (ehAudio(tipo)) {
+    // player quando a mídia já está no bucket; degrade honesto quando não (bolha-audio.tsx)
+    return <BolhaAudio m={m} />;
   }
   const rotulo =
     tipo === "image" || tipo === "imagem"

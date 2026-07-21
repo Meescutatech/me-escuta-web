@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { registrarEventoUI, type ResultadoEvento } from "@/app/(app)/funil/actions";
+import { caminhoValido } from "@/lib/conversas/midia";
 
 /**
  * TRANSBORDO — Sara assume a conversa (Clara pausa) / devolve (Clara retoma).
@@ -35,6 +36,29 @@ export async function enviarMensagem(conversaId: string, corpo: string): Promise
   const r = await registrarEventoUI("enviar_mensagem_humana", { conversa_id: conversaId, corpo: texto });
   revalidatePath("/conversas");
   return r;
+}
+
+export interface ResultadoUrlAudio {
+  ok: boolean;
+  url?: string;
+  motivo?: string;
+}
+
+/**
+ * Signed URL (~60 min) pro áudio no bucket PRIVADO 'midia-whatsapp' (pipeline de mídia, rodada 5).
+ * Roda no servidor com o cliente de SESSÃO (anon key + JWT do operador logado) — nenhuma service
+ * key chega perto do client; o acesso ao objeto é decidido pelo RLS do Storage (política de
+ * leitura pra authenticated no bucket, parte do contrato do backend). Sem política ou sem objeto,
+ * retorna ok=false e a bolha degrada.
+ */
+export async function obterUrlAudio(caminho: string): Promise<ResultadoUrlAudio> {
+  if (!caminhoValido(caminho)) return { ok: false, motivo: "caminho inválido" };
+  const supabase = criarClienteServidor();
+  const { data, error } = await supabase.storage
+    .from("midia-whatsapp")
+    .createSignedUrl(caminho.trim(), 3600);
+  if (error || !data?.signedUrl) return { ok: false, motivo: error?.message ?? "sem URL" };
+  return { ok: true, url: data.signedUrl };
 }
 
 /**
