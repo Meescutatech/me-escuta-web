@@ -87,6 +87,18 @@ test("mensagem de ENTRADA com o mesmo corpo não reconcilia pendente de saída",
   assert.deepEqual(pendentesVivas([pendente], servidor), [pendente]);
 });
 
+test("sequência na_fila→falhou não ressuscita bolha fantasma (poda de estado)", () => {
+  // fluxo real do 131030: envia → projeção confirma na_fila → sender falha → linha vira 'falhou'.
+  // O inbox aplica pendentesVivas no ESTADO a cada refetch; a confirmação tem que ser irreversível.
+  let estado: Mensagem[] = [msg({ id: "tmp-1", pendente: true })];
+  estado = pendentesVivas(estado, [msg({ id: "srv-1", status_entrega: "na_fila" })]);
+  assert.deepEqual(estado, []); // confirmada → podada do estado
+  estado = pendentesVivas(estado, [
+    msg({ id: "srv-1", status_entrega: "falhou", erro_codigo: "131030" }),
+  ]);
+  assert.deepEqual(estado, []); // a mesma linha falhou depois → nada ressuscita
+});
+
 test("corpo diferente não reconcilia", () => {
   const pendente = msg({ id: "tmp-1", corpo: "Bom dia", pendente: true });
   const servidor = [msg({ id: "srv-1", status_entrega: "enviado" })];

@@ -145,6 +145,16 @@ export function Inbox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selecionadaId]);
 
+  // poda pendentes confirmadas do ESTADO, não só do render: confirmação é irreversível — se a
+  // linha confirmada depois virar 'falhou', a pendente não pode ressuscitar como bolha fantasma
+  // "aguardando fila" ao lado da bolha de erro (nem inflar visiveis.length → pill "1 nova" falsa).
+  useEffect(() => {
+    setPendentes((p) => {
+      const vivas = pendentesVivas(p, mensagens);
+      return vivas.length === p.length ? p : vivas;
+    });
+  }, [mensagens]);
+
   // mensagens visíveis = servidor + pendentes ainda não confirmadas pela projeção
   const visiveis = useMemo(
     () => [...mensagens, ...pendentesVivas(pendentes, mensagens)],

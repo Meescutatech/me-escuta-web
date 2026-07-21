@@ -137,6 +137,9 @@ export function podeTentarDeNovo(m: Mensagem): boolean {
  * RF-32 — reconciliação das bolhas otimistas: a pendente some quando a projeção confirma uma
  * mensagem de saída com o mesmo corpo. Linha 'falhou' do servidor NÃO confirma pendente
  * nenhuma — senão a falhada antiga engole o reenvio do mesmo texto e o clique fica invisível.
+ * Contrato com o inbox: o chamador aplica o resultado de volta no ESTADO a cada refetch
+ * (confirmação é irreversível) — se a linha confirmada virar 'falhou' depois, a pendente já
+ * saiu do estado e não ressuscita como bolha fantasma.
  */
 export function pendentesVivas(pendentes: Mensagem[], servidor: Mensagem[]): Mensagem[] {
   return pendentes.filter(
