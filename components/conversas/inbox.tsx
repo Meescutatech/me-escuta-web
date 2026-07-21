@@ -10,8 +10,10 @@ import {
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
+import { BolhaImagem } from "@/components/conversas/bolha-imagem";
+import { Composer, type MidiaPronta } from "@/components/conversas/composer";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
-import { ehAudio } from "@/lib/conversas/midia";
+import { ehAudio, ehImagem, temImagemVisivel } from "@/lib/conversas/midia";
 import { useConversaViva } from "@/components/conversas/tempo-real";
 import {
   fronteiraNaoLidas,
@@ -111,7 +113,6 @@ export function Inbox({
   const [pendentes, setPendentes] = useState<Mensagem[]>([]);
   const [props_, setProps] = useState<SugestaoMensagem[]>(sugestoes);
   const [mode, setMode] = useState<ModoConversa>(selecionada?.mode ?? "IA");
-  const [rascunho, setRascunho] = useState("");
   const [busca, setBusca] = useState("");
   const [aba, setAba] = useState<Aba>("todas");
   const [editando, setEditando] = useState<{ id: string; texto: string } | null>(null);
@@ -246,8 +247,13 @@ export function Inbox({
     });
   }
 
-  /** Despacha texto pro backend com bolha otimista; falha NÃO descarta o texto (RF-32). */
-  function despachar(texto: string, idPendente?: string) {
+  /**
+   * Despacha texto OU mídia pro backend com bolha otimista; falha NÃO descarta o conteúdo
+   * (RF-32). Mídia (rodada 6): o upload pro Storage já aconteceu no composer — aqui só emite o
+   * evento estendido (D4) com o caminho; a bolha otimista carrega midia_caminho/mime e renderiza
+   * com os MESMOS componentes das mensagens do servidor (signed URL de sessão).
+   */
+  function despachar(texto: string, midia?: MidiaPronta | null, idPendente?: string) {
     if (!selecionada) return;
     // o id da bolha é também a chave de idempotência do evento (id_externo): retry da MESMA bolha
     // reusa a chave e a porta deduplica — nunca sai duplicado no WhatsApp por retry de rede.
@@ -264,17 +270,24 @@ export function Inbox({
         {
           id,
           direcao: "saida",
-          tipo_conteudo: "texto",
-          corpo: texto,
+          tipo_conteudo: midia ? midia.tipo : "texto",
+          corpo: texto || null,
           criado_em: new Date().toISOString(),
           pendente: true,
           autor: mode === "HUMANO" ? "sara" : "clara",
+          midia_caminho: midia?.caminho,
+          midia_mime: midia?.mime,
         },
       ]);
       requestAnimationFrame(() => fimRef.current?.scrollIntoView({ behavior: "smooth" }));
     }
     startTransition(async () => {
-      const r = await enviarMensagem(selecionada.id, texto, id);
+      const r = await enviarMensagem(
+        selecionada.id,
+        texto,
+        id,
+        midia ? { caminho: midia.caminho, mime: midia.mime } : undefined,
+      );
       if (r.ok) {
         router.refresh();
       } else {
@@ -284,22 +297,34 @@ export function Inbox({
     });
   }
 
-  function enviar() {
-    const texto = rascunho.trim();
-    if (!texto || !selecionada) return;
-    setRascunho("");
-    despachar(texto);
+  /** "Tentar de novo" de falha LOCAL: reusa a mesma bolha/chave; mídia não sobe de novo. */
+  function tentarDeNovoLocal(m: Mensagem) {
+    const midia: MidiaPronta | null = m.midia_caminho
+      ? {
+          caminho: m.midia_caminho,
+          mime: m.midia_mime ?? "",
+          tipo: ehImagem(m.tipo_conteudo) ? "imagem" : "audio",
+          legenda: m.corpo ?? null,
+        }
+      : null;
+    despachar(m.corpo ?? "", midia, m.id);
   }
 
   /**
    * RF-28: reenvio de mensagem que a PROJEÇÃO marcou 'falhou' — evento NOVO na porta com o
-   * mesmo corpo (a porta gera novo dedup_id; a falhada fica no ledger, imutável). Sem bolha
-   * otimista aqui: a verdade é a nova linha da projeção, que o refresh traz como 'na_fila'.
+   * mesmo conteúdo (a porta gera novo dedup_id; a falhada fica no ledger, imutável). Mídia
+   * reusa o MESMO midia_caminho — o objeto segue no bucket. Sem bolha otimista aqui: a verdade
+   * é a nova linha da projeção, que o refresh traz como 'na_fila'.
    */
   function reenviar(m: Mensagem) {
-    if (!selecionada || !m.corpo) return;
+    if (!selecionada || (!m.corpo && !m.midia_caminho)) return;
     startTransition(async () => {
-      const r = await enviarMensagem(selecionada.id, m.corpo!);
+      const r = await enviarMensagem(
+        selecionada.id,
+        m.corpo ?? "",
+        undefined,
+        m.midia_caminho ? { caminho: m.midia_caminho, mime: m.midia_mime } : undefined,
+      );
       if (r.ok) {
         avisar("Reenviado — nova tentativa na fila.");
         router.refresh();
@@ -558,7 +583,7 @@ export function Inbox({
                                     </span>
                                     {podeRetry && (
                                       <button
-                                        onClick={() => (m.falha_local ? despachar(m.corpo!, m.id) : reenviar(m))}
+                                        onClick={() => (m.falha_local ? tentarDeNovoLocal(m) : reenviar(m))}
                                         disabled={pending}
                                         className="font-semibold underline underline-offset-2 hover:text-tinta disabled:opacity-50"
                                       >
@@ -674,46 +699,14 @@ export function Inbox({
             )}
             </div>
 
-            {/* composer sensível ao modo */}
-            <div className="flex-shrink-0 bg-board px-4 pb-4 pt-3">
-              <div className="flex items-end gap-2.5 rounded-xl border border-linha-forte bg-branco py-2 pl-3.5 pr-2 focus-within:border-foco-comp">
-                <textarea
-                  rows={1}
-                  value={rascunho}
-                  onChange={(e) => setRascunho(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      enviar();
-                    }
-                  }}
-                  placeholder={modoClara ? "Escreva para assumir a conversa…" : "Escreva como Sara…"}
-                  className="max-h-28 flex-1 resize-none bg-transparent py-1 text-[0.9rem] leading-relaxed text-tinta outline-none placeholder:text-mute"
-                />
-                <button
-                  onClick={enviar}
-                  disabled={pending || !rascunho.trim()}
-                  title="Enviar"
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-navy text-branco transition-colors hover:bg-navy-esc focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/40 disabled:opacity-50"
-                >
-                  <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-current" fill="none">
-                    <path d="M22 2 11 13" />
-                    <path d="M22 2 15 22l-4-9-9-4 20-7z" />
-                  </svg>
-                </button>
-              </div>
-              <p className="mt-2 text-center text-[0.72rem] text-mute">
-                {modoClara ? (
-                  <>
-                    A Clara está conduzindo — <b className="font-medium text-suave">ao enviar, você assume a conversa</b>. Ou aprove a sugestão acima.
-                  </>
-                ) : (
-                  <>
-                    Você assumiu — escrevendo como <b className="font-medium text-suave">Sara</b>. A Clara volta quando você devolver.
-                  </>
-                )}
-              </p>
-            </div>
+            {/* composer sensível ao modo — texto + anexo + gravador (rodada 6, composer.tsx) */}
+            <Composer
+              modoClara={modoClara}
+              pending={pending}
+              onEnviarTexto={(texto) => despachar(texto)}
+              onEnviarMidia={(midia) => despachar(midia.legenda ?? "", midia)}
+              avisar={avisar}
+            />
           </>
         )}
       </section>
@@ -829,6 +822,10 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
   if (ehAudio(tipo)) {
     // player quando a mídia já está no bucket; degrade honesto quando não (bolha-audio.tsx)
     return <BolhaAudio m={m} />;
+  }
+  if (temImagemVisivel(m)) {
+    // foto (in e out) quando a mídia já está no bucket; sem caminho cai no rótulo de sempre
+    return <BolhaImagem m={m} />;
   }
   // tipos em PT-BR = contrato do ingestor (parser TIPO_PT); os em EN cobrem mock/histórico
   const rotulo =

@@ -34,35 +34,44 @@ export async function enviarMensagem(
   conversaId: string,
   corpo: string,
   chaveIdem?: string,
+  midia?: { caminho: string; mime?: string | null },
 ): Promise<ResultadoEvento> {
   const texto = corpo.trim();
-  if (!texto) return { ok: false, motivo: "mensagem vazia" };
+  if (!texto && !midia) return { ok: false, motivo: "mensagem vazia" };
+  // Payload estendido da rodada 6 (D4): {conversa_id, corpo?, midia_caminho?, midia_mime?} —
+  // corpo = legenda quando houver mídia. Texto puro segue emitindo o shape idêntico ao de antes.
+  const payload: Record<string, unknown> = { conversa_id: conversaId };
+  if (texto) payload.corpo = texto;
+  if (midia) {
+    const caminho = midia.caminho.trim();
+    // o front só sobe em saida/ (D5); qualquer outro caminho aqui é bug ou request forjado
+    if (!caminhoValido(caminho) || !caminho.startsWith("saida/")) {
+      return { ok: false, motivo: "caminho de mídia inválido" };
+    }
+    payload.midia_caminho = caminho;
+    if (midia.mime) payload.midia_mime = midia.mime;
+  }
   // chaveIdem = id da bolha otimista: "Tentar de novo" da mesma bolha reusa a chave e o dedupe da
   // porta absorve (se a 1ª chamada gravou mas a resposta se perdeu, não sai duplicado no WhatsApp).
-  const r = await registrarEventoUI(
-    "enviar_mensagem_humana",
-    { conversa_id: conversaId, corpo: texto },
-    undefined,
-    chaveIdem,
-  );
+  const r = await registrarEventoUI("enviar_mensagem_humana", payload, undefined, chaveIdem);
   revalidatePath("/conversas");
   return r;
 }
 
-export interface ResultadoUrlAudio {
+export interface ResultadoUrlMidia {
   ok: boolean;
   url?: string;
   motivo?: string;
 }
 
 /**
- * Signed URL (~60 min) pro áudio no bucket PRIVADO 'midia-whatsapp' (pipeline de mídia, rodada 5).
- * Roda no servidor com o cliente de SESSÃO (anon key + JWT do operador logado) — nenhuma service
- * key chega perto do client; o acesso ao objeto é decidido pelo RLS do Storage (política de
- * leitura pra authenticated no bucket, parte do contrato do backend). Sem política ou sem objeto,
- * retorna ok=false e a bolha degrada.
+ * Signed URL (~60 min) pra QUALQUER mídia no bucket PRIVADO 'midia-whatsapp' (generalização do
+ * obterUrlAudio da rodada 5 — mesma mecânica, agora serve áudio E imagem, in e out). Roda no
+ * servidor com o cliente de SESSÃO (anon key + JWT do operador logado) — nenhuma service key
+ * chega perto do client; o acesso ao objeto é decidido pelo RLS do Storage (política de leitura
+ * pra authenticated no bucket). Sem política ou sem objeto, retorna ok=false e a bolha degrada.
  */
-export async function obterUrlAudio(caminho: string): Promise<ResultadoUrlAudio> {
+export async function obterUrlMidia(caminho: string): Promise<ResultadoUrlMidia> {
   if (!caminhoValido(caminho)) return { ok: false, motivo: "caminho inválido" };
   const supabase = criarClienteServidor();
   const { data, error } = await supabase.storage

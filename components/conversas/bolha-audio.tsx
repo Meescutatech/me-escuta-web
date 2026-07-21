@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { obterUrlAudio } from "@/app/(app)/conversas/actions";
+import { obterUrlMidia } from "@/app/(app)/conversas/actions";
 import { temPlayerDeAudio } from "@/lib/conversas/midia";
 import type { Mensagem } from "@/lib/dados/conversas";
 
@@ -20,7 +20,7 @@ function PlayerAudio({ caminho, mime }: { caminho: string; mime?: string | null 
     let vivo = true;
     setUrl(null);
     setErro(false);
-    obterUrlAudio(caminho)
+    obterUrlMidia(caminho)
       .then((r) => {
         if (!vivo) return;
         if (r.ok && r.url) setUrl(r.url);

@@ -104,3 +104,87 @@ test("corpo diferente não reconcilia", () => {
   const servidor = [msg({ id: "srv-1", status_entrega: "enviado" })];
   assert.deepEqual(pendentesVivas([pendente], servidor), [pendente]);
 });
+
+// ─────────── rodada 6 — retry e reconciliação com MÍDIA ───────────
+
+test("mídia falhada SEM legenda ganha retry (tem o que reenviar: o caminho)", () => {
+  const m = msg({
+    tipo_conteudo: "imagem",
+    corpo: null,
+    midia_caminho: "saida/u1.jpg",
+    status_entrega: "falhou",
+    erro_codigo: "131030",
+  });
+  assert.equal(podeTentarDeNovo(m), true);
+});
+
+test("mídia com erro permanente segue sem retry", () => {
+  const m = msg({
+    tipo_conteudo: "imagem",
+    corpo: null,
+    midia_caminho: "saida/u1.jpg",
+    status_entrega: "falhou",
+    erro_codigo: "131047",
+  });
+  assert.equal(podeTentarDeNovo(m), false);
+});
+
+test("pendente de mídia reconcilia pelo midia_caminho (chave única do upload)", () => {
+  const pendente = msg({
+    id: "tmp-1",
+    tipo_conteudo: "imagem",
+    corpo: "olha a foto",
+    midia_caminho: "saida/u1.jpg",
+    pendente: true,
+  });
+  const servidor = [
+    msg({ id: "srv-1", tipo_conteudo: "imagem", corpo: "olha a foto", midia_caminho: "saida/u1.jpg", status_entrega: "na_fila" }),
+  ];
+  assert.deepEqual(pendentesVivas([pendente], servidor), []);
+});
+
+test("dois uploads com a MESMA legenda não se engolem (caminhos distintos)", () => {
+  const pendente = msg({
+    id: "tmp-2",
+    tipo_conteudo: "imagem",
+    corpo: "olha a foto",
+    midia_caminho: "saida/u2.jpg",
+    pendente: true,
+  });
+  const servidor = [
+    msg({ id: "srv-1", tipo_conteudo: "imagem", corpo: "olha a foto", midia_caminho: "saida/u1.jpg", status_entrega: "enviado" }),
+  ];
+  assert.deepEqual(pendentesVivas([pendente], servidor), [pendente]);
+});
+
+test("degrade: servidor SEM colunas de mídia reconcilia pela legenda não-vazia", () => {
+  // deploy em qualquer ordem: se a projeção ainda não propaga midia_caminho, a linha vem só com
+  // o corpo (legenda) — reconcilia por ele; legenda vazia NÃO reconcilia com qualquer linha vazia
+  const comLegenda = msg({
+    id: "tmp-1",
+    tipo_conteudo: "imagem",
+    corpo: "olha a foto",
+    midia_caminho: "saida/u1.jpg",
+    pendente: true,
+  });
+  const semLegenda = msg({
+    id: "tmp-2",
+    tipo_conteudo: "audio",
+    corpo: null,
+    midia_caminho: "saida/u2.ogg",
+    pendente: true,
+  });
+  const servidor = [
+    msg({ id: "srv-1", corpo: "olha a foto", status_entrega: "na_fila" }),
+    msg({ id: "srv-2", corpo: null, status_entrega: "na_fila" }),
+  ];
+  assert.deepEqual(pendentesVivas([comLegenda, semLegenda], servidor), [semLegenda]);
+});
+
+test("pendente de TEXTO não é confirmada por linha de mídia com legenda igual", () => {
+  const pendente = msg({ id: "tmp-1", corpo: "olha a foto", pendente: true });
+  const servidor = [
+    msg({ id: "srv-1", tipo_conteudo: "imagem", corpo: "olha a foto", midia_caminho: "saida/u1.jpg", status_entrega: "enviado" }),
+  ];
+  assert.deepEqual(pendentesVivas([pendente], servidor), [pendente]);
+});
