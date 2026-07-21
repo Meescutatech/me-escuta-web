@@ -121,14 +121,15 @@ export function motivoErroPermanente(codigo: string | null | undefined): string 
 }
 
 /**
- * RF-28/32 — quando a mensagem falhada ganha o botão "Tentar de novo": tem corpo E a falha é
- * local (a action recusou o enfileiramento) OU a projeção confirmou 'falhou' com erro NÃO
- * permanente. Sem janela de tempo: falha retriável continua retriável — o conserto que
- * destrava o reenvio (ex.: sender corrigido pro 131030) pode chegar dias depois da falha.
- * O retry emite evento NOVO na porta (novo dedup_id); a falhada fica no ledger como está.
+ * RF-28/32 — quando a mensagem falhada ganha o botão "Tentar de novo": tem CONTEÚDO reenviável
+ * (corpo OU mídia já no bucket — rodada 6) E a falha é local (a action recusou o enfileiramento)
+ * OU a projeção confirmou 'falhou' com erro NÃO permanente. Sem janela de tempo: falha retriável
+ * continua retriável — o conserto que destrava o reenvio (ex.: sender corrigido pro 131030) pode
+ * chegar dias depois da falha. O retry emite evento NOVO na porta (novo dedup_id) com o MESMO
+ * midia_caminho (o objeto já está no Storage — não se sobe de novo); a falhada fica no ledger.
  */
 export function podeTentarDeNovo(m: Mensagem): boolean {
-  if (!m.corpo) return false;
+  if (!m.corpo && !m.midia_caminho?.trim()) return false;
   if (m.falha_local) return true;
   return m.status_entrega === "falhou" && !motivoErroPermanente(m.erro_codigo);
 }
@@ -142,13 +143,25 @@ export function podeTentarDeNovo(m: Mensagem): boolean {
  * saiu do estado e não ressuscita como bolha fantasma.
  */
 export function pendentesVivas(pendentes: Mensagem[], servidor: Mensagem[]): Mensagem[] {
-  return pendentes.filter(
-    (p) =>
-      !servidor.some(
-        (m) =>
-          m.direcao === "saida" &&
-          m.status_entrega !== "falhou" &&
-          (m.corpo ?? "").trim() === (p.corpo ?? "").trim(),
-      ),
-  );
+  return pendentes.filter((p) => !servidor.some((m) => confirmaPendente(m, p)));
+}
+
+/**
+ * Rodada 6: pendente COM mídia casa primeiro pelo midia_caminho (é único por upload — chave
+ * perfeita); se a projeção do servidor ainda não trouxer as colunas de mídia (deploy do db em
+ * paralelo, cascata de degrade do select), cai pro match por legenda NÃO-vazia. Pendente sem
+ * mídia segue o match por corpo de sempre — mas nunca é confirmada por uma linha de mídia
+ * (legenda igual a um texto são mensagens diferentes).
+ */
+function confirmaPendente(m: Mensagem, p: Mensagem): boolean {
+  if (m.direcao !== "saida" || m.status_entrega === "falhou") return false;
+  const caminhoP = p.midia_caminho?.trim();
+  const caminhoM = m.midia_caminho?.trim();
+  if (caminhoP) {
+    if (caminhoM) return caminhoM === caminhoP;
+    const legenda = (p.corpo ?? "").trim();
+    return legenda !== "" && (m.corpo ?? "").trim() === legenda;
+  }
+  if (caminhoM) return false;
+  return (m.corpo ?? "").trim() === (p.corpo ?? "").trim();
 }
