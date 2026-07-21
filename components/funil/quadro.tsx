@@ -265,8 +265,6 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
       ),
     );
 
-    if (dados.fonte === "mock") return; // mock não persiste — move só visual
-
     const res = await moverCardEtapa(leadId, etapaDe, etapaAlvo);
     if (!res.ok) {
       setCards((prev) =>
@@ -319,9 +317,12 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
               className="w-full bg-transparent text-[0.84rem] text-tinta outline-none placeholder:text-mute"
             />
           </label>
-          {dados.fonte === "mock" && (
-            <span className="rounded-full bg-laranja-cl px-3 py-1 text-xs font-semibold text-laranja-esc">
-              dados de exemplo
+          {dados.corte && (
+            <span
+              className="rounded-full bg-laranja-cl px-3 py-1 text-xs font-semibold text-laranja-esc"
+              title="O board bateu no teto de leitura — paginação vem em rodada futura."
+            >
+              mostrando os {dados.cards.length} leads mais recentes
             </span>
           )}
           {aviso && (
@@ -370,7 +371,7 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
         </DragOverlay>
       </DndContext>
 
-      <DrawerCard lead={leadAberto} etapa={etapaAberta} fonte={dados.fonte} onFechar={() => setCardAberto(null)} />
+      <DrawerCard lead={leadAberto} etapa={etapaAberta} onFechar={() => setCardAberto(null)} />
 
       {toast && (
         <div className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-md border border-linha-forte bg-branco px-4 py-2.5 text-sm text-navy shadow-[0_6px_26px_rgba(37,47,99,.12)]">

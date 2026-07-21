@@ -93,13 +93,11 @@ type Aba = "todas" | "clara" | "humano" | "nao_lidas";
 
 export function Inbox({
   conversas,
-  fonte,
   selecionadaId,
   mensagens,
   sugestoes,
 }: {
   conversas: ConversaResumo[];
-  fonte: "real" | "mock";
   selecionadaId: string | null;
   mensagens: Mensagem[];
   sugestoes: SugestaoMensagem[];
@@ -128,7 +126,7 @@ export function Inbox({
   const totalAnteriorRef = useRef(-1); // -1 = próxima renderização é abertura de conversa
 
   // Realtime (dica) + polling (fallback) → refetch das projeções (RF-9/32)
-  useConversaViva(selecionadaId, fonte === "real");
+  useConversaViva(selecionadaId, true);
 
   // cada refetch re-sincroniza com o servidor (a verdade é a projeção; o rascunho/edição ficam)
   useEffect(() => {
@@ -494,7 +492,6 @@ export function Inbox({
             {conversas.length === 0
               ? "Nenhuma conversa ainda — a primeira mensagem recebida no WhatsApp abre aqui."
               : "Selecione uma conversa."}
-            {fonte === "mock" && <div className="mt-1 text-xs">dados de exemplo</div>}
           </div>
         ) : (
           <>
@@ -827,7 +824,7 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
     // foto (in e out) quando a mídia já está no bucket; sem caminho cai no rótulo de sempre
     return <BolhaImagem m={m} />;
   }
-  // tipos em PT-BR = contrato do ingestor (parser TIPO_PT); os em EN cobrem mock/histórico
+  // tipos em PT-BR = contrato do ingestor (parser TIPO_PT); os em EN cobrem linhas históricas
   const rotulo =
     tipo === "image" || tipo === "imagem"
       ? "Foto recebida"

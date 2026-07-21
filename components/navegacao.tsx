@@ -4,12 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
+/**
+ * Só as 3 visualizações da operação (Rodada 7, D4): Funil · Conversas · Dashboard.
+ * /fila, /jarvis e /timeline continuam existindo como rotas (a fila é o coração HITL da
+ * Clara) — só saem do menu.
+ */
 const ROTAS = [
   { href: "/funil", rotulo: "Funil" },
   { href: "/conversas", rotulo: "Conversas" },
-  { href: "/jarvis", rotulo: "@jarvis" },
-  { href: "/timeline", rotulo: "Timeline" },
-  { href: "/fila", rotulo: "Fila" },
+  { href: "/", rotulo: "Dashboard" },
 ];
 
 /**
@@ -21,7 +24,8 @@ export function Navegacao() {
   return (
     <nav className="flex items-center gap-0.5">
       {ROTAS.map((r) => {
-        const ativa = pathname === r.href || pathname.startsWith(r.href + "/");
+        const ativa =
+          r.href === "/" ? pathname === "/" : pathname === r.href || pathname.startsWith(r.href + "/");
         return (
           <Link
             key={r.href}

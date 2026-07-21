@@ -31,7 +31,7 @@ export function textoTempoCurto(desdeIso: string | null, agora: number): string 
   return `${dias}d`;
 }
 
-/** Lead "parado há muitos dias": warm funcional (#B67A5B) no timer. Espelha o mockup (≥4d). */
+/** Lead "parado há muitos dias": warm funcional (#B67A5B) no timer. Espelha o croqui (≥4d). */
 export function timerVelho(desdeIso: string | null, agora: number): boolean {
   const d = diasNaEtapa(desdeIso, agora);
   return d != null && d >= 4;

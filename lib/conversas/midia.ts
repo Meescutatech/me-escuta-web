@@ -13,7 +13,7 @@ export function ehAudio(tipo: string | null | undefined): boolean {
   return TIPOS_AUDIO.has((tipo ?? "").toLowerCase());
 }
 
-/** Tipos de foto: PT do contrato do ingestor (parser TIPO_PT) + EN de mock/histórico. */
+/** Tipos de foto: PT do contrato do ingestor (parser TIPO_PT) + EN de linhas históricas. */
 const TIPOS_IMAGEM = new Set(["image", "imagem"]);
 
 export function ehImagem(tipo: string | null | undefined): boolean {
