@@ -54,6 +54,10 @@ export interface Mensagem {
   status_entrega?: EstadoEntrega | null; // projeção RF-5 (Trilha A); undefined = sem status (check some)
   erro_codigo?: string | null; // código Meta quando status_entrega='falhou' (ex.: 131047, 131026)
   falha_local?: boolean; // envio otimista que a action recusou — tentar de novo refaz a intenção
+  // Pipeline de mídia (contrato rodada 5): preenchidos quando o runtime baixou a mídia pro bucket
+  // privado 'midia-whatsapp'. null/ausente = ainda não baixada ou falhou → a UI mantém o degrade.
+  midia_caminho?: string | null; // ex.: '2050562992220931.ogg' (chave no bucket)
+  midia_mime?: string | null; // ex.: 'audio/ogg'
 }
 
 export interface SugestaoMensagem {
@@ -224,6 +228,8 @@ export async function lerConversas(): Promise<DadosConversas> {
 /** Colunas da projeção de entrega (Trilha A, migration 0024 — contrato fechado, SPEC RF-5/6). */
 const COLUNAS_BASE = "id,direcao,tipo_conteudo,corpo,criado_em";
 const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor,timestamp_origem`;
+/** + colunas da pipeline de mídia (contrato rodada 5, migration em paralelo). */
+const COLUNAS_COM_MIDIA = `${COLUNAS_COM_STATUS},midia_caminho,midia_mime`;
 
 export async function lerMensagens(conversaId: string, fonte: "real" | "mock"): Promise<Mensagem[]> {
   if (fonte === "mock") return MENSAGENS_MOCK[conversaId] ?? [];
@@ -239,9 +245,12 @@ export async function lerMensagens(conversaId: string, fonte: "real" | "mock"): 
         .order("id", { ascending: true })
         .limit(500);
 
-    // Tenta o contrato completo (projeção da Trilha A, 0024); se as colunas ainda não existirem
-    // no banco, degrada pro select base — a UI fica sem checks, nunca com check falso.
-    let { data, error } = await buscar(COLUNAS_COM_STATUS);
+    // Cascata de degrade (mesmo padrão da 0024): tenta o contrato completo com mídia; se as
+    // colunas de mídia ainda não existirem (migration do backend em paralelo), cai pro contrato
+    // de status; se nem essas, pro base. Produção nunca quebra se o front sair antes da migration
+    // — o select explícito com coluna inexistente ERRA, então o erro vira degrade, não tela morta.
+    let { data, error } = await buscar(COLUNAS_COM_MIDIA);
+    if (error) ({ data, error } = await buscar(COLUNAS_COM_STATUS));
     if (error) ({ data, error } = await buscar(COLUNAS_BASE));
     if (error || !data) return [];
 
@@ -257,6 +266,8 @@ export async function lerMensagens(conversaId: string, fonte: "real" | "mock"): 
       autor: m.autor === "sara" ? "sara" : m.autor === "clara" ? "clara" : undefined,
       status_entrega: (m.status_entrega as EstadoEntrega | null | undefined) ?? undefined,
       erro_codigo: m.erro_codigo ?? undefined,
+      midia_caminho: m.midia_caminho ?? undefined,
+      midia_mime: m.midia_mime ?? undefined,
     }));
     // reordena por timestamp de origem + id como desempate (webhook atrasado não entra fora de lugar)
     return linhas.sort((a, b) => {
