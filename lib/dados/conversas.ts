@@ -39,6 +39,7 @@ export interface ConversaResumo {
   valor?: number | null;
   origem?: string | null;
   tags?: string[]; // core.lead.tags via v_lead_card (chips no painel do lead)
+  kommo_lead_id?: string | null; // #id de referência no painel (r9)
   idade?: number | null; // 0011 — null por ora
   previa?: string | null; // corpo da última mensagem
   previa_saida?: boolean; // última msg foi de saída (Você/Clara)
@@ -93,7 +94,7 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
       const { data: cards } = await supabase
         .schema("core")
         .from("v_lead_card")
-        .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags")
+        .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags,kommo_lead_id")
         .in("lead_id", leadIds);
       for (const r of cards ?? []) leadInfo.set(String(r.lead_id), r);
     }
@@ -159,6 +160,7 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
         valor: info?.valor != null ? Number(info.valor) : null,
         origem: info?.origem ? String(info.origem) : null,
         tags: parseTags(info?.tags),
+        kommo_lead_id: info?.kommo_lead_id ?? null,
         idade: null,
         previa: p?.corpo ?? null,
         previa_saida: p?.saida ?? false,

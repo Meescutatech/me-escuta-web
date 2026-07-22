@@ -24,7 +24,10 @@ import {
 } from "@/lib/conversas/thread";
 import { diasNaEtapa } from "@/lib/tempo";
 import type { PainelLead } from "@/lib/dados/lead-painel";
-import { FichaLead } from "@/components/lead/ficha-lead";
+import { FichaKommo } from "@/components/lead/ficha-kommo";
+import { ReguaFunil } from "@/components/regua-funil";
+import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
+import type { EtapaFunil } from "@/lib/dados/funil";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
 import { cn } from "@/lib/utils";
@@ -84,9 +87,6 @@ function tempoLista(iso: string | null): string {
   if (difDias < 7) return DIAS[d.getDay()];
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
-function moeda(v: number | null | undefined): string {
-  return v == null ? "" : "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-}
 function textoNaEtapa(iso: string | null | undefined): string {
   const dd = diasNaEtapa(iso ?? null, Date.now());
   if (dd == null) return "—";
@@ -102,6 +102,7 @@ export function Inbox({
   sugestoes,
   painel,
   autorEmail,
+  etapas,
 }: {
   conversas: ConversaResumo[];
   selecionadaId: string | null;
@@ -109,6 +110,7 @@ export function Inbox({
   sugestoes: SugestaoMensagem[];
   painel: PainelLead | null;
   autorEmail: string | null;
+  etapas: EtapaFunil[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -392,14 +394,13 @@ export function Inbox({
       ? fmtTelefone(selecionada.telefone)
       : selecionada.nome!
     : "";
-  const origemLabel = selecionada?.origem ? ORIGEM_ROTULO[selecionada.origem.toLowerCase()] ?? selecionada.origem : null;
 
   return (
-    <div className="flex h-[calc(100vh-58px)] bg-board">
+    <div className="flex h-[calc(100vh-52px)] bg-board">
       {/* ═══════════ ZONA 1 · LISTA ═══════════ */}
-      <aside className="flex w-[302px] shrink-0 flex-col border-r border-linha bg-branco">
+      <aside className="flex w-[272px] shrink-0 flex-col border-r border-linha bg-branco">
         <div className="px-4 pb-2.5 pt-3.5">
-          <h1 className="mb-2.5 font-serif text-[1.24rem] font-semibold leading-none text-navy">Conversas</h1>
+          <h1 className="mb-2.5 text-[15px] font-[650] leading-none text-tinta">Conversas</h1>
           <label className="flex items-center gap-2 rounded-lg border border-linha bg-board px-2.5 py-1.5 focus-within:border-linha-forte">
             <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-[14px] w-[14px] shrink-0 stroke-mute" fill="none">
               <circle cx="11" cy="11" r="7" />
@@ -572,8 +573,8 @@ export function Inbox({
                                   className={cn(
                                     "whitespace-pre-wrap break-words px-3.5 py-2.5 text-[0.88rem] leading-relaxed",
                                     saida
-                                      ? "rounded-[13px] rounded-br-[5px] border border-linha bg-bolha-out text-tinta"
-                                      : "rounded-[13px] rounded-bl-[5px] bg-bolha-in text-tinta",
+                                      ? "rounded-[13px] rounded-br-[5px] bg-bolha-out text-tinta"
+                                      : "rounded-[13px] rounded-bl-[5px] border border-linha bg-bolha-in text-tinta",
                                     saida && !primeira && "rounded-tr-[5px]",
                                     !saida && !primeira && "rounded-tl-[5px]",
                                     falhou && "border border-vermelho-bd bg-vermelho-bg",
@@ -720,9 +721,8 @@ export function Inbox({
       <aside
         className={cn(
           "flex shrink-0 flex-col border-l border-linha bg-branco transition-[width] duration-150",
-          // 288px→320px na R8: a zona 3 virou o painel de COLETA (ficha por grupos + tarefas
-          // com prazo + anotações) — precisa de respiro pros editores inline
-          ctxColapsado ? "w-[46px]" : "w-[320px]",
+          // r9: painel do lead com anatomia Kommo — 368px (token w-painel)
+          ctxColapsado ? "w-[46px]" : "w-painel",
         )}
       >
         <div className={cn("flex items-center gap-2 border-b border-linha px-4 py-3", ctxColapsado && "justify-center px-0")}>
@@ -743,94 +743,96 @@ export function Inbox({
         </div>
 
         {!ctxColapsado && selecionada && (
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="font-serif text-[1.16rem] font-semibold leading-tight text-navy">{titulo}</div>
-            <div className="mt-0.5 text-[0.82rem] tabular-nums text-suave">{fmtTelefone(selecionada.telefone)}</div>
-            {(selecionada.tags ?? []).length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {(selecionada.tags ?? []).map((t) => (
-                  <span key={t} className="rounded-full bg-board px-2 py-0.5 text-[0.68rem] font-semibold text-suave">
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-[18px] flex flex-col">
-              <LinhaCtx k="Etapa">
-                {selecionada.etapa_nome ? (
-                  <span className="inline-flex items-center gap-1.5 font-medium text-navy">
-                    <span className="h-1.5 w-1.5 rounded-full bg-laranja" />
-                    {selecionada.etapa_nome}
-                  </span>
-                ) : (
-                  <span className="text-mute">—</span>
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* header do lead (r9): nome + #id mono + link pro card + tags + funil-linha + régua */}
+            <div className="px-[18px] pt-3.5">
+              <div className="flex items-baseline gap-2">
+                <h2 className="min-w-0 truncate text-[17px] font-[650] leading-[1.2] text-tinta">{titulo}</h2>
+                {selecionada.kommo_lead_id && (
+                  <span className="shrink-0 font-mono text-[11.5px] text-suave">#{selecionada.kommo_lead_id}</span>
                 )}
-              </LinhaCtx>
-              <LinhaCtx k="Na etapa há">{textoNaEtapa(selecionada.entrou_etapa_em)}</LinhaCtx>
-              <LinhaCtx k="Valor estimado">
-                {selecionada.valor != null ? moeda(selecionada.valor) : <span className="font-normal text-mute">a definir</span>}
-              </LinhaCtx>
-              <LinhaCtx k="Origem">{origemLabel ?? <span className="font-normal text-mute">—</span>}</LinhaCtx>
-              <LinhaCtx k="Idade">
-                {selecionada.idade != null ? selecionada.idade : <span className="font-normal text-mute">—</span>}
-              </LinhaCtx>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/funil${selecionada.lead_id ? `?lead=${selecionada.lead_id}` : ""}`)}
+                  title="Abrir card no funil"
+                  aria-label="Abrir card no funil"
+                  className="ml-auto grid h-6 w-6 shrink-0 place-items-center rounded text-mute hover:bg-hover hover:text-navy"
+                >
+                  <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 stroke-current" fill="none">
+                    <path d="M7 17 17 7M9 7h8v8" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mt-0.5 font-mono text-[11.5px] text-suave">{fmtTelefone(selecionada.telefone)}</div>
+              {(selecionada.tags ?? []).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(selecionada.tags ?? []).map((t) => (
+                    <span key={t} className="rounded-full bg-laranja-cl px-2 py-0.5 text-[11.5px] font-medium text-laranja-esc">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="mt-3 text-[12.5px] text-suave">
+                Funil de vendas ·{" "}
+                <b className="font-semibold text-tinta">{selecionada.etapa_nome ?? "sem etapa"}</b>{" "}
+                {selecionada.entrou_etapa_em && (
+                  <span className="font-mono text-[11px]">({textoNaEtapa(selecionada.entrou_etapa_em)} na etapa)</span>
+                )}
+              </div>
+              <div className="mt-2">
+                <ReguaFunil
+                  segmentos={segmentosReguaLead(
+                    etapas.filter((e) => e.tipo === "aberto"),
+                    selecionada.etapa ?? null,
+                  )}
+                  rotulo={`Progresso no funil: ${selecionada.etapa_nome ?? "sem etapa"}`}
+                />
+              </div>
             </div>
 
-            {/* ── painel de coleta (Rodada 8): ficha + tarefas + anotações do lead ── */}
+            {/* ficha réplica Kommo + Tarefas/Anotações como abas (R8 por baixo — mesma porta) */}
             {selecionada.lead_id && painel ? (
-              <div className="mt-4 flex flex-col gap-4 border-t border-linha pt-3.5">
-                <div>
-                  <TituloSecao>Ficha</TituloSecao>
-                  <FichaLead leadId={selecionada.lead_id} ficha={painel.ficha} aoAtualizar={() => router.refresh()} />
-                </div>
-                <div>
-                  <TituloSecao>Tarefas</TituloSecao>
-                  <TarefasLead
-                    leadId={selecionada.lead_id}
-                    tarefas={painel.tarefas}
-                    responsavelPadrao={autorEmail}
-                    aoAtualizar={() => router.refresh()}
-                  />
-                </div>
-                <div>
-                  <TituloSecao>Anotações</TituloSecao>
-                  <AnotacoesLead
-                    leadId={selecionada.lead_id}
-                    anotacoes={painel.anotacoes}
-                    autor={autorEmail}
-                    aoAtualizar={() => router.refresh()}
-                  />
-                </div>
+              <div className="mt-3 flex min-h-0 flex-1 flex-col">
+                <FichaKommo
+                  leadId={selecionada.lead_id}
+                  ficha={painel.ficha}
+                  aoAtualizar={() => router.refresh()}
+                  abasExtras={[
+                    {
+                      chave: "aba-tarefas",
+                      rotulo: "Tarefas",
+                      contagem: painel.tarefas.filter((t) => t.status !== "concluida").length,
+                      conteudo: (
+                        <TarefasLead
+                          leadId={selecionada.lead_id}
+                          tarefas={painel.tarefas}
+                          responsavelPadrao={autorEmail}
+                          aoAtualizar={() => router.refresh()}
+                        />
+                      ),
+                    },
+                    {
+                      chave: "aba-notas",
+                      rotulo: "Anotações",
+                      contagem: painel.anotacoes.length,
+                      conteudo: (
+                        <AnotacoesLead
+                          leadId={selecionada.lead_id}
+                          anotacoes={painel.anotacoes}
+                          autor={autorEmail}
+                          aoAtualizar={() => router.refresh()}
+                        />
+                      ),
+                    },
+                  ]}
+                />
               </div>
             ) : (
-              <p className="mt-[18px] border-t border-linha pt-3 text-[0.78rem] leading-relaxed text-mute">
+              <p className="mt-4 border-t border-linha px-[18px] pt-3 text-[12.5px] leading-relaxed text-mute">
                 Conversa ainda sem lead vinculado — a ficha aparece quando o lead existir no funil.
               </p>
             )}
-
-            <div className="mt-5 flex flex-col gap-2">
-              <button
-                onClick={() => router.push(`/funil${selecionada.lead_id ? `?lead=${selecionada.lead_id}` : ""}`)}
-                className="flex items-center gap-2.5 rounded-[9px] border border-linha bg-board px-3 py-2.5 text-[0.83rem] font-semibold text-navy transition-colors hover:border-linha-forte hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
-              >
-                <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-suave" fill="none">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <path d="M3 9h18M9 21V9" />
-                </svg>
-                Abrir card no funil
-              </button>
-              <button
-                onClick={() => router.push(`/funil${selecionada.lead_id ? `?lead=${selecionada.lead_id}` : ""}`)}
-                className="flex items-center gap-2.5 rounded-[9px] border border-linha bg-board px-3 py-2.5 text-[0.83rem] font-semibold text-navy transition-colors hover:border-linha-forte hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
-              >
-                <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-suave" fill="none">
-                  <path d="M3 3v18h18" />
-                  <path d="m7 14 4-4 3 3 5-6" />
-                </svg>
-                Analisar crédito (Levindo)
-              </button>
-            </div>
           </div>
         )}
       </aside>
@@ -844,20 +846,6 @@ export function Inbox({
   );
 }
 
-function TituloSecao({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="mb-2 text-[0.7rem] font-semibold uppercase tracking-wide text-mute">{children}</h3>
-  );
-}
-
-function LinhaCtx({ k, children }: { k: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2 py-[5px] text-[0.83rem] text-tinta">
-      <span className="text-suave">{k}</span>
-      <span className="ml-auto font-medium tabular-nums">{children}</span>
-    </div>
-  );
-}
 
 /**
  * Conteúdo da bolha por tipo (RF-33, degradação HONESTA): a pipeline de mídia (container

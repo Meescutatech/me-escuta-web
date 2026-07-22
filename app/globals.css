@@ -23,6 +23,14 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
+/* Abas roláveis sem scrollbar visível (painel do lead, r9) */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Ponto "ao vivo" (r9): pisca suave; respeita reduced-motion */
 @keyframes pulso-ao-vivo {
   0%,
