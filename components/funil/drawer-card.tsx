@@ -9,6 +9,8 @@ import { registrarEventoUI } from "@/app/(app)/funil/actions";
 import { FichaKommo } from "@/components/lead/ficha-kommo";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
+import type { Mencionavel } from "@/lib/conversas/mencao";
+import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { cn } from "@/lib/utils";
 
 /*
@@ -35,11 +37,17 @@ export function DrawerCard({
   lead,
   etapa,
   autorEmail,
+  autorId,
+  mencionaveis,
+  tiposTarefa,
   onFechar,
 }: {
   lead: CardLead | null;
   etapa: EtapaFunil | null;
   autorEmail: string | null;
+  autorId: string | null;
+  mencionaveis: Mencionavel[];
+  tiposTarefa: TipoTarefa[];
   onFechar: () => void;
 }) {
   const router = useRouter();
@@ -232,7 +240,10 @@ export function DrawerCard({
                     <TarefasLead
                       leadId={lead.lead_id}
                       tarefas={painel.tarefas}
-                      responsavelPadrao={autorEmail}
+                      mencionaveis={mencionaveis}
+                      tiposTarefa={tiposTarefa}
+                      autorId={autorId}
+                      autorEmail={autorEmail}
                       aoAtualizar={recarregar}
                     />
                   )}
@@ -240,7 +251,10 @@ export function DrawerCard({
                     <AnotacoesLead
                       leadId={lead.lead_id}
                       anotacoes={painel.anotacoes}
-                      autor={autorEmail}
+                      mencoes={painel.mencoes}
+                      mencionaveis={mencionaveis}
+                      meuId={autorId}
+                      autorEmail={autorEmail}
                       aoAtualizar={recarregar}
                     />
                   )}

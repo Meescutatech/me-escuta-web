@@ -31,6 +31,11 @@ const config: Config = {
         "pt-ads": "#B4B7BD", // micro-ponto do sinal "Meta Ads" (decorativo)
         "foco-comp": "#D9C4B6", // borda do composer em foco (conversa-v2)
         bolha: { in: "#FFFFFF", out: "#EAECF5" }, // r9-conversa: entrada branca hairline · saída azulada
+        // ── R13 / Bloco C: as duas peles do modo interno do composer, cravadas nos mockups
+        // composer-comandos-v3.html e tarefas-lead-v3.html. Nota = ÂMBAR, tarefa = NAVY;
+        // laranja NÃO entra aqui — segue reservado a ação primária e foco.
+        nota: { fundo: "#FDF8EC", linha: "#E4D2A6", faixa: "#F9EFD8" },
+        tarefa: { fundo: "#EFF1F8", linha: "#C9CFE4", faixa: "#E7EAF5" },
         azul: { DEFAULT: "#143691", bg: "#EEF1FB", bd: "#D5DDF3" },
         creme: "#F7F7F4", // morreu o creme quente — vira o fundo frio
         fundo: "#F7F7F4",

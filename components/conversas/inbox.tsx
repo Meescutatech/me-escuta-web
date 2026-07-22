@@ -34,6 +34,10 @@ import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import type { EtapaFunil } from "@/lib/dados/funil";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
+import { RegistroInterno } from "@/components/conversas/registro-interno";
+import { itensDoDia, montarRegistros } from "@/lib/conversas/registro-timeline";
+import type { Mencionavel } from "@/lib/conversas/mencao";
+import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { cn } from "@/lib/utils";
 
 /*
@@ -106,6 +110,9 @@ export function Inbox({
   sugestoes,
   painel,
   autorEmail,
+  autorId,
+  mencionaveis,
+  tiposTarefa,
   etapas,
 }: {
   conversas: ConversaResumo[];
@@ -114,6 +121,9 @@ export function Inbox({
   sugestoes: SugestaoMensagem[];
   painel: PainelLead | null;
   autorEmail: string | null;
+  autorId: string | null;
+  mencionaveis: Mencionavel[];
+  tiposTarefa: TipoTarefa[];
   etapas: EtapaFunil[];
 }) {
   const router = useRouter();
@@ -210,6 +220,15 @@ export function Inbox({
   );
 
   const blocos = useMemo(() => montarBlocos(visiveis), [visiveis]);
+
+  // R13/C2: notas e tarefas do lead viram registros no mesmo fio das mensagens
+  const registros = useMemo(
+    () =>
+      painel
+        ? montarRegistros(painel.anotacoes, painel.tarefas, painel.mencoes, mencionaveis)
+        : [],
+    [painel, mencionaveis],
+  );
 
   // abertura → âncora no divider de não-lidas (ou no fim); mensagem nova → rola só se já estava
   // no fim, senão vira contador na pill — NUNCA rouba o scroll da Sara (RF-30)
@@ -584,7 +603,12 @@ export function Inbox({
                   <span className="sticky top-0 z-10 my-1 self-center rounded-full border border-linha bg-branco px-3 py-0.5 text-[0.71rem] text-mute shadow-suave">
                     {bloco.dia}
                   </span>
-                  {bloco.grupos.map((grupo, gi) => {
+                  {itensDoDia(bloco, registros).map((item, gi) => {
+                    // R13/C2: nota e tarefa entram no mesmo fio cronológico, em largura total
+                    if (item.tipo === "registro") {
+                      return <RegistroInterno key={`reg-${item.registro.id}`} registro={item.registro} />;
+                    }
+                    const grupo = item.grupo;
                     const saida = grupo.falante !== "cliente";
                     const comDivisor = fronteira && grupo.itens[0]?.id === fronteira.primeiraId;
                     return (
@@ -748,9 +772,17 @@ export function Inbox({
             <Composer
               modoClara={modoClara}
               pending={pending}
+              leadId={selecionada.lead_id ?? null}
+              conversaId={selecionada.id}
+              nomeLead={titulo}
+              mencionaveis={mencionaveis}
+              tiposTarefa={tiposTarefa}
+              autorId={autorId}
+              autorEmail={autorEmail}
               onEnviarTexto={(texto) => despachar(texto)}
               onEnviarMidia={(midia) => despachar(midia.legenda ?? "", midia)}
               onDigitar={aoDigitar}
+              aoPublicar={() => router.refresh()}
               avisar={avisar}
             />
           </>
@@ -847,7 +879,10 @@ export function Inbox({
                         <TarefasLead
                           leadId={selecionada.lead_id}
                           tarefas={painel.tarefas}
-                          responsavelPadrao={autorEmail}
+                          mencionaveis={mencionaveis}
+                          tiposTarefa={tiposTarefa}
+                          autorId={autorId}
+                          autorEmail={autorEmail}
                           aoAtualizar={() => router.refresh()}
                         />
                       ),
@@ -860,7 +895,10 @@ export function Inbox({
                         <AnotacoesLead
                           leadId={selecionada.lead_id}
                           anotacoes={painel.anotacoes}
-                          autor={autorEmail}
+                          mencoes={painel.mencoes}
+                          mencionaveis={mencionaveis}
+                          meuId={autorId}
+                          autorEmail={autorEmail}
                           aoAtualizar={() => router.refresh()}
                         />
                       ),
