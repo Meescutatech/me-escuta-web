@@ -2,35 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { CardLead, EtapaFunil, Origem, TipoResp } from "@/lib/dados/funil";
+import type { CardLead, EtapaFunil, Origem } from "@/lib/dados/funil";
+import type { PainelLead } from "@/lib/dados/lead-painel";
+import { lerPainelLeadAction } from "@/app/(app)/lead/actions";
 import { registrarEventoUI } from "@/app/(app)/funil/actions";
+import { FichaLead } from "@/components/lead/ficha-lead";
+import { TarefasLead } from "@/components/lead/tarefas-lead";
+import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
 import { cn } from "@/lib/utils";
 
 /*
- * Drawer do card — versão HONESTA (Rodada 7, D3): mostra só o que existe de verdade no card
- * (facts da v_lead_card) e o que o usuário criar NESTA sessão (tarefa/anotação viram eventos
- * reais no ledger pela porta). Sem detalhe sintetizado: nada de cidade, análise do Levindo,
- * anexos ou histórico inventados. Leitura real do histórico por lead (core.evento) e projeção
- * de tarefas/anotações são rodadas futuras (0009+).
+ * Drawer do card (Rodada 8): mesmo painel de coleta da conversa — FICHA (config ficha_lead +
+ * core.lead_campo) + TAREFAS (core.tarefa; conclusão SEMPRE com tarefa_id real — conserto do
+ * bug da R7 que emitia tarefa_concluida sem id e a projeção nunca refletia) + ANOTAÇÕES
+ * (core.anotacao). Dados buscados ao abrir via server action (mesma sessão/RLS); recarrega
+ * após cada escrita. Componentes compartilhados com a zona 3 de /conversas.
  */
 
-const RESP_COR: Record<TipoResp, string> = { dm: "bg-navy", sara: "bg-roxo", fono: "bg-verde" };
 const ORIGEM_TXT: Record<Origem, string> = { wa: "WhatsApp", ig: "Instagram", meta: "Meta Ads", ind: "Indicação" };
-
-interface Tarefa {
-  id: string;
-  titulo: string;
-  responsavel: { tipo: TipoResp; nome: string };
-  concluida: boolean;
-}
-
-interface Anotacao {
-  id: string;
-  autor: string;
-  autorTipo: TipoResp;
-  texto: string;
-  quando: string;
-}
 
 function iniciais(nome: string): string {
   const p = nome.replace(/→|·/g, " ").trim().split(/\s+/);
@@ -40,91 +29,70 @@ function moeda(v: number | null): string {
   return v == null ? "—" : "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
 
-type Aba = "tarefas" | "notas" | "hist";
+type Aba = "ficha" | "tarefas" | "notas";
 
 export function DrawerCard({
   lead,
   etapa,
+  autorEmail,
   onFechar,
 }: {
   lead: CardLead | null;
   etapa: EtapaFunil | null;
+  autorEmail: string | null;
   onFechar: () => void;
 }) {
   const router = useRouter();
   const aberto = !!lead;
 
-  const [aba, setAba] = useState<Aba>("tarefas");
-  const [tarefas, setTarefas] = useState<Tarefa[]>([]);
-  const [anotacoes, setAnotacoes] = useState<Anotacao[]>([]);
-  const [novaNota, setNovaNota] = useState("");
-  const [novaTarefa, setNovaTarefa] = useState("");
-  const [addTarefa, setAddTarefa] = useState(false);
+  const [aba, setAba] = useState<Aba>("ficha");
+  const [painel, setPainel] = useState<PainelLead | null>(null);
+  const [carregando, setCarregando] = useState(false);
   const [levindoSolicitado, setLevindoSolicitado] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [versao, setVersao] = useState(0); // bump = recarregar painel após escrita
 
-  // (re)sincroniza estado local quando abre outro card
-  const leadId = lead?.lead_id;
+  const leadId = lead?.lead_id ?? null;
+
+  // zera o estado ao trocar de card
   useEffect(() => {
-    setTarefas([]);
-    setAnotacoes([]);
-    setNovaNota("");
-    setNovaTarefa("");
-    setAddTarefa(false);
-    setAba("tarefas");
+    setAba("ficha");
     setLevindoSolicitado(false);
+    setPainel(null);
+    setVersao(0);
   }, [leadId]);
+
+  // busca o painel ao abrir (e a cada recarga pós-escrita) via server action — mesma sessão/RLS
+  useEffect(() => {
+    if (!leadId) return;
+    let vivo = true;
+    setCarregando(true);
+    lerPainelLeadAction(leadId)
+      .then((p) => {
+        if (vivo) setPainel(p);
+      })
+      .finally(() => {
+        if (vivo) setCarregando(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [leadId, versao]);
+
+  function recarregar() {
+    setVersao((v) => v + 1);
+    router.refresh(); // board também reflete (lead_atualizado pode mudar valor/nome no card)
+  }
 
   function avisar(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 3500);
   }
 
-  function emitir(tipo: string, payload: Record<string, unknown>) {
-    if (leadId) void registrarEventoUI(tipo, { lead_id: leadId, ...payload }, leadId);
-  }
-
-  function toggleTarefa(id: string) {
-    const t = tarefas.find((x) => x.id === id);
-    setTarefas((prev) => prev.map((x) => (x.id === id ? { ...x, concluida: !x.concluida } : x)));
-    if (t && !t.concluida) emitir("tarefa_concluida", { titulo: t.titulo, resultado: "concluída" });
-  }
-
-  function criarTarefa() {
-    const titulo = novaTarefa.trim();
-    if (!titulo) return;
-    const t: Tarefa = {
-      id: `t-${titulo.length}-${tarefas.length}`,
-      titulo,
-      responsavel: lead?.responsavel ?? { tipo: "dm", nome: "Você" },
-      concluida: false,
-    };
-    setTarefas((prev) => [t, ...prev]);
-    setNovaTarefa("");
-    setAddTarefa(false);
-    emitir("tarefa_criada", { titulo, responsavel: t.responsavel.nome });
-    avisar("Tarefa criada — nasce como evento no ledger.");
-  }
-
-  function criarNota() {
-    const texto = novaNota.trim();
-    if (!texto) return;
-    const n: Anotacao = {
-      id: `n-${anotacoes.length}`,
-      autor: "Você",
-      autorTipo: "dm",
-      quando: "agora",
-      texto,
-    };
-    setAnotacoes((prev) => [n, ...prev]);
-    setNovaNota("");
-    emitir("anotacao_adicionada", { autor: "humano", texto });
-    avisar("Anotação registrada no ledger.");
-  }
-
   function acionarLevindo() {
+    if (!leadId) return;
     setLevindoSolicitado(true);
-    emitir("levindo_acionado", { motivo: "solicitado no card" });
+    void registrarEventoUI("levindo_acionado", { lead_id: leadId, motivo: "solicitado no card" }, leadId);
     avisar("Solicitação registrada no ledger.");
   }
 
@@ -236,121 +204,47 @@ export function DrawerCard({
 
               {/* tabs */}
               <div className="mb-4 flex gap-1 border-b-[1.5px] border-borda">
-                <AbaBtn ativa={aba === "tarefas"} onClick={() => setAba("tarefas")} rotulo="Tarefas" cnt={tarefas.length} />
-                <AbaBtn ativa={aba === "notas"} onClick={() => setAba("notas")} rotulo="Anotações" cnt={anotacoes.length} />
-                <AbaBtn ativa={aba === "hist"} onClick={() => setAba("hist")} rotulo="Histórico" />
+                <AbaBtn ativa={aba === "ficha"} onClick={() => setAba("ficha")} rotulo="Ficha" />
+                <AbaBtn
+                  ativa={aba === "tarefas"}
+                  onClick={() => setAba("tarefas")}
+                  rotulo="Tarefas"
+                  cnt={painel ? painel.tarefas.filter((t) => t.status !== "concluida").length : undefined}
+                />
+                <AbaBtn
+                  ativa={aba === "notas"}
+                  onClick={() => setAba("notas")}
+                  rotulo="Anotações"
+                  cnt={painel?.anotacoes.length}
+                />
               </div>
 
-              {/* tarefas */}
-              {aba === "tarefas" && (
-                <div>
-                  {tarefas.length === 0 && !addTarefa && (
-                    <p className="mb-2 text-sm text-mute">Nenhuma tarefa pra este lead ainda.</p>
+              {carregando && !painel ? (
+                <p className="text-sm text-mute">Carregando…</p>
+              ) : !painel ? (
+                <p className="text-sm text-mute">Não foi possível carregar o painel — tente reabrir o card.</p>
+              ) : (
+                <>
+                  {aba === "ficha" && (
+                    <FichaLead leadId={lead.lead_id} ficha={painel.ficha} aoAtualizar={recarregar} />
                   )}
-                  {tarefas.map((t) => (
-                    <div key={t.id} className="mb-2 flex items-start gap-3 rounded-lg border border-borda bg-branco px-3.5 py-3 hover:border-borda-forte hover:shadow-suave">
-                      <button
-                        onClick={() => toggleTarefa(t.id)}
-                        className={cn(
-                          "mt-0.5 grid h-[19px] w-[19px] shrink-0 place-items-center rounded-md border-2",
-                          t.concluida ? "border-verde bg-verde" : "border-borda-forte hover:border-laranja",
-                        )}
-                      >
-                        <svg viewBox="0 0 24 24" strokeWidth={3} strokeLinecap="round" className={cn("h-2.5 w-2.5 stroke-branco", t.concluida ? "opacity-100" : "opacity-0")} fill="none">
-                          <path d="M20 6 9 17l-5-5" />
-                        </svg>
-                      </button>
-                      <div className="min-w-0 flex-1">
-                        <div className={cn("text-sm font-medium leading-snug text-navy", t.concluida && "text-mute line-through")}>
-                          {t.titulo}
-                        </div>
-                        <div className="mt-1.5 flex items-center gap-2 text-xs text-suave">
-                          <span className={cn("grid h-5 w-5 place-items-center rounded-full text-[0.58rem] font-bold text-branco", RESP_COR[t.responsavel.tipo])}>
-                            {t.responsavel.tipo === "fono" ? "F" : iniciais(t.responsavel.nome)}
-                          </span>
-                          {t.responsavel.nome}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {addTarefa ? (
-                    <div className="mt-1 flex items-center gap-2 rounded-lg border-[1.5px] border-borda-forte bg-branco px-3 py-2">
-                      <input
-                        autoFocus
-                        value={novaTarefa}
-                        onChange={(e) => setNovaTarefa(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && criarTarefa()}
-                        placeholder="Descreva a tarefa…"
-                        className="flex-1 bg-transparent text-sm outline-none placeholder:text-mute"
-                      />
-                      <button onClick={criarTarefa} className="rounded-md bg-laranja px-3 py-1.5 text-xs font-semibold text-branco hover:bg-laranja-esc">
-                        Criar
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setAddTarefa(true)}
-                      className="mt-1 flex w-full items-center gap-2 rounded-lg border-[1.5px] border-dashed border-borda-forte px-3.5 py-3 text-sm font-medium text-mute hover:border-laranja hover:text-laranja-esc"
-                    >
-                      <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-4 w-4 stroke-current" fill="none">
-                        <path d="M12 5v14M5 12h14" />
-                      </svg>
-                      Nova tarefa
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* anotações */}
-              {aba === "notas" && (
-                <div>
-                  {anotacoes.length === 0 && (
-                    <p className="mb-2 text-sm text-mute">Nenhuma anotação ainda.</p>
-                  )}
-                  {anotacoes.map((n) => (
-                    <div
-                      key={n.id}
-                      className="mb-2.5 rounded-md border border-borda border-l-[3px] border-l-laranja-cl bg-branco px-3.5 py-3"
-                    >
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <span className={cn("grid h-[22px] w-[22px] place-items-center rounded-full text-[0.6rem] font-bold text-branco", RESP_COR[n.autorTipo])}>
-                          {iniciais(n.autor)}
-                        </span>
-                        <span className="text-xs font-semibold text-navy">{n.autor}</span>
-                        <span className="ml-auto text-xs text-mute">{n.quando}</span>
-                      </div>
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-texto">{n.texto}</p>
-                    </div>
-                  ))}
-                  <div className="mt-1 flex items-end gap-2 rounded-lg border-[1.5px] border-borda-forte bg-branco py-2 pl-3.5 pr-2">
-                    <textarea
-                      rows={1}
-                      value={novaNota}
-                      onChange={(e) => setNovaNota(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          criarNota();
-                        }
-                      }}
-                      placeholder="Escrever anotação para a equipe…"
-                      className="max-h-24 flex-1 resize-none bg-transparent py-1 text-sm outline-none placeholder:text-mute"
+                  {aba === "tarefas" && (
+                    <TarefasLead
+                      leadId={lead.lead_id}
+                      tarefas={painel.tarefas}
+                      responsavelPadrao={autorEmail}
+                      aoAtualizar={recarregar}
                     />
-                    <button onClick={criarNota} className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-laranja text-branco hover:bg-laranja-esc">
-                      <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-current" fill="none">
-                        <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* histórico — leitura real de core.evento por lead chega em rodada futura */}
-              {aba === "hist" && (
-                <p className="text-sm text-mute">
-                  O histórico deste lead vive no ledger. A leitura por card ainda não foi ligada —
-                  enquanto isso, a <b className="text-suave">Timeline</b> mostra o ledger completo.
-                </p>
+                  )}
+                  {aba === "notas" && (
+                    <AnotacoesLead
+                      leadId={lead.lead_id}
+                      anotacoes={painel.anotacoes}
+                      autor={autorEmail}
+                      aoAtualizar={recarregar}
+                    />
+                  )}
+                </>
               )}
             </div>
 

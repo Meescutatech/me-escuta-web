@@ -23,6 +23,10 @@ import {
   podeTentarDeNovo,
 } from "@/lib/conversas/thread";
 import { diasNaEtapa } from "@/lib/tempo";
+import type { PainelLead } from "@/lib/dados/lead-painel";
+import { FichaLead } from "@/components/lead/ficha-lead";
+import { TarefasLead } from "@/components/lead/tarefas-lead";
+import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
 import { cn } from "@/lib/utils";
 
 /*
@@ -96,11 +100,15 @@ export function Inbox({
   selecionadaId,
   mensagens,
   sugestoes,
+  painel,
+  autorEmail,
 }: {
   conversas: ConversaResumo[];
   selecionadaId: string | null;
   mensagens: Mensagem[];
   sugestoes: SugestaoMensagem[];
+  painel: PainelLead | null;
+  autorEmail: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -712,7 +720,9 @@ export function Inbox({
       <aside
         className={cn(
           "flex shrink-0 flex-col border-l border-linha bg-branco transition-[width] duration-150",
-          ctxColapsado ? "w-[46px]" : "w-[288px]",
+          // 288px→320px na R8: a zona 3 virou o painel de COLETA (ficha por grupos + tarefas
+          // com prazo + anotações) — precisa de respiro pros editores inline
+          ctxColapsado ? "w-[46px]" : "w-[320px]",
         )}
       >
         <div className={cn("flex items-center gap-2 border-b border-linha px-4 py-3", ctxColapsado && "justify-center px-0")}>
@@ -736,6 +746,15 @@ export function Inbox({
           <div className="flex-1 overflow-y-auto p-4">
             <div className="font-serif text-[1.16rem] font-semibold leading-tight text-navy">{titulo}</div>
             <div className="mt-0.5 text-[0.82rem] tabular-nums text-suave">{fmtTelefone(selecionada.telefone)}</div>
+            {(selecionada.tags ?? []).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(selecionada.tags ?? []).map((t) => (
+                  <span key={t} className="rounded-full bg-board px-2 py-0.5 text-[0.68rem] font-semibold text-suave">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
 
             <div className="mt-[18px] flex flex-col">
               <LinhaCtx k="Etapa">
@@ -758,9 +777,37 @@ export function Inbox({
               </LinhaCtx>
             </div>
 
-            <p className="mt-[18px] border-t border-linha pt-3 text-[0.78rem] leading-relaxed text-mute">
-              Sinais e anotações aparecem aqui quando registrados na conversa.
-            </p>
+            {/* ── painel de coleta (Rodada 8): ficha + tarefas + anotações do lead ── */}
+            {selecionada.lead_id && painel ? (
+              <div className="mt-4 flex flex-col gap-4 border-t border-linha pt-3.5">
+                <div>
+                  <TituloSecao>Ficha</TituloSecao>
+                  <FichaLead leadId={selecionada.lead_id} ficha={painel.ficha} aoAtualizar={() => router.refresh()} />
+                </div>
+                <div>
+                  <TituloSecao>Tarefas</TituloSecao>
+                  <TarefasLead
+                    leadId={selecionada.lead_id}
+                    tarefas={painel.tarefas}
+                    responsavelPadrao={autorEmail}
+                    aoAtualizar={() => router.refresh()}
+                  />
+                </div>
+                <div>
+                  <TituloSecao>Anotações</TituloSecao>
+                  <AnotacoesLead
+                    leadId={selecionada.lead_id}
+                    anotacoes={painel.anotacoes}
+                    autor={autorEmail}
+                    aoAtualizar={() => router.refresh()}
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="mt-[18px] border-t border-linha pt-3 text-[0.78rem] leading-relaxed text-mute">
+                Conversa ainda sem lead vinculado — a ficha aparece quando o lead existir no funil.
+              </p>
+            )}
 
             <div className="mt-5 flex flex-col gap-2">
               <button
@@ -794,6 +841,12 @@ export function Inbox({
         </div>
       )}
     </div>
+  );
+}
+
+function TituloSecao({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="mb-2 text-[0.7rem] font-semibold uppercase tracking-wide text-mute">{children}</h3>
   );
 }
 
