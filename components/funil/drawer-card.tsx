@@ -6,7 +6,7 @@ import type { CardLead, EtapaFunil, Origem } from "@/lib/dados/funil";
 import type { PainelLead } from "@/lib/dados/lead-painel";
 import { lerPainelLeadAction } from "@/app/(app)/lead/actions";
 import { registrarEventoUI } from "@/app/(app)/funil/actions";
-import { FichaLead } from "@/components/lead/ficha-lead";
+import { FichaKommo } from "@/components/lead/ficha-kommo";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
 import { cn } from "@/lib/utils";
@@ -226,7 +226,7 @@ export function DrawerCard({
               ) : (
                 <>
                   {aba === "ficha" && (
-                    <FichaLead leadId={lead.lead_id} ficha={painel.ficha} aoAtualizar={recarregar} />
+                    <FichaKommo leadId={lead.lead_id} ficha={painel.ficha} aoAtualizar={recarregar} />
                   )}
                   {aba === "tarefas" && (
                     <TarefasLead

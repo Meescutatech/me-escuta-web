@@ -23,3 +23,25 @@ export function chavesDoBoard(etapas: Array<{ chave: string }>): string[] {
 export function houveCorte(qtdLida: number, teto: number): boolean {
   return qtdLida >= teto;
 }
+
+// ─────────────── régua do funil (assinatura visual R9 — nas 3 telas) ───────────────
+
+export type SegmentoRegua = "ok" | "atual" | "futura" | "fraca";
+
+/**
+ * Régua do lead (painel da conversa): 1 segmento por etapa ABERTA, preenchidas até a etapa
+ * atual. Etapa fora da lista (ganho/perdido/desconhecida) → tudo "futura" (não inventar
+ * progresso).
+ */
+export function segmentosReguaLead(
+  etapasAbertas: Array<{ chave: string }>,
+  etapaAtual: string | null,
+): SegmentoRegua[] {
+  const idx = etapaAtual ? etapasAbertas.findIndex((e) => e.chave === etapaAtual) : -1;
+  return etapasAbertas.map((_, i) => (idx < 0 ? "futura" : i < idx ? "ok" : i === idx ? "atual" : "futura"));
+}
+
+/** Régua agregada (dashboard): etapa com lead = "ok"; vazia = "fraca"; contagem nula = "fraca". */
+export function segmentosReguaAgregada(faixas: Array<{ qtd: number | null }>): SegmentoRegua[] {
+  return faixas.map((f) => ((f.qtd ?? 0) > 0 ? "ok" : "fraca"));
+}

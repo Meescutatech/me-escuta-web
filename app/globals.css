@@ -12,15 +12,50 @@
 }
 
 html {
-  font-size: 15px;
+  font-size: 14px; /* r9: densidade de operação (mockups em 14) */
 }
 
 body {
-  background: #f3eee6; /* fundo */
-  color: #3a3a3a; /* texto */
+  background: #f7f7f4; /* --fundo (r9: neutro frio) */
+  color: #1f2328; /* --tinta */
   font-family: var(--fonte-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+/* Sidebar retrátil (r9 §6): prefers-reduced-motion desliga TODAS as transições dela */
+@media (prefers-reduced-motion: reduce) {
+  .lateral-r9,
+  .lateral-r9 * {
+    transition: none !important;
+  }
+}
+
+/* Abas roláveis sem scrollbar visível (painel do lead, r9) */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Ponto "ao vivo" (r9): pisca suave; respeita reduced-motion */
+@keyframes pulso-ao-vivo {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulso-ao-vivo {
+  animation: pulso-ao-vivo 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulso-ao-vivo {
+    animation: none;
+  }
 }
 
 /* Card recém-chegado no board vivo (Rodada 9): pulsa UMA vez, discreto, e some */
