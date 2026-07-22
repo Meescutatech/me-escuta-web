@@ -43,23 +43,18 @@ export interface PainelLead {
 type Supabase = ReturnType<typeof criarClienteServidor>;
 
 async function lerFicha(supabase: Supabase, leadId: string): Promise<FichaDoLead> {
-  const { data: cfg, error: erroCfg } = await supabase
-    .schema("core")
-    .from("v_config_vigente")
-    .select("payload")
-    .eq("nome", "ficha_lead")
-    .maybeSingle();
-  const grupos = erroCfg || !cfg ? null : parseConfigFicha(cfg.payload);
+  // config + valores em paralelo (não dependem um do outro); se a config não existir os
+  // valores são descartados — mesmo resultado de antes, um round-trip a menos
+  const [cfgRes, camposRes] = await Promise.all([
+    supabase.schema("core").from("v_config_vigente").select("payload").eq("nome", "ficha_lead").maybeSingle(),
+    // Projeção 0028 (Trilha DB, paralela): select explícito — tabela/coluna ausente ERRA e o
+    // erro vira degrade (valores = null), nunca tela morta.
+    supabase.schema("core").from("lead_campo").select("campo,valor").eq("lead_id", leadId).limit(500),
+  ]);
+  const grupos = cfgRes.error || !cfgRes.data ? null : parseConfigFicha(cfgRes.data.payload);
   if (!grupos) return { grupos: null, valores: null }; // sem definição, valores não têm onde aparecer
 
-  // Projeção 0028 (Trilha DB, paralela): select explícito — tabela/coluna ausente ERRA e o
-  // erro vira degrade (valores = null), nunca tela morta.
-  const { data, error } = await supabase
-    .schema("core")
-    .from("lead_campo")
-    .select("campo,valor")
-    .eq("lead_id", leadId)
-    .limit(500);
+  const { data, error } = camposRes;
   if (error || !data) return { grupos, valores: null };
   const valores: Record<string, unknown> = {};
   for (const r of data as any[]) valores[String(r.campo)] = r.valor;
