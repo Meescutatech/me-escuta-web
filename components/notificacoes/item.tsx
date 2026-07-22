@@ -1,0 +1,183 @@
+"use client";
+
+import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+import {
+  carimbo,
+  carimboSoHora,
+  carimboPrazo,
+  destino,
+  fraseNotificacao,
+  naoLida,
+  podePromover,
+  textoAtraso,
+  type Notificacao,
+} from "@/lib/notificacoes";
+import {
+  concluirTarefaNotificacao,
+  marcarMencaoLida,
+  promoverMencaoTarefa,
+} from "@/app/(app)/notificacoes/actions";
+
+/**
+ * Item de notificação — o MESMO no popover e na visão expandida (é assim no mockup
+ * notificacoes-sino-v3.html, classe `.n`, e é o que mantém as duas telas coerentes).
+ *
+ * Gramática do mockup, ao pé da letra:
+ *  · não-lida = ponto laranja de 7px à esquerda + nome em tinta;
+ *    lida = sem ponto e o texto inteiro em suave;
+ *  · nenhum ícone colorido por tipo — o tipo vem ESCRITO ("mencionou você", "atribuiu", "venceu");
+ *  · atraso é a única exceção cromática: vermelho, porque é a informação que muda a ação;
+ *  · citação com filete à esquerda; menção dentro da citação vira chip navy sobre #EAECF5.
+ */
+export function ItemNotificacao({
+  n,
+  agoraMs,
+  expandido = false,
+}: {
+  n: Notificacao;
+  agoraMs: number;
+  expandido?: boolean;
+}) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+  const lida = !naoLida(n);
+  const { forte, resto } = fraseNotificacao(n);
+  const atraso = n.especie === "tarefa_vencida" ? textoAtraso(n.prazo, agoraMs) : "";
+  const citacao = n.especie === "mencao" ? n.trecho : n.titulo ? n.trecho : null;
+
+  function abrir() {
+    if (n.mencao_id && naoLida(n)) iniciar(() => void marcarMencaoLida(n.mencao_id!));
+    const url = destino(n);
+    if (url) router.push(url);
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={abrir}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          abrir();
+        }
+      }}
+      className={cn(
+        "flex cursor-pointer items-start gap-2.5 border-b border-[#F1F0EC] py-[11px] pl-3 pr-3.5 last:border-b-0 hover:bg-hover",
+        expandido && "px-6",
+        pendente && "opacity-70",
+      )}
+    >
+      {/* ponto de não-lida — 7px, laranja; lida não tem ponto (ocupa o espaço, não pula) */}
+      <span
+        aria-label={lida ? undefined : "não lida"}
+        className={cn(
+          "mt-1.5 h-[7px] w-[7px] flex-none rounded-full",
+          lida ? "bg-transparent" : "bg-laranja",
+        )}
+      />
+
+      <span className="min-w-0 flex-1">
+        <span className={cn("block text-[13.5px] leading-[1.45]", lida && "text-suave")}>
+          <b className={cn("font-semibold", lida && "text-suave")}>{forte}</b>
+          {resto}
+        </span>
+
+        {citacao && (
+          <span className="mt-[3px] block border-l-2 border-linha pl-[9px] text-[12.5px] leading-[1.45] text-suave">
+            <TrechoComMencoes texto={citacao} />
+          </span>
+        )}
+
+        <span className="mt-[5px] flex flex-wrap items-center gap-x-[7px] gap-y-1 text-[11.5px] text-mute">
+          {n.lead_nome && <span className="text-suave">{n.lead_nome}</span>}
+          {atraso && <span className="whitespace-nowrap font-semibold text-vermelho">{atraso}</span>}
+          {n.especie === "mencao" ? (
+            <span className="whitespace-nowrap font-mono tabular-nums">
+              {/* na expandida o dia já está no cabeçalho do grupo — aqui só a hora */}
+              {expandido ? carimboSoHora(n.quando) : carimbo(n.quando, agoraMs)}
+            </span>
+          ) : (
+            <span className="whitespace-nowrap">{carimboPrazo(n.prazo, agoraMs)}</span>
+          )}
+        </span>
+      </span>
+
+      {/*
+        Ação direta. O popover tem 376px: no mockup só a tarefa VENCIDA carrega botão ali —
+        é o que cabe sem estrangular a citação. A visão expandida, larga, mostra as duas ações:
+        concluir a tarefa e transformar a menção pendente em tarefa (§7/§10.2).
+      */}
+      {n.tarefa_id && n.especie !== "mencao" && (expandido || n.especie === "tarefa_vencida") && (
+        <BotaoAcao
+          rotulo="Concluir"
+          pendente={pendente}
+          onAcao={() => iniciar(() => void concluirTarefaNotificacao(n.tarefa_id!, "concluída"))}
+        />
+      )}
+      {expandido && podePromover(n) && (
+        <BotaoAcao
+          rotulo="Virar tarefa"
+          titulo="Cria uma tarefa com o texto da menção e resolve a pendência"
+          pendente={pendente}
+          onAcao={() =>
+            iniciar(() =>
+              void promoverMencaoTarefa(n.mencao_id!, n.lead_id, n.trecho ?? "", n.ator),
+            )
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function BotaoAcao({
+  rotulo,
+  titulo,
+  pendente,
+  onAcao,
+}: {
+  rotulo: string;
+  titulo?: string;
+  pendente: boolean;
+  onAcao: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={titulo}
+      disabled={pendente}
+      onClick={(e) => {
+        e.stopPropagation();
+        onAcao();
+      }}
+      className="ml-auto flex-none self-center rounded-[6px] border border-linha bg-branco px-2.5 py-1 text-[12px] font-semibold text-tinta hover:bg-hover disabled:opacity-50"
+    >
+      {rotulo}
+    </button>
+  );
+}
+
+/**
+ * `@Fulano` dentro da citação vira chip navy — igual ao `.men` do mockup.
+ * O chip cobre o NOME INTEIRO ("@Camila Rocha", não "@Camila"): nome próprio é sequência de
+ * palavras capitalizadas. Agente vem em minúsculas e casa pelo segundo ramo ("@levindo").
+ */
+function TrechoComMencoes({ texto }: { texto: string }) {
+  const partes = texto.split(/(@\p{Lu}\p{L}*(?:\s\p{Lu}\p{L}*)*|@[\w.-]+)/u);
+  return (
+    <>
+      {partes.map((p, i) =>
+        p.startsWith("@") ? (
+          <span key={i} className="rounded-[4px] bg-[#EAECF5] px-[3px] font-medium text-navy">
+            {p}
+          </span>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
+  );
+}
