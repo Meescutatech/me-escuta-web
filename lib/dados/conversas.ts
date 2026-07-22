@@ -1,4 +1,5 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { parseTags } from "./ficha-calculos";
 
 /**
  * Leitura de CONVERSAS (inbox WhatsApp) + mensagens + propostas da Clara. Schema real (0009):
@@ -37,6 +38,7 @@ export interface ConversaResumo {
   entrou_etapa_em?: string | null;
   valor?: number | null;
   origem?: string | null;
+  tags?: string[]; // core.lead.tags via v_lead_card (chips no painel do lead)
   idade?: number | null; // 0011 — null por ora
   previa?: string | null; // corpo da última mensagem
   previa_saida?: boolean; // última msg foi de saída (Você/Clara)
@@ -91,7 +93,7 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
       const { data: cards } = await supabase
         .schema("core")
         .from("v_lead_card")
-        .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em")
+        .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags")
         .in("lead_id", leadIds);
       for (const r of cards ?? []) leadInfo.set(String(r.lead_id), r);
     }
@@ -156,6 +158,7 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
         entrou_etapa_em: info?.entrou_etapa_em ?? null,
         valor: info?.valor != null ? Number(info.valor) : null,
         origem: info?.origem ? String(info.origem) : null,
+        tags: parseTags(info?.tags),
         idade: null,
         previa: p?.corpo ?? null,
         previa_saida: p?.saida ?? false,
