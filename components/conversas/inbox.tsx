@@ -7,8 +7,10 @@ import {
   assumirConversa,
   devolverConversa,
   enviarMensagem,
+  sinalizarPresenca,
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
+import { criarGatilhoDigitando } from "@/lib/conversas/presenca";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
@@ -156,6 +158,23 @@ export function Inbox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selecionadaId]);
 
+  // PRESENÇA (Rodada 11): Sara abriu a conversa ⇒ marca a última recebida como lida no WhatsApp
+  // (checks azuis pro cliente; a Meta marca as anteriores junto). Best-effort: fire-and-forget,
+  // resultado ignorado — presença nunca vira erro de UI.
+  const gatilhoDigitando = useRef(criarGatilhoDigitando()).current;
+  useEffect(() => {
+    if (selecionadaId) void sinalizarPresenca(selecionadaId, "lida");
+  }, [selecionadaId]);
+
+  // "digitando…" com throttle por conversa (~20s < 25s do indicador da Meta). Chamado pelo
+  // composer a cada tecla; o gatilho decide quando realmente sinalizar.
+  function aoDigitar() {
+    if (!selecionadaId) return;
+    if (gatilhoDigitando.deve(selecionadaId, Date.now())) {
+      void sinalizarPresenca(selecionadaId, "digitando");
+    }
+  }
+
   // poda pendentes confirmadas do ESTADO, não só do render: confirmação é irreversível — se a
   // linha confirmada depois virar 'falhou', a pendente não pode ressuscitar como bolha fantasma
   // "aguardando fila" ao lado da bolha de erro (nem inflar visiveis.length → pill "1 nova" falsa).
@@ -289,6 +308,8 @@ export function Inbox({
       ]);
       requestAnimationFrame(() => fimRef.current?.scrollIntoView({ behavior: "smooth" }));
     }
+    // enviar derruba o "digitando…" na Meta — zera o throttle pra próxima digitação re-sinalizar já
+    gatilhoDigitando.zerar(selecionada.id);
     startTransition(async () => {
       const r = await enviarMensagem(
         selecionada.id,
@@ -711,6 +732,7 @@ export function Inbox({
               pending={pending}
               onEnviarTexto={(texto) => despachar(texto)}
               onEnviarMidia={(midia) => despachar(midia.legenda ?? "", midia)}
+              onDigitar={aoDigitar}
               avisar={avisar}
             />
           </>

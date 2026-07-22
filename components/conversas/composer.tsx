@@ -46,12 +46,15 @@ export function Composer({
   pending,
   onEnviarTexto,
   onEnviarMidia,
+  onDigitar,
   avisar,
 }: {
   modoClara: boolean;
   pending: boolean;
   onEnviarTexto: (texto: string) => void;
   onEnviarMidia: (m: MidiaPronta) => void;
+  /** PRESENÇA (Rodada 11): chamado a cada tecla com texto — o pai decide (throttle) se sinaliza "digitando…". */
+  onDigitar?: () => void;
   avisar: (msg: string) => void;
 }) {
   const [rascunho, setRascunho] = useState("");
@@ -280,7 +283,11 @@ export function Composer({
         <textarea
           rows={1}
           value={rascunho}
-          onChange={(e) => setRascunho(e.target.value)}
+          onChange={(e) => {
+            setRascunho(e.target.value);
+            // só com conteúdo real — apagar tudo não é "digitando"
+            if (e.target.value.trim()) onDigitar?.();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
