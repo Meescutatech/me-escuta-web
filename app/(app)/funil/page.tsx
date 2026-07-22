@@ -19,6 +19,11 @@ export default async function FunilPage({
   } = await supabase.auth.getUser();
 
   return (
-    <Quadro dados={dados} abrirLead={searchParams.lead ?? null} autorEmail={user?.email ?? null} />
+    <Quadro
+      dados={dados}
+      geradoEm={new Date().toISOString()}
+      abrirLead={searchParams.lead ?? null}
+      autorEmail={user?.email ?? null}
+    />
   );
 }

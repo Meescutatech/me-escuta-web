@@ -1,210 +1,221 @@
-import type { DadosDashboard, DiaMensagens, FaixaEtapa } from "@/lib/dados/dashboard";
+import type { DadosDashboard, FaixaEtapa } from "@/lib/dados/dashboard";
 import { formatarDuracaoMin } from "@/lib/dados/dashboard-calculos";
+import { segmentosReguaAgregada } from "@/lib/dados/funil-calculos";
+import { ReguaFunil } from "@/components/regua-funil";
 import { CarimboVivo } from "./carimbo-vivo";
+import { cn } from "@/lib/utils";
 
 /*
- * Dashboard v1 (Rodada 7, D5) — números grandes + barras simples, SEM lib de gráfico.
- * Mesmos tokens do redesign Notion-minimalista (fase 1): Fraunces nos números, navy/laranja,
- * cartões brancos com hairline. Número indisponível = "—" (nunca zero inventado).
- * Server component puro: tudo chega pronto de lerDashboard().
+ * Visão geral (R9) — mockup r9-dashboard.html: 4 tiles de números-chave (peso 650,
+ * -0.02em, tabular — número de operação é leitura, não pôster), leads por etapa com a
+ * régua-assinatura + barras, mensagens de hoje em linhas métricas, fechamentos.
+ * Números 100% do ledger/projeções (R7); indisponível = "—", nunca zero inventado.
  */
 
 function n(v: number | null): string {
   return v == null ? "—" : v.toLocaleString("pt-BR");
 }
-function brl(v: number): string {
-  return "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-}
 
-/** "dados de 21/07, 20:15" no fuso da operação. */
-function recencia(iso: string | null): string | null {
+/** "22/07 14:34" (fuso da operação) pro carimbo de recência do snapshot. */
+function ddmmhhmm(iso: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   const dia = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" });
   const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-  return `dados de ${dia}, ${hora}`;
+  return `${dia} ${hora}`;
 }
 
-function Cartao({
-  titulo,
-  className,
-  children,
-}: {
-  titulo: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
+function Tile({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
-    <section className={`rounded-[9px] border border-linha bg-branco px-5 py-4 shadow-suave ${className ?? ""}`}>
-      <h2 className="mb-3 text-[0.72rem] font-semibold uppercase tracking-wide text-mute">{titulo}</h2>
+    <div className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
+      <div className="text-[12.5px] font-semibold uppercase tracking-[0.05em] text-suave">{rotulo}</div>
       {children}
-    </section>
-  );
-}
-
-function NumeroGrande({ valor, rotulo }: { valor: string; rotulo: string }) {
-  return (
-    <div>
-      <div className="font-serif text-[2.1rem] font-semibold leading-none tabular-nums text-navy">{valor}</div>
-      <div className="mt-1.5 text-[0.78rem] text-mute">{rotulo}</div>
     </div>
   );
 }
 
-// ─────────────── funil por etapa (barras horizontais) ───────────────
+function Num({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-2 text-[34px] font-[650] leading-[1.15] tracking-[-0.02em] tabular-nums text-tinta">
+      {children}
+    </div>
+  );
+}
 
-function FunilEtapas({ faixas }: { faixas: FaixaEtapa[] }) {
+// ─────────────── leads por etapa ───────────────
+
+function LeadsPorEtapa({ faixas }: { faixas: FaixaEtapa[] }) {
   const max = Math.max(1, ...faixas.map((f) => f.qtd ?? 0));
   return (
-    <div className="flex flex-col gap-2">
-      {faixas.map(({ etapa, qtd }) => (
-        <div key={etapa.chave} className="flex items-center gap-3">
-          <span className="w-36 shrink-0 truncate text-[0.8rem] text-suave" title={etapa.nome}>
-            {etapa.nome}
-          </span>
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-board">
-            {qtd != null && qtd > 0 && (
-              <div
-                className="h-full rounded-full"
-                style={{ width: `${Math.max(4, (qtd / max) * 100)}%`, background: etapa.cor }}
-              />
-            )}
-          </div>
-          <span className="w-8 shrink-0 text-right font-serif text-[0.9rem] font-medium tabular-nums text-navy">
-            {n(qtd)}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─────────────── mensagens por dia (barras verticais pareadas) ───────────────
-
-function MensagensPorDia({ dias }: { dias: DiaMensagens[] }) {
-  const max = Math.max(1, ...dias.flatMap((d) => [d.entrada ?? 0, d.saida ?? 0]));
-  const totalEntrada = dias.some((d) => d.entrada == null)
-    ? null
-    : dias.reduce((s, d) => s + (d.entrada ?? 0), 0);
-  const totalSaida = dias.some((d) => d.saida == null)
-    ? null
-    : dias.reduce((s, d) => s + (d.saida ?? 0), 0);
-  return (
-    <div>
-      <div className="flex h-24 items-end gap-2">
-        {dias.map((d) => (
-          <div key={d.rotulo} className="flex flex-1 flex-col items-center gap-1" title={`${d.rotulo}: ${n(d.entrada)} recebidas · ${n(d.saida)} enviadas`}>
-            <div className="flex h-20 w-full items-end justify-center gap-[3px]">
-              <div
-                className="w-[9px] rounded-t-sm bg-laranja"
-                style={{ height: `${((d.entrada ?? 0) / max) * 100}%`, minHeight: (d.entrada ?? 0) > 0 ? 3 : 0 }}
-              />
-              <div
-                className="w-[9px] rounded-t-sm bg-navy"
-                style={{ height: `${((d.saida ?? 0) / max) * 100}%`, minHeight: (d.saida ?? 0) > 0 ? 3 : 0 }}
-              />
-            </div>
-            <span className="whitespace-nowrap text-[0.62rem] text-mute">{d.rotulo.split(" ")[0]}</span>
-          </div>
-        ))}
+    <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
+      <div className="mb-3.5 flex items-baseline gap-2.5">
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Leads por etapa</h2>
+        <span className="ml-auto font-mono text-[10.5px] text-mute">derivado do ledger · ao vivo</span>
       </div>
-      <div className="mt-3 flex items-center gap-4 border-t border-linha pt-2.5 text-[0.78rem] text-suave">
-        <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-sm bg-laranja" /> {n(totalEntrada)} recebidas
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-sm bg-navy" /> {n(totalSaida)} enviadas
-        </span>
+      <div className="mb-4">
+        <ReguaFunil segmentos={segmentosReguaAgregada(faixas)} rotulo="Etapas do funil com leads" />
       </div>
-    </div>
+      {faixas.map(({ etapa, qtd }) => {
+        const alerta = /faltou/i.test(etapa.chave) || /faltou/i.test(etapa.nome);
+        return (
+          <div key={etapa.chave} className="flex min-h-8 items-center gap-3">
+            <span className={cn("w-[190px] min-w-[190px] truncate text-[13px]", alerta ? "text-amarelo" : "text-tinta")} title={etapa.nome}>
+              {etapa.nome}
+            </span>
+            <span className="h-1.5 flex-1 overflow-hidden rounded-[3px] bg-board">
+              {qtd != null && qtd > 0 && (
+                <span
+                  className={cn("block h-full rounded-[3px]", alerta ? "bg-amarelo" : "bg-laranja opacity-85")}
+                  style={{ width: `${Math.max(2, (qtd / max) * 100)}%` }}
+                />
+              )}
+            </span>
+            <span className="w-11 text-right font-mono text-[12px] tabular-nums text-tinta">{n(qtd)}</span>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
 // ─────────────── painel ───────────────
 
 export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; geradoEm: string }) {
-  const rec = recencia(dados.ultimoEventoEm);
   const { entrega, primeiraResposta, valorNegociacao } = dados;
+  const abertas = dados.leadsPorEtapa.filter((f) => f.etapa.tipo === "aberto");
+  const hoje = dados.mensagens7d[dados.mensagens7d.length - 1] ?? null;
+  const ganhos = dados.leadsPorEtapa.filter((f) => f.etapa.tipo === "ganho");
+  const perdidos = dados.leadsPorEtapa.filter((f) => f.etapa.tipo === "perdido");
+  const somaOuNull = (fs: FaixaEtapa[]) =>
+    fs.length === 0 || fs.some((f) => f.qtd == null) ? null : fs.reduce((s, f) => s + (f.qtd ?? 0), 0);
+  const snapshot = ddmmhhmm(dados.ultimoEventoEm);
   const semDados = dados.ultimoEventoEm == null && (dados.leadsAtivos ?? 0) === 0;
 
   return (
-    <div className="min-h-[calc(100vh-58px)] bg-board">
-      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 border-b border-linha bg-branco px-6 pb-3 pt-4">
-        <h1 className="font-serif text-2xl font-semibold leading-none text-navy">Dashboard</h1>
-        {dados.leadsAtivos != null && (
-          <span className="flex items-baseline gap-1.5">
-            <span className="font-serif text-[1.02rem] font-medium tabular-nums text-navy">{n(dados.leadsAtivos)}</span>
-            <span className="text-[0.78rem] text-mute">leads ativos</span>
-          </span>
-        )}
-        {/* recência honesta: o universo Kommo é snapshot — divergência até o sync contínuo é esperada */}
-        <span className="ml-auto flex items-baseline gap-3">
-          {rec && <span className="text-[0.78rem] text-mute">{rec} · importado do Kommo</span>}
+    <main className="mx-auto max-w-[1180px] px-6 pb-12 pt-6">
+      <div className="mb-5 flex items-baseline gap-3.5">
+        <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Visão geral</h1>
+        <span className="ml-auto">
           <CarimboVivo geradoEm={geradoEm} />
         </span>
       </div>
 
       {semDados ? (
-        <div className="grid place-items-center px-6 py-24 text-center">
+        <div className="grid place-items-center rounded-[10px] border border-linha bg-branco py-24 text-center">
           <div>
-            <p className="font-serif text-xl font-semibold text-navy">Nada no ledger ainda</p>
-            <p className="mt-2 max-w-md text-sm text-mute">
+            <p className="text-[17px] font-[650] text-tinta">Nada no ledger ainda</p>
+            <p className="mt-2 max-w-md text-[13px] text-suave">
               Os números daqui derivam dos eventos reais — quando o primeiro lead ou mensagem
-              entrar, o dashboard acende sozinho.
+              entrar, o painel acende sozinho.
             </p>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 px-6 py-5 md:grid-cols-2 xl:grid-cols-3">
-          <Cartao titulo="Leads por etapa" className="md:row-span-2">
-            <FunilEtapas faixas={dados.leadsPorEtapa} />
-          </Cartao>
+        <>
+          {/* números-chave */}
+          <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <Tile rotulo="Leads ativos no funil">
+              <Num>{n(dados.leadsAtivos)}</Num>
+              <div className="mt-1.5 text-[12.5px] text-suave">
+                <b className="font-semibold tabular-nums text-tinta">{n(dados.novosHoje)}</b> novos hoje ·{" "}
+                <b className="font-semibold tabular-nums text-tinta">{n(dados.novos7d)}</b> nos últimos 7 dias
+              </div>
+            </Tile>
+            <Tile rotulo="Mensagens hoje">
+              <Num>
+                {n(hoje?.entrada ?? null)}{" "}
+                <span className="text-[16px] font-semibold tracking-normal text-suave">/ {n(hoje?.saida ?? null)}</span>
+              </Num>
+              <div className="mt-1.5 text-[12.5px] text-suave">
+                recebidas / enviadas · entrega{" "}
+                <b className="font-semibold tabular-nums text-tinta">
+                  {entrega.pct != null ? `${entrega.pct.toLocaleString("pt-BR")}%` : "—"}
+                </b>
+              </div>
+            </Tile>
+            <Tile rotulo="1ª resposta (mediana 7d)">
+              <Num>{formatarDuracaoMin(primeiraResposta.medianaMin)}</Num>
+              <div className="mt-1.5 text-[12.5px] text-suave">
+                {primeiraResposta.amostra > 0
+                  ? `${n(primeiraResposta.amostra)} conversas${primeiraResposta.parcial ? " · amostra parcial" : ""}`
+                  : "sem conversas com resposta"}{" "}
+                · meta: qualificação em <b className="font-semibold text-tinta">48 h</b>
+              </div>
+            </Tile>
+            <Tile rotulo="Valor em negociação">
+              <Num>
+                <span className="text-[16px] font-semibold tracking-normal text-suave">R$</span>{" "}
+                {valorNegociacao.total.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
+              </Num>
+              <div className="mt-1.5 text-[12.5px] text-suave">
+                <b className="font-semibold tabular-nums text-tinta">{n(valorNegociacao.comValor)}</b> leads com valor
+                {(valorNegociacao.semValor ?? 0) > 0 && <> · {n(valorNegociacao.semValor)} sem</>}
+              </div>
+              <div className="mt-1.5 font-mono text-[10.5px] text-mute">valor lançado no fechamento</div>
+            </Tile>
+          </div>
 
-          <Cartao titulo="Novos leads">
-            <div className="flex items-end gap-8">
-              <NumeroGrande valor={n(dados.novosHoje)} rotulo="hoje" />
-              <NumeroGrande valor={n(dados.novos7d)} rotulo="últimos 7 dias" />
+          <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[1.6fr_1fr]">
+            <LeadsPorEtapa faixas={abertas} />
+
+            <div className="flex flex-col gap-3">
+              {/* mensagens */}
+              <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
+                <div className="mb-2 flex items-baseline gap-2.5">
+                  <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Mensagens · hoje</h2>
+                  <span className="ml-auto font-mono text-[10.5px] text-mute">ao vivo</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-5">
+                  <Metrica rot="Recebidas" val={n(hoje?.entrada ?? null)} />
+                  <Metrica rot="Enviadas" val={n(hoje?.saida ?? null)} />
+                  <Metrica
+                    rot="Entrega"
+                    val={entrega.pct != null ? `${entrega.pct.toLocaleString("pt-BR")}%` : "—"}
+                    tom={entrega.pct != null && entrega.pct >= 95 ? "ok" : undefined}
+                  />
+                  <Metrica rot="Falhas" val={n(entrega.falhas)} tom={(entrega.falhas ?? 0) > 0 ? "alerta" : undefined} />
+                </div>
+              </section>
+
+              {/* fechamentos */}
+              <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
+                <div className="mb-3 flex items-baseline gap-2.5">
+                  <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Fechamentos</h2>
+                  {snapshot && <span className="ml-auto font-mono text-[10.5px] text-mute">snapshot {snapshot}</span>}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-linha px-3.5 py-3">
+                    <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-verde">Venda ganha</div>
+                    <div className="mt-1 text-2xl font-[650] tracking-[-0.02em] tabular-nums">{n(somaOuNull(ganhos))}</div>
+                  </div>
+                  <div className="rounded-lg border border-linha px-3.5 py-3">
+                    <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-vermelho">Venda perdida</div>
+                    <div className="mt-1 text-2xl font-[650] tracking-[-0.02em] tabular-nums">{n(somaOuNull(perdidos))}</div>
+                  </div>
+                </div>
+              </section>
             </div>
-          </Cartao>
-
-          <Cartao titulo="Valor em negociação">
-            <NumeroGrande valor={brl(valorNegociacao.total)} rotulo={`${n(valorNegociacao.comValor)} leads com valor em etapas abertas`} />
-            {(valorNegociacao.semValor ?? 0) > 0 && (
-              <p className="mt-2.5 text-[0.74rem] leading-relaxed text-mute">
-                {n(valorNegociacao.semValor)} sem valor — o Kommo só preenche o valor no fechamento.
-              </p>
-            )}
-          </Cartao>
-
-          <Cartao titulo="Mensagens · últimos 7 dias">
-            <MensagensPorDia dias={dados.mensagens7d} />
-          </Cartao>
-
-          <Cartao titulo="Entrega no WhatsApp">
-            <NumeroGrande
-              valor={entrega.pct != null ? `${entrega.pct.toLocaleString("pt-BR")}%` : "—"}
-              rotulo="das saídas com estado conhecido chegaram (entregue ou lido)"
-            />
-            <div className="mt-3 flex gap-4 border-t border-linha pt-2.5 text-[0.78rem] text-suave">
-              <span>{n(entrega.entregues)} entregues</span>
-              <span>{n(entrega.base)} com estado</span>
-              <span className={entrega.falhas ? "font-semibold text-vermelho" : ""}>{n(entrega.falhas)} falhas</span>
-            </div>
-          </Cartao>
-
-          <Cartao titulo="Tempo de 1ª resposta">
-            <NumeroGrande
-              valor={formatarDuracaoMin(primeiraResposta.medianaMin)}
-              rotulo={
-                primeiraResposta.amostra > 0
-                  ? `mediana · ${n(primeiraResposta.amostra)} conversas nos últimos 7 dias${primeiraResposta.parcial ? " · amostra parcial" : ""}`
-                  : "sem conversas com resposta nos últimos 7 dias"
-              }
-            />
-          </Cartao>
-        </div>
+          </div>
+        </>
       )}
+    </main>
+  );
+}
+
+function Metrica({ rot, val, tom }: { rot: string; val: string; tom?: "ok" | "alerta" }) {
+  return (
+    <div className="flex min-h-9 items-baseline justify-between border-b border-linha/60 [&:nth-last-child(-n+2)]:border-b-0">
+      <span className="text-[13px] text-suave">{rot}</span>
+      <span
+        className={cn(
+          "text-[16px] font-[650] tracking-[-0.01em] tabular-nums",
+          tom === "ok" && "text-verde",
+          tom === "alerta" && "text-amarelo",
+        )}
+      >
+        {val}
+      </span>
     </div>
   );
 }

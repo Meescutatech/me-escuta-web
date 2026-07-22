@@ -133,7 +133,7 @@ export function CartaoLead({
       }}
       title={titulo || undefined}
       className={cn(
-        "relative cursor-grab touch-none select-none rounded-[9px] border bg-branco px-[11px] pb-[9px] pt-[10px] transition-all",
+        "relative cursor-grab touch-none select-none rounded-[10px] border bg-branco px-3 pb-[9px] pt-[10px] transition-all",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50",
         selecionado ? "border-linha-forte" : "border-linha hover:border-linha-forte hover:shadow-[0_1px_6px_rgba(37,47,99,.06)]",
         isDragging && "opacity-40",
@@ -150,7 +150,7 @@ export function CartaoLead({
       <div className="flex items-start gap-2">
         <div
           className={cn(
-            "min-w-0 flex-1 truncate text-[0.9rem] font-semibold leading-[1.25] text-navy",
+            "min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-[1.25] text-tinta",
             ruim && "tabular-nums",
           )}
         >
@@ -182,7 +182,7 @@ export function CartaoLead({
           {timer && (
             <span
               className={cn(
-                "ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-[0.72rem]",
+                "ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[10.5px]",
                 velho ? "font-bold text-timer-velho" : "text-mute", // peso 700 + ícone: canal não-cor (WCAG 1.4.1)
               )}
               title={velho ? "Lead parado há muitos dias" : undefined}
