@@ -1,50 +1,68 @@
-import { test } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BATIMENTO_MS, INTERACAO_MS, devePulsar, montarEnvelopeAtividade } from "../lib/presenca.ts";
+import {
+  acaoPresencaValida,
+  criarGatilhoDigitando,
+  JANELA_DIGITANDO_MS,
+  montarCorpoPresenca,
+} from "../lib/conversas/presenca.ts";
 
 /*
- * Heartbeat (spec §7.1): pulsa a cada 60s SOMENTE com sessão + aba visível + interação
- * nos últimos 5 min. As constantes casam com a config `presenca` semeada na 0035
- * (batimento_seg=60, interacao_seg=300) — a derivação de janelas é do banco.
+ * PRESENÇA (Rodada 11 — Bloco B): lógica pura dos gatilhos. O contrato com o runtime
+ * (POST /presenca {conversa_id, acao}) e o throttle do "digitando…" por conversa.
  */
 
-test("constantes casam com a config presenca da 0035 (60s / 300s)", () => {
-  assert.equal(BATIMENTO_MS, 60_000);
-  assert.equal(INTERACAO_MS, 300_000);
-});
-
-test("pulsa: autenticado + aba visível + interação recente", () => {
-  assert.equal(devePulsar({ autenticado: true, abaVisivel: true, msDesdeInteracao: 0 }), true);
-  assert.equal(devePulsar({ autenticado: true, abaVisivel: true, msDesdeInteracao: 299_999 }), true);
-});
-
-test("NÃO pulsa sem sessão", () => {
-  assert.equal(devePulsar({ autenticado: false, abaVisivel: true, msDesdeInteracao: 0 }), false);
-});
-
-test("NÃO pulsa com aba oculta (deixar aberta no fundo não conta tempo online)", () => {
-  assert.equal(devePulsar({ autenticado: true, abaVisivel: false, msDesdeInteracao: 0 }), false);
-});
-
-test("NÃO pulsa parado há 5 min ou mais (idle não é tempo online)", () => {
-  assert.equal(devePulsar({ autenticado: true, abaVisivel: true, msDesdeInteracao: 300_000 }), false);
-  assert.equal(devePulsar({ autenticado: true, abaVisivel: true, msDesdeInteracao: 3_600_000 }), false);
-});
-
-test("envelope de atividade segue o contrato da porta (id_externo por ação, versao_payload 1)", () => {
-  const env = montarEnvelopeAtividade("presenca_registrada", { rota: "/funil" }, "uuid-1");
-  assert.deepEqual(env, {
-    tipo: "presenca_registrada",
-    id_externo: "uuid-1",
-    versao_payload: 1,
-    payload: { rota: "/funil" },
+describe("acaoPresencaValida", () => {
+  it("aceita só as duas ações que a API oficial suporta", () => {
+    assert.equal(acaoPresencaValida("lida"), true);
+    assert.equal(acaoPresencaValida("digitando"), true);
+    for (const invalida of ["online", "typing", "", null, undefined, 42]) {
+      assert.equal(acaoPresencaValida(invalida), false, `aceitou indevidamente: ${String(invalida)}`);
+    }
   });
-  // ator/origem NÃO vão no envelope — a porta força do JWT (anti-forja)
-  assert.ok(!("ator" in env) && !("origem" in env));
 });
 
-test("envelope de conversa_aberta carrega a conversa (D10)", () => {
-  const env = montarEnvelopeAtividade("conversa_aberta", { conversa_id: "abc" }, "uuid-2");
-  assert.equal(env.tipo, "conversa_aberta");
-  assert.deepEqual(env.payload, { conversa_id: "abc" });
+describe("montarCorpoPresenca (contrato web ↔ rota /presenca do runtime)", () => {
+  it("shape exato {conversa_id, acao}", () => {
+    assert.deepEqual(JSON.parse(montarCorpoPresenca("abc-123", "digitando")), {
+      conversa_id: "abc-123",
+      acao: "digitando",
+    });
+  });
+});
+
+describe("criarGatilhoDigitando (throttle por conversa)", () => {
+  const T0 = 1_000_000;
+
+  it("primeira tecla sinaliza; dentro da janela segura; passada a janela sinaliza de novo", () => {
+    const g = criarGatilhoDigitando(20_000);
+    assert.equal(g.deve("c1", T0), true, "primeira tecla deve sinalizar");
+    assert.equal(g.deve("c1", T0 + 1_000), false, "1s depois: dentro da janela");
+    assert.equal(g.deve("c1", T0 + 19_999), false, "19,999s: ainda dentro");
+    assert.equal(g.deve("c1", T0 + 20_000), true, "20s: janela venceu, re-sinaliza (typing da Meta dura 25s)");
+  });
+
+  it("janela é POR CONVERSA — trocar de conversa não herda o relógio", () => {
+    const g = criarGatilhoDigitando(20_000);
+    assert.equal(g.deve("c1", T0), true);
+    assert.equal(g.deve("c2", T0 + 100), true, "outra conversa sinaliza imediatamente");
+    assert.equal(g.deve("c1", T0 + 200), false, "c1 continua na própria janela");
+  });
+
+  it("zerar(conversa) reabre a janela na hora (mensagem enviada derruba o typing na Meta)", () => {
+    const g = criarGatilhoDigitando(20_000);
+    assert.equal(g.deve("c1", T0), true);
+    g.zerar("c1");
+    assert.equal(g.deve("c1", T0 + 1), true, "após zerar, a próxima tecla re-sinaliza");
+  });
+
+  it("conversa vazia nunca sinaliza", () => {
+    const g = criarGatilhoDigitando(20_000);
+    assert.equal(g.deve("", T0), false);
+  });
+
+  it("janela default fica abaixo dos 25s do indicador da Meta", () => {
+    assert.ok(JANELA_DIGITANDO_MS < 25_000);
+    assert.ok(JANELA_DIGITANDO_MS >= 10_000, "não martelar a Graph");
+  });
 });

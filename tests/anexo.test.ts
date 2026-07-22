@@ -6,6 +6,7 @@ import {
   LIMITE_IMAGEM_BYTES,
   caminhoSaida,
   escolherMimeGravacao,
+  MIMES_GRAVACAO_PREFERIDOS,
   mimeBase,
   validarAnexo,
 } from "../lib/conversas/anexo.ts";
@@ -93,12 +94,31 @@ test("accept do input não oferece webm (gravador entra por outro caminho)", () 
   assert.ok(!ACCEPT_ANEXO.includes("audio/webm"));
 });
 
-// ─────────── escolherMimeGravacao (D1: preferir o que a Meta aceita direto) ───────────
+// ─────────── escolherMimeGravacao (R11: opus primeiro, mp4 por ÚLTIMO) ───────────
 
-test("Safari-like (audio/mp4 suportado) grava mp4 — sem remux no sender", () => {
+test("REGRESSÃO R10: Chrome moderno (suporta TUDO, inclusive audio/mp4) grava ogg/opus — NUNCA mp4", () => {
+  // o Chrome dizia suportar audio/mp4 mas gravava opus em fMP4 → Meta 131053 "Media upload error"
+  assert.equal(
+    escolherMimeGravacao(() => true),
+    "audio/ogg;codecs=opus",
+  );
+});
+
+test("audio/mp4 é o último recurso da lista (Safari-only — o sender da R11 normaliza pelo sniff)", () => {
+  assert.equal(MIMES_GRAVACAO_PREFERIDOS[MIMES_GRAVACAO_PREFERIDOS.length - 1], "audio/mp4");
+});
+
+test("Safari-like (SÓ audio/mp4 suportado) ainda grava mp4 — normalização é do sender", () => {
   assert.equal(
     escolherMimeGravacao((m) => m === "audio/mp4"),
     "audio/mp4",
+  );
+});
+
+test("Chrome-like que suporta webm E mp4 (sem ogg) escolhe webm/opus, não mp4", () => {
+  assert.equal(
+    escolherMimeGravacao((m) => m.startsWith("audio/webm") || m === "audio/mp4"),
+    "audio/webm;codecs=opus",
   );
 });
 

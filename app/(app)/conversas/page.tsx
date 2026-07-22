@@ -1,4 +1,5 @@
 import { lerConversas, lerMensagens, lerSugestoesConversa } from "@/lib/dados/conversas";
+import { ETAPAS_PADRAO, lerEtapasReais } from "@/lib/dados/funil";
 import { lerPainelLead, type PainelLead } from "@/lib/dados/lead-painel";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { Inbox } from "@/components/conversas/inbox";
@@ -10,7 +11,8 @@ export default async function ConversasPage({
 }: {
   searchParams: { c?: string; lead?: string };
 }) {
-  const conversas = await lerConversas();
+  const [conversas, etapasReais] = await Promise.all([lerConversas(), lerEtapasReais()]);
+  const etapas = etapasReais ?? ETAPAS_PADRAO; // régua do funil no painel do lead (r9)
 
   // conversa selecionada: ?c explícito → ?lead (vindo do funil) → a primeira do inbox
   const selecionadaId =
@@ -43,6 +45,7 @@ export default async function ConversasPage({
       sugestoes={sugestoes}
       painel={painel}
       autorEmail={user?.email ?? null}
+      etapas={etapas}
     />
   );
 }
