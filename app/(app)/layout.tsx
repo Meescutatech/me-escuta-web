@@ -26,22 +26,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex h-[58px] flex-shrink-0 items-center gap-6 border-b border-borda bg-branco px-6">
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-laranja text-lg text-branco shadow-laranja">
-            👂
-          </span>
-          <span className="font-serif text-lg font-semibold text-navy">
-            me <b className="font-bold text-laranja">escuta</b>
-          </span>
+      {/* topbar r9: 52px, marca com ponto laranja, hairline única */}
+      <header className="flex h-[52px] flex-shrink-0 items-center gap-7 border-b border-linha bg-branco px-5">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-laranja" aria-hidden />
+          <span className="text-[15px] font-[650] text-navy">Me Escuta</span>
         </div>
         <Navegacao />
         <div className="ml-auto flex items-center gap-3">
-          <div className="hidden text-right leading-tight sm:block">
-            <div className="text-[0.82rem] font-semibold text-navy">{email}</div>
-            <div className="text-[0.68rem] text-mute">operação · sistema</div>
-          </div>
-          <span className="grid h-[33px] w-[33px] place-items-center rounded-full bg-navy text-[0.76rem] font-bold text-branco">
+          <span className="hidden text-[12.5px] text-suave sm:block">{email}</span>
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-navy text-[11.5px] font-semibold text-branco">
             {iniciais(email)}
           </span>
           <form action="/auth/signout" method="post">

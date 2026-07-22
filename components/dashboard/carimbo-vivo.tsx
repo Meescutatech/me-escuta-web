@@ -5,13 +5,12 @@ import { useProjecaoViva } from "@/components/projecao-viva";
 import { fmtAtras } from "@/lib/tempo-real";
 
 /*
- * Dashboard "vivo" (Rodada 9, fase 1): revalidação periódica leve (45s, só com a aba
- * visível — o hook cuida) + carimbo "atualizado há Xs" derivado da hora REAL da renderização
- * server-side (geradoEm), não do relógio do cliente. Sem dica realtime aqui: o dashboard é
- * agregação, 45s de defasagem é honesto e barato.
+ * "ao vivo · atualizado há Xs" (r9): ponto verde pulsando + carimbo mono, revalidação leve
+ * (45s por padrão, só com a aba visível — o hook cuida). O relógio conta da hora REAL da
+ * renderização server-side (geradoEm), não do cliente.
  */
-export function CarimboVivo({ geradoEm }: { geradoEm: string }) {
-  useProjecaoViva([], { intervaloMs: 45_000 });
+export function CarimboVivo({ geradoEm, intervaloMs = 45_000 }: { geradoEm: string; intervaloMs?: number }) {
+  useProjecaoViva([], { intervaloMs });
 
   // começa "agora" (igual no SSR → sem mismatch de hidratação) e passa a contar no cliente
   const [texto, setTexto] = useState("agora");
@@ -24,8 +23,12 @@ export function CarimboVivo({ geradoEm }: { geradoEm: string }) {
   }, [geradoEm]);
 
   return (
-    <span className="text-[0.72rem] tabular-nums text-mute" title="O painel se atualiza sozinho a cada 45s">
-      atualizado {texto}
+    <span
+      className="flex items-center gap-1.5 font-mono text-[11px] text-suave"
+      title={`O painel se atualiza sozinho a cada ${Math.round(intervaloMs / 1000)}s`}
+    >
+      <span className="pulso-ao-vivo h-[7px] w-[7px] rounded-full bg-verde" aria-hidden />
+      ao vivo · atualizado {texto}
     </span>
   );
 }
