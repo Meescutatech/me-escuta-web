@@ -27,7 +27,7 @@ const config: Config = {
         linha: { DEFAULT: "#E8E7E2", forte: "#DCDAD4" }, // --linha: hairline universal
         hover: "#F3F2EF", // --hover
         "scroll-h": "#CFCDC7", // hover da scrollbar
-        "timer-velho": "#9E5A38", // ESTADO lead parado · 4.5:1 (AA) — sempre com peso 700 + ícone
+        "timer-velho": "#B27A00", // --ambar (r9): lead parado — peso 700 + ícone
         "pt-ads": "#B4B7BD", // micro-ponto do sinal "Meta Ads" (decorativo)
         "foco-comp": "#D9C4B6", // borda do composer em foco (conversa-v2)
         bolha: { in: "#FFFFFF", out: "#EAECF5" }, // r9-conversa: entrada branca hairline · saída azulada

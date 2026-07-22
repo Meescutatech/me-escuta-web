@@ -9,8 +9,17 @@ import { fmtAtras } from "@/lib/tempo-real";
  * (45s por padrão, só com a aba visível — o hook cuida). O relógio conta da hora REAL da
  * renderização server-side (geradoEm), não do cliente.
  */
-export function CarimboVivo({ geradoEm, intervaloMs = 45_000 }: { geradoEm: string; intervaloMs?: number }) {
-  useProjecaoViva([], { intervaloMs });
+export function CarimboVivo({
+  geradoEm,
+  intervaloMs = 45_000,
+  revalidar = true,
+}: {
+  geradoEm: string;
+  intervaloMs?: number;
+  /** false = só exibe o carimbo (a tela já tem o próprio ciclo de refetch, ex.: board) */
+  revalidar?: boolean;
+}) {
+  useProjecaoViva([], { intervaloMs, ativo: revalidar });
 
   // começa "agora" (igual no SSR → sem mismatch de hidratação) e passa a contar no cliente
   const [texto, setTexto] = useState("agora");
