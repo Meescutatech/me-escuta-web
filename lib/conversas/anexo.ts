@@ -90,16 +90,19 @@ export const ACCEPT_ANEXO = [...Object.keys(MIME_IMAGEM), ...Object.keys(MIME_AU
   .join(",");
 
 /**
- * Mime da GRAVAÇÃO (D1): preferir formatos que a Meta aceita direto (Safari grava audio/mp4;
- * Firefox suporta audio/ogg) e só cair no audio/webm;codecs=opus do Chrome quando não houver
- * opção — esse o sender remuxa. Recebe o predicado (MediaRecorder.isTypeSupported) pra ser puro.
+ * Mime da GRAVAÇÃO (D1, ordem invertida na R11 — Bloco A): opus primeiro (ogg → webm), audio/mp4
+ * por ÚLTIMO. Lição da R10 (DIAGNOSTICO-AUDIO-NAO-ENTREGUE): o Chrome moderno diz suportar
+ * audio/mp4 mas grava OPUS em MP4 fragmentado — mime que a Meta aceita, conteúdo que ela rejeita
+ * assíncrono ("Media upload error" 131053). Com opus na frente, o Chrome cai no webm/ogg (caminho
+ * remuxado e testado do sender) e o mp4 sobra só pro Safari — que o sender da R11 normaliza pelo
+ * sniff de bytes. Recebe o predicado (MediaRecorder.isTypeSupported) pra ser puro.
  */
 export const MIMES_GRAVACAO_PREFERIDOS = [
-  "audio/mp4",
   "audio/ogg;codecs=opus",
   "audio/ogg",
   "audio/webm;codecs=opus",
   "audio/webm",
+  "audio/mp4",
 ] as const;
 
 export function escolherMimeGravacao(suporta: (mime: string) => boolean): string | null {
