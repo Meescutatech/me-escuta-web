@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { lerContadoresSidebar } from "@/lib/dados/sidebar";
 import { Sidebar } from "@/components/sidebar";
+import { PresencaBatimento } from "@/components/presenca-batimento";
 
 /**
  * Shell autenticado (r9): SIDEBAR de ícones retrátil no lugar do menu de topo — colapsada
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         contNaoLidas={contadores.naoLidas}
       />
       <main>{children}</main>
+      <PresencaBatimento />
     </div>
   );
 }

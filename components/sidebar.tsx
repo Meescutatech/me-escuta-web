@@ -54,6 +54,12 @@ const ICONES: Record<string, React.ReactNode> = {
   conversas: (
     <path d="M20 11.5c0 3.6-3.6 6.5-8 6.5-1 0-2-.15-2.9-.43L4.5 19l1.1-3.1C4.6 14.7 4 13.2 4 11.5 4 7.9 7.6 5 12 5s8 2.9 8 6.5z" />
   ),
+  configuracoes: (
+    <>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" />
+    </>
+  ),
 };
 
 function iniciais(email: string): string {
@@ -91,6 +97,12 @@ export function Sidebar({
       cont: contNaoLidas != null && contNaoLidas > 0 ? contNaoLidas.toLocaleString("pt-BR") : null,
       laranja: true,
       ponto: contNaoLidas != null && contNaoLidas > 0,
+    },
+    {
+      href: "/configuracoes",
+      rotulo: "Configurações",
+      icone: ICONES.configuracoes,
+      ativa: pathname.startsWith("/configuracoes"),
     },
   ];
 
