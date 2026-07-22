@@ -296,7 +296,7 @@ export function Quadro({
   const etapaAberta = dados.etapas.find((e) => e.chave === leadAberto?.etapa) ?? null;
 
   return (
-    <div className="flex h-[calc(100vh-52px)] flex-col bg-board">
+    <div className="flex h-screen flex-col bg-board">
       {/* ── cab do board (r9): título + total mono + busca + ao vivo ── */}
       <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-5 pb-3 pt-4">
         <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Funil de vendas</h1>

@@ -23,6 +23,14 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
+/* Sidebar retrátil (r9 §6): prefers-reduced-motion desliga TODAS as transições dela */
+@media (prefers-reduced-motion: reduce) {
+  .lateral-r9,
+  .lateral-r9 * {
+    transition: none !important;
+  }
+}
+
 /* Abas roláveis sem scrollbar visível (painel do lead, r9) */
 .scrollbar-none {
   scrollbar-width: none;

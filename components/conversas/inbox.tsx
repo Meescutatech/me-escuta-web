@@ -396,7 +396,7 @@ export function Inbox({
     : "";
 
   return (
-    <div className="flex h-[calc(100vh-52px)] bg-board">
+    <div className="flex h-screen bg-board">
       {/* ═══════════ ZONA 1 · LISTA ═══════════ */}
       <aside className="flex w-[272px] shrink-0 flex-col border-r border-linha bg-branco">
         <div className="px-4 pb-2.5 pt-3.5">
