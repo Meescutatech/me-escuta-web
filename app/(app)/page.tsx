@@ -6,5 +6,6 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const dados = await lerDashboard();
-  return <PainelDashboard dados={dados} />;
+  // hora REAL desta renderização — o carimbo "atualizado há Xs" conta a partir daqui
+  return <PainelDashboard dados={dados} geradoEm={new Date().toISOString()} />;
 }

@@ -23,6 +23,20 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
+/* Card recém-chegado no board vivo (Rodada 9): pulsa UMA vez, discreto, e some */
+@keyframes pulso-novo {
+  0% {
+    box-shadow: 0 0 0 0 rgba(236, 102, 46, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 0 11px rgba(236, 102, 46, 0);
+  }
+}
+.pulso-novo {
+  animation: pulso-novo 1.2s ease-out 1;
+  border-radius: 9px;
+}
+
 /* Scrollbar discreta no tom da marca (front-clara-v1) */
 ::-webkit-scrollbar {
   width: 8px;
