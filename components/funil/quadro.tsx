@@ -155,11 +155,22 @@ function MiniColuna({
 
 // ─────────────── board ───────────────
 
-export function Quadro({ dados }: { dados: DadosFunil }) {
+export function Quadro({
+  dados,
+  abrirLead = null,
+  autorEmail = null,
+}: {
+  dados: DadosFunil;
+  /** deep-link ?lead=<id> (vindo do painel da conversa): abre o drawer deste card ao montar */
+  abrirLead?: string | null;
+  autorEmail?: string | null;
+}) {
   const [cards, setCards] = useState<CardLead[]>(dados.cards);
   const [arrastando, setArrastando] = useState<string | null>(null);
-  const [cardAberto, setCardAberto] = useState<string | null>(null);
-  const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
+  const [cardAberto, setCardAberto] = useState<string | null>(
+    abrirLead && dados.cards.some((c) => c.lead_id === abrirLead) ? abrirLead : null,
+  );
+  const [selecionadoId, setSelecionadoId] = useState<string | null>(cardAberto);
   const [agora, setAgora] = useState<number>(() => Date.now());
   const [aviso, setAviso] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -371,7 +382,7 @@ export function Quadro({ dados }: { dados: DadosFunil }) {
         </DragOverlay>
       </DndContext>
 
-      <DrawerCard lead={leadAberto} etapa={etapaAberta} onFechar={() => setCardAberto(null)} />
+      <DrawerCard lead={leadAberto} etapa={etapaAberta} autorEmail={autorEmail} onFechar={() => setCardAberto(null)} />
 
       {toast && (
         <div className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-md border border-linha-forte bg-branco px-4 py-2.5 text-sm text-navy shadow-[0_6px_26px_rgba(37,47,99,.12)]">
