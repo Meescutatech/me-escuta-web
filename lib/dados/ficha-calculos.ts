@@ -2,15 +2,27 @@
  * Lógica PURA da ficha do lead + tarefas (Rodada 8) — sem I/O, client-safe, testável com
  * node --test. Leitura/escrita ficam em lib/dados/lead-painel.ts e app/(app)/lead/actions.ts.
  *
- * CONTRATOS (combinados com as Trilhas DB/Dados — não mudar sem avisar o Orquestrador):
- *  - Definição da ficha: core.config chave 'ficha_lead' → payload { grupos: [{ chave, nome,
- *    campos: [{ slug, nome, tipo, opcoes?, editavel?, kommo_field_id? }] }] }. O parser abaixo
- *    é tolerante (chave/slug/id, campos soltos sem grupos) porque a config nasce em trilha
- *    paralela — config ausente/inválida → null (UI mostra "ficha não configurada").
- *  - Escrita: evento `lead_atualizado` payload `campos: {"<slug>": <valor|null>}` (null = limpar).
+ * CONTRATOS (validados contra a config REAL `ficha_lead` v1 no remoto, 52 campos/7 grupos):
+ *  - Definição: core.config `ficha_lead` → payload { grupos: [{ nome, editavel?, campos:
+ *    [{ slug, rotulo, tipo, opcoes?, kommo_field_id? }] }] }. `editavel` vem no GRUPO
+ *    (Principal/Qualificação true) e vale pros campos dele; campo pode sobrescrever.
+ *    Tipos reais: selecao · texto · texto_longo · data · data_hora · numero · url ·
+ *    endereco · arquivo — os dois últimos não têm editor (read-only), nunca "vira texto".
+ *  - Valores: core.lead_campo.valor é jsonb CRU (preserva tipo).
+ *  - Escrita: evento `lead_atualizado` payload `campos: {"<slug>": <valor|null>}`
+ *    (null = limpar; só slugs da config). Contrato fixo — mudar só via Orquestrador.
  */
 
-export type TipoCampo = "texto" | "numero" | "booleano" | "opcao" | "data";
+export type TipoCampo =
+  | "texto"
+  | "texto_longo"
+  | "numero"
+  | "booleano"
+  | "selecao"
+  | "data"
+  | "data_hora"
+  | "url"
+  | "outro"; // endereco/arquivo/desconhecido — exibe, não edita
 
 export interface CampoFicha {
   slug: string;
@@ -26,20 +38,29 @@ export interface GrupoFicha {
   campos: CampoFicha[];
 }
 
-const TIPOS: TipoCampo[] = ["texto", "numero", "booleano", "opcao", "data"];
+const TIPOS_EDITAVEIS: TipoCampo[] = [
+  "texto", "texto_longo", "numero", "booleano", "selecao", "data", "data_hora", "url",
+];
 
-function parseCampo(c: any): CampoFicha | null {
+function normalizarTipo(raw: unknown): TipoCampo {
+  const t = String(raw ?? "texto").toLowerCase();
+  if (t === "opcao") return "selecao"; // alias
+  return (TIPOS_EDITAVEIS as string[]).includes(t) ? (t as TipoCampo) : "outro";
+}
+
+function parseCampo(c: any, grupoEditavel: boolean): CampoFicha | null {
   const slug = String(c?.slug ?? c?.chave ?? c?.id ?? "").trim();
   if (!slug) return null; // sem slug não há como escrever o evento — campo fora
-  const tipoRaw = String(c?.tipo ?? "texto").toLowerCase();
-  const tipo = (TIPOS as string[]).includes(tipoRaw) ? (tipoRaw as TipoCampo) : "texto";
+  const tipo = normalizarTipo(c?.tipo);
   const opcoes = Array.isArray(c?.opcoes) ? c.opcoes.map(String).filter(Boolean) : [];
+  // editavel: campo sobrescreve; senão herda do grupo. Tipo sem editor nunca é editável.
+  const editavelBase = typeof c?.editavel === "boolean" ? c.editavel : grupoEditavel;
   return {
     slug,
-    nome: String(c?.nome ?? slug),
+    nome: String(c?.nome ?? c?.rotulo ?? slug),
     tipo,
     opcoes,
-    editavel: c?.editavel === true,
+    editavel: editavelBase && tipo !== "outro",
   };
 }
 
@@ -53,8 +74,9 @@ export function parseConfigFicha(payload: unknown): GrupoFicha[] | null {
 
   const resultado: GrupoFicha[] = [];
   for (const g of grupos) {
+    const grupoEditavel = g?.editavel === true;
     const campos = (Array.isArray(g?.campos) ? g.campos : [])
-      .map(parseCampo)
+      .map((c: any) => parseCampo(c, grupoEditavel))
       .filter((c: CampoFicha | null): c is CampoFicha => c !== null);
     if (campos.length === 0) continue;
     const chave = String(g?.chave ?? g?.id ?? g?.nome ?? resultado.length);
@@ -72,7 +94,34 @@ export function parseTags(raw: unknown): string[] {
     .filter(Boolean);
 }
 
-/** Valor projetado (core.lead_campo.valor) → texto de exibição. Vazio = "—" honesto. */
+// ─────────────── datas (fuso da operação, UTC-3 fixo como no dashboard) ───────────────
+
+const OFFSET_SP = "-03:00";
+
+function ymdSP(d: Date): string {
+  return new Date(d.getTime() - 3 * 3600_000).toISOString().slice(0, 10);
+}
+function hhmmSP(d: Date): string {
+  return new Date(d.getTime() - 3 * 3600_000).toISOString().slice(11, 16);
+}
+
+/** "hoje 16:20" · "ontem 14:02" · "amanhã 10:00" · "21/07 09:15" — fuso America/Sao_Paulo. */
+export function fmtDataHora(iso: string, agora: Date): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const dia = ymdSP(d);
+  const hoje = ymdSP(agora);
+  const difDias = Math.round((new Date(dia).getTime() - new Date(hoje).getTime()) / 86400_000);
+  if (difDias === 0) return `hoje ${hhmmSP(d)}`;
+  if (difDias === -1) return `ontem ${hhmmSP(d)}`;
+  if (difDias === 1) return `amanhã ${hhmmSP(d)}`;
+  const [, m, dd] = dia.split("-");
+  return `${dd}/${m} ${hhmmSP(d)}`;
+}
+
+// ─────────────── valor projetado ⇄ exibição/editor ───────────────
+
+/** Valor projetado (core.lead_campo.valor, jsonb cru) → texto de exibição. Vazio = "—". */
 export function valorParaTexto(tipo: TipoCampo, valor: unknown): string {
   if (valor == null || valor === "") return "—";
   if (tipo === "booleano") {
@@ -86,14 +135,19 @@ export function valorParaTexto(tipo: TipoCampo, valor: unknown): string {
   }
   if (tipo === "data") {
     const m = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-    return String(valor);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : String(valor);
+  }
+  if (tipo === "data_hora") {
+    const d = new Date(String(valor));
+    if (Number.isNaN(d.getTime())) return String(valor);
+    const [ano, mes, dia] = ymdSP(d).split("-");
+    return `${dia}/${mes}/${ano} ${hhmmSP(d)}`;
   }
   if (typeof valor === "object") return JSON.stringify(valor);
   return String(valor);
 }
 
-/** Valor projetado → valor inicial do editor (input/select). */
+/** Valor projetado → valor inicial do editor (input/select/datetime-local). */
 export function valorParaInput(tipo: TipoCampo, valor: unknown): string {
   if (valor == null) return "";
   if (tipo === "booleano") {
@@ -105,6 +159,11 @@ export function valorParaInput(tipo: TipoCampo, valor: unknown): string {
     const m = String(valor).match(/^\d{4}-\d{2}-\d{2}/);
     return m ? m[0] : "";
   }
+  if (tipo === "data_hora") {
+    const d = new Date(String(valor));
+    if (Number.isNaN(d.getTime())) return "";
+    return `${ymdSP(d)}T${hhmmSP(d)}`; // datetime-local no fuso da operação
+  }
   return String(valor);
 }
 
@@ -112,7 +171,7 @@ export type ValorCampo = string | number | boolean | null;
 
 /**
  * Editor → valor do payload `campos` (contrato: null limpa o campo). Número aceita vírgula
- * decimal pt-BR; inválido NÃO vira evento — volta erro pro editor.
+ * decimal pt-BR; data_hora entra no fuso da operação e sai ISO; inválido NÃO vira evento.
  */
 export function inputParaValor(
   tipo: TipoCampo,
@@ -134,30 +193,14 @@ export function inputParaValor(
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return { ok: false, erro: "data inválida" };
     return { ok: true, valor: s };
   }
+  if (tipo === "data_hora") {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return { ok: false, erro: "data/hora inválida" };
+    const d = new Date(`${s}:00${OFFSET_SP}`);
+    if (Number.isNaN(d.getTime())) return { ok: false, erro: "data/hora inválida" };
+    return { ok: true, valor: d.toISOString() };
+  }
+  if (tipo === "outro") return { ok: false, erro: "campo sem editor" };
   return { ok: true, valor: s };
-}
-
-// ─────────────── datas (fuso da operação, UTC-3 fixo como no dashboard) ───────────────
-
-function ymdSP(d: Date): string {
-  return new Date(d.getTime() - 3 * 3600_000).toISOString().slice(0, 10);
-}
-function hhmmSP(d: Date): string {
-  return new Date(d.getTime() - 3 * 3600_000).toISOString().slice(11, 16);
-}
-
-/** "hoje 16:20" · "ontem 14:02" · "amanhã 10:00" · "21/07 09:15" — fuso America/Sao_Paulo. */
-export function fmtDataHora(iso: string, agora: Date): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const dia = ymdSP(d);
-  const hoje = ymdSP(agora);
-  const difDias = Math.round((new Date(dia).getTime() - new Date(hoje).getTime()) / 86400_000);
-  if (difDias === 0) return `hoje ${hhmmSP(d)}`;
-  if (difDias === -1) return `ontem ${hhmmSP(d)}`;
-  if (difDias === 1) return `amanhã ${hhmmSP(d)}`;
-  const [, m, dd] = dia.split("-");
-  return `${dd}/${m} ${hhmmSP(d)}`;
 }
 
 // ─────────────── tarefas: prazo ───────────────

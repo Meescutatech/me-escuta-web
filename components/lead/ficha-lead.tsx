@@ -80,7 +80,7 @@ function LinhaCampo({
             type="button"
             onClick={abrir}
             disabled={!editavelAqui}
-            title={editavelAqui ? "Editar" : undefined}
+            title={`${valorParaTexto(campo.tipo, valor)}${editavelAqui ? " — clique p/ editar" : ""}`}
             className={cn(
               "max-w-[55%] truncate text-right font-medium text-tinta",
               editavelAqui && "cursor-pointer rounded px-1 -mr-1 hover:bg-hover hover:text-navy",
@@ -91,7 +91,7 @@ function LinhaCampo({
           </button>
         ) : (
           <div className="w-[58%]">
-            {campo.tipo === "opcao" || campo.tipo === "booleano" ? (
+            {campo.tipo === "selecao" || campo.tipo === "booleano" ? (
               <select
                 autoFocus
                 value={input}
@@ -113,10 +113,19 @@ function LinhaCampo({
                   ))
                 )}
               </select>
+            ) : campo.tipo === "texto_longo" ? (
+              <textarea
+                autoFocus
+                rows={3}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setEditando(false)}
+                className={cn(clsInput, "resize-none")}
+              />
             ) : (
               <input
                 autoFocus
-                type={campo.tipo === "data" ? "date" : "text"}
+                type={campo.tipo === "data" ? "date" : campo.tipo === "data_hora" ? "datetime-local" : "text"}
                 inputMode={campo.tipo === "numero" ? "decimal" : undefined}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
