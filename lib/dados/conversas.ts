@@ -76,6 +76,15 @@ export interface SugestaoMensagem {
 export async function lerConversas(): Promise<ConversaResumo[]> {
   try {
     const supabase = criarClienteServidor();
+    // rótulo de exibição da etapa (chave → nome) via config vigente do funil — não depende da
+    // lista, então dispara junto com a query principal (era a 3ª de 4 queries em série)
+    const configPromise = supabase
+      .schema("core")
+      .from("v_config_vigente")
+      .select("payload")
+      .eq("nome", "funil_vendas")
+      .maybeSingle();
+
     // Contrato 0025 (Trilha A): o inbox lista core.v_conversa WHERE visivel_inbox — conversa só
     // aparece quando satisfaz o filtro (inbound real). Lista vazia é estado HONESTO.
     const { data, error } = await supabase
@@ -87,58 +96,51 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
       .limit(50);
     if (error || !data || data.length === 0) return [];
 
-    // dados do lead (nome/etapa/valor/origem) pelo lead_id via v_lead_card
     const leadIds = data.map((c: any) => c.lead_id).filter(Boolean);
-    const leadInfo = new Map<string, any>();
-    if (leadIds.length) {
-      const { data: cards } = await supabase
-        .schema("core")
-        .from("v_lead_card")
-        .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags,kommo_lead_id")
-        .in("lead_id", leadIds);
-      for (const r of cards ?? []) leadInfo.set(String(r.lead_id), r);
-    }
-
-    // rótulo de exibição da etapa (chave → nome) via config vigente do funil
-    const etapaNome = new Map<string, string>();
-    try {
-      const { data: cfg } = await supabase
-        .schema("core")
-        .from("v_config_vigente")
-        .select("payload")
-        .eq("nome", "funil_vendas")
-        .maybeSingle();
-      for (const e of ((cfg?.payload as any)?.etapas ?? []) as any[]) {
-        if (e?.chave) etapaNome.set(String(e.chave), String(e.nome ?? e.chave));
-      }
-    } catch {
-      /* sem config — usa a própria chave */
-    }
-
-    // prévia = última mensagem por conversa + contagem de não-lidas (proxy RF-30/31: mensagens de
-    // entrada após a última saída — sem rastreio de leitura no banco ainda, é o proxy honesto)
     const ids = data.map((c: any) => String(c.id));
-    const previa = new Map<string, { corpo: string | null; saida: boolean }>();
-    const naoLidas = new Map<string, number>();
-    try {
-      const { data: msgs } = await supabase
+
+    // leads (nome/etapa/valor) + prévia/não-lidas + config, tudo em paralelo: só a lista de
+    // conversas precisa vir antes (ids) — profundidade 2 de round-trips em vez de 4
+    const [cardsRes, msgsRes, cfgRes] = await Promise.all([
+      leadIds.length
+        ? supabase
+            .schema("core")
+            .from("v_lead_card")
+            .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags,kommo_lead_id")
+            .in("lead_id", leadIds)
+        : Promise.resolve({ data: null } as { data: any[] | null }),
+      supabase
         .schema("core")
         .from("mensagem")
         .select("conversa_id,direcao,corpo,criado_em")
         .in("conversa_id", ids)
         .order("criado_em", { ascending: false })
-        .limit(800);
-      const fechada = new Set<string>(); // conversa já encontrou uma saída — para de contar
-      for (const m of msgs ?? []) {
-        const k = String(m.conversa_id);
-        if (!previa.has(k)) previa.set(k, { corpo: m.corpo ?? null, saida: m.direcao === "saida" });
-        if (!fechada.has(k)) {
-          if (m.direcao === "saida") fechada.add(k);
-          else naoLidas.set(k, (naoLidas.get(k) ?? 0) + 1);
-        }
+        .limit(800),
+      configPromise,
+    ]);
+
+    // dados do lead (nome/etapa/valor/origem) pelo lead_id via v_lead_card
+    const leadInfo = new Map<string, any>();
+    for (const r of cardsRes.data ?? []) leadInfo.set(String(r.lead_id), r);
+
+    const etapaNome = new Map<string, string>();
+    for (const e of (((cfgRes as any)?.data?.payload as any)?.etapas ?? []) as any[]) {
+      if (e?.chave) etapaNome.set(String(e.chave), String(e.nome ?? e.chave));
+    }
+
+    // prévia = última mensagem por conversa + contagem de não-lidas (proxy RF-30/31: mensagens de
+    // entrada após a última saída — sem rastreio de leitura no banco ainda, é o proxy honesto);
+    // erro de leitura degrada pra lista sem prévia, como antes
+    const previa = new Map<string, { corpo: string | null; saida: boolean }>();
+    const naoLidas = new Map<string, number>();
+    const fechada = new Set<string>(); // conversa já encontrou uma saída — para de contar
+    for (const m of msgsRes.data ?? []) {
+      const k = String(m.conversa_id);
+      if (!previa.has(k)) previa.set(k, { corpo: m.corpo ?? null, saida: m.direcao === "saida" });
+      if (!fechada.has(k)) {
+        if (m.direcao === "saida") fechada.add(k);
+        else naoLidas.set(k, (naoLidas.get(k) ?? 0) + 1);
       }
-    } catch {
-      /* sem prévia — lista degrada pro rótulo de origem */
     }
 
     return data.map((c: any) => {
