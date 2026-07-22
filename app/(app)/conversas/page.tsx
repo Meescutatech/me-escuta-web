@@ -1,6 +1,8 @@
 import { lerConversas, lerMensagens, lerSugestoesConversa } from "@/lib/dados/conversas";
 import { ETAPAS_PADRAO, lerEtapasReais } from "@/lib/dados/funil";
 import { lerPainelLead, type PainelLead } from "@/lib/dados/lead-painel";
+import { lerMencionaveis } from "@/lib/dados/mencionaveis";
+import { lerTiposTarefa } from "@/lib/dados/tarefa-tipos";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { Inbox } from "@/components/conversas/inbox";
 
@@ -26,16 +28,20 @@ export default async function ConversasPage({
     ? await Promise.all([lerMensagens(selecionadaId), lerSugestoesConversa(selecionadaId)])
     : [[], []];
 
-  // painel do lead (ficha + tarefas + anotações) da conversa selecionada — Rodada 8
+  // painel do lead (ficha + tarefas + anotações + menções) da conversa selecionada — R8/R13
   const painel: PainelLead | null = selecionada?.lead_id
     ? await lerPainelLead(selecionada.lead_id)
     : null;
 
-  // autor das anotações/tarefas criadas aqui (exibição; o ator real é carimbado pela porta)
+  // autor das notas/tarefas criadas aqui. O uuid é o dado forte (responsavel_id / autor_id /
+  // mencionado_id); o e-mail fica só como legado de exibição. O ator do evento é carimbado
+  // pela porta de qualquer jeito.
   const supabase = criarClienteServidor();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [{ data: sessao }, mencionaveis, tipos] = await Promise.all([
+    supabase.auth.getUser(),
+    lerMencionaveis(), // R13/C4-C5: lista canônica do `@` (core.v_membro + core.agente)
+    lerTiposTarefa(), // R13/C6: config `tipo_tarefa`, com semente provisória
+  ]);
 
   return (
     <Inbox
@@ -44,7 +50,10 @@ export default async function ConversasPage({
       mensagens={mensagens}
       sugestoes={sugestoes}
       painel={painel}
-      autorEmail={user?.email ?? null}
+      autorEmail={sessao.user?.email ?? null}
+      autorId={sessao.user?.id ?? null}
+      mencionaveis={mencionaveis}
+      tiposTarefa={tipos.tipos}
       etapas={etapas}
     />
   );

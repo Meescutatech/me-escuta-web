@@ -16,6 +16,8 @@ import type { DadosFunil, CardLead, EtapaFunil } from "@/lib/dados/funil";
 import { moverCardEtapa } from "@/app/(app)/funil/actions";
 import { CartaoLead } from "./card-lead";
 import { DrawerCard } from "./drawer-card";
+import type { Mencionavel } from "@/lib/conversas/mencao";
+import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { CarimboVivo } from "@/components/dashboard/carimbo-vivo";
 import { useProjecaoViva } from "@/components/projecao-viva";
 import { novosIds } from "@/lib/tempo-real";
@@ -146,6 +148,9 @@ export function Quadro({
   geradoEm,
   abrirLead = null,
   autorEmail = null,
+  autorId = null,
+  mencionaveis = [],
+  tiposTarefa = [],
 }: {
   dados: DadosFunil;
   /** hora da renderização server — carimbo "ao vivo · atualizado há Xs" */
@@ -153,6 +158,9 @@ export function Quadro({
   /** deep-link ?lead=<id> (vindo do painel da conversa): abre o drawer deste card ao montar */
   abrirLead?: string | null;
   autorEmail?: string | null;
+  autorId?: string | null;
+  mencionaveis?: Mencionavel[];
+  tiposTarefa?: TipoTarefa[];
 }) {
   const [cards, setCards] = useState<CardLead[]>(dados.cards);
   const [arrastando, setArrastando] = useState<string | null>(null);
@@ -370,7 +378,15 @@ export function Quadro({
         </DragOverlay>
       </DndContext>
 
-      <DrawerCard lead={leadAberto} etapa={etapaAberta} autorEmail={autorEmail} onFechar={() => setCardAberto(null)} />
+      <DrawerCard
+        lead={leadAberto}
+        etapa={etapaAberta}
+        autorEmail={autorEmail}
+        autorId={autorId}
+        mencionaveis={mencionaveis}
+        tiposTarefa={tiposTarefa}
+        onFechar={() => setCardAberto(null)}
+      />
 
       {toast && (
         <div className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-[6px] border border-linha-forte bg-branco px-4 py-2.5 text-sm text-navy shadow-forte">
