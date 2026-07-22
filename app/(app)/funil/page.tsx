@@ -10,13 +10,11 @@ export default async function FunilPage({
 }: {
   searchParams: { lead?: string };
 }) {
-  const dados = await lerFunil();
-
-  // autor exibido em tarefas/anotações criadas no drawer (o ator real é carimbado pela porta)
+  // board + autor exibido no drawer (o ator real é carimbado pela porta) em paralelo —
+  // getUser vai à rede e não depende do funil
   const supabase = criarClienteServidor();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [dados, userRes] = await Promise.all([lerFunil(), supabase.auth.getUser()]);
+  const user = userRes.data.user;
 
   return (
     <Quadro

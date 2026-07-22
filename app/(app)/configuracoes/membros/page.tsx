@@ -12,11 +12,9 @@ export const dynamic = "force-dynamic";
  */
 export default async function MembrosPage() {
   const supabase = criarClienteServidor();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const [{ data: papelData }, { data: membros }, { data: convites }] = await Promise.all([
+  // getUser junto das leituras — vai à rede e não depende delas
+  const [userRes, { data: papelData }, { data: membros }, { data: convites }] = await Promise.all([
+    supabase.auth.getUser(),
     supabase.schema("api").rpc("papel_atual"),
     supabase
       .schema("core")
@@ -30,6 +28,8 @@ export default async function MembrosPage() {
       .in("status", ["pendente", "expirado"])
       .order("criado_em", { ascending: true }),
   ]);
+
+  const user = userRes.data.user;
 
   return (
     <TabelaMembros
