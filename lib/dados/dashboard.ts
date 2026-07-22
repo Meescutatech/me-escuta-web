@@ -150,12 +150,20 @@ export async function lerDashboard(agora = new Date()): Promise<DadosDashboard> 
   const inicioHojeIso = janelas[janelas.length - 1].inicioIso;
   const inicio7dIso = janelas[0].inicioIso;
 
-  const etapas = (await lerEtapasReais()) ?? ETAPAS_PADRAO;
-  const etapasAbertas = etapas.filter((e) => e.tipo === "aberto").map((e) => e.chave);
+  // As leituras que dependem das ETAPAS (contagens por etapa e valor em negociação) esperam só
+  // lerEtapasReais; todo o resto dispara imediatamente em paralelo — um round-trip a menos por visita.
+  const dependentesDeEtapas = (async () => {
+    const etapas = (await lerEtapasReais()) ?? ETAPAS_PADRAO;
+    const etapasAbertas = etapas.filter((e) => e.tipo === "aberto").map((e) => e.chave);
+    const [contagensEtapa, valorNegociacao] = await Promise.all([
+      Promise.all(etapas.map((e) => contar(supabase, "v_lead_card", (q) => q.eq("etapa", e.chave)))),
+      lerValorNegociacao(supabase, etapasAbertas),
+    ]);
+    return { etapas, contagensEtapa, valorNegociacao };
+  })();
 
   const [
     ultimoEventoEm,
-    contagensEtapa,
     novosHoje,
     novos7d,
     porDia,
@@ -163,12 +171,9 @@ export async function lerDashboard(agora = new Date()): Promise<DadosDashboard> 
     entregues,
     falhas,
     primeiraResposta,
-    valorNegociacao,
+    { etapas, contagensEtapa, valorNegociacao },
   ] = await Promise.all([
     lerUltimoEvento(supabase),
-    Promise.all(
-      etapas.map((e) => contar(supabase, "v_lead_card", (q) => q.eq("etapa", e.chave))),
-    ),
     contar(supabase, "lead", (q) => q.gte("criado_em", inicioHojeIso)),
     contar(supabase, "lead", (q) => q.gte("criado_em", inicio7dIso)),
     Promise.all(
@@ -192,7 +197,7 @@ export async function lerDashboard(agora = new Date()): Promise<DadosDashboard> 
     ),
     contar(supabase, "mensagem", (q) => q.eq("direcao", "saida").eq("status_entrega", "falhou")),
     lerPrimeiraResposta(supabase, inicio7dIso),
-    lerValorNegociacao(supabase, etapasAbertas),
+    dependentesDeEtapas,
   ]);
 
   const leadsPorEtapa: FaixaEtapa[] = etapas.map((etapa, i) => ({ etapa, qtd: contagensEtapa[i] }));
