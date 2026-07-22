@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { registrarEventoUI, type ResultadoEvento } from "@/app/(app)/funil/actions";
 import { caminhoValido } from "@/lib/conversas/midia";
+import { acaoPresencaValida, montarCorpoPresenca, type AcaoPresenca } from "@/lib/conversas/presenca";
 
 /**
  * TRANSBORDO — Sara assume a conversa (Clara pausa) / devolve (Clara retoma).
@@ -56,6 +57,38 @@ export async function enviarMensagem(
   const r = await registrarEventoUI("enviar_mensagem_humana", payload, undefined, chaveIdem);
   revalidatePath("/conversas");
   return r;
+}
+
+/**
+ * PRESENÇA (Rodada 11 — Bloco B): repassa "lida" (Sara abriu a conversa) ou "digitando" (Sara
+ * digitando no composer) pra rota interna POST /presenca do RUNTIME — só ele tem o token da Graph
+ * e resolve o wamid da última recebida. BEST-EFFORT por contrato: NUNCA lança, nunca revalida
+ * rota, nunca vira erro pro operador; sem RUNTIME_PRESENCA_URL/TOKEN é no-op silencioso (o
+ * sender ainda marca lida antes de cada resposta — degrade honesto).
+ */
+export async function sinalizarPresenca(
+  conversaId: string,
+  acao: AcaoPresenca,
+): Promise<{ ok: boolean; motivo?: string }> {
+  const url = process.env.RUNTIME_PRESENCA_URL;
+  const token = process.env.RUNTIME_PRESENCA_TOKEN;
+  if (!url || !token) return { ok: false, motivo: "presença desligada (sem RUNTIME_PRESENCA_URL/TOKEN)" };
+  if (!conversaId || !acaoPresencaValida(acao)) return { ok: false, motivo: "pedido inválido" };
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: montarCorpoPresenca(conversaId, acao),
+      // presença é cosmética: teto curto pra nunca segurar a UI atrás de action pendente
+      signal: AbortSignal.timeout(3000),
+      cache: "no-store",
+    });
+    if (!resp.ok) return { ok: false, motivo: `runtime respondeu ${resp.status}` };
+    const corpo = (await resp.json()) as { ok?: boolean; motivo?: string };
+    return { ok: corpo.ok === true, ...(corpo.motivo ? { motivo: corpo.motivo } : {}) };
+  } catch (err) {
+    return { ok: false, motivo: String(err) };
+  }
 }
 
 export interface ResultadoUrlMidia {
