@@ -1,4 +1,5 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { caminhosParaAssinar } from "@/lib/conversas/midia";
 import { parseTags } from "./ficha-calculos";
 
 /**
@@ -62,6 +63,9 @@ export interface Mensagem {
   // privado 'midia-whatsapp'. null/ausente = ainda não baixada ou falhou → a UI mantém o degrade.
   midia_caminho?: string | null; // ex.: '2050562992220931.ogg' (chave no bucket)
   midia_mime?: string | null; // ex.: 'audio/ogg'
+  // Signed URL pré-assinada em LOTE no servidor (perf/rotas) — quando presente, a bolha usa
+  // direto; ausente (falha de assinatura/linha antiga), a bolha cai no fetch lazy de antes.
+  midia_url?: string | null;
 }
 
 export interface SugestaoMensagem {
@@ -219,11 +223,34 @@ export async function lerMensagens(conversaId: string): Promise<Mensagem[]> {
       midia_mime: m.midia_mime ?? undefined,
     }));
     // reordena por timestamp de origem + id como desempate (webhook atrasado não entra fora de lugar)
-    return linhas.sort((a, b) => {
+    linhas.sort((a, b) => {
       const ta = new Date(a.criado_em).getTime();
       const tb = new Date(b.criado_em).getTime();
       return ta !== tb ? ta - tb : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
+
+    // assina em LOTE as mídias que a thread vai renderizar: 1 round-trip pro Storage no lugar
+    // de 1 server action POR BOLHA depois da hidratação (o React enfileira actions em série).
+    // Falha de assinatura → bolha cai no fetch lazy de antes (degrade idêntico).
+    const caminhos = caminhosParaAssinar(linhas);
+    if (caminhos.length) {
+      try {
+        const { data: assinadas } = await supabase.storage
+          .from("midia-whatsapp")
+          .createSignedUrls(caminhos, 3600);
+        const urlPorCaminho = new Map<string, string>();
+        for (const a of assinadas ?? []) {
+          if (!a.error && a.path && a.signedUrl) urlPorCaminho.set(a.path, a.signedUrl);
+        }
+        for (const m of linhas) {
+          const url = m.midia_caminho ? urlPorCaminho.get(m.midia_caminho.trim()) : undefined;
+          if (url) m.midia_url = url;
+        }
+      } catch {
+        /* sem URLs pré-assinadas — bolhas seguem no caminho lazy */
+      }
+    }
+    return linhas;
   } catch {
     return [];
   }

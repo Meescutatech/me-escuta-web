@@ -12,14 +12,27 @@ import type { Mensagem } from "@/lib/dados/conversas";
  * quebrado. Transcrição (corpo) continua aparecendo quando existir.
  */
 
-function PlayerAudio({ caminho, mime }: { caminho: string; mime?: string | null }) {
-  const [url, setUrl] = useState<string | null>(null);
+function PlayerAudio({
+  caminho,
+  mime,
+  urlPronta,
+}: {
+  caminho: string;
+  mime?: string | null;
+  urlPronta?: string | null;
+}) {
+  const [url, setUrl] = useState<string | null>(urlPronta ?? null);
   const [erro, setErro] = useState(false);
 
   useEffect(() => {
     let vivo = true;
-    setUrl(null);
     setErro(false);
+    // URL pré-assinada no servidor (perf/rotas): usa direto, sem server action por bolha
+    if (urlPronta) {
+      setUrl(urlPronta);
+      return;
+    }
+    setUrl(null);
     obterUrlMidia(caminho)
       .then((r) => {
         if (!vivo) return;
@@ -32,7 +45,7 @@ function PlayerAudio({ caminho, mime }: { caminho: string; mime?: string | null 
     return () => {
       vivo = false;
     };
-  }, [caminho]);
+  }, [caminho, urlPronta]);
 
   if (erro) {
     return (
@@ -63,7 +76,7 @@ export function BolhaAudio({ m }: { m: Mensagem }) {
         Mensagem de voz
       </span>
       {temPlayerDeAudio(m) ? (
-        <PlayerAudio caminho={m.midia_caminho!} mime={m.midia_mime} />
+        <PlayerAudio caminho={m.midia_caminho!} mime={m.midia_mime} urlPronta={m.midia_url} />
       ) : null}
       {m.corpo ? (
         <span className="text-[0.84rem] text-suave">“{m.corpo}”</span>

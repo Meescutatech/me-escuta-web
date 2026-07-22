@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   caminhoValido,
+  caminhosParaAssinar,
   ehAudio,
   ehImagem,
   temImagemVisivel,
@@ -74,4 +75,25 @@ test("traversal, caminho absoluto, URL e vazio são recusados", () => {
   for (const c of ["../segredo.ogg", "/etc/passwd", "https://x/y.ogg", "", "  ", "a/../b.ogg"]) {
     assert.equal(caminhoValido(c), false, c);
   }
+});
+
+// ─────────── caminhosParaAssinar (batch de signed URLs — perf/rotas) ───────────
+
+test("só mídias renderizáveis entram no batch, únicas e com trim", () => {
+  const caminhos = caminhosParaAssinar([
+    { tipo_conteudo: "audio", midia_caminho: "a.ogg" },
+    { tipo_conteudo: "image", midia_caminho: " foto.jpg " },
+    { tipo_conteudo: "audio", midia_caminho: "a.ogg" }, // duplicada
+    { tipo_conteudo: "audio", midia_caminho: null }, // sem caminho → degrade, não assina
+    { tipo_conteudo: "text", midia_caminho: "b.ogg" }, // texto nunca assina
+    { tipo_conteudo: "video", midia_caminho: "v.mp4" }, // tipo sem bolha de mídia
+  ]);
+  assert.deepEqual(caminhos, ["a.ogg", "foto.jpg"]);
+});
+
+test("thread sem mídia → batch vazio (nenhum round-trip de Storage)", () => {
+  assert.deepEqual(
+    caminhosParaAssinar([{ tipo_conteudo: "text", midia_caminho: null }]),
+    [],
+  );
 });

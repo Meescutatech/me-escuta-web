@@ -15,16 +15,21 @@ import type { Mensagem } from "@/lib/dados/conversas";
 
 export function BolhaImagem({ m }: { m: Mensagem }) {
   const caminho = m.midia_caminho!;
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, setUrl] = useState<string | null>(m.midia_url ?? null);
   const [erro, setErro] = useState(false);
   const [carregou, setCarregou] = useState(false);
   const [ampliada, setAmpliada] = useState(false);
 
   useEffect(() => {
     let vivo = true;
-    setUrl(null);
     setErro(false);
     setCarregou(false);
+    // URL pré-assinada no servidor (perf/rotas): usa direto, sem server action por bolha
+    if (m.midia_url) {
+      setUrl(m.midia_url);
+      return;
+    }
+    setUrl(null);
     obterUrlMidia(caminho)
       .then((r) => {
         if (!vivo) return;
@@ -37,7 +42,7 @@ export function BolhaImagem({ m }: { m: Mensagem }) {
     return () => {
       vivo = false;
     };
-  }, [caminho]);
+  }, [caminho, m.midia_url]);
 
   // lightbox fecha no Esc (além do clique)
   useEffect(() => {
