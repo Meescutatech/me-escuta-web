@@ -13,6 +13,7 @@ const ROTAS = [
   { href: "/funil", rotulo: "Funil" },
   { href: "/conversas", rotulo: "Conversas" },
   { href: "/", rotulo: "Dashboard" },
+  { href: "/configuracoes", rotulo: "Configurações" },
 ];
 
 /**

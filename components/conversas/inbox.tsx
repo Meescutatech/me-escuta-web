@@ -15,6 +15,8 @@ import { Composer, type MidiaPronta } from "@/components/conversas/composer";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
 import { ehAudio, ehImagem, temImagemVisivel } from "@/lib/conversas/midia";
 import { useConversaViva } from "@/components/conversas/tempo-real";
+import { criarClienteBrowser } from "@/lib/supabase/client";
+import { montarEnvelopeAtividade } from "@/lib/presenca";
 import {
   fronteiraNaoLidas,
   montarBlocos,
@@ -152,6 +154,22 @@ export function Inbox({
     noFimRef.current = true;
     totalAnteriorRef.current = -1;
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selecionadaId]);
+
+  // conversa_aberta no ledger (spec §5.2, D10): "viu e não respondeu" + base do indicador de
+  // não-lida. Toda abertura conta; melhor esforço (métrica nunca atrapalha a operação).
+  useEffect(() => {
+    if (!selecionadaId) return;
+    const supabase = criarClienteBrowser();
+    void supabase
+      .schema("api")
+      .rpc("registrar_evento", {
+        p: montarEnvelopeAtividade("conversa_aberta", { conversa_id: selecionadaId }, crypto.randomUUID()),
+      })
+      .then(
+        () => undefined,
+        () => undefined,
+      );
   }, [selecionadaId]);
 
   // poda pendentes confirmadas do ESTADO, não só do render: confirmação é irreversível — se a

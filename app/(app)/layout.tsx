@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Navegacao } from "@/components/navegacao";
+import { PresencaBatimento } from "@/components/presenca-batimento";
 
 /** Iniciais pro avatar (ex.: "diogo@meescuta.com" → "DI"). */
 function iniciais(email: string): string {
@@ -52,6 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
       <main className="flex-1">{children}</main>
+      <PresencaBatimento />
     </div>
   );
 }

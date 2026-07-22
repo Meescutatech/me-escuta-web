@@ -36,7 +36,8 @@ export async function atualizarSessao(request: NextRequest): Promise<NextRespons
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const rotaPublica = pathname.startsWith("/login") || pathname.startsWith("/auth");
+  const rotaPublica =
+    pathname.startsWith("/login") || pathname.startsWith("/auth") || pathname.startsWith("/convite");
 
   if (!user && !rotaPublica) {
     const url = request.nextUrl.clone();
