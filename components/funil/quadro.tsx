@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -15,6 +15,8 @@ import {
 import type { DadosFunil, CardLead, EtapaFunil } from "@/lib/dados/funil";
 import { moverCardEtapa } from "@/app/(app)/funil/actions";
 import { CartaoLead } from "./card-lead";
+import { useProjecaoViva } from "@/components/projecao-viva";
+import { novosIds } from "@/lib/tempo-real";
 import { DrawerCard } from "./drawer-card";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +49,7 @@ function Coluna({
   agora,
   selecionadoId,
   arrastando,
+  pulsando,
   onAbrir,
   onRecolher,
   onResolverSugestao,
@@ -56,6 +59,7 @@ function Coluna({
   agora: number;
   selecionadoId: string | null;
   arrastando: boolean;
+  pulsando: ReadonlySet<string>;
   onAbrir: (id: string) => void;
   onRecolher: (chave: string) => void;
   onResolverSugestao: (leadId: string, decisao: "aprovada" | "descartada") => void;
@@ -91,14 +95,15 @@ function Coluna({
         )}
       >
         {cards.map((c) => (
-          <CartaoLead
-            key={c.lead_id}
-            card={c}
-            agora={agora}
-            selecionado={c.lead_id === selecionadoId}
-            onAbrir={onAbrir}
-            onResolverSugestao={onResolverSugestao}
-          />
+          <div key={c.lead_id} className={cn(pulsando.has(c.lead_id) && "pulso-novo")}>
+            <CartaoLead
+              card={c}
+              agora={agora}
+              selecionado={c.lead_id === selecionadoId}
+              onAbrir={onAbrir}
+              onResolverSugestao={onResolverSugestao}
+            />
+          </div>
         ))}
         {/* placeholder de drop: retângulo tracejado na altura do card (spec A6) */}
         {isOver && arrastando && (
@@ -182,6 +187,36 @@ export function Quadro({
     const t = setInterval(() => setAgora(Date.now()), 60000);
     return () => clearInterval(t);
   }, []);
+
+  // ── board VIVO (Rodada 9): dica realtime (estado_lead/lead) + polling 7s → router.refresh().
+  // A publication supabase_realtime está vazia hoje (diagnóstico 22/07) — o polling sustenta;
+  // quando a Trilha DB publicar as tabelas, a dica acende sozinha.
+  useProjecaoViva(
+    [
+      { tabela: { schema: "core", table: "estado_lead" } },
+      { tabela: { schema: "core", table: "lead" } },
+    ],
+    { intervaloMs: 7000 },
+  );
+
+  // refresh → dados.cards novos: re-sincroniza o estado local (a VERDADE é a projeção) e faz
+  // o card recém-chegado pulsar 1x. Move otimista em voo NÃO é sobrescrito (guarda movendoRef);
+  // o próximo tick re-sincroniza.
+  const movendoRef = useRef(0);
+  const idsVistosRef = useRef<Set<string> | null>(null);
+  const [pulsando, setPulsando] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (movendoRef.current > 0) return;
+    setCards(dados.cards);
+    const ids = dados.cards.map((c) => c.lead_id);
+    const novos = novosIds(idsVistosRef.current ?? new Set(), ids, idsVistosRef.current === null);
+    idsVistosRef.current = new Set(ids);
+    if (novos.length > 0) {
+      setPulsando(new Set(novos));
+      const t = setTimeout(() => setPulsando(new Set()), 1600);
+      return () => clearTimeout(t);
+    }
+  }, [dados.cards]);
 
   // Depois da hidratação, sobrescreve com a preferência local do usuário (se houver).
   useEffect(() => {
@@ -276,7 +311,13 @@ export function Quadro({
       ),
     );
 
-    const res = await moverCardEtapa(leadId, etapaDe, etapaAlvo);
+    movendoRef.current += 1;
+    let res;
+    try {
+      res = await moverCardEtapa(leadId, etapaDe, etapaAlvo);
+    } finally {
+      movendoRef.current -= 1;
+    }
     if (!res.ok) {
       setCards((prev) =>
         prev.map((c) =>
@@ -365,6 +406,7 @@ export function Quadro({
                 agora={agora}
                 selecionadoId={selecionadoId}
                 arrastando={arrastando != null}
+                pulsando={pulsando}
                 onAbrir={abrirCard}
                 onRecolher={alternarRecolhida}
                 onResolverSugestao={resolverSugestao}

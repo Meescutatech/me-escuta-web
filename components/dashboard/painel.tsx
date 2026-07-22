@@ -1,5 +1,6 @@
 import type { DadosDashboard, DiaMensagens, FaixaEtapa } from "@/lib/dados/dashboard";
 import { formatarDuracaoMin } from "@/lib/dados/dashboard-calculos";
+import { CarimboVivo } from "./carimbo-vivo";
 
 /*
  * Dashboard v1 (Rodada 7, D5) — números grandes + barras simples, SEM lib de gráfico.
@@ -122,7 +123,7 @@ function MensagensPorDia({ dias }: { dias: DiaMensagens[] }) {
 
 // ─────────────── painel ───────────────
 
-export function PainelDashboard({ dados }: { dados: DadosDashboard }) {
+export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; geradoEm: string }) {
   const rec = recencia(dados.ultimoEventoEm);
   const { entrega, primeiraResposta, valorNegociacao } = dados;
   const semDados = dados.ultimoEventoEm == null && (dados.leadsAtivos ?? 0) === 0;
@@ -138,7 +139,10 @@ export function PainelDashboard({ dados }: { dados: DadosDashboard }) {
           </span>
         )}
         {/* recência honesta: o universo Kommo é snapshot — divergência até o sync contínuo é esperada */}
-        {rec && <span className="ml-auto text-[0.78rem] text-mute">{rec} · importado do Kommo</span>}
+        <span className="ml-auto flex items-baseline gap-3">
+          {rec && <span className="text-[0.78rem] text-mute">{rec} · importado do Kommo</span>}
+          <CarimboVivo geradoEm={geradoEm} />
+        </span>
       </div>
 
       {semDados ? (
