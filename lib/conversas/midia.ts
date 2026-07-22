@@ -41,6 +41,21 @@ export function temPlayerDeAudio(
 }
 
 /**
+ * Caminhos de mídia que a thread VAI renderizar (player/imagem), únicos e na ordem de aparição —
+ * entrada do batch de signed URLs no servidor (1 round-trip pra thread toda, em vez de 1 server
+ * action por bolha ao montar, que o React roda em série no cliente).
+ */
+export function caminhosParaAssinar(
+  mensagens: Pick<Mensagem, "tipo_conteudo" | "midia_caminho">[],
+): string[] {
+  const unicos = new Set<string>();
+  for (const m of mensagens) {
+    if (temPlayerDeAudio(m) || temImagemVisivel(m)) unicos.add(m.midia_caminho!.trim());
+  }
+  return [...unicos];
+}
+
+/**
  * Guarda defensiva do caminho antes de pedir signed URL: chave simples do bucket, sem traversal,
  * sem URL absoluta. (A porta de verdade é o RLS do Storage; isto só corta pedido malformado.)
  */

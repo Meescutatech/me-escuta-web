@@ -1,4 +1,5 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { caminhosParaAssinar } from "@/lib/conversas/midia";
 import { parseTags } from "./ficha-calculos";
 
 /**
@@ -62,6 +63,9 @@ export interface Mensagem {
   // privado 'midia-whatsapp'. null/ausente = ainda não baixada ou falhou → a UI mantém o degrade.
   midia_caminho?: string | null; // ex.: '2050562992220931.ogg' (chave no bucket)
   midia_mime?: string | null; // ex.: 'audio/ogg'
+  // Signed URL pré-assinada em LOTE no servidor (perf/rotas) — quando presente, a bolha usa
+  // direto; ausente (falha de assinatura/linha antiga), a bolha cai no fetch lazy de antes.
+  midia_url?: string | null;
 }
 
 export interface SugestaoMensagem {
@@ -76,6 +80,15 @@ export interface SugestaoMensagem {
 export async function lerConversas(): Promise<ConversaResumo[]> {
   try {
     const supabase = criarClienteServidor();
+    // rótulo de exibição da etapa (chave → nome) via config vigente do funil — não depende da
+    // lista, então dispara junto com a query principal (era a 3ª de 4 queries em série)
+    const configPromise = supabase
+      .schema("core")
+      .from("v_config_vigente")
+      .select("payload")
+      .eq("nome", "funil_vendas")
+      .maybeSingle();
+
     // Contrato 0025 (Trilha A): o inbox lista core.v_conversa WHERE visivel_inbox — conversa só
     // aparece quando satisfaz o filtro (inbound real). Lista vazia é estado HONESTO.
     const { data, error } = await supabase
@@ -87,58 +100,51 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
       .limit(50);
     if (error || !data || data.length === 0) return [];
 
-    // dados do lead (nome/etapa/valor/origem) pelo lead_id via v_lead_card
     const leadIds = data.map((c: any) => c.lead_id).filter(Boolean);
-    const leadInfo = new Map<string, any>();
-    if (leadIds.length) {
-      const { data: cards } = await supabase
-        .schema("core")
-        .from("v_lead_card")
-        .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags,kommo_lead_id")
-        .in("lead_id", leadIds);
-      for (const r of cards ?? []) leadInfo.set(String(r.lead_id), r);
-    }
-
-    // rótulo de exibição da etapa (chave → nome) via config vigente do funil
-    const etapaNome = new Map<string, string>();
-    try {
-      const { data: cfg } = await supabase
-        .schema("core")
-        .from("v_config_vigente")
-        .select("payload")
-        .eq("nome", "funil_vendas")
-        .maybeSingle();
-      for (const e of ((cfg?.payload as any)?.etapas ?? []) as any[]) {
-        if (e?.chave) etapaNome.set(String(e.chave), String(e.nome ?? e.chave));
-      }
-    } catch {
-      /* sem config — usa a própria chave */
-    }
-
-    // prévia = última mensagem por conversa + contagem de não-lidas (proxy RF-30/31: mensagens de
-    // entrada após a última saída — sem rastreio de leitura no banco ainda, é o proxy honesto)
     const ids = data.map((c: any) => String(c.id));
-    const previa = new Map<string, { corpo: string | null; saida: boolean }>();
-    const naoLidas = new Map<string, number>();
-    try {
-      const { data: msgs } = await supabase
+
+    // leads (nome/etapa/valor) + prévia/não-lidas + config, tudo em paralelo: só a lista de
+    // conversas precisa vir antes (ids) — profundidade 2 de round-trips em vez de 4
+    const [cardsRes, msgsRes, cfgRes] = await Promise.all([
+      leadIds.length
+        ? supabase
+            .schema("core")
+            .from("v_lead_card")
+            .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags,kommo_lead_id")
+            .in("lead_id", leadIds)
+        : Promise.resolve({ data: null } as { data: any[] | null }),
+      supabase
         .schema("core")
         .from("mensagem")
         .select("conversa_id,direcao,corpo,criado_em")
         .in("conversa_id", ids)
         .order("criado_em", { ascending: false })
-        .limit(800);
-      const fechada = new Set<string>(); // conversa já encontrou uma saída — para de contar
-      for (const m of msgs ?? []) {
-        const k = String(m.conversa_id);
-        if (!previa.has(k)) previa.set(k, { corpo: m.corpo ?? null, saida: m.direcao === "saida" });
-        if (!fechada.has(k)) {
-          if (m.direcao === "saida") fechada.add(k);
-          else naoLidas.set(k, (naoLidas.get(k) ?? 0) + 1);
-        }
+        .limit(800),
+      configPromise,
+    ]);
+
+    // dados do lead (nome/etapa/valor/origem) pelo lead_id via v_lead_card
+    const leadInfo = new Map<string, any>();
+    for (const r of cardsRes.data ?? []) leadInfo.set(String(r.lead_id), r);
+
+    const etapaNome = new Map<string, string>();
+    for (const e of (((cfgRes as any)?.data?.payload as any)?.etapas ?? []) as any[]) {
+      if (e?.chave) etapaNome.set(String(e.chave), String(e.nome ?? e.chave));
+    }
+
+    // prévia = última mensagem por conversa + contagem de não-lidas (proxy RF-30/31: mensagens de
+    // entrada após a última saída — sem rastreio de leitura no banco ainda, é o proxy honesto);
+    // erro de leitura degrada pra lista sem prévia, como antes
+    const previa = new Map<string, { corpo: string | null; saida: boolean }>();
+    const naoLidas = new Map<string, number>();
+    const fechada = new Set<string>(); // conversa já encontrou uma saída — para de contar
+    for (const m of msgsRes.data ?? []) {
+      const k = String(m.conversa_id);
+      if (!previa.has(k)) previa.set(k, { corpo: m.corpo ?? null, saida: m.direcao === "saida" });
+      if (!fechada.has(k)) {
+        if (m.direcao === "saida") fechada.add(k);
+        else naoLidas.set(k, (naoLidas.get(k) ?? 0) + 1);
       }
-    } catch {
-      /* sem prévia — lista degrada pro rótulo de origem */
     }
 
     return data.map((c: any) => {
@@ -217,11 +223,34 @@ export async function lerMensagens(conversaId: string): Promise<Mensagem[]> {
       midia_mime: m.midia_mime ?? undefined,
     }));
     // reordena por timestamp de origem + id como desempate (webhook atrasado não entra fora de lugar)
-    return linhas.sort((a, b) => {
+    linhas.sort((a, b) => {
       const ta = new Date(a.criado_em).getTime();
       const tb = new Date(b.criado_em).getTime();
       return ta !== tb ? ta - tb : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
+
+    // assina em LOTE as mídias que a thread vai renderizar: 1 round-trip pro Storage no lugar
+    // de 1 server action POR BOLHA depois da hidratação (o React enfileira actions em série).
+    // Falha de assinatura → bolha cai no fetch lazy de antes (degrade idêntico).
+    const caminhos = caminhosParaAssinar(linhas);
+    if (caminhos.length) {
+      try {
+        const { data: assinadas } = await supabase.storage
+          .from("midia-whatsapp")
+          .createSignedUrls(caminhos, 3600);
+        const urlPorCaminho = new Map<string, string>();
+        for (const a of assinadas ?? []) {
+          if (!a.error && a.path && a.signedUrl) urlPorCaminho.set(a.path, a.signedUrl);
+        }
+        for (const m of linhas) {
+          const url = m.midia_caminho ? urlPorCaminho.get(m.midia_caminho.trim()) : undefined;
+          if (url) m.midia_url = url;
+        }
+      } catch {
+        /* sem URLs pré-assinadas — bolhas seguem no caminho lazy */
+      }
+    }
+    return linhas;
   } catch {
     return [];
   }

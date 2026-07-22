@@ -12,24 +12,25 @@ export default async function FunilPage({
 }: {
   searchParams: { lead?: string };
 }) {
-  const dados = await lerFunil();
-
-  // autor de tarefas/notas criadas no drawer (o ator real é carimbado pela porta) + lista do
-  // `@` e tipos de tarefa (R13 / Bloco C) — o drawer é o caminho de criação a partir do funil
+  // board + autor exibido no drawer (o ator real é carimbado pela porta) + lista do `@` e
+  // tipos de tarefa (R13 / Bloco C) em paralelo — o drawer é o caminho de criação a partir do
+  // funil, e nada disto depende do funil (getUser vai à rede)
   const supabase = criarClienteServidor();
-  const [{ data: sessao }, mencionaveis, tipos] = await Promise.all([
+  const [dados, userRes, mencionaveis, tipos] = await Promise.all([
+    lerFunil(),
     supabase.auth.getUser(),
     lerMencionaveis(),
     lerTiposTarefa(),
   ]);
+  const user = userRes.data.user;
 
   return (
     <Quadro
       dados={dados}
       geradoEm={new Date().toISOString()}
       abrirLead={searchParams.lead ?? null}
-      autorEmail={sessao.user?.email ?? null}
-      autorId={sessao.user?.id ?? null}
+      autorEmail={user?.email ?? null}
+      autorId={user?.id ?? null}
       mencionaveis={mencionaveis}
       tiposTarefa={tipos.tipos}
     />

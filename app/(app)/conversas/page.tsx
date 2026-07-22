@@ -1,4 +1,10 @@
-import { lerConversas, lerMensagens, lerSugestoesConversa } from "@/lib/dados/conversas";
+import {
+  lerConversas,
+  lerMensagens,
+  lerSugestoesConversa,
+  type Mensagem,
+  type SugestaoMensagem,
+} from "@/lib/dados/conversas";
 import { ETAPAS_PADRAO, lerEtapasReais } from "@/lib/dados/funil";
 import { lerPainelLead, type PainelLead } from "@/lib/dados/lead-painel";
 import { lerMencionaveis } from "@/lib/dados/mencionaveis";
@@ -13,8 +19,20 @@ export default async function ConversasPage({
 }: {
   searchParams: { c?: string; lead?: string };
 }) {
-  const [conversas, etapasReais] = await Promise.all([lerConversas(), lerEtapasReais()]);
+  // autor exibido (getUser vai à rede) + insumos do composer em paralelo com a lista —
+  // nada aqui depende de nada. O autor das notas/tarefas sai desta mesma chamada: o uuid é o
+  // dado forte (responsavel_id / autor_id / mencionado_id) e o e-mail fica só como legado de
+  // exibição. O ator do evento é carimbado pela porta de qualquer jeito.
+  const supabase = criarClienteServidor();
+  const [conversas, etapasReais, userRes, mencionaveis, tipos] = await Promise.all([
+    lerConversas(),
+    lerEtapasReais(),
+    supabase.auth.getUser(),
+    lerMencionaveis(), // R13/C4-C5: lista canônica do `@` (core.v_membro + core.agente)
+    lerTiposTarefa(), // R13/C6: config `tipo_tarefa`, com semente provisória
+  ]);
   const etapas = etapasReais ?? ETAPAS_PADRAO; // régua do funil no painel do lead (r9)
+  const user = userRes.data.user;
 
   // conversa selecionada: ?c explícito → ?lead (vindo do funil) → a primeira do inbox
   const selecionadaId =
@@ -24,24 +42,14 @@ export default async function ConversasPage({
     null;
   const selecionada = conversas.find((c) => c.id === selecionadaId) ?? null;
 
-  const [mensagens, sugestoes] = selecionadaId
-    ? await Promise.all([lerMensagens(selecionadaId), lerSugestoesConversa(selecionadaId)])
-    : [[], []];
-
-  // painel do lead (ficha + tarefas + anotações + menções) da conversa selecionada — R8/R13
-  const painel: PainelLead | null = selecionada?.lead_id
-    ? await lerPainelLead(selecionada.lead_id)
-    : null;
-
-  // autor das notas/tarefas criadas aqui. O uuid é o dado forte (responsavel_id / autor_id /
-  // mencionado_id); o e-mail fica só como legado de exibição. O ator do evento é carimbado
-  // pela porta de qualquer jeito.
-  const supabase = criarClienteServidor();
-  const [{ data: sessao }, mencionaveis, tipos] = await Promise.all([
-    supabase.auth.getUser(),
-    lerMencionaveis(), // R13/C4-C5: lista canônica do `@` (core.v_membro + core.agente)
-    lerTiposTarefa(), // R13/C6: config `tipo_tarefa`, com semente provisória
-  ]);
+  // mensagens + sugestões + painel do lead (ficha/tarefas/anotações/menções, R8/R13) em
+  // paralelo: todos dependem só da conversa selecionada, não uns dos outros
+  const [mensagens, sugestoes, painel]: [Mensagem[], SugestaoMensagem[], PainelLead | null] =
+    await Promise.all([
+      selecionadaId ? lerMensagens(selecionadaId) : Promise.resolve([]),
+      selecionadaId ? lerSugestoesConversa(selecionadaId) : Promise.resolve([]),
+      selecionada?.lead_id ? lerPainelLead(selecionada.lead_id) : Promise.resolve(null),
+    ]);
 
   return (
     <Inbox
@@ -50,8 +58,8 @@ export default async function ConversasPage({
       mensagens={mensagens}
       sugestoes={sugestoes}
       painel={painel}
-      autorEmail={sessao.user?.email ?? null}
-      autorId={sessao.user?.id ?? null}
+      autorEmail={user?.email ?? null}
+      autorId={user?.id ?? null}
       mencionaveis={mencionaveis}
       tiposTarefa={tipos.tipos}
       etapas={etapas}
