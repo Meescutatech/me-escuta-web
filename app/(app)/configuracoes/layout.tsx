@@ -37,6 +37,16 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
           </svg>
           Membros
         </Link>
+        <Link
+          href="/configuracoes/clara"
+          className="mb-px flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-suave hover:bg-hover hover:text-tinta"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-[15px] w-[15px] flex-none">
+            <path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.5-4.4A7.5 7.5 0 1 1 20 11.5Z" />
+            <path d="M9 10.5h6M9 13.2h3.6" />
+          </svg>
+          Clara
+        </Link>
         <span
           aria-disabled="true"
           className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-mute"
