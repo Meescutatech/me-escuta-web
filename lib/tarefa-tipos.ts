@@ -16,15 +16,19 @@ export interface TipoTarefa {
   rotulo: string;
 }
 
-/** Semente da spec §4.1.3. PROVISÓRIA — substituída pela config `tipo_tarefa` do Bloco A. */
+/**
+ * Semente da spec §4.1.3, com as MESMAS chaves que o Bloco A semeou na config `tipo_tarefa`
+ * (migration 0037) — conferidas contra o RELATORIO-BLOCO-A §A4. É só rede de segurança para o
+ * ambiente onde a 0037 ainda não subiu; a config manda sempre que existir.
+ */
 export const TIPOS_TAREFA_SEMENTE: TipoTarefa[] = [
-  { chave: "acompanhar", rotulo: "Acompanhar / Follow-up" },
+  { chave: "acompanhar_follow_up", rotulo: "Acompanhar / Follow-up" },
   { chave: "confirmar_consulta", rotulo: "Confirmar consulta" },
   { chave: "confirmar_exame", rotulo: "Confirmar exame" },
   { chave: "confirmar_pagamento", rotulo: "Confirmar pagamento" },
   { chave: "validar_serasa", rotulo: "Validar Serasa" },
   { chave: "assistencia_tecnica", rotulo: "Assistência técnica" },
-  { chave: "logistica", rotulo: "Logística / expedição" },
+  { chave: "logistica_expedicao", rotulo: "Logística / expedição" },
   { chave: "emitir_contrato", rotulo: "Emitir contrato" },
   { chave: "pos_venda", rotulo: "Pós-venda" },
 ];
