@@ -54,6 +54,12 @@ const ICONES: Record<string, React.ReactNode> = {
   conversas: (
     <path d="M20 11.5c0 3.6-3.6 6.5-8 6.5-1 0-2-.15-2.9-.43L4.5 19l1.1-3.1C4.6 14.7 4 13.2 4 11.5 4 7.9 7.6 5 12 5s8 2.9 8 6.5z" />
   ),
+  tarefas: (
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+      <path d="m8.5 12.5 2.5 2.5 5-5.5" />
+    </>
+  ),
   configuracoes: (
     <>
       <circle cx="12" cy="12" r="3.2" />
@@ -73,10 +79,13 @@ export function Sidebar({
   email,
   contFunil,
   contNaoLidas,
+  contVencidas,
 }: {
   email: string;
   contFunil: number | null;
   contNaoLidas: number | null;
+  /** tarefas VENCIDAS agora (R14) — a fila vermelha; null/0 = sem contador. */
+  contVencidas: number | null;
 }) {
   const pathname = usePathname();
   const itens = [
@@ -88,6 +97,7 @@ export function Sidebar({
       ativa: pathname.startsWith("/funil"),
       cont: contFunil != null ? contFunil.toLocaleString("pt-BR") : null,
       laranja: false,
+      vermelho: false,
     },
     {
       href: "/conversas",
@@ -96,7 +106,20 @@ export function Sidebar({
       ativa: pathname.startsWith("/conversas"),
       cont: contNaoLidas != null && contNaoLidas > 0 ? contNaoLidas.toLocaleString("pt-BR") : null,
       laranja: true,
+      vermelho: false,
       ponto: contNaoLidas != null && contNaoLidas > 0,
+    },
+    {
+      // contador SÓ de vencidas: no Kommo a fila vermelha tinha 755 itens e ninguém olhava;
+      // aqui o número só aparece quando existe débito — e zero é silêncio, não "0".
+      href: "/tarefas",
+      rotulo: "Tarefas",
+      icone: ICONES.tarefas,
+      ativa: pathname.startsWith("/tarefas"),
+      cont: contVencidas != null && contVencidas > 0 ? contVencidas.toLocaleString("pt-BR") : null,
+      laranja: false,
+      vermelho: true,
+      ponto: contVencidas != null && contVencidas > 0,
     },
     {
       href: "/configuracoes",
@@ -148,19 +171,25 @@ export function Sidebar({
               <span
                 className={cn(
                   "ml-auto rounded-full px-[7px] py-px font-mono text-[11px] opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms]",
-                  it.laranja
-                    ? "bg-laranja font-semibold text-branco"
-                    : "border border-linha bg-board text-suave",
+                  it.vermelho
+                    ? "bg-vermelho font-semibold text-branco"
+                    : it.laranja
+                      ? "bg-laranja font-semibold text-branco"
+                      : "border border-linha bg-board text-suave",
                 )}
               >
                 {it.cont}
               </span>
             )}
-            {/* colapsada: não-lida vira ponto laranja no canto do ícone; some na expansão */}
+            {/* colapsada: pendência vira ponto no canto do ícone (laranja = não-lida,
+                vermelho = tarefa vencida); some na expansão */}
             {"ponto" in it && it.ponto && (
               <span
                 aria-hidden
-                className="absolute left-6 top-2 h-[7px] w-[7px] rounded-full border-[1.5px] border-branco bg-laranja transition-opacity duration-[120ms] group-hover:opacity-0"
+                className={cn(
+                  "absolute left-6 top-2 h-[7px] w-[7px] rounded-full border-[1.5px] border-branco transition-opacity duration-[120ms] group-hover:opacity-0",
+                  it.vermelho ? "bg-vermelho" : "bg-laranja",
+                )}
               />
             )}
           </Link>

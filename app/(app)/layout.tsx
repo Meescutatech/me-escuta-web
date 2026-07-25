@@ -32,6 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         email={user.email ?? "usuario"}
         contFunil={contadores.funil}
         contNaoLidas={contadores.naoLidas}
+        contVencidas={contadores.tarefasVencidas}
       />
       <Sino inicial={notificacoes.itens} disponivel={notificacoes.disponivel} />
       <main>{children}</main>
