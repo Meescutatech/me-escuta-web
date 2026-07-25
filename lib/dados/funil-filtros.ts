@@ -29,6 +29,8 @@ export interface FiltrosFunil {
   /** YYYY-MM-DD inclusivo (fuso da operação) — null = ponta aberta */
   de: string | null;
   ate: string | null;
+  /** "meus leads" (0060): corta por dono_id === uuid do usuário logado — chip próprio, fora do painel */
+  meus: boolean;
 }
 
 export const FILTROS_VAZIOS: FiltrosFunil = {
@@ -38,6 +40,7 @@ export const FILTROS_VAZIOS: FiltrosFunil = {
   tags: [],
   de: null,
   ate: null,
+  meus: false,
 };
 
 /**
@@ -65,8 +68,11 @@ export function dentroDoPeriodo(iso: string | null, de: string | null, ate: stri
   return true;
 }
 
-export function filtrarCards(cards: CardLead[], f: FiltrosFunil): CardLead[] {
+export function filtrarCards(cards: CardLead[], f: FiltrosFunil, meuId: string | null = null): CardLead[] {
   return cards.filter((c) => {
+    // meus leads: vínculo por uuid, nunca por nome. Sem usuário logado, "meus" não casa nada
+    // (honesto: não inventar carteira). Lead sem dono_id só aparece no filtro geral.
+    if (f.meus && (meuId == null || c.dono_id !== meuId)) return false;
     if (!buscaCasa(c, f.busca)) return false;
     if (f.responsaveis.length > 0 && !f.responsaveis.includes(c.responsavel?.nome ?? SEM_RESPONSAVEL))
       return false;
@@ -87,9 +93,9 @@ export function contarFiltrosAtivos(f: FiltrosFunil): number {
   );
 }
 
-/** Há qualquer filtro (painel OU busca)? — controla o "X de N leads ativos" do cabeçalho. */
+/** Há qualquer filtro (painel, busca OU meus)? — controla o "X de N leads ativos" do cabeçalho. */
 export function haFiltro(f: FiltrosFunil): boolean {
-  return f.busca.trim() !== "" || contarFiltrosAtivos(f) > 0;
+  return f.busca.trim() !== "" || f.meus || contarFiltrosAtivos(f) > 0;
 }
 
 export interface OpcaoFiltro {

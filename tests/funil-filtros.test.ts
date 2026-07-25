@@ -31,6 +31,8 @@ function base(sobre: Partial<CardLead> = {}): CardLead {
     valor: null,
     origem: "wa",
     responsavel: null,
+    dono_id: null,
+    dono_nome: null,
     tags: [],
     proposta: null,
     kommo_lead_id: null,
@@ -108,6 +110,33 @@ test("tags: OR entre selecionadas; etapa filtra pela chave; dimensões combinam 
 
 test("filtros vazios devolvem todos os cards (identidade)", () => {
   assert.equal(filtrarCards(CARDS, FILTROS_VAZIOS).length, CARDS.length);
+});
+
+// ─────────────── meus leads (0060 — vínculo por uuid, nunca por nome) ───────────────
+
+const UID = "00000000-0000-4000-8000-000000000161";
+const CARDS_DONO: CardLead[] = [
+  base({ lead_id: "m1", dono_id: UID, dono_nome: "Membro Sessenta" }),
+  base({ lead_id: "m2", dono_id: "99999999-0000-4000-8000-000000000099", dono_nome: "Outra Pessoa" }),
+  base({ lead_id: "m3", dono_id: null, responsavel: { tipo: "dm", nome: "Clara" } }),
+];
+
+test("meus leads corta por dono_id === uuid do logado; legado por nome NÃO entra", () => {
+  const meus = filtrarCards(CARDS_DONO, { ...FILTROS_VAZIOS, meus: true }, UID);
+  assert.deepEqual(meus.map((c) => c.lead_id), ["m1"]);
+});
+
+test("meus leads sem usuário logado não casa nada (não inventar carteira)", () => {
+  assert.deepEqual(filtrarCards(CARDS_DONO, { ...FILTROS_VAZIOS, meus: true }, null), []);
+  assert.equal(filtrarCards(CARDS_DONO, FILTROS_VAZIOS, null).length, 3); // desligado, tudo passa
+});
+
+test("meus leads combina em AND com as demais dimensões e conta em haFiltro", () => {
+  const cards = [...CARDS_DONO, base({ lead_id: "m4", dono_id: UID, etapa: "proposta" })];
+  const meusProposta = filtrarCards(cards, { ...FILTROS_VAZIOS, meus: true, etapas: ["proposta"] }, UID);
+  assert.deepEqual(meusProposta.map((c) => c.lead_id), ["m4"]);
+  assert.ok(haFiltro({ ...FILTROS_VAZIOS, meus: true }));
+  assert.equal(contarFiltrosAtivos({ ...FILTROS_VAZIOS, meus: true }), 0); // chip próprio, fora do badge do painel
 });
 
 // ─────────────── facetas e contadores ───────────────
