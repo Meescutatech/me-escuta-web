@@ -3,6 +3,7 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { contratoOk, problemasContrato } from "@/lib/clara/contrato-followup";
 
 /**
  * Ações da página Configurações > Clara (SPEC-CLARA-REPLICA-DEMO §2-bis).
@@ -47,12 +48,17 @@ export interface ConfigFollowupForm {
   fim: number;
 }
 
-/** Follow-ups: cadência/horário como config — o runtime lê a config a CADA disparo. */
+/**
+ * Follow-ups: cadência/horário como config — o runtime lê a config a CADA disparo.
+ * Valida o MESMO contrato de produção que o runtime aplica (lib/clara/contrato-followup —
+ * espelho do parseConfigFollowup): salvar valor fora do contrato mostraria um número na tela
+ * e rodaria outro no runtime. Aqui a recusa vem com o porquê, nunca "valor inválido" seco.
+ */
 export async function salvarFollowup(cfg: ConfigFollowupForm): Promise<ResultadoAcao> {
   const janelas = cfg.janelasMin.map((n) => Math.round(n)).filter((n) => Number.isFinite(n) && n > 0);
-  if (janelas.length === 0) return { ok: false, motivo: "informe ao menos uma janela em minutos" };
-  if (!(cfg.inicio >= 0 && cfg.inicio < 24 && cfg.fim > cfg.inicio && cfg.fim <= 24)) {
-    return { ok: false, motivo: "horário comercial inválido (início < fim, 0–24)" };
+  const problemas = problemasContrato(janelas, cfg.inicio, cfg.fim);
+  if (!contratoOk(problemas)) {
+    return { ok: false, motivo: problemas.janelas ?? problemas.horario ?? "valores fora do contrato de produção" };
   }
   return registrarConfig({
     config_patch: {
