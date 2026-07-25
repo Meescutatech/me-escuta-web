@@ -20,9 +20,9 @@ export const TETO_ABERTAS = 500;
 export const TETO_FECHADAS = 200;
 
 const COLS_VIEW =
-  "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,criado_em,concluida_em,vencida";
+  "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em,vencida";
 const COLS_TABELA_R13 =
-  "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,criado_em,concluida_em";
+  "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em";
 
 export interface DadosVisaoTarefas {
   tarefas: TarefaVisao[];
@@ -47,6 +47,7 @@ function paraTarefa(r: any, agoraMs: number, comVencida: boolean): TarefaVisao {
     prazo: r.prazo ?? null,
     status: String(r.status ?? "pendente"),
     resultado: r.resultado ?? null,
+    motivo_arquivo: r.motivo_arquivo ?? null,
     criado_em: String(r.criado_em),
     concluida_em: r.concluida_em ?? null,
     vencida: comVencida

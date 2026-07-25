@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
@@ -21,6 +20,7 @@ import {
   type TarefaVisao,
 } from "@/lib/dados/tarefas-visao-calculos";
 import { useProjecaoViva } from "@/components/projecao-viva";
+import { AcoesTarefa, BotaoAcoes, type PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
 import { cn } from "@/lib/utils";
 
 /*
@@ -70,6 +70,13 @@ export function VisaoTarefas({
     () => mencionaveis.filter((m) => m.tipo === "humano"),
     [mencionaveis],
   );
+  // reatribuir só oferece membro ATIVO — revogado a porta recusa (22023)
+  const pessoasAtivas = useMemo<PessoaAtiva[]>(
+    () => pessoas.filter((m) => m.ativo).map((m) => ({ id: m.id, nome: m.nome })),
+    [pessoas],
+  );
+  // um painel de ações aberto por vez (R14 — reatribuir/repactuar/arquivar)
+  const [acoesId, setAcoesId] = useState<string | null>(null);
   const nomes = useMemo(
     () => ({
       membros: new Map(pessoas.map((m) => [m.id, m.nome])),
@@ -333,7 +340,17 @@ export function VisaoTarefas({
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[10px] px-0.5 pb-8 pt-px">
                 {g.tarefas.map((t) => (
-                  <CartaoTarefa key={t.id} t={t} agora={agora} nomes={nomes} />
+                  <CartaoTarefa
+                    key={t.id}
+                    t={t}
+                    agora={agora}
+                    nomes={nomes}
+                    pessoas={pessoasAtivas}
+                    acoesAberta={acoesId === t.id}
+                    onToggleAcoes={() => setAcoesId(acoesId === t.id ? null : t.id)}
+                    onFecharAcoes={() => setAcoesId(null)}
+                    aoMudar={() => router.refresh()}
+                  />
                 ))}
                 {g.tarefas.length === 0 && (
                   <p className="rounded-lg border border-dashed border-linha px-1.5 py-3.5 text-center text-[12px] text-mute">
@@ -348,7 +365,17 @@ export function VisaoTarefas({
         <div className="flex-1 overflow-y-auto px-5 pb-8">
           <div className="mx-auto max-w-3xl rounded-[10px] border border-linha bg-branco px-4 py-1">
             {lista.map((t) => (
-              <LinhaTarefa key={t.id} t={t} agora={agora} nomes={nomes} />
+              <LinhaTarefa
+                key={t.id}
+                t={t}
+                agora={agora}
+                nomes={nomes}
+                pessoas={pessoasAtivas}
+                acoesAberta={acoesId === t.id}
+                onToggleAcoes={() => setAcoesId(acoesId === t.id ? null : t.id)}
+                onFecharAcoes={() => setAcoesId(null)}
+                aoMudar={() => router.refresh()}
+              />
             ))}
           </div>
         </div>
@@ -365,14 +392,44 @@ function Vazio({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Envelopa no link do lead quando há lead — a ação (concluir etc.) vive no drawer do funil. */
-function ComLead({ t, children }: { t: TarefaVisao; children: React.ReactNode }) {
-  if (!t.lead_id) return <div>{children}</div>;
+/**
+ * Corpo clicável → drawer do lead no funil (onde concluir vive). Navegação programática em
+ * vez de <Link>: as ações de ciclo de vida (R14) moram DENTRO do card, e botão dentro de
+ * âncora não é HTML válido. O painel de ações faz stopPropagation — clicar nele não navega.
+ */
+function ComLead({
+  t,
+  className,
+  children,
+}: {
+  t: TarefaVisao;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const router = useRouter();
+  if (!t.lead_id) return <div className={className}>{children}</div>;
+  const destino = `/funil?lead=${t.lead_id}`;
   return (
-    <Link href={`/funil?lead=${t.lead_id}`} className="block no-underline">
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => router.push(destino)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && e.target === e.currentTarget) router.push(destino);
+      }}
+      className={cn(className, "cursor-pointer")}
+    >
       {children}
-    </Link>
+    </div>
   );
+}
+
+interface PropsAcoes {
+  pessoas: PessoaAtiva[];
+  acoesAberta: boolean;
+  onToggleAcoes: () => void;
+  onFecharAcoes: () => void;
+  aoMudar: () => void;
 }
 
 function MetaTarefa({
@@ -419,26 +476,46 @@ function CartaoTarefa({
   t,
   agora,
   nomes,
+  pessoas,
+  acoesAberta,
+  onToggleAcoes,
+  onFecharAcoes,
+  aoMudar,
 }: {
   t: TarefaVisao;
   agora: number;
   nomes: { membros: Map<string, string>; tipos: Map<string, string> };
-}) {
+} & PropsAcoes) {
   return (
-    <ComLead t={t}>
-      <div
-        className={cn(
-          "rounded-[10px] border bg-branco px-3 py-2.5 transition-colors",
-          t.lead_id && "cursor-pointer hover:border-linha-forte",
-          t.vencida ? "border-vermelho-bd" : "border-linha",
-        )}
-      >
-        <div className="text-[13.5px] leading-snug text-tinta">{t.titulo}</div>
-        {t.lead_nome && <div className="mt-0.5 truncate text-[12px] text-suave">{t.lead_nome}</div>}
-        <div className="mt-1.5">
-          <MetaTarefa t={t} agora={agora} nomes={nomes} />
+    <ComLead
+      t={t}
+      className={cn(
+        "rounded-[10px] border bg-branco px-3 py-2.5 transition-colors",
+        t.lead_id && "hover:border-linha-forte",
+        t.vencida ? "border-vermelho-bd" : "border-linha",
+      )}
+    >
+      <div className="flex items-start gap-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px] leading-snug text-tinta">{t.titulo}</div>
+          {t.lead_nome && <div className="mt-0.5 truncate text-[12px] text-suave">{t.lead_nome}</div>}
         </div>
+        {t.status === "pendente" && <BotaoAcoes aberto={acoesAberta} onToggle={onToggleAcoes} />}
       </div>
+      <div className="mt-1.5">
+        <MetaTarefa t={t} agora={agora} nomes={nomes} />
+      </div>
+      {acoesAberta && t.status === "pendente" && (
+        <AcoesTarefa
+          leadId={t.lead_id}
+          tarefaId={t.id}
+          prazoAtual={t.prazo}
+          responsavelAtualId={t.responsavel_id}
+          pessoas={pessoas}
+          aoSucesso={aoMudar}
+          onFechar={onFecharAcoes}
+        />
+      )}
     </ComLead>
   );
 }
@@ -447,36 +524,58 @@ function LinhaTarefa({
   t,
   agora,
   nomes,
+  pessoas,
+  acoesAberta,
+  onToggleAcoes,
+  onFecharAcoes,
+  aoMudar,
 }: {
   t: TarefaVisao;
   agora: number;
   nomes: { membros: Map<string, string>; tipos: Map<string, string> };
-}) {
+} & PropsAcoes) {
   const fechada = t.status !== "pendente";
   return (
-    <ComLead t={t}>
-      <div
-        className={cn(
-          "border-b border-[#F1F0EC] py-2.5 last:border-b-0",
-          t.lead_id && "-mx-2 cursor-pointer rounded-md px-2 transition-colors hover:bg-hover",
-        )}
-      >
-        <div className="flex items-baseline gap-2">
-          <span className={cn("min-w-0 flex-1 truncate text-[13.5px] leading-snug", fechada ? "text-suave line-through decoration-mute" : "text-tinta")}>
-            {t.titulo}
+    <ComLead
+      t={t}
+      className={cn(
+        "border-b border-[#F1F0EC] py-2.5 last:border-b-0",
+        t.lead_id && "-mx-2 rounded-md px-2 transition-colors hover:bg-hover",
+      )}
+    >
+      <div className="flex items-baseline gap-2">
+        <span className={cn("min-w-0 flex-1 truncate text-[13.5px] leading-snug", fechada ? "text-suave line-through decoration-mute" : "text-tinta")}>
+          {t.titulo}
+        </span>
+        {t.lead_nome && <span className="shrink-0 text-[12px] text-suave">{t.lead_nome}</span>}
+        {t.status === "pendente" && (
+          <span className="self-center">
+            <BotaoAcoes aberto={acoesAberta} onToggle={onToggleAcoes} />
           </span>
-          {t.lead_nome && <span className="shrink-0 text-[12px] text-suave">{t.lead_nome}</span>}
-        </div>
-        {t.status === "concluida" && t.resultado && (
-          <div className="mt-0.5 text-[12px] leading-snug text-suave">→ {t.resultado}</div>
         )}
-        {t.status === "arquivada" && (
-          <div className="mt-0.5 text-[12px] leading-snug text-mute">arquivada</div>
-        )}
-        <div className="mt-1.5">
-          <MetaTarefa t={t} agora={agora} nomes={nomes} apagada={fechada} />
-        </div>
       </div>
+      {t.status === "concluida" && t.resultado && (
+        <div className="mt-0.5 text-[12px] leading-snug text-suave">→ {t.resultado}</div>
+      )}
+      {t.status === "arquivada" && (
+        <div className="mt-0.5 text-[12px] leading-snug text-mute">
+          arquivada{t.motivo_arquivo ? ` — ${t.motivo_arquivo}` : ""}
+        </div>
+      )}
+      <div className="mt-1.5">
+        <MetaTarefa t={t} agora={agora} nomes={nomes} apagada={fechada} />
+      </div>
+      {acoesAberta && t.status === "pendente" && (
+        <AcoesTarefa
+          leadId={t.lead_id}
+          tarefaId={t.id}
+          prazoAtual={t.prazo}
+          responsavelAtualId={t.responsavel_id}
+          pessoas={pessoas}
+          aoSucesso={aoMudar}
+          onFechar={onFecharAcoes}
+        />
+      )}
     </ComLead>
   );
 }

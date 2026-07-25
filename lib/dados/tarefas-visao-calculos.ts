@@ -22,6 +22,8 @@ export interface TarefaVisao {
   prazo: string | null;
   status: string; // 'pendente' | 'concluida' | 'arquivada'
   resultado: string | null;
+  /** payload.motivo do tarefa_arquivada — sair da fila deixa rastro (spec §10.1). */
+  motivo_arquivo: string | null;
   criado_em: string;
   concluida_em: string | null;
   /** derivada em core.v_tarefa (status='pendente' and prazo < now()). */

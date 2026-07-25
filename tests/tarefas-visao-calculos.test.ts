@@ -38,6 +38,7 @@ function tarefa(sobrescreve: Partial<TarefaVisao>): TarefaVisao {
     prazo: null,
     status: "pendente",
     resultado: null,
+    motivo_arquivo: null,
     criado_em: "2026-07-20T12:00:00.000Z",
     concluida_em: null,
     vencida: false,
