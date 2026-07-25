@@ -1,5 +1,6 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { TETO_CARDS, chavesDoBoard, houveCorte } from "./funil-calculos";
+import { parseTags } from "./ficha-calculos";
 
 /**
  * Camada de leitura do FUNIL. Casada com o schema real (Agent 2, migrations 0009+0010) —
@@ -43,6 +44,7 @@ export interface CardLead {
   valor: number | null;
   origem: Origem | null;
   responsavel: { tipo: TipoResp; nome: string } | null; // derivado de `dono`
+  tags: string[]; // core.lead.tags (jsonb) — a view já retorna; base do filtro por tag
   proposta: PropostaPendente | null; // não vem da view ainda — null até o laço de sugestões chegar no card
   kommo_lead_id?: string | null;
 }
@@ -135,6 +137,7 @@ async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[
       valor: r.valor != null ? Number(r.valor) : null,
       origem: origemRaw ? (MAPA_ORIGEM[origemRaw] ?? null) : null,
       responsavel: donoParaResponsavel(r.dono ?? null),
+      tags: parseTags(r.tags),
       proposta: null,
       kommo_lead_id: r.kommo_lead_id ?? null,
     } as CardLead;
