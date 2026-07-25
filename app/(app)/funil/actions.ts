@@ -45,6 +45,14 @@ export async function registrarEventoUI(
   return { ok: true };
 }
 
+/**
+ * Atribui/remove o responsável do lead (0060): emite dono_atribuido {lead_id, dono_id}.
+ * A chave dono_id vai SEMPRE no payload — null é remoção EXPLÍCITA (a porta recusa ausência).
+ */
+export async function atribuirDono(leadId: string, donoId: string | null): Promise<ResultadoEvento> {
+  return registrarEventoUI("dono_atribuido", { lead_id: leadId, dono_id: donoId }, leadId);
+}
+
 /** Açúcar do arrastar-card: emite etapa_alterada no shape do contrato. */
 export async function moverCardEtapa(
   leadId: string,
