@@ -11,14 +11,17 @@ import {
   type CategoriaAnexo,
 } from "@/lib/conversas/anexo";
 import {
-  COMANDOS,
   despacharAoCliente,
+  efeitoDoComando,
   ehModoInterno,
   menuComandos,
+  MOTIVO_VAZIA,
   rotuloModo,
+  type ComandoComposer,
   type ModoComposer,
   type ModoInterno,
 } from "@/lib/conversas/composer-modo";
+import { placeholdersPendentes, type TemplateMensagem, type VariaveisTemplate } from "@/lib/templates";
 import {
   aplicarMencao,
   avisoSemAcesso,
@@ -73,6 +76,8 @@ export function Composer({
   nomeLead,
   mencionaveis,
   tiposTarefa,
+  templates,
+  variaveis,
   autorId,
   autorEmail,
   onEnviarTexto,
@@ -89,9 +94,14 @@ export function Composer({
   nomeLead: string | null;
   mencionaveis: Mencionavel[];
   tiposTarefa: TipoTarefa[];
+  /** Templates ativos do menu / (SPEC-TEMPLATES §6). Vazio = seção não aparece. */
+  templates: TemplateMensagem[];
+  /** Só variáveis CONFIÁVEIS (§5.2) — o Inbox decide o que entra; nome ruim fica de fora. */
+  variaveis: VariaveisTemplate;
   autorId: string | null;
   autorEmail: string | null;
-  onEnviarTexto: (texto: string) => void;
+  /** templateId acompanha o texto quando o rascunho nasceu de template (§6.4). */
+  onEnviarTexto: (texto: string, templateId?: string | null) => void;
   onEnviarMidia: (m: MidiaPronta) => void;
   onDigitar?: () => void;
   aoPublicar: () => void;
@@ -110,6 +120,8 @@ export function Composer({
   const [gatilho, setGatilho] = useState<{ inicio: number; termo: string } | null>(null);
   const [iMencao, setIMencao] = useState(0);
   const [salvando, setSalvando] = useState(false);
+  // rascunho nasceu de template? viaja no payload do envio (§6.4); zerar o campo descarta
+  const [templateId, setTemplateId] = useState<string | null>(null);
 
   // campos que só a tarefa revela
   const [responsavelId, setResponsavelId] = useState<string>("");
@@ -127,8 +139,13 @@ export function Composer({
   const interno = ehModoInterno(modo);
   const podeComandar = !!leadId;
   const comandos = useMemo(
-    () => (modo === "mensagem" && podeComandar && !anexo ? menuComandos(rascunho) : []),
-    [modo, podeComandar, anexo, rascunho],
+    () => (modo === "mensagem" && podeComandar && !anexo ? menuComandos(rascunho, templates) : []),
+    [modo, podeComandar, anexo, rascunho, templates],
+  );
+  // §5.3: placeholder que sobrou trava o envio (a trava mora em despacharAoCliente; isto é o aviso)
+  const pendentes = useMemo(
+    () => (modo === "mensagem" && rascunho.includes("{{") ? placeholdersPendentes(rascunho) : []),
+    [modo, rascunho],
   );
   const listaMencao = useMemo(
     () => (interno && gatilho ? separarMencionaveis(mencionaveis, gatilho.termo) : null),
@@ -171,6 +188,7 @@ export function Composer({
   function entrarNoModo(alvo: ModoInterno) {
     setModo(alvo);
     setRascunho("");
+    setTemplateId(null);
     setMencoes([]);
     setGatilho(null);
     setResponsavelId(autorId ?? "");
@@ -183,10 +201,43 @@ export function Composer({
   function sairDoModo(silencioso = false) {
     setModo("mensagem");
     setRascunho("");
+    setTemplateId(null);
     setMencoes([]);
     setGatilho(null);
     setDescricao("");
     if (!silencioso) requestAnimationFrame(() => campoRef.current?.focus());
+  }
+
+  /**
+   * T1 (exigência (a) do GO): o que um comando faz é decidido por `efeitoDoComando` — união
+   * exaustiva com never-check. NENHUM efeito envia nada: modo entra em modo interno, template
+   * só escreve no rascunho. O envio continua tendo um único portão (`enviarAoCliente`).
+   */
+  function executarComando(c: ComandoComposer) {
+    const efeito = efeitoDoComando(c, variaveis);
+    switch (efeito.tipo) {
+      case "entrar_modo":
+        entrarNoModo(efeito.modo);
+        return;
+      case "inserir_rascunho": {
+        setRascunho(efeito.texto);
+        setTemplateId(efeito.templateId);
+        requestAnimationFrame(() => {
+          const el = campoRef.current;
+          if (!el) return;
+          el.focus();
+          // seleciona o primeiro placeholder pendente — digitar já o substitui (§5.3)
+          const m = /\{\{[^{}]*\}\}/.exec(efeito.texto);
+          if (m) el.setSelectionRange(m.index, m.index + m[0].length);
+          else el.setSelectionRange(efeito.texto.length, efeito.texto.length);
+        });
+        return;
+      }
+      default: {
+        const nunca: never = efeito;
+        return nunca;
+      }
+    }
   }
 
   // ─────────────── anexo / gravação (rodada 6, intocado) ───────────────
@@ -260,17 +311,19 @@ export function Composer({
   async function enviarAoCliente() {
     if (pending || subindo) return;
     if (!anexo) {
-      // C3: a trava decide. Em modo interno `enviar` nem é chamado.
+      // C3: a trava decide. Em modo interno (ou com {{placeholder}} pendente) `enviar` nem é chamado.
       const r = despacharAoCliente(modo, rascunho, (texto) => {
+        const deTemplate = templateId;
         setRascunho("");
-        onEnviarTexto(texto);
+        setTemplateId(null);
+        onEnviarTexto(texto, deTemplate);
       });
-      if (!r.enviado && r.motivo && ehModoInterno(modo)) avisar(r.motivo);
+      if (!r.enviado && r.motivo && r.motivo !== MOTIVO_VAZIA) avisar(r.motivo);
       return;
     }
     const r = despacharAoCliente(modo, rascunho || "anexo", () => undefined);
-    if (!r.enviado && ehModoInterno(modo)) {
-      avisar(r.motivo ?? "");
+    if (!r.enviado) {
+      if (r.motivo && r.motivo !== MOTIVO_VAZIA) avisar(r.motivo);
       return;
     }
     setSubindo(true);
@@ -341,6 +394,7 @@ export function Composer({
 
   function aoMudarTexto(valor: string, caret: number) {
     setRascunho(valor);
+    if (!valor.trim()) setTemplateId(null); // zerar o campo descarta o vínculo com o template (§6.4)
     if (interno) setGatilho(gatilhoMencao(valor, caret));
     else if (valor.trim()) onDigitar?.();
   }
@@ -393,7 +447,7 @@ export function Composer({
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        entrarNoModo((comandos[iComando] ?? comandos[0]).modo);
+        executarComando(comandos[iComando] ?? comandos[0]);
         return;
       }
       if (e.key === "Escape") {
@@ -501,24 +555,31 @@ export function Composer({
             aria-label="Comandos"
             className="absolute bottom-full left-0 z-30 mb-2 w-[340px] max-w-full rounded-lg border border-linha bg-branco p-[5px] shadow-forte"
           >
-            {comandos.map((c, i) => (
-              <button
-                key={c.comando}
-                type="button"
-                role="option"
-                aria-selected={i === iComando}
-                onMouseEnter={() => setIComando(i)}
-                onClick={() => entrarNoModo(c.modo)}
-                className={cn(
-                  "flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] text-left",
-                  i === iComando && "bg-hover",
-                )}
-              >
-                <span className="min-w-[64px] font-mono text-[12.5px] font-medium text-tinta">{c.comando}</span>
-                <span className="text-[12.5px] text-suave">{c.explicacao}</span>
-                {i === iComando && <span className="ml-auto font-mono text-[10.5px] text-mute">↵</span>}
-              </button>
-            ))}
+            {comandos.map((c, i) => {
+              const primeiroTemplate = c.acao === "template" && (i === 0 || comandos[i - 1].acao !== "template");
+              const temAsDuasSecoes = comandos.some((x) => x.acao === "template") && comandos.some((x) => x.acao === "modo");
+              return (
+                <div key={c.acao === "template" ? c.template.id : c.comando} className="contents">
+                  {i === 0 && c.acao === "modo" && temAsDuasSecoes && <Cabecalho>Comandos</Cabecalho>}
+                  {primeiroTemplate && temAsDuasSecoes && <Cabecalho>Templates</Cabecalho>}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={i === iComando}
+                    onMouseEnter={() => setIComando(i)}
+                    onClick={() => executarComando(c)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] text-left",
+                      i === iComando && "bg-hover",
+                    )}
+                  >
+                    <span className="min-w-[64px] shrink-0 font-mono text-[12.5px] font-medium text-tinta">{c.comando}</span>
+                    <span className="truncate text-[12.5px] text-suave">{c.explicacao}</span>
+                    {i === iComando && <span className="ml-auto font-mono text-[10.5px] text-mute">↵</span>}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -723,9 +784,13 @@ export function Composer({
                 <>
                   <Tecla>↑</Tecla> <Tecla>↓</Tecla> navega · <Tecla>Esc</Tecla> cancela
                 </>
+              ) : pendentes.length > 0 ? (
+                <span className="text-amarelo">
+                  Complete {pendentes.join(", ")} antes de enviar — variável sem valor.
+                </span>
               ) : podeComandar ? (
                 <>
-                  Digite <Tecla>/</Tecla> para nota e tarefa
+                  Digite <Tecla>/</Tecla> para nota{templates.length > 0 ? ", tarefa e templates" : " e tarefa"}
                 </>
               ) : (
                 "Conversa sem lead vinculado — nota e tarefa precisam de um lead."

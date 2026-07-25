@@ -9,6 +9,7 @@ import { ETAPAS_PADRAO, lerEtapasReais } from "@/lib/dados/funil";
 import { lerPainelLead, type PainelLead } from "@/lib/dados/lead-painel";
 import { lerMencionaveis } from "@/lib/dados/mencionaveis";
 import { lerTiposTarefa } from "@/lib/dados/tarefa-tipos";
+import { lerNomeMembro, lerTemplates } from "@/lib/dados/templates";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { Inbox } from "@/components/conversas/inbox";
 
@@ -24,15 +25,18 @@ export default async function ConversasPage({
   // dado forte (responsavel_id / autor_id / mencionado_id) e o e-mail fica só como legado de
   // exibição. O ator do evento é carimbado pela porta de qualquer jeito.
   const supabase = criarClienteServidor();
-  const [conversas, etapasReais, userRes, mencionaveis, tipos] = await Promise.all([
+  const [conversas, etapasReais, userRes, mencionaveis, tipos, templatesLidos] = await Promise.all([
     lerConversas(),
     lerEtapasReais(),
     supabase.auth.getUser(),
     lerMencionaveis(), // R13/C4-C5: lista canônica do `@` (core.v_membro + core.agente)
     lerTiposTarefa(), // R13/C6: config `tipo_tarefa`, com semente provisória
+    lerTemplates(), // SPEC-TEMPLATES §6: menu / do composer (degrade: lista vazia)
   ]);
   const etapas = etapasReais ?? ETAPAS_PADRAO; // régua do funil no painel do lead (r9)
   const user = userRes.data.user;
+  // {{atendente}} vem do NOME de core.v_membro — nunca do e-mail (spec §5.1)
+  const nomeAtendente = await lerNomeMembro(user?.id ?? null);
 
   // conversa selecionada: ?c explícito → ?lead (vindo do funil) → a primeira do inbox
   const selecionadaId =
@@ -60,8 +64,10 @@ export default async function ConversasPage({
       painel={painel}
       autorEmail={user?.email ?? null}
       autorId={user?.id ?? null}
+      nomeAtendente={nomeAtendente}
       mencionaveis={mencionaveis}
       tiposTarefa={tipos.tipos}
+      templates={templatesLidos.templates.filter((t) => t.ativo)}
       etapas={etapas}
     />
   );
