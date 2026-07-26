@@ -43,7 +43,9 @@ export interface CardLead {
   entrou_etapa_em: string | null;
   valor: number | null;
   origem: Origem | null;
-  responsavel: { tipo: TipoResp; nome: string } | null; // derivado de `dono`
+  responsavel: { tipo: TipoResp; nome: string } | null; // dono_nome (vínculo uuid) > derivado de `dono` legado
+  dono_id: string | null; // uuid de core.usuario (0060) — base do "meus leads"
+  dono_nome: string | null; // resolvido pela view em core.usuario
   tags: string[]; // core.lead.tags (jsonb) — a view já retorna; base do filtro por tag
   proposta: PropostaPendente | null; // não vem da view ainda — null até o laço de sugestões chegar no card
   kommo_lead_id?: string | null;
@@ -119,7 +121,7 @@ async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[
   const { data, error } = await supabase
     .schema("core")
     .from("v_lead_card")
-    .select("lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,tags,kommo_lead_id")
+    .select("lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,dono_id,dono_nome,tags,kommo_lead_id")
     .in("etapa", chavesEtapas)
     .order("entrou_etapa_em", { ascending: false, nullsFirst: false })
     .order("lead_id", { ascending: true })
@@ -127,6 +129,8 @@ async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[
   if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
   const cards = data.map((r: any) => {
     const origemRaw = r.origem ? String(r.origem).toLowerCase() : null;
+    // vínculo por uuid (0060) tem precedência sobre o texto legado na hora do chip
+    const donoNome = r.dono_nome ? String(r.dono_nome) : null;
     return {
       lead_id: String(r.lead_id),
       nome: r.nome ?? null,
@@ -136,7 +140,11 @@ async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[
       entrou_etapa_em: r.entrou_etapa_em ?? null,
       valor: r.valor != null ? Number(r.valor) : null,
       origem: origemRaw ? (MAPA_ORIGEM[origemRaw] ?? null) : null,
-      responsavel: donoParaResponsavel(r.dono ?? null),
+      responsavel: donoNome
+        ? { tipo: (/sara/i.test(donoNome) ? "sara" : /fono/i.test(donoNome) ? "fono" : "dm") as TipoResp, nome: donoNome }
+        : donoParaResponsavel(r.dono ?? null),
+      dono_id: r.dono_id ?? null,
+      dono_nome: donoNome,
       tags: parseTags(r.tags),
       proposta: null,
       kommo_lead_id: r.kommo_lead_id ?? null,

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { CardLead, EtapaFunil, Origem } from "@/lib/dados/funil";
 import type { PainelLead } from "@/lib/dados/lead-painel";
 import { lerPainelLeadAction } from "@/app/(app)/lead/actions";
-import { registrarEventoUI } from "@/app/(app)/funil/actions";
+import { atribuirDono, registrarEventoUI } from "@/app/(app)/funil/actions";
 import { FichaKommo } from "@/components/lead/ficha-kommo";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
@@ -59,6 +59,7 @@ export function DrawerCard({
   const [levindoSolicitado, setLevindoSolicitado] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [versao, setVersao] = useState(0); // bump = recarregar painel após escrita
+  const [atribuindo, setAtribuindo] = useState(false);
 
   const leadId = lead?.lead_id ?? null;
 
@@ -95,6 +96,19 @@ export function DrawerCard({
   function avisar(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 3500);
+  }
+
+  async function trocarDono(donoId: string | null) {
+    if (!leadId || atribuindo) return;
+    setAtribuindo(true);
+    const res = await atribuirDono(leadId, donoId);
+    setAtribuindo(false);
+    if (res.ok) {
+      avisar(donoId ? "Responsável atribuído." : "Responsável removido.");
+      router.refresh(); // board re-projeta dono_id/dono_nome no card
+    } else {
+      avisar(`Não foi possível atribuir: ${res.motivo ?? "erro"}`);
+    }
   }
 
   function acionarLevindo() {
@@ -173,7 +187,29 @@ export function DrawerCard({
                 {lead.telefone ?? "—"}
               </Fato>
               <Fato rotulo="Origem">{lead.origem ? ORIGEM_TXT[lead.origem] : "—"}</Fato>
-              <Fato rotulo="Responsável">{lead.responsavel?.nome ?? "—"}</Fato>
+              {/* atribuição por uuid (0060): select de membro ativo → evento dono_atribuido.
+                  Vocabulário = mencionáveis humanos (a página já injeta). Chip legado (Clara,
+                  texto do import) segue no card até o vínculo real ser atribuído. */}
+              <Fato rotulo="Responsável">
+                <select
+                  value={lead.dono_id ?? ""}
+                  disabled={atribuindo}
+                  onChange={(e) => void trocarDono(e.target.value || null)}
+                  aria-label="Responsável pelo lead"
+                  className="w-full cursor-pointer appearance-none bg-transparent text-sm font-semibold text-navy outline-none disabled:opacity-50"
+                >
+                  <option value="">
+                    {lead.dono_id == null && lead.responsavel ? `Sem vínculo (${lead.responsavel.nome})` : "Sem responsável"}
+                  </option>
+                  {mencionaveis
+                    .filter((m) => m.tipo === "humano" && m.ativo)
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.nome}
+                      </option>
+                    ))}
+                </select>
+              </Fato>
               <Fato rotulo="Valor">{moeda(lead.valor)}</Fato>
             </div>
 

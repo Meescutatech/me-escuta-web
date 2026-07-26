@@ -240,7 +240,7 @@ export function FiltrosBoard({
             <button
               type="button"
               disabled={ativos === 0}
-              onClick={() => onChange({ ...FILTROS_VAZIOS, busca: filtros.busca })}
+              onClick={() => onChange({ ...FILTROS_VAZIOS, busca: filtros.busca, meus: filtros.meus })}
               className={cn(
                 "text-[12.5px] transition-colors",
                 ativos === 0 ? "cursor-default text-mute" : "text-laranja-esc hover:underline",

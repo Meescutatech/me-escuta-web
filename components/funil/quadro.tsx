@@ -212,8 +212,8 @@ export function Quadro({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-  // filtros da paridade Kommo (busca + responsável/etapa/tags/período) — lógica pura testada
-  const cardsFiltrados = useMemo(() => filtrarCards(cards, filtros), [cards, filtros]);
+  // filtros da paridade Kommo (busca + responsável/etapa/tags/período + meus) — lógica pura testada
+  const cardsFiltrados = useMemo(() => filtrarCards(cards, filtros, autorId), [cards, filtros, autorId]);
   const filtroAtivo = haFiltro(filtros);
 
   const porEtapa = useMemo(() => {
@@ -330,6 +330,22 @@ export function Quadro({
           <span className="rounded-full bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-semibold text-vermelho">{aviso}</span>
         )}
         <div className="ml-auto flex items-center gap-3.5 self-center">
+          {/* meus leads (0060): corte por dono_id === auth.uid — o gesto diário do vendedor no Kommo */}
+          {autorId && (
+            <button
+              type="button"
+              onClick={() => setFiltros((f) => ({ ...f, meus: !f.meus }))}
+              aria-pressed={filtros.meus}
+              className={cn(
+                "rounded-full border px-3 py-1 text-[12.5px] transition-colors",
+                filtros.meus
+                  ? "border-laranja bg-laranja-cl font-medium text-laranja-esc"
+                  : "border-linha bg-branco text-suave hover:border-linha-forte",
+              )}
+            >
+              Meus leads
+            </button>
+          )}
           <label className="flex w-52 items-center gap-2 rounded-[6px] border border-linha bg-branco px-2.5 py-1.5 transition-colors focus-within:border-linha-forte">
             <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5 shrink-0 stroke-mute" fill="none">
               <circle cx="11" cy="11" r="7" />
