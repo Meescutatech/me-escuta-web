@@ -16,6 +16,8 @@ import type { DadosFunil, CardLead, EtapaFunil } from "@/lib/dados/funil";
 import { moverCardEtapa } from "@/app/(app)/funil/actions";
 import { CartaoLead } from "./card-lead";
 import { DrawerCard } from "./drawer-card";
+import { FiltrosBoard } from "./filtros";
+import { FILTROS_VAZIOS, filtrarCards, haFiltro, type FiltrosFunil } from "@/lib/dados/funil-filtros";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { CarimboVivo } from "@/components/dashboard/carimbo-vivo";
@@ -171,7 +173,7 @@ export function Quadro({
   const [agora, setAgora] = useState<number>(() => Date.now());
   const [aviso, setAviso] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [busca, setBusca] = useState("");
+  const [filtros, setFiltros] = useState<FiltrosFunil>(FILTROS_VAZIOS);
 
   useEffect(() => {
     const t = setInterval(() => setAgora(Date.now()), 60000);
@@ -210,13 +212,9 @@ export function Quadro({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-  const cardsFiltrados = useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    if (!q) return cards;
-    return cards.filter(
-      (c) => (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").toLowerCase().includes(q),
-    );
-  }, [cards, busca]);
+  // filtros da paridade Kommo (busca + responsável/etapa/tags/período) — lógica pura testada
+  const cardsFiltrados = useMemo(() => filtrarCards(cards, filtros), [cards, filtros]);
+  const filtroAtivo = haFiltro(filtros);
 
   const porEtapa = useMemo(() => {
     const m = new Map<string, CardLead[]>();
@@ -228,8 +226,11 @@ export function Quadro({
     return m;
   }, [cardsFiltrados, dados.etapas]);
 
-  const abertas = dados.etapas.filter((e) => e.tipo === "aberto");
-  const terminais = dados.etapas.filter((e) => e.tipo !== "aberto");
+  // filtro de etapa esconde as colunas fora da seleção (terminais incluídos) — como no Kommo
+  const etapasVisiveis =
+    filtros.etapas.length > 0 ? dados.etapas.filter((e) => filtros.etapas.includes(e.chave)) : dados.etapas;
+  const abertas = etapasVisiveis.filter((e) => e.tipo === "aberto");
+  const terminais = etapasVisiveis.filter((e) => e.tipo !== "aberto");
 
   const chavesAbertas = useMemo(
     () => new Set(dados.etapas.filter((e) => e.tipo === "aberto").map((e) => e.chave)),
@@ -238,6 +239,10 @@ export function Quadro({
   const leadsAtivos = useMemo(
     () => cards.filter((c) => chavesAbertas.has(c.etapa)).length,
     [cards, chavesAbertas],
+  );
+  const leadsAtivosFiltrados = useMemo(
+    () => cardsFiltrados.filter((c) => chavesAbertas.has(c.etapa)).length,
+    [cardsFiltrados, chavesAbertas],
   );
 
   const cardArrastado = cards.find((c) => c.lead_id === arrastando) ?? null;
@@ -309,7 +314,9 @@ export function Quadro({
       <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-5 pb-3 pt-4">
         <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Funil de vendas</h1>
         <span className="font-mono text-[12px] text-suave">
-          {leadsAtivos.toLocaleString("pt-BR")} leads ativos
+          {filtroAtivo
+            ? `${leadsAtivosFiltrados.toLocaleString("pt-BR")} de ${leadsAtivos.toLocaleString("pt-BR")} leads ativos`
+            : `${leadsAtivos.toLocaleString("pt-BR")} leads ativos`}
         </span>
         {dados.corte && (
           <span
@@ -329,12 +336,19 @@ export function Quadro({
               <path d="m20 20-3.5-3.5" />
             </svg>
             <input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
+              value={filtros.busca}
+              onChange={(e) => setFiltros((f) => ({ ...f, busca: e.target.value }))}
               placeholder="Buscar lead, telefone"
               className="w-full bg-transparent text-[13px] text-tinta outline-none placeholder:text-mute"
             />
           </label>
+          <FiltrosBoard
+            cards={cards}
+            etapas={dados.etapas}
+            filtros={filtros}
+            onChange={setFiltros}
+            qtdFiltrada={cardsFiltrados.length}
+          />
           <CarimboVivo geradoEm={geradoEm} revalidar={false} />
         </div>
       </div>
