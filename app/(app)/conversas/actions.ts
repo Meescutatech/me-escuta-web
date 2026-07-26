@@ -36,13 +36,17 @@ export async function enviarMensagem(
   corpo: string,
   chaveIdem?: string,
   midia?: { caminho: string; mime?: string | null },
+  templateId?: string,
 ): Promise<ResultadoEvento> {
   const texto = corpo.trim();
   if (!texto && !midia) return { ok: false, motivo: "mensagem vazia" };
   // Payload estendido da rodada 6 (D4): {conversa_id, corpo?, midia_caminho?, midia_mime?} —
   // corpo = legenda quando houver mídia. Texto puro segue emitindo o shape idêntico ao de antes.
+  // template_id (SPEC-TEMPLATES §6.4): rastro de "partiu deste template" — a porta ignora o
+  // campo, o ledger preserva; NENHUM caminho novo de envio, métrica de adoção por SQL.
   const payload: Record<string, unknown> = { conversa_id: conversaId };
   if (texto) payload.corpo = texto;
+  if (templateId) payload.template_id = templateId;
   if (midia) {
     const caminho = midia.caminho.trim();
     // o front só sobe em saida/ (D5); qualquer outro caminho aqui é bug ou request forjado

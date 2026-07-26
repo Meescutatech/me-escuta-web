@@ -47,6 +47,17 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
           </svg>
           Clara
         </Link>
+        <Link
+          href="/configuracoes/templates"
+          className="mb-px flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-suave hover:bg-hover hover:text-tinta"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-[15px] w-[15px] flex-none">
+            <path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8" />
+            <path d="M5 4v16" />
+            <path d="M11 9h5M11 12.5h3.5" />
+          </svg>
+          Templates
+        </Link>
         <span
           aria-disabled="true"
           className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-mute"

@@ -38,6 +38,7 @@ import { RegistroInterno } from "@/components/conversas/registro-interno";
 import { itensDoDia, montarRegistros } from "@/lib/conversas/registro-timeline";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
+import type { TemplateMensagem, VariaveisTemplate } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 
 /*
@@ -111,8 +112,10 @@ export function Inbox({
   painel,
   autorEmail,
   autorId,
+  nomeAtendente,
   mencionaveis,
   tiposTarefa,
+  templates,
   etapas,
 }: {
   conversas: ConversaResumo[];
@@ -122,8 +125,12 @@ export function Inbox({
   painel: PainelLead | null;
   autorEmail: string | null;
   autorId: string | null;
+  /** Nome REAL de core.v_membro (nunca e-mail) — fonte do {{atendente}}; null = não resolve. */
+  nomeAtendente: string | null;
   mencionaveis: Mencionavel[];
   tiposTarefa: TipoTarefa[];
+  /** Templates ativos pro menu / do composer (SPEC-TEMPLATES §6). */
+  templates: TemplateMensagem[];
   etapas: EtapaFunil[];
 }) {
   const router = useRouter();
@@ -317,7 +324,7 @@ export function Inbox({
    * evento estendido (D4) com o caminho; a bolha otimista carrega midia_caminho/mime e renderiza
    * com os MESMOS componentes das mensagens do servidor (signed URL de sessão).
    */
-  function despachar(texto: string, midia?: MidiaPronta | null, idPendente?: string) {
+  function despachar(texto: string, midia?: MidiaPronta | null, idPendente?: string, templateId?: string | null) {
     if (!selecionada) return;
     // o id da bolha é também a chave de idempotência do evento (id_externo): retry da MESMA bolha
     // reusa a chave e a porta deduplica — nunca sai duplicado no WhatsApp por retry de rede.
@@ -353,6 +360,7 @@ export function Inbox({
         texto,
         id,
         midia ? { caminho: midia.caminho, mime: midia.mime } : undefined,
+        templateId ?? undefined,
       );
       if (r.ok) {
         router.refresh();
@@ -452,6 +460,14 @@ export function Inbox({
       ? fmtTelefone(selecionada.telefone)
       : selecionada.nome!
     : "";
+
+  // §5.2: só variável CONFIÁVEL entra. Nome ruim (o título vira telefone) fica DE FORA —
+  // "Oi (31) 98888-7777" não é mensagem; o placeholder literal trava o envio e a Sara completa.
+  const variaveis: VariaveisTemplate = {
+    ...(selecionada && !nomeRuim(selecionada.nome) ? { nome: selecionada.nome!.trim() } : {}),
+    ...(selecionada?.telefone ? { telefone: fmtTelefone(selecionada.telefone) } : {}),
+    ...(nomeAtendente ? { atendente: nomeAtendente } : {}),
+  };
 
   return (
     <div className="flex h-screen bg-board">
@@ -777,9 +793,11 @@ export function Inbox({
               nomeLead={titulo}
               mencionaveis={mencionaveis}
               tiposTarefa={tiposTarefa}
+              templates={templates}
+              variaveis={variaveis}
               autorId={autorId}
               autorEmail={autorEmail}
-              onEnviarTexto={(texto) => despachar(texto)}
+              onEnviarTexto={(texto, templateId) => despachar(texto, undefined, undefined, templateId)}
               onEnviarMidia={(midia) => despachar(midia.legenda ?? "", midia)}
               onDigitar={aoDigitar}
               aoPublicar={() => router.refresh()}
