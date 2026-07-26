@@ -1,12 +1,21 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 /**
  * Página de Configurações (mockup configuracoes-membros-v2.html, Rodada 10c):
  * sub-nav própria à esquerda em --fundo + conteúdo em branco separados por hairline.
  * SEM link "Voltar ao app" (removido a pedido do Diogo — a topbar já navega).
- * Membros é a única seção viva no Bloco C; as demais ficam inertes até terem dono.
+ * Membros deixou de ser a única seção viva (Clara e Templates chegaram depois),
+ * então o item ativo vem da rota — não mais fixo.
  */
+const ATIVO = "mb-px flex items-center gap-2 rounded-md bg-[#EAECF5] px-2 py-1.5 text-[13px] font-semibold text-navy";
+const INERTE = "mb-px flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-suave hover:bg-hover hover:text-tinta";
+
 export default function ConfiguracoesLayout({ children }: { children: React.ReactNode }) {
+  const rota = usePathname();
+  const ativo = (href: string) => rota === href || rota.startsWith(href + "/");
   return (
     <div className="flex min-h-[calc(100vh-58px)] bg-branco">
       <nav aria-label="Configurações" className="w-[224px] flex-none border-r border-linha bg-board px-3 pb-6 pt-5">
@@ -26,8 +35,8 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
         </span>
         <Link
           href="/configuracoes/membros"
-          aria-current="page"
-          className="mb-px flex items-center gap-2 rounded-md bg-[#EAECF5] px-2 py-1.5 text-[13px] font-semibold text-navy"
+          aria-current={ativo("/configuracoes/membros") ? "page" : undefined}
+          className={ativo("/configuracoes/membros") ? ATIVO : INERTE}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-[15px] w-[15px] flex-none">
             <circle cx="9" cy="8.5" r="3.2" />
@@ -39,7 +48,8 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
         </Link>
         <Link
           href="/configuracoes/clara"
-          className="mb-px flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-suave hover:bg-hover hover:text-tinta"
+          aria-current={ativo("/configuracoes/clara") ? "page" : undefined}
+          className={ativo("/configuracoes/clara") ? ATIVO : INERTE}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-[15px] w-[15px] flex-none">
             <path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.5-4.4A7.5 7.5 0 1 1 20 11.5Z" />
@@ -49,7 +59,8 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
         </Link>
         <Link
           href="/configuracoes/templates"
-          className="mb-px flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-suave hover:bg-hover hover:text-tinta"
+          aria-current={ativo("/configuracoes/templates") ? "page" : undefined}
+          className={ativo("/configuracoes/templates") ? ATIVO : INERTE}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-[15px] w-[15px] flex-none">
             <path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8" />
