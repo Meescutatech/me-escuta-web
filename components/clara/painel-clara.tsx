@@ -1,12 +1,19 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
   alternarClara,
   salvarFollowup,
   publicarPrompt,
   zerarLeadDemo,
 } from "@/app/(app)/configuracoes/clara/actions";
+import {
+  PISO_JANELA_PRODUCAO_MIN,
+  HORARIO_PRODUCAO,
+  contratoOk,
+  efeitoRuntime,
+  problemasContrato,
+} from "@/lib/clara/contrato-followup";
 
 /**
  * Painel da Clara (Configurações > Clara, SPEC §2-bis) — desenho R9: hairlines, sem sombra,
@@ -34,7 +41,14 @@ interface Props {
   ativa: boolean;
   prompt: string;
   promptVersao: number;
-  followup: { ativo: boolean; janelasMin: number[]; inicio: number; fim: number };
+  followup: {
+    ativo: boolean;
+    janelasMin: number[];
+    inicio: number;
+    fim: number;
+    /** "demo" só com `modo:"demo"` explícito na config — travas de produção desligadas. */
+    modo: "producao" | "demo";
+  };
   historico: VersaoPrompt[];
   telefonesDemo: string[];
   leadsDemo: LeadDemo[];
@@ -90,6 +104,24 @@ export function PainelClara(props: Props) {
   const [janelas, setJanelas] = useState<string[]>(props.followup.janelasMin.map(String));
   const [inicio, setInicio] = useState(String(props.followup.inicio));
   const [fim, setFim] = useState(String(props.followup.fim));
+
+  // Contrato de produção (espelho do runtime — lib/clara/contrato-followup):
+  // o que está DIGITADO valida em tempo real; o que está SALVO denuncia divergência.
+  const problemasForm = useMemo(
+    () =>
+      problemasContrato(
+        janelas.map((j) => Number(j)).filter((n) => n > 0),
+        Number(inicio),
+        Number(fim),
+      ),
+    [janelas, inicio, fim],
+  );
+  const formOk = contratoOk(problemasForm);
+  const modoDemo = props.followup.modo === "demo";
+  const salvo = useMemo(
+    () => efeitoRuntime(props.followup.janelasMin, props.followup.inicio, props.followup.fim),
+    [props.followup.janelasMin, props.followup.inicio, props.followup.fim],
+  );
 
   const roda = (acao: () => Promise<{ ok: boolean; motivo?: string }>, feito: string) => {
     setErro(null);
@@ -296,10 +328,29 @@ export function PainelClara(props: Props) {
           <Interruptor ligada={fuAtivo} disabled={soLeitura || pendente} onChange={setFuAtivo} />
         </div>
 
+        {/* o salvo diverge do que roda: a página mostra, nunca esconde (contrato = runtime) */}
+        {!modoDemo && salvo.divergente && (
+          <p className="mt-3 rounded-md border border-amarelo-bd bg-amarelo-bg px-3 py-2 text-[12px] leading-relaxed text-amarelo">
+            O que está salvo não é o que roda: a cadência gravada (
+            <span className="font-mono">{props.followup.janelasMin.join("/")} min</span>, das{" "}
+            {props.followup.inicio} às {props.followup.fim}h) está fora do contrato de produção, e o
+            runtime aplica <span className="font-mono">{salvo.janelasEfetivasMin.join("/")} min</span>, das{" "}
+            {salvo.horarioEfetivo.inicio} às {salvo.horarioEfetivo.fim}h. Salve valores dentro dos
+            limites abaixo para a tela e a Clara voltarem a dizer a mesma coisa.
+          </p>
+        )}
+        {modoDemo && (
+          <p className="mt-3 rounded-md border border-linha bg-hover px-3 py-2 text-[12px] leading-relaxed text-suave">
+            Modo demonstração gravado na configuração: as travas de produção estão desligadas e a
+            cadência vale exatamente como está. Salvar aqui grava valores de produção e desliga o
+            modo demonstração.
+          </p>
+        )}
+
         <div className="mt-4 flex flex-wrap items-end gap-4">
           <div>
             <span className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-mute">
-              Janelas (minutos após a última tentativa)
+              Janelas (minutos após a última tentativa · mín. {PISO_JANELA_PRODUCAO_MIN})
             </span>
             <div className="mt-1.5 flex items-center gap-2">
               {janelas.map((j, i) => (
@@ -323,7 +374,7 @@ export function PainelClara(props: Props) {
           </div>
           <div>
             <span className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-mute">
-              Horário comercial
+              Horário comercial ({HORARIO_PRODUCAO.inicioMin}–{HORARIO_PRODUCAO.fimMax}h)
             </span>
             <div className="mt-1.5 flex items-center gap-1.5 text-[13px] text-suave">
               das
@@ -349,7 +400,7 @@ export function PainelClara(props: Props) {
           </div>
           <button
             type="button"
-            disabled={soLeitura || pendente}
+            disabled={soLeitura || pendente || !formOk}
             onClick={() =>
               roda(
                 () =>
@@ -367,6 +418,18 @@ export function PainelClara(props: Props) {
             Salvar cadência
           </button>
         </div>
+
+        {/* validação em tempo real com o PORQUÊ — mesmo contrato que a action recusa no servidor */}
+        {problemasForm.janelas && (
+          <p className="mt-2 text-[12px] leading-relaxed text-vermelho" role="alert">
+            {problemasForm.janelas}
+          </p>
+        )}
+        {problemasForm.horario && (
+          <p className="mt-2 text-[12px] leading-relaxed text-vermelho" role="alert">
+            {problemasForm.horario}
+          </p>
+        )}
       </section>
 
       {/* ===== demo / restart ===== */}

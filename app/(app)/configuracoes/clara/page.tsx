@@ -78,6 +78,9 @@ export default async function ClaraPage() {
           : [120, 240, 480, 960],
         inicio: Number.isFinite(Number(horario["inicio"])) ? Number(horario["inicio"]) : 8,
         fim: Number.isFinite(Number(horario["fim"])) ? Number(horario["fim"]) : 20,
+        // modo demo SÓ com a marca explícita na config (mesma régua do parseConfigFollowup do
+        // runtime) — o painel usa isso pra mostrar quando o salvo diverge do que roda.
+        modo: followup["modo"] === "demo" ? "demo" : "producao",
       }}
       historico={historico}
       telefonesDemo={telefonesDemo}
