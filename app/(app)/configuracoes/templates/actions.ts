@@ -3,6 +3,11 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
+import {
+  avaliarProjecao,
+  posicaoParaConferir,
+  type RespostaRegistrarEvento,
+} from "@/lib/eventos/confirmar-projecao";
 
 /**
  * Ações da aba Configurações > Templates (SPEC-TEMPLATES-MENSAGENS §7).
@@ -25,8 +30,26 @@ async function registrarEventoTemplates(
 ): Promise<ResultadoAcao> {
   const supabase = criarClienteServidor();
   const envelope = { tipo, id_externo: randomUUID(), versao_payload: 1, payload };
-  const { error } = await supabase.schema("api").rpc("registrar_evento", { p: envelope });
+  const { data, error } = await supabase.schema("api").rpc("registrar_evento", { p: envelope });
   if (error) return { ok: false, motivo: error.message };
+
+  // Read-back (R15): ledger aceitar não é sucesso — sucesso é a projeção existir.
+  // A projeção é síncrona na mesma transação; ver lib/eventos/confirmar-projecao.ts.
+  const posicao = posicaoParaConferir(data as RespostaRegistrarEvento | null);
+  let encontrou: boolean | null = null;
+  if (posicao !== null) {
+    const { data: linhas, error: erroLeitura } = await supabase
+      .schema("core")
+      .from("template_mensagem")
+      .select("id")
+      .eq("ultima_posicao", posicao)
+      .limit(1);
+    if (erroLeitura) return { ok: false, motivo: `não deu pra confirmar a projeção: ${erroLeitura.message}` };
+    encontrou = (linhas ?? []).length > 0;
+  }
+  const veredito = avaliarProjecao(encontrou);
+  if (!veredito.ok) return veredito;
+
   revalidatePath("/configuracoes/templates");
   revalidatePath("/conversas");
   return { ok: true };
