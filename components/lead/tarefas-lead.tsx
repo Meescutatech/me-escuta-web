@@ -12,6 +12,7 @@ import {
   vencida,
 } from "@/lib/dados/tarefa-calculos";
 import { concluirTarefaLead, criarTarefaLead } from "@/app/(app)/lead/actions";
+import { AcoesTarefa, BotaoAcoes } from "@/components/tarefas/acoes-tarefa";
 import { cn } from "@/lib/utils";
 
 /*
@@ -52,6 +53,7 @@ export function TarefasLead({
   const [tipo, setTipo] = useState("");
   const [responsavelId, setResponsavelId] = useState(autorId ?? "");
   const [concluindoId, setConcluindoId] = useState<string | null>(null);
+  const [acoesId, setAcoesId] = useState<string | null>(null); // ⋯ (R14: reatribuir/repactuar/arquivar)
   const [resultado, setResultado] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -185,7 +187,26 @@ export function TarefasLead({
                   )}
                 </div>
               </div>
+              <BotaoAcoes
+                aberto={acoesId === t.id}
+                onToggle={() => {
+                  setAcoesId(acoesId === t.id ? null : t.id);
+                  setErro(null);
+                }}
+              />
             </div>
+
+            {acoesId === t.id && (
+              <AcoesTarefa
+                leadId={leadId}
+                tarefaId={t.id}
+                prazoAtual={t.prazo}
+                responsavelAtualId={t.responsavel_id}
+                pessoas={pessoas}
+                aoSucesso={aoAtualizar}
+                onFechar={() => setAcoesId(null)}
+              />
+            )}
 
             {concluindo && (
               <div className="mt-2 flex items-center gap-1.5 border-t border-linha pt-2">

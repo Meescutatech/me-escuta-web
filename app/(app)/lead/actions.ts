@@ -9,6 +9,11 @@ import {
   type MencaoResolvida,
   type OrigemMencao,
 } from "@/lib/conversas/mencao";
+import {
+  construirArquivamento,
+  construirReatribuicao,
+  construirRepactuacao,
+} from "@/lib/dados/tarefa-eventos";
 
 /**
  * Ações do PAINEL DO LEAD (ficha + tarefas + anotações + menções) — compartilhadas entre
@@ -34,6 +39,7 @@ import {
 
 function revalidarPaineis() {
   revalidatePath("/conversas");
+  revalidatePath("/tarefas"); // visão de tarefas (R14) lê as mesmas projeções
   // /funil e /timeline já são revalidados dentro de registrarEventoUI
 }
 
@@ -128,6 +134,51 @@ export async function concluirTarefaLead(
     { tarefa_id: tarefaId, resultado: desfecho },
     leadId,
   );
+  if (r.ok) revalidarPaineis();
+  return r;
+}
+
+/**
+ * Ciclo de vida da tarefa (Rodada 14 — A-7 do Bloco C fechado): reatribuir, repactuar prazo e
+ * arquivar, pelos MESMOS trilhos da conclusão. Payload construído em módulo puro
+ * (lib/dados/tarefa-eventos.ts, testado chave a chave); a porta do Bloco A revalida tudo —
+ * motivo obrigatório (23514), membro ativo (22023), só tarefa pendente (55000). O `leadId`
+ * ancora o evento no ledger do lead; sem ele o evento ainda é válido (a porta acha a tarefa
+ * pelo tarefa_id).
+ */
+export async function reatribuirTarefaLead(
+  leadId: string | null,
+  tarefaId: string,
+  responsavelId: string,
+): Promise<ResultadoEvento> {
+  const c = construirReatribuicao(tarefaId, responsavelId);
+  if (!c.ok) return c;
+  const r = await registrarEventoUI(c.tipo, c.payload, leadId ?? undefined);
+  if (r.ok) revalidarPaineis();
+  return r;
+}
+
+export async function repactuarPrazoTarefaLead(
+  leadId: string | null,
+  tarefaId: string,
+  prazoIso: string,
+  motivo: string,
+): Promise<ResultadoEvento> {
+  const c = construirRepactuacao(tarefaId, prazoIso, motivo);
+  if (!c.ok) return c;
+  const r = await registrarEventoUI(c.tipo, c.payload, leadId ?? undefined);
+  if (r.ok) revalidarPaineis();
+  return r;
+}
+
+export async function arquivarTarefaLead(
+  leadId: string | null,
+  tarefaId: string,
+  motivo: string,
+): Promise<ResultadoEvento> {
+  const c = construirArquivamento(tarefaId, motivo);
+  if (!c.ok) return c;
+  const r = await registrarEventoUI(c.tipo, c.payload, leadId ?? undefined);
   if (r.ok) revalidarPaineis();
   return r;
 }
