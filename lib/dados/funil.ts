@@ -91,8 +91,11 @@ function donoParaResponsavel(dono: string | null): { tipo: TipoResp; nome: strin
   return { tipo, nome: d };
 }
 
-export async function lerEtapasReais(): Promise<EtapaFunil[] | null> {
-  const supabase = criarClienteServidor();
+/** Cliente injetável — mesma razão de spec que em conversas.ts (portões do F24a/F25). */
+type Supabase = ReturnType<typeof criarClienteServidor>;
+
+export async function lerEtapasReais(cliente?: Supabase): Promise<EtapaFunil[] | null> {
+  const supabase = cliente ?? criarClienteServidor();
   const { data, error } = await supabase
     .schema("core")
     .from("v_config_vigente")

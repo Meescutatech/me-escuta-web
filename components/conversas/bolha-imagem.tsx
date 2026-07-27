@@ -73,11 +73,21 @@ export function BolhaImagem({ m }: { m: Mensagem }) {
             <img
               src={url}
               alt={m.corpo ? `Foto: ${m.corpo}` : "Foto da conversa"}
+              // F13: `lazy` — a thread traz até 500 mensagens, e sem isto TODAS as fotos baixam
+              // de uma vez, inclusive as que estão muito acima da dobra e ninguém vai olhar.
+              loading="lazy"
+              decoding="async"
+              // espaço reservado com a MESMA caixa do estado "carregando foto…": a imagem que
+              // chega ocupa o lugar que já era dela, em vez de empurrar as mensagens vizinhas
+              // enquanto a pessoa lê. `w-auto/h-auto` deixam o CSS mandar na exibição; os
+              // atributos existem para o navegador reservar antes de ter o arquivo.
+              width={208}
+              height={144}
               onLoad={() => setCarregou(true)}
               onError={() => setErro(true)}
               onClick={() => setAmpliada(true)}
               className={
-                "max-h-72 max-w-full cursor-zoom-in rounded-[9px] object-cover" +
+                "h-auto max-h-72 w-auto max-w-full cursor-zoom-in rounded-[9px] object-cover" +
                 (carregou ? "" : " hidden")
               }
             />

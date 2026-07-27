@@ -20,6 +20,7 @@ import {
   type TarefaVisao,
 } from "@/lib/dados/tarefas-visao-calculos";
 import { useProjecaoViva } from "@/components/projecao-viva";
+import { INTERVALOS } from "@/lib/intervalos-vivos";
 import { AcoesTarefa, BotaoAcoes, type PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +58,7 @@ export function VisaoTarefas({
   }, []);
 
   // tarefa muda pouco, mas quem deixa a aba aberta merece ver a fila andar sozinha
-  useProjecaoViva([{ tabela: { schema: "core", table: "tarefa" } }], { intervaloMs: 15000 });
+  useProjecaoViva([{ tabela: { schema: "core", table: "tarefa" } }], { intervaloMs: INTERVALOS.tarefas });
 
   function mudar(parcial: Partial<FiltrosTarefas>) {
     const novo = { ...filtros, ...parcial };

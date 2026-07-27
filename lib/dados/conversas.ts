@@ -1,5 +1,20 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { caminhosParaAssinar } from "@/lib/conversas/midia";
+import {
+  TTL_ASSINATURA_SEG,
+  criarArmazem,
+  expirar,
+  guardar,
+  obter as obterDoCache,
+  precisaAssinar,
+} from "@/lib/conversas/cache-midia";
+import {
+  LIMITE_PAGINA,
+  decodificar,
+  filtroKeyset,
+  houveCorte,
+  proximoCursor,
+} from "@/lib/conversas/paginacao";
 import { parseTags } from "./ficha-calculos";
 
 /**
@@ -32,6 +47,18 @@ export interface ConversaResumo {
   dono_atual: string | null;
   status: string | null;
   atualizado_em: string | null;
+  /**
+   * F21 — quando a conversa recebeu a última mensagem de ENTRADA (core.conversa.ultima_entrada_em,
+   * mantido pelo projetor com `greatest()`). É por este campo que a lista ORDENA. NULL para
+   * conversa nascida de disparo (só saída) — daí o `nulls last` na consulta.
+   */
+  ultima_entrada_em?: string | null;
+  /**
+   * F21 — hora da última mensagem de QUALQUER direção, carimbada pela prévia (custo zero: o dado
+   * já vinha). É por este campo que a lista EXIBE a data. Ausente quando a prévia não pôde ser
+   * lida; a exibição então degrada por `dataDaLista`, nunca de volta pra `atualizado_em`.
+   */
+  ultima_msg_em?: string | null;
   // enriquecimento p/ a lista (prévia) + painel de contexto do redesign (conversa-v2).
   lead_id?: string | null;
   etapa?: string | null; // chave
@@ -46,6 +73,23 @@ export interface ConversaResumo {
   previa_saida?: boolean; // última msg foi de saída (Você/Clara)
   nao_lida?: boolean; // proxy: última msg foi do cliente (entrada), sem resposta
   nao_lidas_qtd?: number; // proxy: qtde de mensagens de entrada após a última saída (RF-30/31)
+}
+
+/**
+ * Uma página do inbox — mesma forma que `DadosFunil`, que é o padrão da casa para "mostrei uma
+ * parte e estou dizendo isso".
+ */
+export interface PaginaConversas {
+  conversas: ConversaResumo[];
+  /**
+   * Total do FILTRO no servidor (`visivel_inbox`), não o tamanho do array. `null` quando a
+   * contagem falha — e aí a UI mostra "50+" ou omite, nunca "50" fingindo ser o total.
+   */
+  total: number | null;
+  /** Existe conversa além das carregadas. A tela DECLARA, no molde do aviso do funil. */
+  corte: boolean;
+  /** Cursor da próxima página; `null` quando acabou de verdade. */
+  proximoCursor: string | null;
 }
 
 export interface Mensagem {
@@ -77,9 +121,164 @@ export interface SugestaoMensagem {
 
 // ─────────────── leitura real ───────────────
 
-export async function lerConversas(): Promise<ConversaResumo[]> {
+/**
+ * Cliente de leitura. O parâmetro opcional `cliente` das funções abaixo existe por exigência de
+ * spec, não por conveniência de teste: os portões do F24a e do F25 precisam injetar um cliente
+ * FALSO QUE CONTA CHAMADAS para medir requisições, e os portões que falam com o banco de verdade
+ * precisam injetar um cliente AUTENTICADO (a sessão do app vem de cookie, que não existe fora de
+ * uma requisição). Sem o parâmetro, o portão teria de reimplementar a consulta — e um portão que
+ * testa uma cópia da lógica não testa o produto.
+ * Omitido, o comportamento é exatamente o de antes: a sessão do usuário, com o RLS dele.
+ */
+type Supabase = ReturnType<typeof criarClienteServidor>;
+
+/** Colunas da prévia. `timestamp_origem` é a hora REAL da mensagem no WhatsApp (RF-6). */
+const PREVIA_COM_ORIGEM = "conversa_id,direcao,corpo,criado_em,timestamp_origem";
+const PREVIA_BASE = "conversa_id,direcao,corpo,criado_em";
+
+/**
+ * Últimas mensagens das conversas da página, em ordem cronológica REAL decrescente. Dela saem
+ * três coisas: a prévia (corpo da última), o carimbo do F21 (`ultima_msg_em`) e a contagem de
+ * não-lidas — esta última só faz sentido em ordem decrescente, porque conta as entradas até
+ * esbarrar na última saída.
+ *
+ * Ordena por `timestamp_origem`, não por `criado_em`, pelo mesmo motivo que existe o F21: um é a
+ * hora em que a mensagem existiu, o outro é a hora em que nós a processamos, e webhook atrasado
+ * não pode fingir que a mensagem é nova. Mesma cascata de degrade da `lerMensagens`: se a coluna
+ * ainda não existir no ambiente, cai pro select base — produção não quebra se o front sair antes
+ * da migration.
+ */
+async function lerPrevias(
+  supabase: Supabase,
+  ids: string[],
+  colunasComOrigem = PREVIA_COM_ORIGEM,
+): Promise<any[]> {
+  // o degrade tira `timestamp_origem` do select E da ordenação — pedir ordem por coluna que não
+  // existe erraria do mesmo jeito que pedi-la no select
+  const semOrigem = colunasComOrigem
+    .split(",")
+    .filter((c) => c !== "timestamp_origem")
+    .join(",");
+  const buscar = (colunas: string, porOrigem: boolean) => {
+    const base = supabase.schema("core").from("mensagem").select(colunas).in("conversa_id", ids);
+    const ordenada = porOrigem
+      ? base.order("timestamp_origem", { ascending: false, nullsFirst: false })
+      : base;
+    return ordenada.order("criado_em", { ascending: false }).limit(800);
+  };
+  let { data, error } = await buscar(colunasComOrigem, true);
+  if (error) ({ data, error } = await buscar(semOrigem, false));
+  return error || !data ? [] : (data as any[]);
+}
+
+/**
+ * F22 — total de conversas do filtro do inbox, `head`-count: o Postgres conta e devolve só o
+ * número, nenhuma linha trafega. É a requisição mais barata que existe, e é ela que tira a
+ * mentira de "Todas · 50" quando são 94.
+ *
+ * Erro → `null`, e `null` faz a UI mostrar "50+" ou omitir. Nunca um total inventado.
+ */
+export async function contarConversasVisiveis(cliente?: Supabase): Promise<number | null> {
   try {
-    const supabase = criarClienteServidor();
+    const supabase = cliente ?? criarClienteServidor();
+    const { count, error } = await supabase
+      .schema("core")
+      .from("v_conversa")
+      .select("*", { count: "exact", head: true })
+      .eq("visivel_inbox", true);
+    return error ? null : count ?? 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * F25 — o contador de não-lidas da barra lateral, por uma consulta ESTREITA.
+ *
+ * O que ele custava: `lerConversas().filter(c => c.nao_lida).length` — a leitura INTEIRA do inbox
+ * (50 conversas + join de leads em v_lead_card + 800 mensagens de prévia + config do funil) para
+ * produzir UM número. E a barra lateral vive no layout: /funil, /tarefas e /configuracoes pagavam
+ * isso também, a cada `router.refresh()`.
+ *
+ * O que ele custa agora: os ids das conversas visíveis + a direção da última mensagem de cada uma.
+ * Sem join de lead, sem `corpo`, sem config. Mesmas 2 requisições, payload de outra ordem.
+ *
+ * O PROXY NÃO MUDA — e isso é requisito, não detalhe. "Não-lida" continua sendo "a última mensagem
+ * é de entrada", exatamente como a lista calcula, porque um número diferente do badge da lista
+ * seria pior que o custo da consulta. É a mesma regra, lida mais barato; se divergir, o item falhou.
+ *
+ * Indisponível é `null` (a barra lateral esconde o contador), nunca zero inventado.
+ */
+export async function contarNaoLidas(cliente?: Supabase): Promise<number | null> {
+  try {
+    const supabase = cliente ?? criarClienteServidor();
+    const { data: convs, error } = await supabase
+      .schema("core")
+      .from("v_conversa")
+      .select("id")
+      .eq("visivel_inbox", true)
+      .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
+      .limit(LIMITE_PAGINA);
+    if (error || !convs) return null;
+    if (convs.length === 0) return 0;
+
+    const ids = convs.map((c: any) => String(c.id));
+    // só `conversa_id` e `direcao`: o que decide o proxy. `corpo` é o que pesa, e não é preciso
+    // para contar. A ordem é a mesma da prévia (hora real da mensagem), senão "a última" seria outra.
+    const previas = await lerPrevias(supabase, ids, "conversa_id,direcao,timestamp_origem,criado_em");
+    const ultimaDirecao = new Map<string, string>();
+    for (const m of previas) {
+      const k = String(m.conversa_id);
+      if (!ultimaDirecao.has(k)) ultimaDirecao.set(k, String(m.direcao));
+    }
+    return ids.filter((id) => ultimaDirecao.get(id) === "entrada").length;
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * O `head`-count de verdade — 1 requisição, ZERO payload — depende de uma coluna que ainda não
+ * existe. Fica escrito para o dia em que existir, e não é comentário de intenção: é o pedido que
+ * está na mesa da Trilha C.
+ *
+ *   core.conversa.ultima_saida_em, mantida pelo projetor de saída com greatest(), espelhando
+ *   ultima_entrada_em. Com ela:
+ *
+ *     supabase.schema("core").from("v_conversa")
+ *       .select("*", { count: "exact", head: true })
+ *       .eq("visivel_inbox", true)
+ *       .gt("ultima_entrada_em", "coalesce(ultima_saida_em, '-infinity')")
+ *
+ * Hoje o predicado NÃO é expressável: core.conversa tem ultima_entrada_em e não tem a de saída,
+ * então "a última mensagem é de entrada" não cabe em SQL sem a coluna. Por isso a consulta acima
+ * estreita em vez de colapsar — e por isso ela ainda lê duas vezes.
+ */
+
+const PAGINA_VAZIA: PaginaConversas = {
+  conversas: [],
+  total: null,
+  corte: false,
+  proximoCursor: null,
+};
+
+export async function lerConversas(
+  opcoes: {
+    cliente?: Supabase;
+    cursor?: string | null;
+    limite?: number;
+    /**
+     * Quantas o operador já tem na tela antes desta página. Quem acumula é o cliente, então é ele
+     * quem sabe — deduzir aqui ("veio com cursor, logo já tem uma página cheia") erraria toda vez
+     * que uma página voltasse incompleta, e erraria escondendo conversa.
+     */
+    jaCarregadas?: number;
+  } = {},
+): Promise<PaginaConversas> {
+  const { cliente, cursor: cursorCru, limite = LIMITE_PAGINA, jaCarregadas = 0 } = opcoes;
+  try {
+    const supabase = cliente ?? criarClienteServidor();
     // rótulo de exibição da etapa (chave → nome) via config vigente do funil — não depende da
     // lista, então dispara junto com a query principal (era a 3ª de 4 queries em série)
     const configPromise = supabase
@@ -91,14 +290,29 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
 
     // Contrato 0025 (Trilha A): o inbox lista core.v_conversa WHERE visivel_inbox — conversa só
     // aparece quando satisfaz o filtro (inbound real). Lista vazia é estado HONESTO.
-    const { data, error } = await supabase
+    // F21: ordena por `ultima_entrada_em` — "quem falou com a gente por último", que é o critério
+    // de uma FILA DE ATENDIMENTO. `atualizado_em` segue no select porque é o que o tempo real usa
+    // pra detectar mudança (NÃO apagar), mas deixou de mandar na ordem: ele é a hora em que a
+    // LINHA foi tocada, e o import do Kommo tocou todas de uma vez.
+    // O desempate por `id` é obrigatório e não decorativo: sem ele a ordem entre carimbos iguais é
+    // indefinida, e é sobre este PAR (ultima_entrada_em, id) que o keyset do F22 se apoia.
+    // F22: o total do filtro vem do servidor, em paralelo com a página. Cursor inválido vira
+    // `null` (= começar do começo) em vez de derrubar a lista ou, pior, virar consulta sem filtro.
+    const cursor = decodificar(cursorCru);
+    const totalPromise = contarConversasVisiveis(supabase);
+
+    const base = supabase
       .schema("core")
       .from("v_conversa")
-      .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em")
-      .eq("visivel_inbox", true)
-      .order("atualizado_em", { ascending: false, nullsFirst: false })
-      .limit(50);
-    if (error || !data || data.length === 0) return [];
+      .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em")
+      .eq("visivel_inbox", true);
+    const comCursor = cursor ? base.or(filtroKeyset(cursor)) : base;
+    const { data, error } = await comCursor
+      .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
+      .limit(limite);
+    const total = await totalPromise;
+    if (error || !data || data.length === 0) return { ...PAGINA_VAZIA, total };
 
     const leadIds = data.map((c: any) => c.lead_id).filter(Boolean);
     const ids = data.map((c: any) => String(c.id));
@@ -113,13 +327,7 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
             .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags,kommo_lead_id")
             .in("lead_id", leadIds)
         : Promise.resolve({ data: null } as { data: any[] | null }),
-      supabase
-        .schema("core")
-        .from("mensagem")
-        .select("conversa_id,direcao,corpo,criado_em")
-        .in("conversa_id", ids)
-        .order("criado_em", { ascending: false })
-        .limit(800),
+      lerPrevias(supabase, ids),
       configPromise,
     ]);
 
@@ -135,19 +343,25 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
     // prévia = última mensagem por conversa + contagem de não-lidas (proxy RF-30/31: mensagens de
     // entrada após a última saída — sem rastreio de leitura no banco ainda, é o proxy honesto);
     // erro de leitura degrada pra lista sem prévia, como antes
-    const previa = new Map<string, { corpo: string | null; saida: boolean }>();
+    const previa = new Map<string, { corpo: string | null; saida: boolean; em: string | null }>();
     const naoLidas = new Map<string, number>();
     const fechada = new Set<string>(); // conversa já encontrou uma saída — para de contar
-    for (const m of msgsRes.data ?? []) {
+    for (const m of msgsRes) {
       const k = String(m.conversa_id);
-      if (!previa.has(k)) previa.set(k, { corpo: m.corpo ?? null, saida: m.direcao === "saida" });
+      // primeira linha da conversa nesta ordem = a mais recente de verdade (F21: qualquer direção)
+      if (!previa.has(k))
+        previa.set(k, {
+          corpo: m.corpo ?? null,
+          saida: m.direcao === "saida",
+          em: m.timestamp_origem ?? m.criado_em ?? null,
+        });
       if (!fechada.has(k)) {
         if (m.direcao === "saida") fechada.add(k);
         else naoLidas.set(k, (naoLidas.get(k) ?? 0) + 1);
       }
     }
 
-    return data.map((c: any) => {
+    const conversas = data.map((c: any) => {
       const info = c.lead_id ? leadInfo.get(String(c.lead_id)) : null;
       const p = previa.get(String(c.id));
       const etapaChave = info?.etapa ? String(info.etapa) : null;
@@ -159,6 +373,8 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
         dono_atual: c.dono_atual ?? null,
         status: c.status ?? null,
         atualizado_em: c.atualizado_em ?? null,
+        ultima_entrada_em: c.ultima_entrada_em ?? null,
+        ultima_msg_em: p?.em ?? null,
         lead_id: c.lead_id ?? null,
         etapa: etapaChave,
         etapa_nome: etapaChave ? etapaNome.get(etapaChave) ?? null : null,
@@ -174,10 +390,22 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
         nao_lidas_qtd: naoLidas.get(String(c.id)) ?? 0,
       };
     });
+
+    // Quantas o operador tem na mão depois desta página vs. quantas existem no filtro.
+    const corte = houveCorte(jaCarregadas + conversas.length, total, limite);
+    return { conversas, total, corte, proximoCursor: proximoCursor(conversas, corte) };
   } catch {
-    return [];
+    return PAGINA_VAZIA;
   }
 }
+
+/**
+ * F13 — cache de URL assinada, POR PROCESSO. Não é cache de dado: é cache de credencial de leitura,
+ * e some no deploy. Módulo, e não parâmetro, de propósito: o ganho depende de sobreviver ENTRE
+ * requisições (é a cada `router.refresh()` que a URL mudava), e um cache por requisição não faria
+ * nada. O que ele nunca faz é estender a validade — quem decide isso é o TTL da assinatura.
+ */
+const ARMAZEM_MIDIA = criarArmazem();
 
 /** Colunas da projeção de entrega (Trilha A, migration 0024 — contrato fechado, SPEC RF-5/6). */
 const COLUNAS_BASE = "id,direcao,tipo_conteudo,corpo,criado_em";
@@ -185,9 +413,18 @@ const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor,tim
 /** + colunas da pipeline de mídia (contrato rodada 5, migration em paralelo). */
 const COLUNAS_COM_MIDIA = `${COLUNAS_COM_STATUS},midia_caminho,midia_mime`;
 
-export async function lerMensagens(conversaId: string): Promise<Mensagem[]> {
+export async function lerMensagens(
+  conversaId: string,
+  cliente?: Supabase,
+  /**
+   * Instante da leitura. Existe para que a expiração do cache de mídia seja MEDÍVEL: "a URL muda
+   * depois do TTL" é asserção de portão, e sem esta costura ela só poderia ser afirmada (ou o
+   * portão teria de esperar 50 minutos). Em produção ninguém passa — o padrão é o relógio.
+   */
+  agoraMs?: number,
+): Promise<Mensagem[]> {
   try {
-    const supabase = criarClienteServidor();
+    const supabase = cliente ?? criarClienteServidor();
     const buscar = (colunas: string) =>
       supabase
         .schema("core")
@@ -235,15 +472,23 @@ export async function lerMensagens(conversaId: string): Promise<Mensagem[]> {
     const caminhos = caminhosParaAssinar(linhas);
     if (caminhos.length) {
       try {
-        const { data: assinadas } = await supabase.storage
-          .from("midia-whatsapp")
-          .createSignedUrls(caminhos, 3600);
-        const urlPorCaminho = new Map<string, string>();
-        for (const a of assinadas ?? []) {
-          if (!a.error && a.path && a.signedUrl) urlPorCaminho.set(a.path, a.signedUrl);
+        // F13: a URL assinada É a chave de cache do navegador. `createSignedUrls` devolve token
+        // novo a cada chamada, e `lerMensagens` roda a cada router.refresh() — então, sem isto, o
+        // mesmo `src` muda e a foto é BAIXADA DE NOVO, a cada refresh, para sempre.
+        const agora = agoraMs ?? Date.now();
+        expirar(ARMAZEM_MIDIA, agora); // poda: cache de processo que só cresce vira vazamento
+        const faltando = precisaAssinar(ARMAZEM_MIDIA, caminhos, agora);
+        if (faltando.length) {
+          const { data: assinadas } = await supabase.storage
+            .from("midia-whatsapp")
+            .createSignedUrls(faltando, TTL_ASSINATURA_SEG);
+          for (const a of assinadas ?? []) {
+            if (!a.error && a.path && a.signedUrl) guardar(ARMAZEM_MIDIA, a.path, a.signedUrl, agora);
+          }
         }
         for (const m of linhas) {
-          const url = m.midia_caminho ? urlPorCaminho.get(m.midia_caminho.trim()) : undefined;
+          const caminho = m.midia_caminho?.trim();
+          const url = caminho ? obterDoCache(ARMAZEM_MIDIA, caminho, agora) : null;
           if (url) m.midia_url = url;
         }
       } catch {

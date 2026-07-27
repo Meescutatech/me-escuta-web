@@ -23,6 +23,7 @@ import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { CarimboVivo } from "@/components/dashboard/carimbo-vivo";
 import { useProjecaoViva } from "@/components/projecao-viva";
 import { novosIds } from "@/lib/tempo-real";
+import { INTERVALOS, PISO_SEM_TEMPO_REAL } from "@/lib/intervalos-vivos";
 import { cn } from "@/lib/utils";
 
 /*
@@ -180,15 +181,17 @@ export function Quadro({
     return () => clearInterval(t);
   }, []);
 
-  // ── board VIVO (Rodada 9): dica realtime (estado_lead/lead) + polling 7s → router.refresh().
-  // A publication supabase_realtime está vazia hoje (diagnóstico 22/07) — o polling sustenta;
-  // quando a Trilha DB publicar as tabelas, a dica acende sozinha.
-  useProjecaoViva(
+  // ── board VIVO (Rodada 9): dica realtime (estado_lead/lead) + polling → router.refresh().
+  // A publication supabase_realtime TEM as 6 tabelas core.* (conferido na fonte em 26/07); o
+  // comentário anterior, que a dava como vazia, era falso e desviou o diagnóstico por 4 dias
+  // (E-008). F4: o intervalo vem do módulo único e cai para o piso enquanto o tempo real não
+  // estiver confirmado.
+  const tempoRealBoard = useProjecaoViva(
     [
       { tabela: { schema: "core", table: "estado_lead" } },
       { tabela: { schema: "core", table: "lead" } },
     ],
-    { intervaloMs: 7000 },
+    { intervaloMs: INTERVALOS.funil, pisoSemTempoRealMs: PISO_SEM_TEMPO_REAL },
   );
 
   // refresh → dados.cards novos: re-sincroniza o estado local (a VERDADE é a projeção) e faz
@@ -365,7 +368,14 @@ export function Quadro({
             onChange={setFiltros}
             qtdFiltrada={cardsFiltrados.length}
           />
-          <CarimboVivo geradoEm={geradoEm} revalidar={false} />
+          <CarimboVivo
+            geradoEm={geradoEm}
+            revalidar={false}
+            intervaloMs={INTERVALOS.funil}
+            aoVivo={tempoRealBoard.aoVivo}
+            conectando={tempoRealBoard.conectando}
+            falhas={tempoRealBoard.falhas}
+          />
         </div>
       </div>
 

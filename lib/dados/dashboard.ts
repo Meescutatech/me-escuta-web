@@ -1,6 +1,12 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { ETAPAS_PADRAO, lerEtapasReais, type EtapaFunil } from "./funil";
 import {
+  ESTADOS_ENTREGA_CONHECIDA,
+  TETO_LEADS_AGREGACAO,
+  TETO_MENSAGENS_AGREGACAO,
+  bucketizarMensagens,
+  contarEntrega,
+  contarPorEtapa,
   janelasUltimosDias,
   mediana,
   minutosPrimeiraResposta,
@@ -93,6 +99,87 @@ async function lerUltimoEvento(supabase: Supabase): Promise<string | null> {
 const TETO_CONVERSAS_7D = 300;
 const TETO_MENSAGENS_7D = 5000;
 
+/*
+ * ── F24a · os três blocos que colapsam ──────────────────────────────────────────────────────
+ * Cada um lê UMA coluna estreita em vez de disparar N head-counts, e cada um volta ao caminho
+ * antigo acima de um teto declarado. O `+1` no limite é o detector: se voltou mais que o teto, é
+ * porque há pelo menos mais uma — então não dá para confiar na leitura, e o fallback assume.
+ * Falha de leitura devolve `null` só do bloco dela; nunca zera os vizinhos (EARS).
+ */
+
+/** 14 head-counts (1 por etapa) → 1 leitura da coluna `etapa`. */
+async function lerContagensEtapa(
+  supabase: Supabase,
+  etapas: EtapaFunil[],
+): Promise<Array<number | null>> {
+  const { data, error } = await supabase
+    .schema("core")
+    .from("v_lead_card")
+    .select("etapa")
+    .limit(TETO_LEADS_AGREGACAO + 1);
+  if (!error && data && data.length <= TETO_LEADS_AGREGACAO) {
+    return contarPorEtapa(data as Array<{ etapa?: string | null }>, etapas.map((e) => e.chave));
+  }
+  // acima do teto (ou leitura falhou): volta aos head-counts, que independem do volume
+  return Promise.all(etapas.map((e) => contar(supabase, "v_lead_card", (q) => q.eq("etapa", e.chave))));
+}
+
+/** 14 head-counts (7 dias × 2 direções) → 1 leitura da janela. */
+async function lerMensagensPorDia(
+  supabase: Supabase,
+  janelas: JanelaDia[],
+): Promise<DiaMensagens[]> {
+  const inicio = janelas[0].inicioIso;
+  const fim = janelas[janelas.length - 1].fimIso;
+  const { data, error } = await supabase
+    .schema("core")
+    .from("mensagem")
+    .select("direcao,criado_em")
+    .gte("criado_em", inicio)
+    .lt("criado_em", fim)
+    .limit(TETO_MENSAGENS_AGREGACAO + 1);
+  if (!error && data && data.length <= TETO_MENSAGENS_AGREGACAO) {
+    return bucketizarMensagens(data as Array<{ direcao?: string; criado_em?: string }>, janelas);
+  }
+  return Promise.all(
+    janelas.map(async (j) => {
+      const [entrada, saida] = await Promise.all([
+        contar(supabase, "mensagem", (q) =>
+          q.eq("direcao", "entrada").gte("criado_em", j.inicioIso).lt("criado_em", j.fimIso),
+        ),
+        contar(supabase, "mensagem", (q) =>
+          q.eq("direcao", "saida").gte("criado_em", j.inicioIso).lt("criado_em", j.fimIso),
+        ),
+      ]);
+      return { rotulo: j.rotulo, entrada, saida } as DiaMensagens;
+    }),
+  );
+}
+
+/** 3 head-counts → 1 leitura de `status_entrega` das saídas com estado conhecido. */
+async function lerEntrega(
+  supabase: Supabase,
+): Promise<{ base: number | null; entregues: number | null; falhas: number | null }> {
+  const { data, error } = await supabase
+    .schema("core")
+    .from("mensagem")
+    .select("status_entrega")
+    .eq("direcao", "saida")
+    .in("status_entrega", ESTADOS_ENTREGA_CONHECIDA)
+    .limit(TETO_MENSAGENS_AGREGACAO + 1);
+  if (!error && data && data.length <= TETO_MENSAGENS_AGREGACAO) {
+    return contarEntrega(data as Array<{ status_entrega?: string | null }>);
+  }
+  const [base, entregues, falhas] = await Promise.all([
+    contar(supabase, "mensagem", (q) =>
+      q.eq("direcao", "saida").in("status_entrega", ESTADOS_ENTREGA_CONHECIDA),
+    ),
+    contar(supabase, "mensagem", (q) => q.eq("direcao", "saida").in("status_entrega", ["entregue", "lido"])),
+    contar(supabase, "mensagem", (q) => q.eq("direcao", "saida").eq("status_entrega", "falhou")),
+  ]);
+  return { base, entregues, falhas };
+}
+
 async function lerPrimeiraResposta(
   supabase: Supabase,
   inicio7dIso: string,
@@ -144,8 +231,18 @@ async function lerValorNegociacao(
   return { total: somaValores(valores), comValor: valores.length, semValor };
 }
 
-export async function lerDashboard(agora = new Date()): Promise<DadosDashboard> {
-  const supabase = criarClienteServidor();
+/**
+ * PONTO DE TROCA do F24b (contrato no §F24b da Trilha D): no dia em que
+ * `api.painel_resumo(p_dias int default 7)` existir — devolvendo UM jsonb com as chaves que
+ * `DadosDashboard` já tem —, `lerDashboard` vira UMA chamada e tudo abaixo passa a ser o caminho
+ * de fallback. É por isso que as agregações estão em funções próprias e a lógica de contagem está
+ * em `dashboard-calculos.ts`: trocar a fonte não deve exigir reescrever a conta.
+ */
+export async function lerDashboard(
+  agora = new Date(),
+  cliente?: Supabase,
+): Promise<DadosDashboard> {
+  const supabase = cliente ?? criarClienteServidor();
   const janelas: JanelaDia[] = janelasUltimosDias(agora, 7);
   const inicioHojeIso = janelas[janelas.length - 1].inicioIso;
   const inicio7dIso = janelas[0].inicioIso;
@@ -153,10 +250,10 @@ export async function lerDashboard(agora = new Date()): Promise<DadosDashboard> 
   // As leituras que dependem das ETAPAS (contagens por etapa e valor em negociação) esperam só
   // lerEtapasReais; todo o resto dispara imediatamente em paralelo — um round-trip a menos por visita.
   const dependentesDeEtapas = (async () => {
-    const etapas = (await lerEtapasReais()) ?? ETAPAS_PADRAO;
+    const etapas = (await lerEtapasReais(supabase)) ?? ETAPAS_PADRAO;
     const etapasAbertas = etapas.filter((e) => e.tipo === "aberto").map((e) => e.chave);
     const [contagensEtapa, valorNegociacao] = await Promise.all([
-      Promise.all(etapas.map((e) => contar(supabase, "v_lead_card", (q) => q.eq("etapa", e.chave)))),
+      lerContagensEtapa(supabase, etapas),
       lerValorNegociacao(supabase, etapasAbertas),
     ]);
     return { etapas, contagensEtapa, valorNegociacao };
@@ -167,35 +264,15 @@ export async function lerDashboard(agora = new Date()): Promise<DadosDashboard> 
     novosHoje,
     novos7d,
     porDia,
-    base,
-    entregues,
-    falhas,
+    { base, entregues, falhas },
     primeiraResposta,
     { etapas, contagensEtapa, valorNegociacao },
   ] = await Promise.all([
     lerUltimoEvento(supabase),
     contar(supabase, "lead", (q) => q.gte("criado_em", inicioHojeIso)),
     contar(supabase, "lead", (q) => q.gte("criado_em", inicio7dIso)),
-    Promise.all(
-      janelas.map(async (j) => {
-        const [entrada, saida] = await Promise.all([
-          contar(supabase, "mensagem", (q) =>
-            q.eq("direcao", "entrada").gte("criado_em", j.inicioIso).lt("criado_em", j.fimIso),
-          ),
-          contar(supabase, "mensagem", (q) =>
-            q.eq("direcao", "saida").gte("criado_em", j.inicioIso).lt("criado_em", j.fimIso),
-          ),
-        ]);
-        return { rotulo: j.rotulo, entrada, saida } as DiaMensagens;
-      }),
-    ),
-    contar(supabase, "mensagem", (q) =>
-      q.eq("direcao", "saida").in("status_entrega", ["enviado", "entregue", "lido", "falhou"]),
-    ),
-    contar(supabase, "mensagem", (q) =>
-      q.eq("direcao", "saida").in("status_entrega", ["entregue", "lido"]),
-    ),
-    contar(supabase, "mensagem", (q) => q.eq("direcao", "saida").eq("status_entrega", "falhou")),
+    lerMensagensPorDia(supabase, janelas),
+    lerEntrega(supabase),
     lerPrimeiraResposta(supabase, inicio7dIso),
     dependentesDeEtapas,
   ]);

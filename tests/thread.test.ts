@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { motivoErroPermanente, pendentesVivas, podeTentarDeNovo } from "../lib/conversas/thread.ts";
+import {
+  dataDaLista,
+  motivoErroPermanente,
+  pendentesVivas,
+  podeTentarDeNovo,
+} from "../lib/conversas/thread.ts";
 import type { Mensagem } from "../lib/dados/conversas.ts";
 
 /*
@@ -187,4 +192,48 @@ test("pendente de TEXTO não é confirmada por linha de mídia com legenda igual
     msg({ id: "srv-1", tipo_conteudo: "imagem", corpo: "olha a foto", midia_caminho: "saida/u1.jpg", status_entrega: "enviado" }),
   ];
   assert.deepEqual(pendentesVivas([pendente], servidor), [pendente]);
+});
+
+/*
+ * F21 · dataDaLista — a lista do inbox exibe a hora da MENSAGEM, nunca `atualizado_em`.
+ * As quatro situações que a spec nomeia, mais as bordas que o campo vazio cria.
+ */
+
+const ENTRADA = "2026-07-20T23:49:27.000Z";
+const QUALQUER = "2026-07-25T00:19:27.000Z";
+
+test("F21 · com entrada: exibe a última mensagem de QUALQUER direção, não a última entrada", () => {
+  // a mais recente é uma SAÍDA nossa — é ela que a lista mostra, porque a pessoa quer saber
+  // quando a conversa se moveu, e a ordenação (que é por entrada) é outro assunto
+  assert.equal(dataDaLista({ ultima_msg_em: QUALQUER, ultima_entrada_em: ENTRADA }), QUALQUER);
+});
+
+test("F21 · só saída (ultima_entrada_em NULL): exibe a data da saída, não fica sem data", () => {
+  assert.equal(dataDaLista({ ultima_msg_em: QUALQUER, ultima_entrada_em: null }), QUALQUER);
+});
+
+test("F21 · sem mensagem nenhuma: 'sem data' (null), nunca a data de gravação", () => {
+  assert.equal(dataDaLista({ ultima_msg_em: null, ultima_entrada_em: null }), null);
+  assert.equal(dataDaLista({}), null);
+});
+
+test("F21 · prévia indisponível: degrada pra ultima_entrada_em, NÃO pra atualizado_em", () => {
+  // prévia não lida = campo ausente. O degrade é a entrada; `atualizado_em` nem é parâmetro.
+  assert.equal(dataDaLista({ ultima_entrada_em: ENTRADA }), ENTRADA);
+  assert.equal(dataDaLista({ ultima_msg_em: undefined, ultima_entrada_em: ENTRADA }), ENTRADA);
+});
+
+test("F21 · string vazia é ausência de data, não data — não vira 'Invalid Date' na tela", () => {
+  assert.equal(dataDaLista({ ultima_msg_em: "", ultima_entrada_em: ENTRADA }), ENTRADA);
+  assert.equal(dataDaLista({ ultima_msg_em: "   ", ultima_entrada_em: "" }), null);
+});
+
+test("F21 · a assinatura NÃO aceita atualizado_em — o que não entra não pode vazar", () => {
+  // se alguém um dia acrescentar o campo, este teste continua verde; o que ele pina é que hoje
+  // passar `atualizado_em` não muda NADA no resultado (a precedência ignora o que não conhece)
+  const comLixo = { ultima_msg_em: null, ultima_entrada_em: null, atualizado_em: QUALQUER } as {
+    ultima_msg_em: string | null;
+    ultima_entrada_em: string | null;
+  };
+  assert.equal(dataDaLista(comLixo), null);
 });

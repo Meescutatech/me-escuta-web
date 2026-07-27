@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ConversaResumo, Mensagem, ModoConversa, SugestaoMensagem } from "@/lib/dados/conversas";
 import {
   assumirConversa,
+  carregarMaisConversas,
   devolverConversa,
   enviarMensagem,
   sinalizarPresenca,
@@ -20,6 +21,7 @@ import { useConversaViva } from "@/components/conversas/tempo-real";
 import { criarClienteBrowser } from "@/lib/supabase/client";
 import { montarEnvelopeAtividade } from "@/lib/presenca";
 import {
+  dataDaLista,
   fronteiraNaoLidas,
   montarBlocos,
   motivoErroPermanente,
@@ -106,6 +108,9 @@ type Aba = "todas" | "clara" | "humano" | "nao_lidas";
 
 export function Inbox({
   conversas,
+  total,
+  corte,
+  proximoCursor,
   selecionadaId,
   mensagens,
   sugestoes,
@@ -119,6 +124,12 @@ export function Inbox({
   etapas,
 }: {
   conversas: ConversaResumo[];
+  /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
+  total: number | null;
+  /** F22 · existem conversas além das carregadas. */
+  corte: boolean;
+  /** F22 · cursor keyset da próxima página; `null` quando acabou. */
+  proximoCursor: string | null;
   selecionadaId: string | null;
   mensagens: Mensagem[];
   sugestoes: SugestaoMensagem[];
@@ -148,6 +159,12 @@ export function Inbox({
   const [toast, setToast] = useState<string | null>(null);
   const [ctxColapsado, setCtxColapsado] = useState(false);
   const [novas, setNovas] = useState(0); // pill "N novas" quando o scroll está lá em cima (RF-30)
+  // F22 · páginas seguintes acumuladas no cliente. A página 1 vem do servidor por props.
+  const [extras, setExtras] = useState<ConversaResumo[]>([]);
+  const [cursor, setCursor] = useState<string | null>(proximoCursor);
+  const [corteAtual, setCorteAtual] = useState(corte);
+  const [totalAtual, setTotalAtual] = useState(total);
+  const [carregandoMais, setCarregandoMais] = useState(false);
   const [fronteira, setFronteira] = useState<{ primeiraId: string; qtd: number } | null>(null);
 
   const rolagemRef = useRef<HTMLDivElement>(null);
@@ -276,27 +293,81 @@ export function Inbox({
     setTimeout(() => setToast(null), 3500);
   }
 
+  // F22 · página 1 (servidor) + páginas acumuladas, sem repetir id. A dedup é cinto e suspensório
+  // sobre o keyset: se uma conversa subir entre duas páginas, ela não aparece duas vezes.
+  const carregadas = useMemo(() => {
+    const vistos = new Set<string>();
+    const juntas: ConversaResumo[] = [];
+    for (const c of [...conversas, ...extras]) {
+      if (vistos.has(c.id)) continue;
+      vistos.add(c.id);
+      juntas.push(c);
+    }
+    return juntas;
+  }, [conversas, extras]);
+
+  // Lista nova vinda do servidor (router.refresh, tempo real) descarta as páginas acumuladas:
+  // costurar página velha em lista nova é justamente como offset duplica e pula linha.
+  const assinaturaServidor = conversas.map((c) => c.id).join(",");
+  useEffect(() => {
+    setExtras([]);
+    setCursor(proximoCursor);
+    setCorteAtual(corte);
+    setTotalAtual(total);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assinaturaServidor, proximoCursor, corte, total]);
+
+  async function carregarMais() {
+    if (!cursor || carregandoMais) return;
+    setCarregandoMais(true);
+    try {
+      const r = await carregarMaisConversas(cursor, carregadas.length);
+      setExtras((antes) => [...antes, ...r.conversas]);
+      setCursor(r.proximoCursor);
+      setCorteAtual(r.corte);
+      setTotalAtual(r.total);
+      if (r.conversas.length === 0 && r.proximoCursor) setCursor(null); // nunca laço infinito
+    } catch {
+      avisar("Não deu pra carregar mais conversas — tente de novo.");
+    } finally {
+      setCarregandoMais(false);
+    }
+  }
+
   // filtros da lista (RF-31): Todas · Clara conduz · Humano conduz · Não lidas
   const contagens = useMemo(
     () => ({
-      todas: conversas.length,
-      clara: conversas.filter((c) => c.mode === "IA").length,
-      humano: conversas.filter((c) => c.mode === "HUMANO").length,
-      nao_lidas: conversas.filter((c) => c.nao_lida).length,
+      todas: carregadas.length,
+      clara: carregadas.filter((c) => c.mode === "IA").length,
+      humano: carregadas.filter((c) => c.mode === "HUMANO").length,
+      nao_lidas: carregadas.filter((c) => c.nao_lida).length,
     }),
-    [conversas],
+    [carregadas],
   );
+
+  /**
+   * F22 · nenhum contador exibe o tamanho da página como se fosse o total.
+   * "Todas" tem total de servidor (`head`-count) e mostra o número exato. As outras abas contam
+   * sobre o que está CARREGADO — enquanto houver corte elas dizem "N+" ("pelo menos N"), porque
+   * o predicado delas (modo, não-lida) não é contável no servidor sem a coluna que o F25 pede.
+   * Um "+" a mais é honesto; um número redondo mentiroso é o defeito que este item existe pra tirar.
+   */
+  function rotuloContagem(k: Aba): string {
+    if (k === "todas" && totalAtual != null) return totalAtual.toLocaleString("pt-BR");
+    const n = contagens[k];
+    return corteAtual ? `${n}+` : String(n);
+  }
 
   const conversasVisiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return conversas.filter((c) => {
+    return carregadas.filter((c) => {
       if (aba === "clara" && c.mode !== "IA") return false;
       if (aba === "humano" && c.mode !== "HUMANO") return false;
       if (aba === "nao_lidas" && !c.nao_lida) return false;
       if (!q) return true;
       return (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").includes(q);
     });
-  }, [conversas, busca, aba]);
+  }, [carregadas, busca, aba]);
 
   function abrir(id: string) {
     router.push(`/conversas?c=${id}`);
@@ -490,10 +561,10 @@ export function Inbox({
         </div>
         <div className="flex gap-3 px-4 pb-1.5 pt-2.5">
           {([
-            ["todas", `Todas · ${contagens.todas}`],
-            ["clara", `Clara · ${contagens.clara}`],
-            ["humano", `Humano · ${contagens.humano}`],
-            ["nao_lidas", `Não lidas · ${contagens.nao_lidas}`],
+            ["todas", `Todas · ${rotuloContagem("todas")}`],
+            ["clara", `Clara · ${rotuloContagem("clara")}`],
+            ["humano", `Humano · ${rotuloContagem("humano")}`],
+            ["nao_lidas", `Não lidas · ${rotuloContagem("nao_lidas")}`],
           ] as [Aba, string][]).map(([k, rot]) => (
             <button
               key={k}
@@ -549,7 +620,11 @@ export function Inbox({
                     <span className={cn("flex-1 truncate text-[0.86rem] font-semibold text-navy", ruim && "tabular-nums")}>
                       {rotulo}
                     </span>
-                    <span className="shrink-0 text-[0.72rem] text-mute">{tempoLista(c.atualizado_em)}</span>
+                    {/* F21: a hora da MENSAGEM (dataDaLista), nunca `atualizado_em` — sem data
+                        na conversa sem mensagem é honesto; data de gravação disfarçada não é. */}
+                    <span className="shrink-0 text-[0.72rem] text-mute">
+                      {dataDaLista(c) ? tempoLista(dataDaLista(c)) : "sem data"}
+                    </span>
                   </div>
                   <div className={cn("mt-0.5 truncate text-[0.78rem]", c.previa ? "text-suave" : "text-mute")}>
                     {prev}
@@ -565,6 +640,28 @@ export function Inbox({
               </button>
             );
           })}
+
+          {/* F22 · o corte é DECLARADO, no molde do aviso do funil. Enquanto a busca for local,
+              isso precisa estar na cara: ela só encontra o que já veio. */}
+          {corteAtual && (
+            <div className="flex flex-col items-center gap-2 px-3 pb-2 pt-3">
+              <span className="text-center text-[0.72rem] text-mute">
+                {totalAtual != null
+                  ? `mostrando ${carregadas.length.toLocaleString("pt-BR")} de ${totalAtual.toLocaleString("pt-BR")} conversas`
+                  : `mostrando as ${carregadas.length.toLocaleString("pt-BR")} mais recentes`}
+                {busca.trim() ? " · a busca cobre só o que está carregado" : ""}
+              </span>
+              {cursor && (
+                <button
+                  onClick={carregarMais}
+                  disabled={carregandoMais}
+                  className="rounded-full bg-hover px-3 py-1 text-[0.76rem] font-medium text-navy transition-colors hover:bg-borda focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40 disabled:opacity-60"
+                >
+                  {carregandoMais ? "carregando…" : "Carregar mais"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 

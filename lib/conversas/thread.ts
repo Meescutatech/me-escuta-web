@@ -8,6 +8,36 @@ import type { EstadoEntrega, Mensagem } from "@/lib/dados/conversas";
 /** Janela de corte do grupo visual — 60s (SPEC RF-27, BENCHMARK-UX P1/D1). */
 export const JANELA_GRUPO_MS = 60_000;
 
+/** Vazio/branco é ausência de data, não data — `""` não pode virar "Invalid Date" na tela. */
+function carimbo(v: string | null | undefined): string | null {
+  const s = (v ?? "").trim();
+  return s === "" ? null : s;
+}
+
+/**
+ * F21 — a data que a LISTA do inbox exibe.
+ *
+ * NUNCA `atualizado_em`: esse campo é quando a LINHA foi tocada, não quando a mensagem existiu.
+ * O import do Kommo carimba todas as linhas com "agora", e é por isso que hoje a caixa inteira
+ * parece nova (medido: conversa cuja última mensagem é de 6 dias atrás exibia a hora de hoje).
+ *
+ * Precedência declarada, com o degrade que a spec exige (EARS · comportamento indesejado):
+ *   1. `ultima_msg_em` — carimbo da última mensagem de QUALQUER direção, vindo da prévia.
+ *      É o exato, e é o que a pessoa espera ver.
+ *   2. `ultima_entrada_em` — degrade quando a prévia não pôde ser lida. Só entrada, mantido pelo
+ *      projetor com `greatest()` (webhook atrasado não puxa a conversa pra trás).
+ *   3. `null` — "sem data". Conversa sem mensagem nenhuma declara ausência; nunca a data de
+ *      gravação disfarçada de hora da mensagem.
+ *
+ * `atualizado_em` de propósito NÃO é parâmetro desta função: o que não entra não pode vazar.
+ */
+export function dataDaLista(c: {
+  ultima_msg_em?: string | null;
+  ultima_entrada_em?: string | null;
+}): string | null {
+  return carimbo(c.ultima_msg_em) ?? carimbo(c.ultima_entrada_em) ?? null;
+}
+
 /** Quem "fala" na bolha: cliente (entrada) ou Clara/Sara (saída). Troca Clara↔Sara quebra grupo. */
 export type Falante = "cliente" | "clara" | "sara";
 

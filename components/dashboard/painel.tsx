@@ -51,7 +51,9 @@ function LeadsPorEtapa({ faixas }: { faixas: FaixaEtapa[] }) {
     <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
       <div className="mb-3.5 flex items-baseline gap-2.5">
         <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Leads por etapa</h2>
-        <span className="ml-auto font-mono text-[10.5px] text-mute">derivado do ledger · ao vivo</span>
+        {/* F5: "ao vivo" saiu daqui. O painel não tem assinatura de Realtime — quem diz de quanto
+            em quanto tempo ele relê é o CarimboVivo do cabeçalho, e agora ele diz a verdade. */}
+        <span className="ml-auto font-mono text-[10.5px] text-mute">derivado do ledger</span>
       </div>
       <div className="mb-4">
         <ReguaFunil segmentos={segmentosReguaAgregada(faixas)} rotulo="Etapas do funil com leads" />
@@ -164,7 +166,7 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
               <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
                 <div className="mb-2 flex items-baseline gap-2.5">
                   <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Mensagens · hoje</h2>
-                  <span className="ml-auto font-mono text-[10.5px] text-mute">ao vivo</span>
+                  {/* F5: idem — o carimbo do cabeçalho é o único selo de frescor da página. */}
                 </div>
                 <div className="grid grid-cols-2 gap-x-5">
                   <Metrica rot="Recebidas" val={n(hoje?.entrada ?? null)} />

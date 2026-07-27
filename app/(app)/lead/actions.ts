@@ -86,9 +86,21 @@ export async function criarAnotacaoLead(
   const r = await registrarEventoUI("anotacao_adicionada", payload, leadId, origemId);
   if (!r.ok) return r;
 
-  await emitirMencoes(dados.mencoes, "nota", origemId, texto, leadId);
+  // F6 — a nota está no ledger e o ledger é append-only: falha de menção NÃO desfaz a nota. O
+  // retorno tem que distinguir "nota salva, menção não notificada" de "nada salvo", senão o autor
+  // reescreve uma nota que já existe.
+  const mencoes = await emitirMencoes(dados.mencoes, "nota", origemId, texto, leadId);
   revalidarPaineis();
+  if (mencoes.falharam > 0) {
+    return { ...r, motivo: motivoMencaoParcial("nota", mencoes.falharam, mencoes.total) };
+  }
   return r;
+}
+
+/** Aviso de sucesso PARCIAL: o registro ficou, a notificação não. Não é falha da escrita. */
+function motivoMencaoParcial(oQue: string, falharam: number, total: number): string {
+  const quem = falharam === 1 ? "1 pessoa" : `${falharam} pessoas`;
+  return `${oQue} salva — mas ${quem} de ${total} não foi notificada; avise por outro canal`;
 }
 
 export async function criarTarefaLead(
@@ -111,8 +123,17 @@ export async function criarTarefaLead(
   const r = await registrarEventoUI("tarefa_criada", payload, leadId, origemId);
   if (!r.ok) return r;
 
-  await emitirMencoes(dados.mencoes, "tarefa", origemId, `${titulo} ${descricao}`.trim(), leadId);
+  const mencoes = await emitirMencoes(
+    dados.mencoes,
+    "tarefa",
+    origemId,
+    `${titulo} ${descricao}`.trim(),
+    leadId,
+  );
   revalidarPaineis();
+  if (mencoes.falharam > 0) {
+    return { ...r, motivo: motivoMencaoParcial("tarefa", mencoes.falharam, mencoes.total) };
+  }
   return r;
 }
 
@@ -213,14 +234,17 @@ async function emitirMencoes(
   origemId: string,
   texto: string,
   leadId: string,
-): Promise<void> {
+): Promise<{ total: number; falharam: number }> {
   const unicas = new Map<string, MencaoResolvida>();
   for (const m of mencoes) if (!unicas.has(m.id)) unicas.set(m.id, m);
+  let falharam = 0;
   for (const m of unicas.values()) {
-    await registrarEventoUI(
+    const r = await registrarEventoUI(
       "mencao_criada",
       payloadMencaoCriada(m, origemTipo, origemId, texto) as unknown as Record<string, unknown>,
       leadId,
     );
+    if (!r.ok) falharam += 1;
   }
+  return { total: unicas.size, falharam };
 }

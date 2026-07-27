@@ -26,6 +26,12 @@ export async function lerNotificacoesAction(): Promise<Notificacao[]> {
   return (await lerNotificacoes()).itens;
 }
 
+/**
+ * F6 — a conferência de `mencao_lida` é por ESTADO (`lida_em not null`), não por posição: o
+ * projetor tem `and m.lida_em is null` ("primeira leitura manda"), então remarcar uma menção já
+ * lida é um no-op correto que não carimba posição nova. Conferir por posição reprovaria justamente
+ * o caminho idempotente. Ver a tabela CONFERENCIA em lib/eventos/confirmar-projecao.ts.
+ */
 export async function marcarMencaoLida(mencaoId: string): Promise<ResultadoEvento> {
   if (!mencaoId) return { ok: false, motivo: "menção sem id — recarregue a lista" };
   const r = await registrarEventoUI("mencao_lida", { mencao_id: mencaoId });
