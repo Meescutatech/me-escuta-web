@@ -252,17 +252,43 @@ test("a formatação das violações mostra portão, arquivo, linha e motivo", (
   assert.equal(formatarViolacoes([]), "sem violações");
 });
 
-test("TOKEN_NA_UI reprova a palavra token num .tsx e num componente client", () => {
+test("TOKEN_NA_UI reprova o VALOR do token num .tsx e num componente client", () => {
   const noTsx = PORTAO_TOKEN_NA_UI.avaliar(
     arq("components/configuracoes/painel.tsx", "export const T = () => <span>{canal.token}</span>;"),
   );
   assert.equal(noTsx.length, 1);
   assert.match(noTsx[0].motivo, /vira HTML/);
 
-  const noClient = PORTAO_TOKEN_NA_UI.avaliar(
-    arq("components/suporte/x.ts", '"use client";\n// TODO: colar o access_token aqui'),
+  for (const linha of [
+    "const token = props.credencial;",
+    "<Campo token={x} />",
+    "const h = { token: cfg.segredo };",
+    "const u = process.env.RUNTIME_LITE_TOKEN;",
+  ]) {
+    assert.equal(
+      PORTAO_TOKEN_NA_UI.avaliar(arq("components/suporte/x.ts", '"use client";\n' + linha)).length,
+      1,
+      linha,
+    );
+  }
+});
+
+test("TOKEN_NA_UI deixa passar a palavra em PROSA — foi o rodapé do mockup que corrigiu a regra", () => {
+  // "O token de cada número vem do ambiente do servidor — esta tela nunca o pede." é a linha que
+  // conta à gestora que a tela nao pede credencial. Proibir a palavra apagaria justamente ela.
+  assert.deepEqual(
+    PORTAO_TOKEN_NA_UI.avaliar(
+      arq(
+        "components/configuracoes/tabela.tsx",
+        "<p>O token de cada número vem do ambiente do servidor — esta tela nunca o pede.</p>",
+      ),
+    ),
+    [],
   );
-  assert.equal(noClient.length, 1);
+  assert.deepEqual(
+    PORTAO_TOKEN_NA_UI.avaliar(arq("components/configuracoes/x.tsx", "/* O TOKEN NÃO APARECE aqui. */")),
+    [],
+  );
 });
 
 test("TOKEN_NA_UI deixa o SERVIDOR nomear a env declarada — é ele que fala com o runtime", () => {

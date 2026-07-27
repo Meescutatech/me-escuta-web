@@ -28,11 +28,10 @@ export type Papel = "owner" | "admin" | "membro";
 /**
  * Uma linha de `core.v_canal_whatsapp`.
  *
- * `inbox_desde` está aqui e **não está na view** do CONTRATO-C §4.2 — pedido registrado ao
- * Agent 3 (ver `CONTRATO-E-ADENDO-R16.md`). Enquanto não estiver, a leitura devolve `null`, e
- * `null` significa "não sei se tem corte". A regra abaixo trata desconhecido como ausente e
- * EXIGE o corte: o dano do falso negativo (pedir uma data a mais) é uma pergunta; o do falso
- * positivo (ativar sem corte) é o inbox inteiro com histórico, e não tem desfazer barato.
+ * `inbox_desde` foi pedido no adendo da fase 1 e a `0069` o ENTREGOU na view. A leitura mantém o
+ * caminho de degrade mesmo assim: `null` significa "ausente OU não legível", e os dois exigem o
+ * corte na ativação — o dano do falso negativo é uma pergunta a mais; o do falso positivo é o
+ * histórico inteiro do número no inbox de todo mundo, e isso não tem desfazer barato.
  */
 export interface Canal {
   canal_id: string;
@@ -45,6 +44,7 @@ export interface Canal {
   pareado_em: string | null;
   consentimento_em: string | null;
   consentimento_titular: string | null;
+  consentimento_texto_versao: string | null;
   risco_ban_aceito: boolean;
   desativado_em: string | null;
   criado_em: string | null;
@@ -332,6 +332,29 @@ export function rotuloEstadoCanal(e: EstadoCanal): string {
  */
 export const TEXTO_CREDENCIAL_DESCONHECIDA =
   "A credencial deste canal vive no ambiente do runtime — esta tela não lê, não mostra e não guarda token.";
+
+/**
+ * COLUNA COM VALOR ÚNICO SOME (decisão do Orquestrador sobre o mockup r10).
+ *
+ * Uma coluna em que todas as linhas dizem a mesma coisa não é informação: é ruído com custo de
+ * largura. Enquanto todo canal for `comercial`, ÁREA sai; enquanto todo canal for oficial,
+ * PROVEDOR sai. Voltam sozinhas no instante em que a segunda área ou o primeiro canal não oficial
+ * aparecer — e é aí que elas passam a significar alguma coisa.
+ *
+ * Regra deliberadamente NÃO aplicada a `nome`, `numero` e `estado`: essas três são a identidade e
+ * o estado da linha, e sumir com elas deixaria a tabela sem sujeito mesmo quando o valor coincide.
+ */
+export interface ColunasVisiveis {
+  provedor: boolean;
+  area: boolean;
+}
+
+export function colunasVisiveis(canais: Canal[]): ColunasVisiveis {
+  if (canais.length === 0) return { provedor: false, area: false };
+  const provedores = new Set(canais.map((c) => c.provedor));
+  const areas = new Set(canais.map((c) => c.area_efetiva ?? "comercial"));
+  return { provedor: provedores.size > 1, area: areas.size > 1 };
+}
 
 export function ordenarCanais(canais: Canal[]): Canal[] {
   return [...canais].sort(

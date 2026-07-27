@@ -47,6 +47,7 @@ function canal(p: Partial<Canal> = {}): Canal {
     pareado_em: null,
     consentimento_em: "2026-07-26T12:00:00Z",
     consentimento_titular: "Jade",
+    consentimento_texto_versao: null,
     risco_ban_aceito: true,
     desativado_em: null,
     criado_em: null,

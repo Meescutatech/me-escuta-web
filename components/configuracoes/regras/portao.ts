@@ -225,18 +225,20 @@ export const PORTAO_READBACK: Portao = {
  */
 export const ROTAS_DE_GESTAO = [
   "app/(app)/configuracoes/canais/page.tsx",
-  "app/(app)/configuracoes/sistema/page.tsx",
+  "app/(app)/configuracoes/funil/page.tsx",
+  "app/(app)/configuracoes/avancado/[nome]/page.tsx",
 ];
 
 export const PORTAO_PAPEL: Portao = {
   nome: "papel",
-  prova: "toda página de gestão da trilha lê papel_atual no servidor — sem papel, a tela nasce em leitura",
+  prova:
+    "toda página de gestão da trilha resolve o papel no servidor (api.papel_atual, direto ou pelo helper) — sem papel, a tela nasce em leitura",
   avaliar(arquivos) {
     const v: Violacao[] = [];
     for (const caminho of ROTAS_DE_GESTAO) {
       const a = arquivos.find((x) => x.caminho === caminho);
       if (!a) continue; // página ainda não existe (fase 1): não é violação, é ausência
-      if (!a.conteudo.includes("papel_atual")) {
+      if (!/papel_atual|lerPapelAtual/.test(a.conteudo)) {
         v.push({
           portao: "papel",
           caminho,
@@ -318,27 +320,35 @@ export const PORTAO_FRONTEIRA: Portao = {
  * O EARS que a auditoria mediu sem comando: *"o sistema NÃO DEVE exibir, transmitir ou registrar
  * qualquer token"* e *"a web NÃO DEVE conter, receber ou transmitir token de instância"*.
  *
- * O jeito de transformar isso em regra que uma máquina confere é pelo LADO DA UI: nenhum `.tsx` e
- * nenhum arquivo `"use client"` desta trilha pode sequer NOMEAR token. Se a palavra não existe do
- * lado que vira HTML, não há como exibir, e o valor não tem por onde descer. O lado servidor pode
- * (e precisa) nomear a env declarada — é ele que fala com o runtime.
+ * A primeira versão desta regra proibia a PALAVRA token em qualquer `.tsx` — e reprovou o rodapé
+ * que o próprio mockup escreveu: *"O token de cada número vem do ambiente do servidor — esta tela
+ * nunca o pede"*. A frase é o oposto do defeito: ela existe para a gestora saber que a tela não
+ * pede credencial. Proibir a palavra teria apagado a única linha que conta isso.
  *
- * Comentário e prosa contam: um TODO com um token colado é o caso real que isto pega.
+ * O que não pode descer é o VALOR. Então a regra passou a mirar token em posição de CÓDIGO —
+ * `.token`, `token=`, `token:`, `{token}`, `process.env.*TOKEN` — e a deixar passar a palavra
+ * em prosa, JSX de texto e comentário.
  */
+/** token em posição de CÓDIGO: acesso a campo, atribuição, chave de objeto, interpolação, env. */
+const TOKEN_COMO_VALOR =
+  /[.{[]\s*\w*token\w*\b|\b\w*token\w*\s*[=:(]|process\.env\.\w*TOKEN/i;
+
 export const PORTAO_TOKEN_NA_UI: Portao = {
   nome: "token_na_ui",
-  prova: "nenhum .tsx e nenhum componente client da Web-B contém a palavra token — o que a UI não nomeia, ela não exibe",
+  prova:
+    "nenhum .tsx e nenhum componente client da Web-B referencia um VALOR de token (a palavra em prosa é permitida — é ela que diz à gestora que a tela não pede credencial)",
   avaliar(arquivos) {
     const v: Violacao[] = [];
     for (const a of arquivos) {
       if (!a.caminho.endsWith(".tsx") && !ehCliente(a)) continue;
       for (const { n, texto } of linhas(a)) {
-        if (/token/i.test(texto)) {
+        if (!TOKEN_COMO_VALOR.test(texto)) continue;
+        {
           v.push({
             portao: "token_na_ui",
             caminho: a.caminho,
             linha: n,
-            motivo: "a palavra token aparece do lado que vira HTML — a tela mostra presença/ausência de credencial, nunca a credencial",
+            motivo: "valor de token referenciado do lado que vira HTML — a tela mostra presença/ausência de credencial, nunca a credencial",
           });
         }
       }

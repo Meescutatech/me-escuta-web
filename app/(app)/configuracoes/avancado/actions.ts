@@ -37,7 +37,7 @@ import {
  *      "recarregue", não como erro genérico.
  */
 
-const ROTA = "/configuracoes/sistema";
+const ROTA = "/configuracoes/avancado";
 
 export interface ResultadoPublicacao extends ResultadoAcao {
   /** versão que resultaria da publicação, para a tela confirmar o efeito. */
@@ -92,7 +92,7 @@ export async function publicarConfig(entrada: {
       justificativa: entrada.justificativa,
     }),
     idExterno: randomUUID(),
-    revalidar: [ROTA, "/configuracoes", "/funil", "/conversas"],
+    revalidar: [ROTA, "/configuracoes/funil", "/funil", "/conversas"],
   });
 
   if (!r.ok) {

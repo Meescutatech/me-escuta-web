@@ -17,7 +17,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { provedorValido, type Canal, type Provedor } from "../regras/canais.ts";
 
 const COLUNAS_COM_CORTE =
-  "canal_id,nome,provedor,ativo,numero,waba_id,area_efetiva,pareado_em,consentimento_em,consentimento_titular,risco_ban_aceito,desativado_em,criado_em,inbox_desde";
+  "canal_id,nome,provedor,ativo,numero,waba_id,area_efetiva,inbox_desde,pareado_em,consentimento_em,consentimento_titular,consentimento_texto_versao,risco_ban_aceito,desativado_em,criado_em";
 const COLUNAS_SEM_CORTE =
   "canal_id,nome,provedor,ativo,numero,waba_id,area_efetiva,pareado_em,consentimento_em,consentimento_titular,risco_ban_aceito,desativado_em,criado_em";
 
@@ -45,6 +45,7 @@ function mapear(linha: Record<string, unknown>, temCorte: boolean): Canal | null
     pareado_em: linha.pareado_em ? String(linha.pareado_em) : null,
     consentimento_em: linha.consentimento_em ? String(linha.consentimento_em) : null,
     consentimento_titular: linha.consentimento_titular ? String(linha.consentimento_titular) : null,
+    consentimento_texto_versao: linha.consentimento_texto_versao ? String(linha.consentimento_texto_versao) : null,
     risco_ban_aceito: linha.risco_ban_aceito === true || provedor === "nao_oficial",
     desativado_em: linha.desativado_em ? String(linha.desativado_em) : null,
     criado_em: linha.criado_em ? String(linha.criado_em) : null,

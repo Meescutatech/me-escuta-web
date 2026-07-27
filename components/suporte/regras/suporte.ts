@@ -97,6 +97,28 @@ export interface FormChamado {
 
 export type ProblemasChamado = Partial<Record<keyof FormChamado, string>>;
 
+/**
+ * UM CAMPO, DOIS DADOS (desenho do mockup r10): quem relata escreve num texto só, e a PRIMEIRA
+ * LINHA vira o título. Pedir título e descrição separados é pedir que a pessoa componha um
+ * documento quando ela só quer contar o que aconteceu — e o campo "título" volta preenchido com
+ * "erro" em metade dos casos.
+ *
+ * A descrição fica com o TEXTO INTEIRO, não com o resto. Dois motivos: a porta exige `descricao`
+ * não vazia (relato de uma linha só ficaria sem ela e seria recusado), e um relato lido no Lovable
+ * sem a primeira frase começa no meio.
+ */
+export function dividirRelato(texto: string): { titulo: string; descricao: string } {
+  const inteiro = (texto ?? "").trim();
+  const primeira = inteiro.split("\n")[0].trim();
+  const titulo = primeira.length > LIMITE_TITULO ? `${primeira.slice(0, LIMITE_TITULO - 1)}…` : primeira;
+  return { titulo, descricao: inteiro };
+}
+
+/** O que a prévia mostra enquanto se digita — o título que vai nascer, ou o traço. */
+export function previaTitulo(texto: string): string {
+  return dividirRelato(texto).titulo || "—";
+}
+
 export function validarChamado(f: FormChamado): ProblemasChamado {
   const p: ProblemasChamado = {};
   const titulo = (f.titulo ?? "").trim();

@@ -7,6 +7,7 @@ import {
   avisoDesativacao,
   canalIdDoForm,
   canalIdNaoOficial,
+  colunasVisiveis,
   ehCanalNaoOficialId,
   envelopeCanal,
   estadoDoCanal,
@@ -57,6 +58,7 @@ function canal(p: Partial<Canal> = {}): Canal {
     pareado_em: null,
     consentimento_em: null,
     consentimento_titular: null,
+    consentimento_texto_versao: null,
     risco_ban_aceito: true,
     desativado_em: null,
     criado_em: null,
@@ -272,4 +274,45 @@ test("ordenação põe os ligados na frente e é estável por nome", () => {
     canal({ canal_id: "c", nome: "Bravo", ativo: false }),
   ]);
   assert.deepEqual(lista.map((c) => c.nome), ["Alfa", "Bravo", "Zulu"]);
+});
+
+// ═══════════════════════ coluna com valor único some (decisão sobre o r10) ═══════════════════════
+
+test("enquanto TODOS forem comerciais e oficiais, ÁREA e PROVEDOR somem da tabela", () => {
+  const cols = colunasVisiveis([
+    canal({ canal_id: "a", provedor: "waba", area_efetiva: "comercial" }),
+    canal({ canal_id: "b", provedor: "waba", area_efetiva: "comercial" }),
+  ]);
+  assert.deepEqual(cols, { provedor: false, area: false });
+});
+
+test("a coluna VOLTA no instante em que passa a significar alguma coisa", () => {
+  assert.equal(
+    colunasVisiveis([
+      canal({ canal_id: "a", provedor: "waba", area_efetiva: "comercial" }),
+      canal({ canal_id: "b", provedor: "nao_oficial", area_efetiva: "comercial" }),
+    ]).provedor,
+    true,
+  );
+  assert.equal(
+    colunasVisiveis([
+      canal({ canal_id: "a", provedor: "waba", area_efetiva: "comercial" }),
+      canal({ canal_id: "b", provedor: "waba", area_efetiva: "clinica" }),
+    ]).area,
+    true,
+  );
+});
+
+test("área ausente conta como 'comercial' — nulo não inventa uma segunda área", () => {
+  assert.equal(
+    colunasVisiveis([
+      canal({ canal_id: "a", area_efetiva: null }),
+      canal({ canal_id: "b", area_efetiva: "comercial" }),
+    ]).area,
+    false,
+  );
+});
+
+test("tabela vazia não mostra coluna nenhuma dessas", () => {
+  assert.deepEqual(colunasVisiveis([]), { provedor: false, area: false });
 });

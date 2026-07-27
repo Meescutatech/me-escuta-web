@@ -10,6 +10,8 @@ import {
   caminhoAnexoSuporte,
   codigoTicket,
   contarPorAba,
+  dividirRelato,
+  previaTitulo,
   envelopeSuporte,
   filtrarTickets,
   nomeArquivoSeguro,
@@ -239,4 +241,38 @@ test("as abas são aberto/resolvido (ARB-18.4) e contam certo", () => {
   assert.deepEqual(filtrarTickets(lista, "resolvidos").map((t) => t.id), ["b"]);
   assert.deepEqual(filtrarTickets(lista, "todos").map((t) => t.id), ["b", "c", "a"]);
   assert.deepEqual(contarPorAba(lista), { abertos: 2, resolvidos: 1, todos: 3 });
+});
+
+// ═══════════════════════ um campo, dois dados (desenho do r10) ═══════════════════════
+
+test("a PRIMEIRA LINHA vira o título; a descrição fica com o texto inteiro", () => {
+  const r = dividirRelato("Board não carrega\n\nabri /funil e ficou girando");
+  assert.equal(r.titulo, "Board não carrega");
+  assert.equal(r.descricao, "Board não carrega\n\nabri /funil e ficou girando");
+});
+
+test("relato de UMA linha não fica sem descrição — a porta exige as duas", () => {
+  const r = dividirRelato("o botão de publicar não faz nada");
+  assert.equal(r.titulo, "o botão de publicar não faz nada");
+  assert.equal(r.descricao, "o botão de publicar não faz nada");
+  assert.ok(r.descricao.length > 0);
+});
+
+test("título longo demais é cortado com reticência, e a descrição continua inteira", () => {
+  const longa = "a".repeat(LIMITE_TITULO + 40);
+  const r = dividirRelato(longa);
+  assert.equal(r.titulo.length, LIMITE_TITULO);
+  assert.ok(r.titulo.endsWith("…"));
+  assert.equal(r.descricao, longa);
+});
+
+test("a prévia mostra o traço enquanto não há texto — nunca 'undefined'", () => {
+  assert.equal(previaTitulo(""), "—");
+  assert.equal(previaTitulo("   \n  "), "—");
+  assert.equal(previaTitulo("Erro no funil"), "Erro no funil");
+});
+
+test("o par título/descrição derivado passa na validação do chamado", () => {
+  const { titulo, descricao } = dividirRelato("Board não carrega\nabri e girou");
+  assert.ok(semProblemasChamado(validarChamado({ tipo: "bug", titulo, descricao, onde: "/funil" })));
 });
