@@ -413,3 +413,35 @@ test("aceite_contato_registrado é exceção DECLARADA (ledger-only), com motivo
   assert.equal(regraWebB("aceite_contato_registrado"), null);
   assert.equal(Object.keys(EXCECOES_WEB_B).length, 1);
 });
+
+// ═══ ARB-26 · a identidade do ticket nasce do EVENTO, não de um id mandado pela tela ═══
+
+test("a abertura de ticket confere pelo evento_id — foi o portão de escrita real que pegou isto", () => {
+  // A regra anterior lia `v_suporte_ticket` por `payload.ticket_id`. O projetor da 0070 crava
+  // `id = evento.id` e NUNCA lê esse campo: a releitura devolvia ZERO para toda abertura
+  // bem-sucedida — a tela acusaria falha em cima de uma escrita que funcionou, que é pior que o
+  // defeito que o readback existe para pegar.
+  const r = regraWebB("suporte_ticket_aberto")!;
+  assert.deepEqual(r.filtros, [{ campo: "id", op: "igualEvento" }]);
+  assert.deepEqual(resolverFiltros(r, {}, "evt-abertura"), [
+    { campo: "id", tipo: "igual", valor: "evt-abertura" },
+  ]);
+  // sem evento_id não há como conferir — e a resolução falha em vez de conferir "qualquer linha"
+  assert.equal(resolverFiltros(r, { ticket_id: "inventado" }, null), null);
+  assert.match(r.porque, /ARB-26|nasce do evento/i);
+});
+
+test("nenhuma regra desta trilha confere por um id que a própria tela inventou", () => {
+  // o padrão que produziu o defeito: filtrar por um campo do payload que o projetor ignora.
+  // `ticket_id` só é legítimo em comentar/resolver, onde ele APONTA para um ticket que já existe.
+  for (const [tipo, r] of Object.entries(CONFERENCIA_WEB_B)) {
+    if (tipo === "suporte_ticket_aberto") continue;
+    const porPayload = r.filtros.filter((f) => f.op === "igualPayload");
+    for (const f of porPayload) {
+      assert.ok(
+        f.dePayload !== "ticket_id" || tipo !== "suporte_ticket_aberto",
+        `${tipo} confere por um id de criação vindo do payload`,
+      );
+    }
+  }
+});

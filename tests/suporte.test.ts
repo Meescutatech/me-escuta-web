@@ -66,9 +66,10 @@ function ticket(p: Partial<Ticket> = {}): Ticket {
 // ═══════════════════════ o caminho do anexo (a RLS depende dele) ═══════════════════════
 
 const UID = "11111111-2222-3333-4444-555555555555";
+// LOTE, não ticket (ARB-26): o anexo sobe antes do evento e a identidade do ticket nasce dele.
 const TICKET = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
-test("o caminho é <uid>/<ticket_id>/<arquivo>, nessa ordem", () => {
+test("o caminho é <uid>/<lote>/<arquivo> — e a RLS depende da PRIMEIRA pasta ser o uid", () => {
   assert.equal(caminhoAnexoSuporte(UID, TICKET, "print.png"), `${UID}/${TICKET}/print.png`);
   assert.equal(primeiraPasta(caminhoAnexoSuporte(UID, TICKET, "print.png")), UID);
 });
@@ -183,16 +184,15 @@ test("o aviso de PII nomeia o que não colar e por quê", () => {
 
 // ═══════════════════════ payloads ═══════════════════════
 
-test("o ticket_id vai no payload — é o que torna a releitura determinística", () => {
-  const p = payloadTicketAberto({ ticketId: TICKET, form: form(), anexos: [] });
-  assert.equal(p.ticket_id, TICKET);
+test("ARB-26: a abertura NÃO manda ticket_id — a identidade nasce do evento", () => {
+  const p = payloadTicketAberto({ form: form(), anexos: [] });
+  assert.ok(!("ticket_id" in p), "id mandado de fora é identidade inventada, e o projetor o ignora");
   assert.equal(p.onde, "/funil");
   assert.deepEqual(p.anexos, []);
 });
 
 test("o evento carrega o CAMINHO do anexo, nunca o binário", () => {
   const p = payloadTicketAberto({
-    ticketId: TICKET,
     form: form(),
     anexos: [{ caminho: `${UID}/${TICKET}/print.png`, mime: "image/png", nome: "print.png", bytes: 1234 }],
   });
@@ -202,7 +202,7 @@ test("o evento carrega o CAMINHO do anexo, nunca o binário", () => {
 });
 
 test("rota vazia não vai no payload (campo ausente é melhor que campo mentiroso)", () => {
-  const p = payloadTicketAberto({ ticketId: TICKET, form: form({ onde: "" }), anexos: [] });
+  const p = payloadTicketAberto({ form: form({ onde: "" }), anexos: [] });
   assert.ok(!("onde" in p));
 });
 

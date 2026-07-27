@@ -53,6 +53,12 @@ export interface ResultadoAcao {
   /** true = a porta absorveu a repetição. É estado, não erro. */
   duplicado?: boolean;
   classe?: ClasseErroPorta;
+  /**
+   * O id do evento que a porta criou. É a IDENTIDADE do que nasceu — o ticket de suporte tem
+   * `id = evento.id` (0070), e ARB-26 cravou que é assim para todo mundo: quem manda id de fora
+   * está inventando identidade. Quem precisa referenciar o que acabou de criar usa este campo.
+   */
+  eventoId?: string;
 }
 
 export interface PedidoEscrita {
@@ -88,7 +94,7 @@ export async function registrarEventoComReadback(pedido: PedidoEscrita): Promise
   // Duplicado é ESTADO: a projeção vigente é a do evento original, não há posição nova a conferir.
   if (resposta?.duplicado) {
     revalidar(pedido.revalidar);
-    return { ok: true, duplicado: true };
+    return { ok: true, duplicado: true, eventoId: resposta.evento_id };
   }
 
   const veredito = conhecidoPeloF6
@@ -98,7 +104,7 @@ export async function registrarEventoComReadback(pedido: PedidoEscrita): Promise
   if (!veredito.ok) return { ok: false, motivo: veredito.motivo, classe: "outro" };
 
   revalidar(pedido.revalidar);
-  return { ok: true };
+  return { ok: true, eventoId: resposta?.evento_id };
 }
 
 /**

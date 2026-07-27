@@ -247,8 +247,11 @@ export const CONFERENCIA_WEB_B: Readonly<Record<string, RegraConferenciaWebB>> =
   suporte_ticket_aberto: {
     fonte: "v_suporte_ticket",
     coluna: "id",
-    filtros: [{ campo: "id", op: "igualPayload", dePayload: "ticket_id" }],
-    porque: "mandamos o ticket_id de propósito — é o que torna a releitura determinística em vez de adivinhação.",
+    filtros: [{ campo: "id", op: "igualEvento" }],
+    porque:
+      "ARB-26: a identidade do ticket NASCE DO EVENTO (0070 crava id = evento.id e nunca lê payload.ticket_id na abertura). " +
+      "A minha regra conferia por um ticket_id que eu mesmo gerava — e que o banco ignorava —, então a releitura devolvia ZERO " +
+      "para toda abertura BEM-SUCEDIDA. É a Constituição §1.1 aplicada a um id: quem manda id de fora está inventando identidade.",
   },
   suporte_ticket_comentado: {
     fonte: "suporte_ticket_comentario",

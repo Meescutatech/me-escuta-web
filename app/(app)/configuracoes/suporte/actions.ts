@@ -34,9 +34,9 @@ import {
  *  1. O ANEXO SOBE ANTES DO EVENTO, e o evento carrega o CAMINHO, nunca o binário. Se o upload
  *     falhar, o chamado NÃO é gravado sem a imagem por conta própria: enviar sem ela vira escolha
  *     explícita de quem está reportando (`semAnexo: true`).
- *  2. O CAMINHO É `<uid>/<ticket_id>/<arquivo>` e a RLS por autor do Storage DEPENDE disso. Por
- *     isso o `ticket_id` é gerado aqui, antes do upload — e é o mesmo que vai no payload, o que
- *     de quebra torna o readback determinístico.
+ *  2. O CAMINHO É `<uid>/<lote>/<arquivo>` e a RLS por autor do Storage depende da PRIMEIRA pasta
+ *     ser o uid. O meio é o LOTE desta submissão, não o ticket: o anexo sobe antes do evento e a
+ *     identidade do ticket nasce do evento (ARB-26).
  */
 
 const ROTA = "/configuracoes/suporte";
@@ -75,14 +75,17 @@ export async function abrirChamado(
     return { ok: false, motivo: "não deu para identificar o seu usuário — recarregue a página", classe: "outro" };
   }
 
-  const ticketId = randomUUID();
+  // LOTE, não ticket: o anexo sobe ANTES do evento, e a identidade do ticket só nasce do evento
+  // (ARB-26). Usar aqui um id que ainda não existe foi como o defeito começou. A RLS depende só da
+  // primeira pasta ser o uid; a do meio agrupa os arquivos desta submissão e não promete mais.
+  const lote = randomUUID();
   const anexos: AnexoDoEvento[] = [];
   const falhos: string[] = [];
 
   for (const arq of arquivos.slice(0, MAX_ANEXOS)) {
     const valido = validarAnexoSuporte({ type: arq.tipo, size: arq.tamanho });
     if (!valido.ok) return { ok: false, motivo: valido.motivo, classe: "recusa" };
-    const subido = await subirAnexo(uid, ticketId, arq, valido.mime);
+    const subido = await subirAnexo(uid, lote, arq, valido.mime);
     if (subido) anexos.push(subido);
     else falhos.push(arq.nome);
   }
@@ -93,11 +96,12 @@ export async function abrirChamado(
 
   const r = await registrarEventoComReadback({
     tipo: "suporte_ticket_aberto",
-    payload: payloadTicketAberto({ ticketId, form, anexos }),
+    payload: payloadTicketAberto({ form, anexos }),
     idExterno: randomUUID(),
     revalidar: [ROTA],
   });
-  return { ...r, ticketId: r.ok ? ticketId : undefined, ...(falhos.length ? { anexosFalhos: falhos } : {}) };
+  // o id do ticket é o do EVENTO, devolvido pela porta — é ele que comentar e resolver referenciam
+  return { ...r, ticketId: r.ok ? r.eventoId : undefined, ...(falhos.length ? { anexosFalhos: falhos } : {}) };
 }
 
 /**
@@ -106,11 +110,11 @@ export async function abrirChamado(
  */
 async function subirAnexo(
   uid: string,
-  ticketId: string,
+  lote: string,
   arq: ArquivoParaSubir,
   mime: string,
 ): Promise<AnexoDoEvento | null> {
-  const caminho = caminhoAnexoSuporte(uid, ticketId, arq.nome);
+  const caminho = caminhoAnexoSuporte(uid, lote, arq.nome);
   // cinto e suspensório: se a primeira pasta não for o uid, a policy recusaria — e um caminho
   // montado errado que "quase" funciona é como um anexo vaza para fora do dono.
   if (primeiraPasta(caminho) !== uid) return null;

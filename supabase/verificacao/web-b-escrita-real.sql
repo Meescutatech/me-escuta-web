@@ -170,9 +170,9 @@ declare
   v_r         jsonb;
   v_evt       uuid;
   v_canal     text := 'lite:portao-b2';
-  -- uuid fixo (não `gen_random_uuid()`): o `ticket_id` que a tela manda é o que torna a releitura
-  -- determinística, e um id fixo deixa a linha do erro apontar para o mesmo lugar em toda execução.
-  v_ticket    uuid := '00000000-0000-4000-8000-0000000000c1';
+  -- NAO nasce fixo: a identidade do ticket vem do evento (ARB-26). E preenchido logo apos a
+  -- abertura, com o evento_id que a porta devolve, e e ele que comentar e resolver referenciam.
+  v_ticket    uuid;
   v_cfg_vig   int;
 begin
   -- ── canal_registrado ──────────────────────────────────────────────────────────────────────
@@ -270,18 +270,28 @@ begin
   end if;
 
   -- ── suporte_ticket_aberto ─────────────────────────────────────────────────────────────────
-  -- regra: v_suporte_ticket · id = payload.ticket_id
-  --        (mandamos o ticket_id de propósito: é o que torna a releitura determinística)
-  perform api.registrar_evento(jsonb_build_object(
+  -- regra (ARB-26): v_suporte_ticket · id = EVENTO_ID devolvido pela porta.
+  --
+  -- A versao anterior deste roteiro mandava um ticket_id gerado por mim e relia por ele. Foi ela
+  -- que REPROVOU aqui, e o defeito era do meu lado: a 0070 crava id = evento.id e NUNCA le
+  -- payload.ticket_id no ramo de abertura, entao a releitura devolvia zero para toda abertura
+  -- BEM-SUCEDIDA. A identidade nasce do evento (Constituicao 1.1); quem manda id de fora esta
+  -- inventando identidade. O caminho do anexo tambem para de citar o ticket: o meio e um LOTE,
+  -- e a RLS so depende da primeira pasta ser o uid.
+  v_r := api.registrar_evento(jsonb_build_object(
     'tipo','suporte_ticket_aberto','id_externo','b2-7','versao_payload',1,
-    'payload', jsonb_build_object('ticket_id', v_ticket,'tipo','bug',
+    'payload', jsonb_build_object('tipo','bug',
       'titulo','O portao da Web-B abriu este','descricao','escrita real, dentro de transacao',
       'onde','/configuracoes/canais',
       'anexos', jsonb_build_array(jsonb_build_object(
-        'caminho','00000000-0000-4000-8000-0000000000b2/' || v_ticket::text || '/print.png',
+        'caminho','00000000-0000-4000-8000-0000000000b2/lote-b2/print.png',
         'mime','image/png','nome','print.png','bytes',1024)))));
+  v_ticket := (v_r ->> 'evento_id')::uuid;   -- a identidade REAL, dita pela porta
+  if v_ticket is null then
+    raise exception 'MEDIDA suporte_ticket_aberto: a porta nao devolveu evento_id — sem ele nao ha releitura';
+  end if;
   if not exists (select 1 from core.v_suporte_ticket where id = v_ticket) then
-    raise exception 'MEDIDA suporte_ticket_aberto: a regra releu v_suporte_ticket por id e nao achou';
+    raise exception 'MEDIDA suporte_ticket_aberto: a regra releu v_suporte_ticket pelo evento_id e nao achou';
   end if;
   if (select numero from core.v_suporte_ticket where id = v_ticket) is null then
     raise exception 'MEDIDA suporte_ticket_aberto: `numero` nulo — o codigo citavel S-### sai dele';

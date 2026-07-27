@@ -215,7 +215,14 @@ export function validarAnexoSuporte(a: { type: string; size: number }): Resultad
 export const BUCKET_SUPORTE = "suporte-anexos";
 
 /**
- * `<uid>/<ticket_id>/<arquivo>` — a RLS por autor DEPENDE desta forma (ARB-21).
+ * `<uid>/<lote>/<arquivo>` — a RLS por autor DEPENDE da PRIMEIRA pasta ser o uid (ARB-21); a do
+ * meio é agrupamento, e a porta não olha para ela.
+ *
+ * Antes o meio era o `ticket_id`, e não podia ser: o anexo sobe ANTES do evento, e a identidade do
+ * ticket só nasce do evento (ARB-26). Usar um id que ainda não existe é como o defeito começou. O
+ * `lote` é o identificador desta submissão — junta os arquivos de um mesmo envio e não promete ser
+ * o que não é.
+ *
  * O nome do arquivo é higienizado: `/`, `..`, controle e espaço viram `_`. Um nome com barra
  * criaria uma pasta a mais e empurraria o arquivo para fora do escopo do dono.
  */
@@ -231,8 +238,8 @@ export function nomeArquivoSeguro(nome: string, extPadrao = "bin"): string {
   return limpo.length > 0 ? limpo : `anexo.${extPadrao}`;
 }
 
-export function caminhoAnexoSuporte(uid: string, ticketId: string, nomeArquivo: string): string {
-  return `${uid}/${ticketId}/${nomeArquivoSeguro(nomeArquivo)}`;
+export function caminhoAnexoSuporte(uid: string, lote: string, nomeArquivo: string): string {
+  return `${uid}/${lote}/${nomeArquivoSeguro(nomeArquivo)}`;
 }
 
 /** A primeira pasta é o dono. Se isto for falso, a policy de INSERT do Storage recusa o upload. */
@@ -250,19 +257,18 @@ export interface AnexoDoEvento {
 // ──────────────────────────────────────── payloads ────────────────────────────────────────
 
 export interface PedidoAbertura {
-  ticketId: string;
   form: FormChamado;
   anexos: AnexoDoEvento[];
 }
 
 /**
- * O `ticket_id` é gerado por nós, de propósito: o contrato o aceita opcional (e usa `evento.id`
- * quando ausente), mas mandá-lo é o que torna o READBACK determinístico — sem ele a tela teria de
- * adivinhar qual linha nasceu do seu evento.
+ * A abertura NÃO manda `ticket_id` (ARB-26). Eu mandava um uuid gerado aqui, achando que era ele
+ * que tornava a releitura determinística — e o projetor da 0070 crava `id = evento.id` e nunca lê
+ * esse campo. O id que eu mandava era peso morto E armadilha: a releitura procurava por ele e não
+ * achava nada, em toda abertura bem-sucedida. Quem devolve a identidade é a porta, no `evento_id`.
  */
 export function payloadTicketAberto(p: PedidoAbertura): Record<string, unknown> {
   const payload: Record<string, unknown> = {
-    ticket_id: p.ticketId,
     tipo: p.form.tipo,
     titulo: (p.form.titulo ?? "").trim(),
     descricao: (p.form.descricao ?? "").trim(),
