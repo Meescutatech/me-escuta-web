@@ -6,7 +6,9 @@ import {
   MOTIVO_NAO_PROJETADO,
   acoesDeclaradas,
   avaliarProjecao,
+  confirmarProjecao,
   excecaoDe,
+  motivoAcaoNaoDeclarada,
   motivoFalhaVerificacao,
   posicaoParaConferir,
   temConferencia,
@@ -209,4 +211,60 @@ test("falha de LEITURA é distinta de 'não projetou' — nunca assumir sucesso"
 test("tipo desconhecido não inventa veredito nem vira exceção silenciosa", () => {
   assert.equal(temConferencia("tipo_que_nao_existe"), false);
   assert.equal(excecaoDe("tipo_que_nao_existe"), null);
+});
+
+/*
+ * FAIL-CLOSED para ação não declarada (achado do Agent 2, R16-23).
+ * A versão anterior devolvia {ok:true} para tipo fora do mapa — o defeito do F6 reintroduzido pela
+ * porta dos fundos, e justamente nos tipos que estreiam (canal_*, config_publicada, suporte_*),
+ * que a prova estática do portão não alcança porque ela só varre os arquivos desta trilha.
+ */
+
+test("ação fora do mapa NÃO é sucesso — e o motivo nomeia a ação", () => {
+  assert.equal(temConferencia("canal_publicado"), false);
+  assert.equal(excecaoDe("canal_publicado"), null);
+  const m = motivoAcaoNaoDeclarada("canal_publicado");
+  assert.match(m, /canal_publicado/, "quem for consertar precisa saber QUAL ação");
+  assert.match(m, /não repita/, "a escrita aconteceu: repetir cria evento duplicado");
+  assert.notEqual(m, MOTIVO_NAO_PROJETADO, "é falha de declaração, não de projeção");
+});
+
+test("os tipos que estreiam nas outras trilhas ainda não estão declarados — e é isso que reprova", () => {
+  for (const acao of ["canal_publicado", "config_publicada", "suporte_ticket_aberto"]) {
+    assert.equal(temConferencia(acao), false, acao);
+    assert.equal(excecaoDe(acao), null, acao);
+  }
+});
+
+test("as ações que a UI já emite continuam declaradas — fail-closed não quebra caminho vivo", () => {
+  // as três emitidas por variável (construirReatribuicao/Repactuacao/Arquivamento), que a prova
+  // estática do portão NÃO vê, porque lá o tipo não é literal
+  for (const acao of ["tarefa_reatribuida", "tarefa_prazo_repactuado", "tarefa_arquivada"]) {
+    assert.ok(temConferencia(acao), `${acao} emitida por variável e precisa estar no mapa`);
+  }
+});
+
+test("confirmarProjecao: ação desconhecida reprova SEM tocar no banco (o ramo é decidido antes)", async () => {
+  // cliente-sentinela: qualquer leitura aqui é erro de desenho, e o teste explode dizendo isso.
+  const proibido = {
+    schema() {
+      throw new Error("ação desconhecida não pode chegar a consultar o banco");
+    },
+  } as never;
+  const r = await confirmarProjecao(proibido, "acao_que_ninguem_declarou", {}, {
+    evento_id: "e1",
+    posicao_global: 7,
+  });
+  assert.equal(r.ok, false, "fail-closed: sucesso aqui é o defeito do F6 pela porta dos fundos");
+  assert.match(r.motivo ?? "", /acao_que_ninguem_declarou/);
+});
+
+test("confirmarProjecao: exceção declarada sem evento_id passa sem tocar no banco", async () => {
+  const proibido = {
+    schema() {
+      throw new Error("não deveria consultar");
+    },
+  } as never;
+  const r = await confirmarProjecao(proibido, "levindo_acionado", {}, null);
+  assert.deepEqual(r, { ok: true });
 });

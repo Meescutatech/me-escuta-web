@@ -30,6 +30,14 @@ export function motivoFalhaVerificacao(erro: string): string {
 }
 
 /**
+ * Ação que ninguém declarou. Fala com o operador primeiro (a escrita ACONTECEU, não repita) e
+ * nomeia a ação para quem for consertar.
+ */
+export function motivoAcaoNaoDeclarada(acao: string): string {
+  return `a escrita foi aceita, mas o sistema não sabe conferir "${acao}" — não repita; avise quem cuida do sistema (falta declarar a conferência desta ação)`;
+}
+
+/**
  * Posição a conferir na projeção, ou null quando não há o que conferir:
  * duplicado é idempotência (não é falha; a projeção vigente é a do evento original) e resposta sem
  * `posicao_global` é contrato antigo — não inventar falha onde não há chave de conferência.
@@ -202,7 +210,17 @@ export async function confirmarProjecao(
     return { ok: true };
   }
 
-  if (!temConferencia(acao)) return { ok: true }; // tipo fora do mapa: não inventar veredito
+  // FAIL-CLOSED (achado do Agent 2, R16-23). Aqui devolvia `{ok:true}` com o argumento de "não
+  // inventar veredito para tipo que não conheço" — e isso é exatamente o defeito que o F6 existe
+  // para tirar, reintroduzido pela porta dos fundos: ação fora do mapa declarava sucesso SEM
+  // conferir nada. Pior, valia justamente para os tipos que ESTREIAM (canal_*, config_publicada,
+  // suporte_*), que são os que mais precisam da rede. A prova estática do portão não pegava:
+  // ela só varre os arquivos desta trilha, e quem estreia tipo novo é outra trilha.
+  //
+  // Agora ação desconhecida REPROVA, com o nome dela no motivo. O custo é o certo: quem acrescenta
+  // uma escrita nova é obrigado a declarar como ela se confere — ou a declarar a exceção com o
+  // motivo, que é a regra que a spec já pedia ("ausência de conferência NUNCA por esquecimento").
+  if (!temConferencia(acao)) return { ok: false, motivo: motivoAcaoNaoDeclarada(acao) };
   const regra = CONFERENCIA[acao];
 
   if (regra.por === "estado") {

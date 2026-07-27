@@ -412,6 +412,24 @@ try {
     else nok(`(5) exceção sem declaração no código que a usa: ${semDeclaracao.join(", ")}`);
   }
 
+  // ── 7-bis · FAIL-CLOSED: ação não declarada REPROVA (achado do Agent 2) ───────────────────
+  {
+    // Um tipo que ninguém declarou, escrito pela porta de verdade. Antes isto devolvia ok:true —
+    // o defeito do F6 entrando pela porta dos fundos, e justamente nos tipos que estreiam.
+    const inventada = "acao_inventada_do_portao_f6";
+    const r = await escreverComoAUI(inventada, { lead_id: LEAD }, LEAD);
+    const noLedger =
+      r.resposta?.evento_id &&
+      (await sql.query("select 1 from core.evento where id = $1", [r.resposta.evento_id]))
+        .rowCount > 0;
+    if (!noLedger)
+      nok("(7) a ação inventada nem entrou no ledger — o caso de fail-open não foi encenado");
+    else if (r.resultado.ok === false && (r.resultado.motivo ?? "").includes(inventada))
+      ok(`(7) ação NÃO declarada reprova e o motivo a nomeia — fail-closed: "${r.resultado.motivo}"`);
+    else
+      nok(`(7) ação não declarada devolveu ${JSON.stringify(r.resultado)} — fail-open: qualquer tipo novo declara sucesso sem conferir`);
+  }
+
   // ── 8-bis · COBERTURA: nenhuma linha do mapa fica sem escrita real ───────────────────────
   {
     const naoExercitadas = Object.keys(CONFERENCIA).filter(
