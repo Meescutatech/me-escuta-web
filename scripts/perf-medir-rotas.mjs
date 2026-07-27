@@ -4,12 +4,24 @@
  * cookie do app) e mede TTFB (primeiro byte = quando a navegação responde) e TOTAL (stream
  * completo = dados na tela) de cada rota. NUNCA aponta pra produção.
  *
- * Uso: BASE=http://127.0.0.1:3101 SUPABASE_URL=http://127.0.0.1:54520 node scripts/perf-medir-rotas.mjs
+ * Uso: BASE=http://127.0.0.1:3101 SUPABASE_URL=http://127.0.0.1:<SUA_PORTA> node scripts/perf-medir-rotas.mjs
+ *
+ * Sem default de alvo (F7): mede o que você declarar. O `?? "…:54520"` que existia aqui apontava
+ * para a faixa compartilhada — medir o ambiente do vizinho dá número que parece seu e não é.
  */
 import { createServerClient } from "@supabase/ssr";
 
-const BASE = process.env.BASE ?? "http://127.0.0.1:3101";
-const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://127.0.0.1:54520";
+function exigir(nome, exemplo) {
+  const valor = process.env[nome];
+  if (!valor) {
+    console.error(`ABORTADO: ${nome} não está definida.  ex.: ${nome}=${exemplo}`);
+    process.exit(2);
+  }
+  return valor;
+}
+
+const BASE = exigir("BASE", "http://127.0.0.1:3101");
+const SUPABASE_URL = exigir("SUPABASE_URL", "http://127.0.0.1:<SUA_ME_API_PORT>");
 const ANON =
   process.env.SUPABASE_ANON_KEY ??
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"; // anon DEMO do supabase local — público, não é segredo
