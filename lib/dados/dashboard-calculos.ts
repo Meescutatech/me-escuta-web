@@ -99,6 +99,89 @@ export function somaValores(valores: Array<number | null | undefined>): number {
   return valores.reduce<number>((s, v) => s + (v ?? 0), 0);
 }
 
+/*
+ * ── F24a · agregação em JS no lugar de um head-count por linha ──────────────────────────────
+ *
+ * O painel disparava ~37 requisições por visita: 14 contagens por etapa (1 por etapa) + 14
+ * contagens de mensagem (7 dias × 2 direções) + 3 de entrega, entre outras. O código já sabia que
+ * isso era errado e dizia por quê: o PostgREST deste projeto não expõe funções de agregação, e a
+ * saída dada foi o head-count por linha.
+ *
+ * A troca é round-trip por PAYLOAD, e ela é boa até certo volume e ruim depois — por isso cada
+ * agregação tem TETO e volta ao caminho antigo acima dele. O teto não é melhoria futura: é critério
+ * de aceite, porque o dia em que a janela de 7 dias tiver 50 mil mensagens o painel ficaria mais
+ * lento do que era antes, e ninguém perceberia.
+ *
+ * As funções abaixo são puras de propósito (a spec manda a contagem em JS morar aqui, não dentro da
+ * função de leitura): é assim que o teste consegue comparar os dois caminhos número a número. A
+ * troca de técnica não pode mudar número — esse é o erro mais provável e o mais difícil de ver.
+ */
+
+/** Acima disto, ler a coluna sai mais caro que os head-counts. Medido hoje: ~692 leads. */
+export const TETO_LEADS_AGREGACAO = 5000;
+/** Acima disto, idem, para a janela de 7 dias de mensagens. Medido hoje: ~410 em 7d. */
+export const TETO_MENSAGENS_AGREGACAO = 20000;
+
+/** Contagem por etapa a partir da coluna `etapa` — mesma pergunta dos 14 head-counts. */
+export function contarPorEtapa(linhas: Array<{ etapa?: string | null }>, chaves: string[]): number[] {
+  const contagem = new Map<string, number>();
+  for (const l of linhas) {
+    const k = l.etapa == null ? "" : String(l.etapa);
+    contagem.set(k, (contagem.get(k) ?? 0) + 1);
+  }
+  return chaves.map((c) => contagem.get(c) ?? 0);
+}
+
+/**
+ * Mensagens por dia e direção, bucketizadas nas MESMAS janelas que os head-counts usavam.
+ * A fronteira é [início, fim) igual à do `.gte()/.lt()`: fechada embaixo, aberta em cima. Errar
+ * isso é o jeito silencioso de a agregação divergir do head-count por uma mensagem na virada.
+ */
+export function bucketizarMensagens(
+  msgs: Array<{ direcao?: string | null; criado_em?: string | null }>,
+  janelas: JanelaDia[],
+): Array<{ rotulo: string; entrada: number; saida: number }> {
+  const baldes = janelas.map((j) => ({
+    rotulo: j.rotulo,
+    entrada: 0,
+    saida: 0,
+    de: new Date(j.inicioIso).getTime(),
+    ate: new Date(j.fimIso).getTime(),
+  }));
+  for (const m of msgs) {
+    const t = m.criado_em ? new Date(m.criado_em).getTime() : NaN;
+    if (isNaN(t)) continue;
+    const b = baldes.find((x) => t >= x.de && t < x.ate);
+    if (!b) continue;
+    if (m.direcao === "entrada") b.entrada += 1;
+    else if (m.direcao === "saida") b.saida += 1;
+  }
+  return baldes.map(({ rotulo, entrada, saida }) => ({ rotulo, entrada, saida }));
+}
+
+/** Os estados que contam como "entrega conhecida" — a base do percentual. */
+export const ESTADOS_ENTREGA_CONHECIDA = ["enviado", "entregue", "lido", "falhou"];
+const ESTADOS_ENTREGUE = new Set(["entregue", "lido"]);
+
+/** Base/entregues/falhas de uma leitura única de `status_entrega` — os 3 head-counts em 1. */
+export function contarEntrega(linhas: Array<{ status_entrega?: string | null }>): {
+  base: number;
+  entregues: number;
+  falhas: number;
+} {
+  let base = 0;
+  let entregues = 0;
+  let falhas = 0;
+  for (const l of linhas) {
+    const e = l.status_entrega == null ? "" : String(l.status_entrega);
+    if (!ESTADOS_ENTREGA_CONHECIDA.includes(e)) continue;
+    base += 1;
+    if (ESTADOS_ENTREGUE.has(e)) entregues += 1;
+    if (e === "falhou") falhas += 1;
+  }
+  return { base, entregues, falhas };
+}
+
 /** Duração amigável a partir de minutos: "45s", "12 min", "1h 05min", "2d 3h". */
 export function formatarDuracaoMin(min: number | null): string {
   if (min == null) return "—";

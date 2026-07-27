@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  bucketizarMensagens,
+  contarEntrega,
+  contarPorEtapa,
   formatarDuracaoMin,
   inicioDoDiaSP,
   janelasUltimosDias,
@@ -138,4 +141,79 @@ test("formatarDuracaoMin: null, segundos, minutos, horas, dias", () => {
   assert.equal(formatarDuracaoMin(80), "1h 20min");
   assert.equal(formatarDuracaoMin(120), "2h");
   assert.equal(formatarDuracaoMin(60 * 26 + 30), "1d 2h");
+});
+
+/*
+ * F24a · a agregação em JS que substitui os head-counts. O risco declarado do item é a TROCA DE
+ * TÉCNICA MUDAR NÚMERO — silenciosamente, por fuso, fronteira de janela ou estado esquecido.
+ * Cada teste abaixo compara contra o que o head-count antigo teria devolvido.
+ */
+
+test("F24a · contagem por etapa == 1 head-count por etapa, inclusive as etapas vazias", () => {
+  const linhas = [
+    { etapa: "novo" }, { etapa: "novo" }, { etapa: "novo" },
+    { etapa: "qualificando" },
+    { etapa: "arquivado" }, // fora do board: não pode entrar em etapa nenhuma
+    { etapa: null },        // sem etapa: idem
+  ];
+  const chaves = ["novo", "qualificando", "proposta"];
+  // o head-count antigo faria: eq(etapa,'novo')=3, eq('qualificando')=1, eq('proposta')=0
+  assert.deepEqual(contarPorEtapa(linhas, chaves), [3, 1, 0]);
+});
+
+test("F24a · etapa vazia é 0, nunca ausente — a régua do painel tem uma casa por etapa", () => {
+  assert.deepEqual(contarPorEtapa([], ["a", "b"]), [0, 0]);
+});
+
+test("F24a · bucketização respeita [início, fim) — a mesma fronteira do .gte()/.lt()", () => {
+  const janelas = [
+    { inicioIso: "2026-07-20T03:00:00.000Z", fimIso: "2026-07-21T03:00:00.000Z", rotulo: "seg 20/07" },
+    { inicioIso: "2026-07-21T03:00:00.000Z", fimIso: "2026-07-22T03:00:00.000Z", rotulo: "ter 21/07" },
+  ];
+  const msgs = [
+    { direcao: "entrada", criado_em: "2026-07-20T03:00:00.000Z" }, // exatamente o início: entra no 1º
+    { direcao: "saida", criado_em: "2026-07-21T02:59:59.999Z" },   // último instante do 1º
+    { direcao: "entrada", criado_em: "2026-07-21T03:00:00.000Z" }, // início do 2º, NÃO do 1º
+    { direcao: "entrada", criado_em: "2026-07-19T23:00:00.000Z" }, // antes de tudo: fora
+    { direcao: "entrada", criado_em: "2026-07-25T00:00:00.000Z" }, // depois: fora
+  ];
+  assert.deepEqual(bucketizarMensagens(msgs, janelas), [
+    { rotulo: "seg 20/07", entrada: 1, saida: 1 },
+    { rotulo: "ter 21/07", entrada: 1, saida: 0 },
+  ]);
+});
+
+test("F24a · direção desconhecida e data inválida não entram em balde nenhum", () => {
+  const janelas = [
+    { inicioIso: "2026-07-20T03:00:00.000Z", fimIso: "2026-07-21T03:00:00.000Z", rotulo: "seg 20/07" },
+  ];
+  const msgs = [
+    { direcao: "interna", criado_em: "2026-07-20T10:00:00.000Z" },
+    { direcao: "entrada", criado_em: "data inventada" },
+    { direcao: "entrada", criado_em: null },
+  ];
+  assert.deepEqual(bucketizarMensagens(msgs, janelas), [{ rotulo: "seg 20/07", entrada: 0, saida: 0 }]);
+});
+
+test("F24a · entrega: base/entregues/falhas == os 3 head-counts que ela substitui", () => {
+  const linhas = [
+    { status_entrega: "enviado" },
+    { status_entrega: "entregue" },
+    { status_entrega: "lido" },
+    { status_entrega: "falhou" },
+    { status_entrega: "na_fila" },  // estado NÃO conhecido: fora da base (era o filtro do .in())
+    { status_entrega: "enviando" }, // idem
+    { status_entrega: null },       // idem
+  ];
+  // head-counts antigos: base in(enviado,entregue,lido,falhou)=4; entregues in(entregue,lido)=2;
+  // falhas eq(falhou)=1
+  assert.deepEqual(contarEntrega(linhas), { base: 4, entregues: 2, falhas: 1 });
+});
+
+test("F24a · 'enviado' NÃO é entregue — confundir os dois infla a taxa do painel", () => {
+  assert.deepEqual(contarEntrega([{ status_entrega: "enviado" }]), {
+    base: 1,
+    entregues: 0,
+    falhas: 0,
+  });
 });
