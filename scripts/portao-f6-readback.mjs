@@ -402,13 +402,30 @@ try {
       ok(`(5) os ${tiposVistos} tipos literais passados a registrarEventoUI estão TODOS declarados`);
     else nok(`(5) tipos escritos sem declaração (nem conferência, nem exceção): ${[...naoDeclaradas].join(", ")}`);
 
-    // toda ação declarada como exceção tem o motivo escrito TAMBÉM no código que a usa
+    // Toda ação declarada como exceção tem o motivo escrito TAMBÉM no código que a usa.
+    // Depois do enxerto (ARB-28-bis) a tabela tem exceção de outra trilha — e exigir declaração
+    // no ponto de chamada quando NÃO EXISTE ponto de chamada nesta branch é cobrar o impossível.
+    // A dispensa é conferida, não presumida: só vale para a exceção que nenhum arquivo desta
+    // branch emite. No dia em que alguém a emitir aqui, o `emitida` vira true e a regra volta.
     const excecoesNoCodigo = /EXCEÇÃO DECLARADA|exceção declarada/i;
-    const semDeclaracao = Object.keys(EXCECOES).filter(
-      (a) => !meus.some((f) => fonte[f].includes(a) && excecoesNoCodigo.test(fonte[f])),
-    );
+    const semDeclaracao = [];
+    const naoEmitidasAqui = [];
+    for (const a of Object.keys(EXCECOES)) {
+      const emitida = meus.some((f) => new RegExp(`["']${a}["']`).test(fonte[f]));
+      if (!emitida) {
+        naoEmitidasAqui.push(a);
+        continue;
+      }
+      if (!meus.some((f) => fonte[f].includes(a) && excecoesNoCodigo.test(fonte[f])))
+        semDeclaracao.push(a);
+    }
     if (semDeclaracao.length === 0)
-      ok(`(5) ${Object.keys(EXCECOES).length} exceção(ões) declarada(s), e o motivo está TAMBÉM no ponto de chamada`);
+      ok(
+        `(5) exceções com motivo TAMBÉM no ponto de chamada` +
+          (naoEmitidasAqui.length
+            ? ` · ${naoEmitidasAqui.join(", ")} dispensada(s) COM PROVA: nenhum arquivo desta branch emite`
+            : ""),
+      );
     else nok(`(5) exceção sem declaração no código que a usa: ${semDeclaracao.join(", ")}`);
   }
 
@@ -431,20 +448,47 @@ try {
   }
 
   // ── 8-bis · COBERTURA: nenhuma linha do mapa fica sem escrita real ───────────────────────
+  //
+  // Depois do enxerto do ARB-28-bis a tabela tem ações de DUAS trilhas, e as projeções da Web-B
+  // (0067–0075) não existem neste cluster — a escrita real delas é o roteiro próprio da web-b
+  // (`supabase/verificacao/web-b-escrita-real.sql`, verde no db-r16-c: 4 vacuidades / 10 recusas /
+  // 18 medidas). Exercitá-las aqui é impossível, não indesejável.
+  //
+  // Mas "impossível" não pode virar bilhete de isenção: a dispensa é CONFERIDA no catálogo do
+  // cluster. Só é dispensada a ação cuja tabela-alvo comprovadamente NÃO EXISTE aqui. Se alguém
+  // acrescentar uma ação DESTA trilha e "esquecer" a escrita real, a tabela existe, a dispensa não
+  // se aplica, e a asserção reprova — que é o comportamento que a (6) sempre teve.
   {
+    // A prova é o DISPATCHER VIVO deste cluster: se `porta.aplicar_projetores` não tem o ramo do
+    // tipo, a projeção não pode nascer aqui de jeito nenhum — não é escolha de quem escreveu o
+    // portão. É fato do banco, lido por pg_get_functiondef, não declaração de intenção.
+    const corpoDispatcher = (
+      await sql.query("select pg_get_functiondef('porta.aplicar_projetores'::regproc) as src")
+    ).rows[0].src;
     const naoExercitadas = Object.keys(CONFERENCIA).filter(
       (a) => !linhas.some((l) => l.includes(`${a} → core.`)),
     );
-    if (naoExercitadas.length === 0)
-      ok(`(6) as ${Object.keys(CONFERENCIA).length} ações mapeadas foram exercitadas com escrita real`);
-    else nok(`(6) ações mapeadas SEM escrita real no portão: ${naoExercitadas.join(", ")}`);
-  }
+    const semProjecaoAqui = naoExercitadas.filter((a) => !corpoDispatcher.includes(a));
+    const faltando = naoExercitadas.filter((a) => corpoDispatcher.includes(a));
+    const exercitaveis = Object.keys(CONFERENCIA).length - semProjecaoAqui.length;
 
-  // ── 9 · VACUIDADE ─────────────────────────────────────────────────────────────────────────
-  if (acoesExercitadas >= Object.keys(CONFERENCIA).length && linhasEncontradas > 0)
-    ok(`(vacuidade) ${acoesExercitadas} escritas reais, ${linhasEncontradas} projeções conferidas — não passou vazio`);
-  else
-    nok(`(vacuidade) só ${acoesExercitadas} escritas e ${linhasEncontradas} projeções; verde aqui seria falso`);
+    if (faltando.length === 0)
+      ok(
+        `(6) as ${exercitaveis} ações exercitáveis neste cluster foram escritas de verdade` +
+          (semProjecaoAqui.length
+            ? ` · ${semProjecaoAqui.length} dispensadas COM PROVA (o dispatcher deste cluster não ` +
+              `tem o ramo delas): ${semProjecaoAqui.join(", ")} — a escrita real dessas é o ` +
+              `roteiro da web-b, verde no db-r16-c`
+            : ""),
+      );
+    else nok(`(6) ações mapeadas SEM escrita real no portão: ${faltando.join(", ")}`);
+
+    // ── 9 · VACUIDADE ───────────────────────────────────────────────────────────────────────
+    if (acoesExercitadas >= exercitaveis && linhasEncontradas > 0)
+      ok(`(vacuidade) ${acoesExercitadas} escritas reais, ${linhasEncontradas} projeções conferidas — não passou vazio`);
+    else
+      nok(`(vacuidade) só ${acoesExercitadas} escritas e ${linhasEncontradas} projeções; verde aqui seria falso`);
+  }
 } finally {
   await sql.end();
   await admin.auth.admin.deleteUser(UID).catch(() => {});

@@ -87,11 +87,89 @@ export function avaliarProjecao(encontrou: boolean | null): { ok: boolean; motiv
  *     mesmo) é do sender, e a UI segue sem emiti-lo.
  */
 
-/** Como confirmar: pela posição carimbada, pelo id do evento, ou por um estado da linha. */
+/**
+ * Um filtro do modo `filtros` (abaixo). Vocabulário mínimo para expressar "a linha ESPERADA", que é
+ * o que as telas B conferem: não basta a linha existir, ela tem de estar no estado que a ação
+ * prometeu (ligado, resolvido, versão nova).
+ */
+export type FiltroProjecao =
+  | { campo: string; op: "igualPayload"; dePayload: string }
+  | { campo: string; op: "igualPayloadMais1"; dePayload: string }
+  | { campo: string; op: "igualEvento" }
+  | { campo: string; op: "igual"; valor: string | number | boolean }
+  | { campo: string; op: "naoNulo" };
+
+/** Como confirmar: pela posição carimbada, pelo id do evento, por um estado, ou por efeito. */
 export type ConferenciaProjecao =
   | { tabela: string; por: "posicao"; coluna: string }
   | { tabela: string; por: "evento"; coluna: string }
-  | { tabela: string; por: "estado"; chave: string; campoPayload: string; naoNulo: string };
+  | { tabela: string; por: "estado"; chave: string; campoPayload: string; naoNulo: string }
+  /**
+   * `filtros` (R16-20, Web-B — enxertado aqui pelo ARB-28-bis): a releitura precisa de MAIS DE UMA
+   * condição. As views das telas B (`v_canal_whatsapp`, `v_suporte_ticket`, `v_config_vigente`) não
+   * expõem `ultima_posicao`, então a conferência é pelo EFEITO ESPERADO — e efeito quase nunca cabe
+   * num par chave/valor: "o canal X está LIGADO", "a config Y subiu para base+1", "o ticket Z está
+   * RESOLVIDO".
+   *
+   * Espremer isso nos três modos acima teria enfraquecido a conferência EM SILÊNCIO (passaria a
+   * conferir só que a linha existe — linha que já existia ANTES da ação), que é exatamente como um
+   * readback vira decoração.
+   */
+  | { tabela: string; por: "filtros"; coluna: string; filtros: FiltroProjecao[] };
+
+/** Valor concreto de um filtro. Puro: é o que o teste exercita sem banco. */
+export type FiltroResolvido =
+  | { campo: string; tipo: "igual"; valor: string | number | boolean }
+  | { campo: string; tipo: "naoNulo" };
+
+export function resolverFiltro(
+  filtro: FiltroProjecao,
+  payload: Record<string, unknown>,
+  eventoId: string | null,
+): FiltroResolvido | null {
+  switch (filtro.op) {
+    case "igual":
+      return { campo: filtro.campo, tipo: "igual", valor: filtro.valor };
+    case "naoNulo":
+      return { campo: filtro.campo, tipo: "naoNulo" };
+    case "igualEvento":
+      return eventoId ? { campo: filtro.campo, tipo: "igual", valor: eventoId } : null;
+    case "igualPayload": {
+      const v = payload[filtro.dePayload];
+      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+        return { campo: filtro.campo, tipo: "igual", valor: v };
+      }
+      return null;
+    }
+    case "igualPayloadMais1": {
+      const v = payload[filtro.dePayload];
+      return typeof v === "number" && Number.isFinite(v)
+        ? { campo: filtro.campo, tipo: "igual", valor: v + 1 }
+        : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * Resolve todos. `null` = algum filtro ficou sem valor — e isso NÃO vira "confere sem ele": um
+ * filtro que some transforma "esta linha" em "qualquer linha", e a conferência passaria a aprovar a
+ * escrita de outra pessoa.
+ */
+export function resolverFiltros(
+  filtros: FiltroProjecao[],
+  payload: Record<string, unknown>,
+  eventoId: string | null,
+): FiltroResolvido[] | null {
+  const saida: FiltroResolvido[] = [];
+  for (const f of filtros) {
+    const r = resolverFiltro(f, payload, eventoId);
+    if (!r) return null;
+    saida.push(r);
+  }
+  return saida;
+}
 
 /** Ausência de conferência DECLARADA, com o motivo escrito. Nunca por esquecimento. */
 export interface ExcecaoConferencia {
@@ -129,9 +207,112 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
 
   // A bolha nasce aqui, em "na_fila", na mesma transação. Sair de fato é outro evento, do sender.
   enviar_mensagem_humana: { tabela: "mensagem", por: "evento", coluna: "id" },
+
+  /*
+   * ── TELAS B (R16-20 · Web-B) ────────────────────────────────────────────────────────────────
+   * Enxertadas aqui pelo ARB-28-bis: o arquivo é meu (Agent 1), o fail-closed é a base, e o modo
+   * `filtros` + estas dez linhas vêm de web-b @ dde4d3c. Não há choque lógico — com as linhas NA
+   * tabela elas são ações CONHECIDAS, e o fail-closed só atinge ação genuinamente fora dela.
+   *
+   * A regra desta casa é que a linha migra JUNTO do caso que a exercita com ESCRITA REAL (E-020).
+   * O caso é `supabase/verificacao/web-b-escrita-real.sql`, verde no stack db-r16-c em 27/07:
+   * 4 vacuidades · 10 recusas · 18 medidas · baseline idêntico por chave.
+   *
+   * E ele não passou de primeira: REPROVOU e pegou um defeito real (ARB-26). A regra da abertura de
+   * ticket conferia por `payload.ticket_id`, e a 0070 crava `id = evento.id` e nunca lê esse campo —
+   * a releitura devolvia zero para toda abertura BEM-SUCEDIDA. A identidade nasce do evento; quem
+   * manda id de fora está inventando identidade. Por isso a linha abaixo confere por `igualEvento`.
+   */
+  canal_registrado: {
+    tabela: "v_canal_whatsapp",
+    por: "filtros",
+    coluna: "canal_id",
+    filtros: [{ campo: "canal_id", op: "igualPayload", dePayload: "canal_id" }],
+    // registrar nasce ativo=false, então `ativo` não serve de prova: o efeito é a linha existir.
+  },
+  canal_atualizado: {
+    tabela: "v_canal_whatsapp",
+    por: "filtros",
+    coluna: "nome",
+    filtros: [
+      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
+      { campo: "nome", op: "igualPayload", dePayload: "nome" },
+    ],
+    // patch parcial: confere o campo que a tela mandou. Só existir a linha não provaria nada.
+  },
+  canal_ativado: {
+    tabela: "v_canal_whatsapp",
+    por: "filtros",
+    coluna: "ativo",
+    filtros: [
+      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
+      { campo: "ativo", op: "igual", valor: true },
+    ],
+    // o efeito É o estado: ligar e a linha continuar false é o que o readback tem de pegar.
+  },
+  canal_desativado: {
+    tabela: "v_canal_whatsapp",
+    por: "filtros",
+    coluna: "ativo",
+    filtros: [
+      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
+      { campo: "ativo", op: "igual", valor: false },
+    ],
+    // este é o caminho que mata mensagem em voo — mentir aqui custa caro.
+  },
+  canal_consentimento_registrado: {
+    tabela: "v_canal_whatsapp",
+    por: "filtros",
+    coluna: "consentimento_em",
+    filtros: [
+      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
+      { campo: "consentimento_em", op: "naoNulo" },
+    ],
+    // consentimento é o PORTÃO da sessão: "registrado" sem a coluna preenchida liberaria o
+    // pareamento de um número pessoal sem base.
+  },
+  config_publicada: {
+    tabela: "v_config_vigente",
+    por: "filtros",
+    coluna: "versao",
+    filtros: [
+      { campo: "nome", op: "igualPayload", dePayload: "nome" },
+      { campo: "versao", op: "igualPayloadMais1", dePayload: "versao_base" },
+    ],
+    // a porta carimba versao = vigente+1; conferir só o nome passaria com a versão VELHA.
+  },
+  suporte_ticket_aberto: {
+    tabela: "v_suporte_ticket",
+    por: "filtros",
+    coluna: "id",
+    filtros: [{ campo: "id", op: "igualEvento" }],
+    // ARB-26: `id = evento.id` (0070). Foi aqui que o portão de escrita real reprovou.
+  },
+  suporte_ticket_comentado: {
+    tabela: "suporte_ticket_comentario",
+    por: "filtros",
+    coluna: "id",
+    filtros: [{ campo: "id", op: "igualEvento" }],
+    // o comentário nasce com id = evento.id; a tabela não tem coluna de posição.
+  },
+  suporte_ticket_resolvido: {
+    tabela: "v_suporte_ticket",
+    por: "filtros",
+    coluna: "status",
+    filtros: [
+      { campo: "id", op: "igualPayload", dePayload: "ticket_id" },
+      { campo: "status", op: "igual", valor: "resolvido" },
+    ],
+    // aqui o ticket_id é legítimo: ele APONTA para um ticket que já existe, não cria identidade.
+  },
 };
 
 export const EXCECOES: Readonly<Record<string, ExcecaoConferencia>> = {
+  aceite_contato_registrado: {
+    motivo:
+      "Ledger-only POR DESENHO (CONTRATO-C §5.5, e o banco concorda: porta.projetor_registro traz o tipo com sem_projetor=true). core.contraparte_conhecida() consulta o evento direto, pelo critério de anterioridade que separa aceite verdadeiro de aceite fabricado pela própria ingestão. Projetar criaria uma segunda verdade sobre quem consentiu.",
+    conferirLedger: true,
+  },
   levindo_acionado: {
     motivo:
       "tipo deliberadamente SEM projetor: o acionamento vive só no ledger, para o runtime consumir. Ausência de projeção aqui é o desenho, não um ramo perdido.",
@@ -235,6 +416,27 @@ export async function confirmarProjecao(
       .eq(regra.chave, alvo)
       .not(regra.naoNulo, "is", null)
       .limit(1);
+    if (error) return { ok: false, motivo: motivoFalhaVerificacao(error.message) };
+    return avaliarProjecao((data ?? []).length > 0);
+  }
+
+  if (regra.por === "filtros") {
+    // Releitura por EFEITO ESPERADO (ARB-28-bis). Duplicado já saiu acima como sucesso idempotente;
+    // aqui o que pode faltar é dado no payload — e nesse caso a conferência FALHA em vez de conferir
+    // menos: um filtro que some transforma "esta linha" em "qualquer linha".
+    const filtros = resolverFiltros(regra.filtros, payload, resposta?.evento_id ?? null);
+    if (!filtros) {
+      return {
+        ok: false,
+        motivo: motivoFalhaVerificacao("faltou dado para montar a releitura da projeção"),
+      };
+    }
+    let consulta = supabase.schema("core").from(regra.tabela).select(regra.coluna);
+    for (const f of filtros) {
+      consulta =
+        f.tipo === "naoNulo" ? consulta.not(f.campo, "is", null) : consulta.eq(f.campo, f.valor);
+    }
+    const { data, error } = await consulta.limit(1);
     if (error) return { ok: false, motivo: motivoFalhaVerificacao(error.message) };
     return avaliarProjecao((data ?? []).length > 0);
   }

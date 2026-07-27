@@ -11,7 +11,10 @@ import {
   motivoAcaoNaoDeclarada,
   motivoFalhaVerificacao,
   posicaoParaConferir,
+  resolverFiltro,
+  resolverFiltros,
   temConferencia,
+  type ConferenciaProjecao,
 } from "../lib/eventos/confirmar-projecao.ts";
 
 /*
@@ -229,8 +232,12 @@ test("ação fora do mapa NÃO é sucesso — e o motivo nomeia a ação", () =>
   assert.notEqual(m, MOTIVO_NAO_PROJETADO, "é falha de declaração, não de projeção");
 });
 
-test("os tipos que estreiam nas outras trilhas ainda não estão declarados — e é isso que reprova", () => {
-  for (const acao of ["canal_publicado", "config_publicada", "suporte_ticket_aberto"]) {
+test("tipo que ninguém declarou reprova — é a razão de ser do fail-closed", () => {
+  // Este teste já listou `config_publicada` e `suporte_ticket_aberto` como não-declarados. Eles
+  // PASSARAM a ser declarados no enxerto do ARB-28-bis, e é assim que tinha de ser: o fail-closed
+  // nunca foi contra esses tipos, foi contra a AUSÊNCIA de declaração. O que ele protege é o tipo
+  // que estreia sem ninguém dizer como se confere — então é isso que o teste fixa agora.
+  for (const acao of ["canal_publicado", "tipo_que_ninguem_declarou", "suporte_ticket_arquivado"]) {
     assert.equal(temConferencia(acao), false, acao);
     assert.equal(excecaoDe(acao), null, acao);
   }
@@ -267,4 +274,160 @@ test("confirmarProjecao: exceção declarada sem evento_id passa sem tocar no ba
   } as never;
   const r = await confirmarProjecao(proibido, "levindo_acionado", {}, null);
   assert.deepEqual(r, { ok: true });
+});
+
+/*
+ * ═══════════ ENXERTO ARB-28-bis · modo `filtros` + as 10 linhas das telas B ═══════════
+ *
+ * O arquivo é meu (Agent 1) e o fail-closed é a base; o modo `filtros`, o resolvedor puro e as dez
+ * linhas vêm de web-b @ dde4d3c, onde o Agent 2 mostrou que os três modos existentes não expressam
+ * as regras dele — as views das telas B não trazem `ultima_posicao`, então a conferência é pelo
+ * EFEITO ESPERADO. Espremer isso nos modos antigos teria enfraquecido o readback EM SILÊNCIO para
+ * "a linha existe" (linha que já existia antes da ação).
+ *
+ * Estes testes vieram junto com o dado, adaptados só no que dependia de arquivos da web-b que não
+ * existem nesta branch: a lista dos 10 tipos é declarada aqui em vez de importada.
+ */
+
+/** Os 10 tipos que a Web-B escreve (a lista viva mora em components/configuracoes/regras/porta.ts). */
+const TIPOS_ESCRITOS_WEB_B = [
+  "canal_registrado",
+  "canal_atualizado",
+  "canal_ativado",
+  "canal_desativado",
+  "canal_consentimento_registrado",
+  "config_publicada",
+  "suporte_ticket_aberto",
+  "suporte_ticket_comentado",
+  "suporte_ticket_resolvido",
+  "aceite_contato_registrado",
+];
+
+function regraWebB(tipo: string): Extract<ConferenciaProjecao, { por: "filtros" }> {
+  const r = CONFERENCIA[tipo];
+  assert.ok(r && r.por === "filtros", `${tipo} deveria conferir por filtros`);
+  return r as Extract<ConferenciaProjecao, { por: "filtros" }>;
+}
+
+test("enxerto · todo tipo escrito pela Web-B tem conferência OU exceção declarada", () => {
+  for (const tipo of TIPOS_ESCRITOS_WEB_B) {
+    assert.ok(temConferencia(tipo) || excecaoDe(tipo), tipo);
+  }
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 10);
+});
+
+test("enxerto · o fail-closed NÃO atinge as 10: com a linha na tabela, elas são conhecidas", () => {
+  // é o ponto do ARB-28-bis: não há choque entre o fail-closed e as linhas da web-b
+  for (const tipo of TIPOS_ESCRITOS_WEB_B) {
+    assert.notEqual(
+      temConferencia(tipo) || excecaoDe(tipo) !== null,
+      false,
+      `${tipo} cairia no fail-closed`,
+    );
+  }
+});
+
+test("enxerto · toda regra das telas B confere por EFEITO, nunca só pela existência da linha", () => {
+  for (const tipo of TIPOS_ESCRITOS_WEB_B) {
+    if (excecaoDe(tipo)) continue;
+    const r = regraWebB(tipo);
+    assert.ok(r.filtros.length > 0, tipo);
+    assert.ok(r.tabela.length > 0, tipo);
+  }
+});
+
+test("enxerto · ativar confere o ESTADO, não só a existência da linha", () => {
+  const r = regraWebB("canal_ativado");
+  assert.ok(r.filtros.some((f) => f.campo === "ativo" && f.op === "igual" && f.valor === true));
+});
+
+test("enxerto · config_publicada confere a VERSÃO RESULTANTE (base + 1), não o nome", () => {
+  const r = regraWebB("config_publicada");
+  assert.deepEqual(resolverFiltros(r.filtros, { nome: "convite", versao_base: 3 }, null), [
+    { campo: "nome", tipo: "igual", valor: "convite" },
+    { campo: "versao", tipo: "igual", valor: 4 },
+  ]);
+});
+
+test("enxerto · comentário de ticket confere pelo id do EVENTO (a tabela não tem posição)", () => {
+  const r = regraWebB("suporte_ticket_comentado");
+  assert.deepEqual(resolverFiltros(r.filtros, {}, "evt-1"), [
+    { campo: "id", tipo: "igual", valor: "evt-1" },
+  ]);
+  assert.equal(resolverFiltros(r.filtros, {}, null), null);
+});
+
+test("enxerto · consentimento confere a COLUNA PREENCHIDA, não a linha", () => {
+  const r = regraWebB("canal_consentimento_registrado");
+  assert.deepEqual(resolverFiltros(r.filtros, { canal_id: "lite:jade" }, null), [
+    { campo: "canal_id", tipo: "igual", valor: "lite:jade" },
+    { campo: "consentimento_em", tipo: "naoNulo" },
+  ]);
+});
+
+test("enxerto · filtro sem valor derruba a conferência — senão 'esta linha' vira 'qualquer linha'", () => {
+  const r = regraWebB("canal_atualizado");
+  assert.equal(resolverFiltros(r.filtros, { canal_id: "lite:jade" }, null), null); // faltou `nome`
+  assert.equal(resolverFiltro({ campo: "x", op: "igualPayload", dePayload: "y" }, {}, null), null);
+  assert.equal(
+    resolverFiltro({ campo: "v", op: "igualPayloadMais1", dePayload: "b" }, { b: "3" }, null),
+    null,
+  );
+});
+
+test("enxerto · ARB-26: a abertura de ticket confere pelo evento_id, não por id da tela", () => {
+  // A regra anterior lia `v_suporte_ticket` por `payload.ticket_id`. O projetor da 0070 crava
+  // `id = evento.id` e NUNCA lê esse campo: a releitura devolvia ZERO para toda abertura
+  // bem-sucedida — a tela acusaria falha em cima de escrita que funcionou, que é pior que o
+  // defeito que o readback existe para pegar. Foi o portão de escrita real que pegou isto.
+  const r = regraWebB("suporte_ticket_aberto");
+  assert.deepEqual(r.filtros, [{ campo: "id", op: "igualEvento" }]);
+  assert.deepEqual(resolverFiltros(r.filtros, {}, "evt-abertura"), [
+    { campo: "id", tipo: "igual", valor: "evt-abertura" },
+  ]);
+  assert.equal(resolverFiltros(r.filtros, { ticket_id: "inventado" }, null), null);
+});
+
+test("enxerto · aceite_contato_registrado é exceção DECLARADA (ledger-only), com motivo", () => {
+  const e = excecaoDe("aceite_contato_registrado")!;
+  assert.ok(e.conferirLedger);
+  assert.match(e.motivo, /Ledger-only|CONTRATO-C/);
+  assert.ok(!temConferencia("aceite_contato_registrado"));
+  // duas exceções: a da web-b (ledger-only por desenho) e levindo_acionado (só no ledger, para o
+  // runtime consumir). Ambas com motivo escrito — ausência de conferência nunca por esquecimento.
+  assert.equal(Object.keys(EXCECOES).length, 2);
+  for (const [tipo, ex] of Object.entries(EXCECOES)) assert.ok(ex.motivo.length > 40, tipo);
+});
+
+test("enxerto · modo filtros monta a releitura com todos os filtros, e falha se faltar dado", async () => {
+  const chamadas: Array<{ campo: string; valor: unknown; tipo: string }> = [];
+  const consulta: any = {
+    eq(campo: string, valor: unknown) {
+      chamadas.push({ campo, valor, tipo: "eq" });
+      return consulta;
+    },
+    not(campo: string, _op: string, valor: unknown) {
+      chamadas.push({ campo, valor, tipo: "not" });
+      return consulta;
+    },
+    limit: async () => ({ data: [{ ativo: true }], error: null }),
+  };
+  const cliente = {
+    schema: () => ({ from: () => ({ select: () => consulta }) }),
+  } as never;
+
+  const ok = await confirmarProjecao(cliente, "canal_ativado", { canal_id: "lite:jade" }, {
+    evento_id: "e1",
+    posicao_global: 9,
+  });
+  assert.deepEqual(ok, { ok: true });
+  assert.deepEqual(chamadas, [
+    { campo: "canal_id", valor: "lite:jade", tipo: "eq" },
+    { campo: "ativo", valor: true, tipo: "eq" },
+  ]);
+
+  // faltou `canal_id` no payload: reprova em vez de conferir "qualquer linha"
+  const semDado = await confirmarProjecao(cliente, "canal_ativado", {}, { evento_id: "e1" });
+  assert.equal(semDado.ok, false);
+  assert.match(semDado.motivo ?? "", /faltou dado/);
 });
