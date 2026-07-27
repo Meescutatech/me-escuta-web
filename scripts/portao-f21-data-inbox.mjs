@@ -138,12 +138,14 @@ const PREFIXO = "+5511921";
  * honesto, não sujeira.
  */
 async function purgar() {
-  await sql.query(
-    `delete from core.mensagem where conversa_id in
-       (select id from core.conversa where telefone like $1)`,
-    [`${PREFIXO}%`],
-  );
-  await sql.query("delete from core.conversa where telefone like $1", [`${PREFIXO}%`]);
+  // Pelo prefixo E pela marca no corpo: as primeiras execuções deste portão sortearam telefone sem
+  // prefixo, e o resíduo delas ficou VISÍVEL no inbox — inflando o total que o portão do F22 mede.
+  // Limpeza que só conhece um critério deixa exatamente esse tipo de rastro.
+  const alvo = `select id from core.conversa
+                 where telefone like $1
+                    or id in (select conversa_id from core.mensagem where corpo like 'f21-%')`;
+  await sql.query(`delete from core.mensagem where conversa_id in (${alvo})`, [`${PREFIXO}%`]);
+  await sql.query(`delete from core.conversa where id in (${alvo})`, [`${PREFIXO}%`]);
 }
 
 async function semear() {
@@ -241,7 +243,7 @@ const mesmoInstante = (a, b) => {
 // as duas pelo comportamento antigo e provar que as asserções ficam vermelhas.
 async function medir({ datar, ordenar, rotuloDoModo }) {
   const { lerConversas } = await import("../lib/dados/conversas.ts");
-  const todas = await lerConversas(supabase);
+  const { conversas: todas } = await lerConversas({ cliente: supabase });
   const minhas = todas.filter((c) => semeadas.some((s) => s.id === c.id));
   const verdade = await verdadePorSql(semeadas.map((s) => s.id));
 

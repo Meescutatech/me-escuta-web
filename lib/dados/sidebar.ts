@@ -32,7 +32,7 @@ export async function lerContadoresSidebar(): Promise<ContadoresSidebar> {
         return error ? null : count ?? 0;
       })(),
       (async () => {
-        const conversas = await lerConversas();
+        const { conversas } = await lerConversas();
         return conversas.filter((c) => c.nao_lida).length;
       })(),
       contarVencidas(),

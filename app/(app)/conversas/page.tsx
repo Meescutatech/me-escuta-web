@@ -25,7 +25,7 @@ export default async function ConversasPage({
   // dado forte (responsavel_id / autor_id / mencionado_id) e o e-mail fica só como legado de
   // exibição. O ator do evento é carimbado pela porta de qualquer jeito.
   const supabase = criarClienteServidor();
-  const [conversas, etapasReais, userRes, mencionaveis, tipos, templatesLidos] = await Promise.all([
+  const [pagina, etapasReais, userRes, mencionaveis, tipos, templatesLidos] = await Promise.all([
     lerConversas(),
     lerEtapasReais(),
     supabase.auth.getUser(),
@@ -33,6 +33,7 @@ export default async function ConversasPage({
     lerTiposTarefa(), // R13/C6: config `tipo_tarefa`, com semente provisória
     lerTemplates(), // SPEC-TEMPLATES §6: menu / do composer (degrade: lista vazia)
   ]);
+  const { conversas } = pagina;
   const etapas = etapasReais ?? ETAPAS_PADRAO; // régua do funil no painel do lead (r9)
   const user = userRes.data.user;
   // {{atendente}} vem do NOME de core.v_membro — nunca do e-mail (spec §5.1)
@@ -58,6 +59,9 @@ export default async function ConversasPage({
   return (
     <Inbox
       conversas={conversas}
+      total={pagina.total}
+      corte={pagina.corte}
+      proximoCursor={pagina.proximoCursor}
       selecionadaId={selecionadaId}
       mensagens={mensagens}
       sugestoes={sugestoes}

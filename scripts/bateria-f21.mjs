@@ -19,8 +19,8 @@ await rodarBateria({
       arquivo: p("lib/dados/conversas.ts"),
       // a lista devolve vazio: sem conversa nenhuma, TODAS as outras asserções passariam por
       // vacuidade. Só a (0) impede o verde mentiroso.
-      de: `    if (error || !data || data.length === 0) return [];`,
-      para: `    if (error || !data || data.length === 0) return [];\n    if (data.length > 0) return [];`,
+      de: `    if (error || !data || data.length === 0) return { ...PAGINA_VAZIA, total };`,
+      para: `    if (error || !data || data.length === 0) return { ...PAGINA_VAZIA, total };\n    if (data.length > 0) return { ...PAGINA_VAZIA, total };`,
       esperaVermelho: /VERMELHO· \(0\) vacuidade/,
     },
     {

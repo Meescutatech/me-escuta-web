@@ -1,5 +1,12 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { caminhosParaAssinar } from "@/lib/conversas/midia";
+import {
+  LIMITE_PAGINA,
+  decodificar,
+  filtroKeyset,
+  houveCorte,
+  proximoCursor,
+} from "@/lib/conversas/paginacao";
 import { parseTags } from "./ficha-calculos";
 
 /**
@@ -58,6 +65,23 @@ export interface ConversaResumo {
   previa_saida?: boolean; // última msg foi de saída (Você/Clara)
   nao_lida?: boolean; // proxy: última msg foi do cliente (entrada), sem resposta
   nao_lidas_qtd?: number; // proxy: qtde de mensagens de entrada após a última saída (RF-30/31)
+}
+
+/**
+ * Uma página do inbox — mesma forma que `DadosFunil`, que é o padrão da casa para "mostrei uma
+ * parte e estou dizendo isso".
+ */
+export interface PaginaConversas {
+  conversas: ConversaResumo[];
+  /**
+   * Total do FILTRO no servidor (`visivel_inbox`), não o tamanho do array. `null` quando a
+   * contagem falha — e aí a UI mostra "50+" ou omite, nunca "50" fingindo ser o total.
+   */
+  total: number | null;
+  /** Existe conversa além das carregadas. A tela DECLARA, no molde do aviso do funil. */
+  corte: boolean;
+  /** Cursor da próxima página; `null` quando acabou de verdade. */
+  proximoCursor: string | null;
 }
 
 export interface Mensagem {
@@ -129,7 +153,48 @@ async function lerPrevias(supabase: Supabase, ids: string[]): Promise<any[]> {
   return error || !data ? [] : (data as any[]);
 }
 
-export async function lerConversas(cliente?: Supabase): Promise<ConversaResumo[]> {
+/**
+ * F22 — total de conversas do filtro do inbox, `head`-count: o Postgres conta e devolve só o
+ * número, nenhuma linha trafega. É a requisição mais barata que existe, e é ela que tira a
+ * mentira de "Todas · 50" quando são 94.
+ *
+ * Erro → `null`, e `null` faz a UI mostrar "50+" ou omitir. Nunca um total inventado.
+ */
+export async function contarConversasVisiveis(cliente?: Supabase): Promise<number | null> {
+  try {
+    const supabase = cliente ?? criarClienteServidor();
+    const { count, error } = await supabase
+      .schema("core")
+      .from("v_conversa")
+      .select("*", { count: "exact", head: true })
+      .eq("visivel_inbox", true);
+    return error ? null : count ?? 0;
+  } catch {
+    return null;
+  }
+}
+
+const PAGINA_VAZIA: PaginaConversas = {
+  conversas: [],
+  total: null,
+  corte: false,
+  proximoCursor: null,
+};
+
+export async function lerConversas(
+  opcoes: {
+    cliente?: Supabase;
+    cursor?: string | null;
+    limite?: number;
+    /**
+     * Quantas o operador já tem na tela antes desta página. Quem acumula é o cliente, então é ele
+     * quem sabe — deduzir aqui ("veio com cursor, logo já tem uma página cheia") erraria toda vez
+     * que uma página voltasse incompleta, e erraria escondendo conversa.
+     */
+    jaCarregadas?: number;
+  } = {},
+): Promise<PaginaConversas> {
+  const { cliente, cursor: cursorCru, limite = LIMITE_PAGINA, jaCarregadas = 0 } = opcoes;
   try {
     const supabase = cliente ?? criarClienteServidor();
     // rótulo de exibição da etapa (chave → nome) via config vigente do funil — não depende da
@@ -149,15 +214,23 @@ export async function lerConversas(cliente?: Supabase): Promise<ConversaResumo[]
     // LINHA foi tocada, e o import do Kommo tocou todas de uma vez.
     // O desempate por `id` é obrigatório e não decorativo: sem ele a ordem entre carimbos iguais é
     // indefinida, e é sobre este PAR (ultima_entrada_em, id) que o keyset do F22 se apoia.
-    const { data, error } = await supabase
+    // F22: o total do filtro vem do servidor, em paralelo com a página. Cursor inválido vira
+    // `null` (= começar do começo) em vez de derrubar a lista ou, pior, virar consulta sem filtro.
+    const cursor = decodificar(cursorCru);
+    const totalPromise = contarConversasVisiveis(supabase);
+
+    const base = supabase
       .schema("core")
       .from("v_conversa")
       .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em")
-      .eq("visivel_inbox", true)
+      .eq("visivel_inbox", true);
+    const comCursor = cursor ? base.or(filtroKeyset(cursor)) : base;
+    const { data, error } = await comCursor
       .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
       .order("id", { ascending: true })
-      .limit(50);
-    if (error || !data || data.length === 0) return [];
+      .limit(limite);
+    const total = await totalPromise;
+    if (error || !data || data.length === 0) return { ...PAGINA_VAZIA, total };
 
     const leadIds = data.map((c: any) => c.lead_id).filter(Boolean);
     const ids = data.map((c: any) => String(c.id));
@@ -206,7 +279,7 @@ export async function lerConversas(cliente?: Supabase): Promise<ConversaResumo[]
       }
     }
 
-    return data.map((c: any) => {
+    const conversas = data.map((c: any) => {
       const info = c.lead_id ? leadInfo.get(String(c.lead_id)) : null;
       const p = previa.get(String(c.id));
       const etapaChave = info?.etapa ? String(info.etapa) : null;
@@ -235,8 +308,12 @@ export async function lerConversas(cliente?: Supabase): Promise<ConversaResumo[]
         nao_lidas_qtd: naoLidas.get(String(c.id)) ?? 0,
       };
     });
+
+    // Quantas o operador tem na mão depois desta página vs. quantas existem no filtro.
+    const corte = houveCorte(jaCarregadas + conversas.length, total, limite);
+    return { conversas, total, corte, proximoCursor: proximoCursor(conversas, corte) };
   } catch {
-    return [];
+    return PAGINA_VAZIA;
   }
 }
 

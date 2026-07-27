@@ -19,7 +19,9 @@
     "portao:f6": "node --experimental-strip-types scripts/portao-f6-readback.mjs",
     "portao:f21": "node --experimental-strip-types scripts/portao-f21-data-inbox.mjs",
     "bateria:f21": "node --experimental-strip-types scripts/bateria-f21.mjs",
-    "bateria:enxerto": "node --experimental-strip-types scripts/bateria-enxerto-conferencia.mjs"
+    "bateria:enxerto": "node --experimental-strip-types scripts/bateria-enxerto-conferencia.mjs",
+    "portao:f22": "node --experimental-strip-types scripts/portao-f22-paginacao.mjs",
+    "bateria:f22": "node --experimental-strip-types scripts/bateria-f22.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

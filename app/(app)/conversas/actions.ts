@@ -5,6 +5,22 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { registrarEventoUI, type ResultadoEvento } from "@/app/(app)/funil/actions";
 import { caminhoValido } from "@/lib/conversas/midia";
 import { acaoPresencaValida, montarCorpoPresenca, type AcaoPresenca } from "@/lib/conversas/presenca";
+import { lerConversas, type PaginaConversas } from "@/lib/dados/conversas";
+
+/**
+ * F22 — próxima página do inbox (keyset). Leitura pura, mesma sessão/RLS do resto do app: o
+ * cursor é opaco e revalidado no servidor, então cursor forjado não vira consulta sem filtro —
+ * `decodificar` devolve null e a leitura recomeça do topo, que é degrade, não brecha.
+ *
+ * `jaCarregadas` vem do cliente porque é ele quem acumula; serve só para decidir se AINDA há
+ * corte, nunca para escolher linha.
+ */
+export async function carregarMaisConversas(
+  cursor: string,
+  jaCarregadas: number,
+): Promise<PaginaConversas> {
+  return lerConversas({ cursor, jaCarregadas });
+}
 
 /**
  * TRANSBORDO — Sara assume a conversa (Clara pausa) / devolve (Clara retoma).
