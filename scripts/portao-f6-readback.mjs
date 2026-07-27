@@ -388,6 +388,18 @@ try {
       ok("(5) registrarEventoUI confere a projeção ANTES de devolver sucesso");
     else nok("(5) registrarEventoUI não passa por confirmarProjecao antes do sucesso");
 
+    // A-3 (achado do Aferidor na bateria cheia do F6): a asserção do DUPLICADO (§5) roda contra a
+    // réplica `escreverComoAUI` deste portão, não contra o artefato real — a réplica não tem
+    // `revalidatePath`, então ela não podia ser a de produção. Consequência medida pelo Aferidor:
+    // tirar a propagação do `duplicado` do retorno de `registrarEventoUI` deixava o portão VERDE
+    // (MUT-F6-4 sobrevivia). O que a réplica não alcança, a prova estática alcança: o retorno real
+    // tem de continuar propagando `duplicado`, senão a UI perde a distinção entre "salvou agora" e
+    // "já estava salvo" — que é a informação que impede o operador de repetir a escrita.
+    if (/return \{ ok: true, \.\.\.\(resposta\?\.duplicado \? \{ duplicado: true \} : \{\}\) \};/.test(corpo))
+      ok("(5) o retorno REAL de registrarEventoUI propaga `duplicado` (A-3: a réplica não prova isto)");
+    else
+      nok("(5) o retorno de registrarEventoUI NÃO propaga `duplicado` — a UI perde o sucesso idempotente");
+
     const declaradas = new Set([...Object.keys(CONFERENCIA), ...Object.keys(EXCECOES)]);
     const naoDeclaradas = new Set();
     let tiposVistos = 0;

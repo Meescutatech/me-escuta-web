@@ -25,7 +25,8 @@
     "portao:f25": "node --experimental-strip-types scripts/portao-f25-nao-lidas.mjs",
     "bateria:f25": "node --experimental-strip-types scripts/bateria-f25.mjs",
     "portao:f24": "node --experimental-strip-types scripts/portao-f24-painel.mjs",
-    "bateria:f24": "node --experimental-strip-types scripts/bateria-f24.mjs"
+    "bateria:f24": "node --experimental-strip-types scripts/bateria-f24.mjs",
+    "bateria:f6-a3": "node --experimental-strip-types scripts/bateria-f6-a3.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
