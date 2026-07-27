@@ -37,9 +37,12 @@ await rodarBateria({
       id: "M2",
       protege: "(2) ordem por ultima_entrada_em desc nulls last",
       arquivo: p("lib/dados/conversas.ts"),
-      // o defeito ORIGINAL, tal como estava antes do F21
-      de: `      .order("ultima_entrada_em", { ascending: false, nullsFirst: false })`,
-      para: `      .order("atualizado_em", { ascending: false, nullsFirst: false })`,
+      // o defeito ORIGINAL, tal como estava antes do F21. Ancorado no `await comCursor` porque
+      // a contarNaoLidas (F25) passou a ter a MESMA linha de ordenação — mutação ambígua não prova.
+      de: `    const { data, error } = await comCursor
+      .order("ultima_entrada_em", { ascending: false, nullsFirst: false })`,
+      para: `    const { data, error } = await comCursor
+      .order("atualizado_em", { ascending: false, nullsFirst: false })`,
       esperaVermelho: /VERMELHO· \(2\) ordem diverge/,
     },
     {

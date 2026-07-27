@@ -140,7 +140,17 @@ const PREVIA_BASE = "conversa_id,direcao,corpo,criado_em";
  * ainda não existir no ambiente, cai pro select base — produção não quebra se o front sair antes
  * da migration.
  */
-async function lerPrevias(supabase: Supabase, ids: string[]): Promise<any[]> {
+async function lerPrevias(
+  supabase: Supabase,
+  ids: string[],
+  colunasComOrigem = PREVIA_COM_ORIGEM,
+): Promise<any[]> {
+  // o degrade tira `timestamp_origem` do select E da ordenação — pedir ordem por coluna que não
+  // existe erraria do mesmo jeito que pedi-la no select
+  const semOrigem = colunasComOrigem
+    .split(",")
+    .filter((c) => c !== "timestamp_origem")
+    .join(",");
   const buscar = (colunas: string, porOrigem: boolean) => {
     const base = supabase.schema("core").from("mensagem").select(colunas).in("conversa_id", ids);
     const ordenada = porOrigem
@@ -148,8 +158,8 @@ async function lerPrevias(supabase: Supabase, ids: string[]): Promise<any[]> {
       : base;
     return ordenada.order("criado_em", { ascending: false }).limit(800);
   };
-  let { data, error } = await buscar(PREVIA_COM_ORIGEM, true);
-  if (error) ({ data, error } = await buscar(PREVIA_BASE, false));
+  let { data, error } = await buscar(colunasComOrigem, true);
+  if (error) ({ data, error } = await buscar(semOrigem, false));
   return error || !data ? [] : (data as any[]);
 }
 
@@ -173,6 +183,70 @@ export async function contarConversasVisiveis(cliente?: Supabase): Promise<numbe
     return null;
   }
 }
+
+/**
+ * F25 — o contador de não-lidas da barra lateral, por uma consulta ESTREITA.
+ *
+ * O que ele custava: `lerConversas().filter(c => c.nao_lida).length` — a leitura INTEIRA do inbox
+ * (50 conversas + join de leads em v_lead_card + 800 mensagens de prévia + config do funil) para
+ * produzir UM número. E a barra lateral vive no layout: /funil, /tarefas e /configuracoes pagavam
+ * isso também, a cada `router.refresh()`.
+ *
+ * O que ele custa agora: os ids das conversas visíveis + a direção da última mensagem de cada uma.
+ * Sem join de lead, sem `corpo`, sem config. Mesmas 2 requisições, payload de outra ordem.
+ *
+ * O PROXY NÃO MUDA — e isso é requisito, não detalhe. "Não-lida" continua sendo "a última mensagem
+ * é de entrada", exatamente como a lista calcula, porque um número diferente do badge da lista
+ * seria pior que o custo da consulta. É a mesma regra, lida mais barato; se divergir, o item falhou.
+ *
+ * Indisponível é `null` (a barra lateral esconde o contador), nunca zero inventado.
+ */
+export async function contarNaoLidas(cliente?: Supabase): Promise<number | null> {
+  try {
+    const supabase = cliente ?? criarClienteServidor();
+    const { data: convs, error } = await supabase
+      .schema("core")
+      .from("v_conversa")
+      .select("id")
+      .eq("visivel_inbox", true)
+      .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
+      .limit(LIMITE_PAGINA);
+    if (error || !convs) return null;
+    if (convs.length === 0) return 0;
+
+    const ids = convs.map((c: any) => String(c.id));
+    // só `conversa_id` e `direcao`: o que decide o proxy. `corpo` é o que pesa, e não é preciso
+    // para contar. A ordem é a mesma da prévia (hora real da mensagem), senão "a última" seria outra.
+    const previas = await lerPrevias(supabase, ids, "conversa_id,direcao,timestamp_origem,criado_em");
+    const ultimaDirecao = new Map<string, string>();
+    for (const m of previas) {
+      const k = String(m.conversa_id);
+      if (!ultimaDirecao.has(k)) ultimaDirecao.set(k, String(m.direcao));
+    }
+    return ids.filter((id) => ultimaDirecao.get(id) === "entrada").length;
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * O `head`-count de verdade — 1 requisição, ZERO payload — depende de uma coluna que ainda não
+ * existe. Fica escrito para o dia em que existir, e não é comentário de intenção: é o pedido que
+ * está na mesa da Trilha C.
+ *
+ *   core.conversa.ultima_saida_em, mantida pelo projetor de saída com greatest(), espelhando
+ *   ultima_entrada_em. Com ela:
+ *
+ *     supabase.schema("core").from("v_conversa")
+ *       .select("*", { count: "exact", head: true })
+ *       .eq("visivel_inbox", true)
+ *       .gt("ultima_entrada_em", "coalesce(ultima_saida_em, '-infinity')")
+ *
+ * Hoje o predicado NÃO é expressável: core.conversa tem ultima_entrada_em e não tem a de saída,
+ * então "a última mensagem é de entrada" não cabe em SQL sem a coluna. Por isso a consulta acima
+ * estreita em vez de colapsar — e por isso ela ainda lê duas vezes.
+ */
 
 const PAGINA_VAZIA: PaginaConversas = {
   conversas: [],

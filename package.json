@@ -21,7 +21,9 @@
     "bateria:f21": "node --experimental-strip-types scripts/bateria-f21.mjs",
     "bateria:enxerto": "node --experimental-strip-types scripts/bateria-enxerto-conferencia.mjs",
     "portao:f22": "node --experimental-strip-types scripts/portao-f22-paginacao.mjs",
-    "bateria:f22": "node --experimental-strip-types scripts/bateria-f22.mjs"
+    "bateria:f22": "node --experimental-strip-types scripts/bateria-f22.mjs",
+    "portao:f25": "node --experimental-strip-types scripts/portao-f25-nao-lidas.mjs",
+    "bateria:f25": "node --experimental-strip-types scripts/bateria-f25.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -377,8 +377,12 @@ else nok(`(5) tempoLista ainda recebe atualizado_em: ${chamadasRuins.join(" | ")
 // a ordenação é exatamente a hora em que alguém "limpa" o select e leva o gatilho junto.
 // Olha o select DA CONSULTA, não o arquivo: `grep` de arquivo inteiro ficaria verde só porque a
 // palavra sobrevive no tipo e no mapeamento — verde por presença de texto, não por comportamento.
+// Ancorado DENTRO da lerConversas: mais de uma função lê v_conversa (a contarNaoLidas do F25
+// também), e pegar "o primeiro select de v_conversa do arquivo" passou a olhar a consulta errada.
+// Foi o próprio portão que acusou isso quando o F25 entrou — prova estática também envelhece.
 const dados = readFileSync(resolve(raiz, "lib/dados/conversas.ts"), "utf8");
-const selectDaLista = dados.match(/\.from\("v_conversa"\)[\s\S]{0,300}?\.select\("([^"]+)"\)/);
+const corpoLerConversas = dados.slice(dados.indexOf("export async function lerConversas("));
+const selectDaLista = corpoLerConversas.match(/\.from\("v_conversa"\)[\s\S]{0,300}?\.select\("([^"]+)"\)/);
 if (!selectDaLista) nok("(6) não achei o select de v_conversa — o portão não sabe mais o que olhar");
 else if (selectDaLista[1].split(",").includes("atualizado_em"))
   ok("(6) atualizado_em preservado no select da lista (o tempo real usa como gatilho)");
