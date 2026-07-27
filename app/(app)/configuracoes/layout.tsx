@@ -16,10 +16,10 @@ import { usePathname } from "next/navigation";
  *  · "Área de trabalho" e "Notificações", que eram `aria-disabled` com title="Em breve", SAÍRAM.
  *    Item morto na navegação é promessa que ninguém cobrou.
  *
- * O contador de Suporte é passado pelo servidor (`children` traz a página; o número vem por
- * `props` do layout não dá) — então ele mora na própria tela, e aqui fica só a marca de que há
- * débito quando a rota o informa via `data-suporte-abertos` no documento. Sem esse dado, nenhum
- * número aparece: contador que chuta é pior que contador nenhum.
+ * O contador de Suporte do mockup NÃO está aqui, e é ausência declarada: este layout é `"use
+ * client"` e não tem como ler o banco; buscá-lo pelo cliente custaria uma consulta por navegação em
+ * Configurações para exibir um número. Ele vive no cabeçalho da própria tela de Suporte, onde o
+ * servidor já leu a lista. Número na navegação é dívida — e dívida chutada é pior que nenhuma.
  */
 
 const ATIVO =
