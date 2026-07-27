@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ASSENTAMENTO_MS,
   deveRefazer,
+  estadoDoSelo,
   fmtAtras,
   montarFontesConversa,
   novosIds,
@@ -74,4 +76,53 @@ test("fmtAtras: agora / segundos / minutos / horas", () => {
   assert.equal(fmtAtras(60), "há 1min");
   assert.equal(fmtAtras(59 * 60), "há 59min");
   assert.equal(fmtAtras(3600), "há 1h");
+});
+
+/*
+ * R16-06bis — o selo só acende com EVIDÊNCIA de entrega.
+ * Medido: o cliente diz SUBSCRIBED em ~40 ms, mas o servidor leva de 2 ms (quente) a 2782 ms
+ * (frio) para registrar a assinatura, e escrita feita nessa janela SE PERDE (2 de 4 rodadas).
+ * Acender no SUBSCRIBED faria a tela mentir exatamente na janela em que ela está mais cega.
+ */
+
+test("estadoDoSelo: SUBSCRIBED sozinho NÃO é 'ao vivo' — é 'conectando'", () => {
+  assert.equal(
+    estadoDoSelo({ todosSubscribed: true, recebeuEvento: false, assentou: false }),
+    "conectando",
+  );
+});
+
+test("estadoDoSelo: um evento que chegou é prova direta — acende na hora", () => {
+  assert.equal(
+    estadoDoSelo({ todosSubscribed: true, recebeuEvento: true, assentou: false }),
+    "ao-vivo",
+  );
+});
+
+test("estadoDoSelo: passado o assentamento, acende mesmo em tela parada", () => {
+  assert.equal(
+    estadoDoSelo({ todosSubscribed: true, recebeuEvento: false, assentou: true }),
+    "ao-vivo",
+  );
+});
+
+test("estadoDoSelo: sem assinatura é degradado, com ou sem relógio", () => {
+  assert.equal(
+    estadoDoSelo({ todosSubscribed: false, recebeuEvento: false, assentou: false }),
+    "degradado",
+  );
+  assert.equal(
+    estadoDoSelo({ todosSubscribed: false, recebeuEvento: false, assentou: true }),
+    "degradado",
+  );
+  // caso de borda honesto: o canal caiu DEPOIS de ter entregue. Não é mais "ao vivo".
+  assert.equal(
+    estadoDoSelo({ todosSubscribed: false, recebeuEvento: true, assentou: true }),
+    "degradado",
+  );
+});
+
+test("o assentamento tem folga sobre a pior janela medida (2782 ms a frio)", () => {
+  assert.ok(ASSENTAMENTO_MS > 2782, "o relógio não pode ser mais curto que a janela observada");
+  assert.equal(ASSENTAMENTO_MS, 5_000);
 });

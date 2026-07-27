@@ -373,6 +373,7 @@ export function Quadro({
             revalidar={false}
             intervaloMs={INTERVALOS.funil}
             aoVivo={tempoRealBoard.aoVivo}
+            conectando={tempoRealBoard.conectando}
             falhas={tempoRealBoard.falhas}
           />
         </div>

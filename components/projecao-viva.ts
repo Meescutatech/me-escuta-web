@@ -4,7 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { criarClienteBrowser } from "@/lib/supabase/client";
-import { problemasNasFontes, tentarRefazer, type FonteTabela } from "@/lib/tempo-real";
+import {
+  ASSENTAMENTO_MS,
+  estadoDoSelo,
+  problemasNasFontes,
+  tentarRefazer,
+  type EstadoSelo,
+  type FonteTabela,
+} from "@/lib/tempo-real";
 import { intervaloEfetivo } from "@/lib/intervalos-vivos";
 
 /**
@@ -33,10 +40,17 @@ export interface FonteViva {
 }
 
 export interface EstadoVivo {
-  /** true só quando existe assinatura e TODAS confirmaram `SUBSCRIBED`. */
+  /**
+   * true só com EVIDÊNCIA de que a dica chega: todas as assinaturas confirmadas E (um evento já
+   * recebido OU passado o assentamento). `SUBSCRIBED` sozinho não basta — medido: escrita feita
+   * logo após o SUBSCRIBED se perdeu em 2 de 4 rodadas (ver lib/tempo-real.ts).
+   */
   aoVivo: boolean;
+  /** assinou, mas ainda sem evidência de entrega. Não é falha, e não é "ao vivo". */
+  conectando: boolean;
   /** falhas observadas, no formato "<canal>: <status>" — vazio quando não há. */
   falhas: string[];
+  selo: EstadoSelo;
 }
 
 export function useProjecaoViva(
@@ -60,6 +74,9 @@ export function useProjecaoViva(
   const chaveFontes = JSON.stringify(fontes);
 
   const [status, setStatus] = useState<Record<string, string>>({});
+  // evidências de que a dica chega de verdade (R16-06bis)
+  const [recebeuEvento, setRecebeuEvento] = useState(false);
+  const [assentou, setAssentou] = useState(false);
 
   // folga muda sem precisar remontar assinatura nem relógio
   const folgaRef = useRef(folgaMs);
@@ -72,9 +89,17 @@ export function useProjecaoViva(
     router.refresh();
   }, [rota, router]);
 
+  // um evento que CHEGOU é a prova direta de que o caminho funciona — melhor que qualquer relógio
+  const aoChegarDica = useCallback(() => {
+    setRecebeuEvento(true);
+    atualizar();
+  }, [atualizar]);
+
   // ── efeito 1: assinaturas. Depende só das fontes — mudar o intervalo NÃO remonta canal
   // (senão o piso condicional viraria laço: reassina → confirma → sobe o intervalo → reassina).
   useEffect(() => {
+    setRecebeuEvento(false);
+    setAssentou(false);
     if (!ativo) {
       setStatus({});
       return;
@@ -109,12 +134,12 @@ export function useProjecaoViva(
         // Enquanto não houver política de leitura em `realtime.messages`, ninguém pede — as fontes
         // do inbox são todas de `tabela` (ver montarFontesConversa).
         let canal = supabase.channel(nome, f.canal ? { config: { private: true } } : undefined);
-        if (f.canal) canal = canal.on("broadcast", { event: "*" }, atualizar);
+        if (f.canal) canal = canal.on("broadcast", { event: "*" }, aoChegarDica);
         if (f.tabela) {
           canal = canal.on(
             "postgres_changes",
             { event: "*", schema: f.tabela.schema, table: f.tabela.table, filter: f.tabela.filter },
-            atualizar,
+            aoChegarDica,
           );
         }
         canais.push(
@@ -134,15 +159,26 @@ export function useProjecaoViva(
       for (const c of canais) supabase.removeChannel(c);
       setStatus({});
     };
-  }, [chaveFontes, ativo, atualizar]);
+  }, [chaveFontes, ativo, aoChegarDica]);
 
-  const { aoVivo, falhas } = useMemo(() => {
+  const { todosSubscribed, falhas } = useMemo(() => {
     const entradas = Object.entries(status);
     return {
-      aoVivo: entradas.length > 0 && entradas.every(([, s]) => s === "SUBSCRIBED"),
+      todosSubscribed: entradas.length > 0 && entradas.every(([, s]) => s === "SUBSCRIBED"),
       falhas: entradas.filter(([, s]) => s !== "SUBSCRIBED").map(([n, s]) => `${n}: ${s}`),
     };
   }, [status]);
+
+  // ── assentamento: o servidor pode levar até ~2 s para ter a assinatura DEPOIS do SUBSCRIBED.
+  // Enquanto isso o selo diz "conectando" e o polling segue no piso curto — nada se perde calado.
+  useEffect(() => {
+    if (!todosSubscribed || recebeuEvento) return;
+    const t = setTimeout(() => setAssentou(true), ASSENTAMENTO_MS);
+    return () => clearTimeout(t);
+  }, [todosSubscribed, recebeuEvento]);
+
+  const selo = estadoDoSelo({ todosSubscribed, recebeuEvento, assentou });
+  const aoVivo = selo === "ao-vivo";
 
   // ── efeito 2: o piso. Polling só com a aba visível + releitura ao focar.
   const intervaloUsado =
@@ -163,5 +199,5 @@ export function useProjecaoViva(
     };
   }, [ativo, intervaloUsado, atualizar]);
 
-  return { aoVivo, falhas };
+  return { aoVivo, conectando: selo === "conectando", falhas, selo };
 }

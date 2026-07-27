@@ -78,6 +78,56 @@ export function montarFontesConversa(conversaId: string | null): FonteVivaPura[]
   return fontes;
 }
 
+/*
+ * ── O selo só acende com EVIDÊNCIA (R16-06bis) ─────────────────────────────────────────────────
+ *
+ * `SUBSCRIBED` do cliente NÃO é evidência de que a dica chega. Medido neste projeto
+ * (scripts/medir-janela-fria-f5.mjs, Realtime v2.82.0, stack local):
+ *
+ *   quente 1.1  SUBSCRIBED +40ms · assinaturas no servidor nesse instante: 0 ·
+ *               linha do servidor +1910ms · escrita NA JANELA: PERDIDA · escrita DEPOIS: 401ms
+ *   quente 2.1  SUBSCRIBED +36ms · escrita NA JANELA: PERDIDA
+ *
+ * Em 2 de 4 rodadas quentes, uma escrita feita logo depois do `SUBSCRIBED` **nunca chegou** ao
+ * callback — o servidor ainda não tinha a assinatura.
+ *
+ * A janela SUBSCRIBED → assinatura no servidor, medida pelo portão (que agora a imprime em toda
+ * execução): **2 ms com o container quente, 1498 / 2182 / 2782 ms em três execuções a frio**.
+ * (Container reiniciando de verdade: o cliente reporta `CLOSED` e nem chega a SUBSCRIBED — esse
+ * caso já era honesto.)
+ *
+ * Consequência: acender "ao vivo" no `SUBSCRIBED` faria a tela mentir exatamente na janela em que
+ * ela está mais cega. Então o selo exige uma das duas evidências:
+ *   · um evento CHEGOU (prova direta de que o caminho funciona), ou
+ *   · passou o tempo de assentamento desde o `SUBSCRIBED` (prova indireta, com margem medida).
+ * Enquanto nenhuma das duas valer, o estado é "conectando" — e o piso de polling do F4 continua
+ * curto, que é o que cobre a janela.
+ */
+
+/**
+ * Margem sobre o pior atraso medido (2782 ms, a frio) até o servidor ter a assinatura.
+ *
+ * 5 s dá ~1,8× de folga sobre o pior caso observado. O risco residual é estreito e assimétrico:
+ *   · se um evento CHEGAR antes disso, o selo acende na hora e por prova direta — o relógio nem
+ *     é consultado. Numa tela com movimento, é sempre este o caminho.
+ *   · o relógio só decide em tela parada, e é lá que errar é barato: se a janela passasse de 5 s,
+ *     o selo acenderia cedo, mas o polling do F4 continua sendo o piso e nada se perde calado.
+ * Se a medição do portão passar a imprimir janelas perto de 5 s, este número sobe.
+ */
+export const ASSENTAMENTO_MS = 5_000;
+
+export type EstadoSelo = "ao-vivo" | "conectando" | "degradado";
+
+/** Puro: o estado do selo a partir das evidências disponíveis no cliente. */
+export function estadoDoSelo(ev: {
+  todosSubscribed: boolean;
+  recebeuEvento: boolean;
+  assentou: boolean;
+}): EstadoSelo {
+  if (!ev.todosSubscribed) return "degradado";
+  return ev.recebeuEvento || ev.assentou ? "ao-vivo" : "conectando";
+}
+
 /**
  * Guarda em tempo de execução da mesma regra (o tipo já a impede em compilação; isto é para o
  * portão e para quem construir fontes dinamicamente). Devolve a lista de problemas, vazia = ok.

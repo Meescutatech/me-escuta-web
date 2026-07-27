@@ -30,6 +30,12 @@ const raiz = resolve(aqui, "..");
 
 const LIMITE_ENTREGA_MS = 3000;
 const ESPERA_ASSINATURA_MS = 8000;
+// R16-06bis: o cliente diz SUBSCRIBED em ~40 ms, mas o SERVIDOR pode levar até ~1,9 s para ter a
+// assinatura, e escrita feita nessa janela SE PERDE. Portão de deploy roda UMA vez, a frio, então
+// ele NÃO pode começar a contar os 3 s no SUBSCRIBED — conta a partir da evidência do servidor.
+// Tudo o que ele espera é limitado e IMPRESSO. Nunca há retry silencioso até passar.
+const ESPERA_EVIDENCIA_SERVIDOR_MS = 15_000;
+const ESPERA_REALTIME_DE_PE_MS = 60_000;
 
 // ── 0 · ambiente declarado, nunca herdado ───────────────────────────────────────────────────
 function lerEnvLocal() {
@@ -211,12 +217,57 @@ async function gravarMensagemRecebida(telefoneAlvo) {
   ]);
 }
 
-async function contarAssinaturas() {
+/** Maior id já existente: tudo acima disto foi criado DEPOIS deste ponto. */
+async function marcaDeAssinaturas() {
+  const { rows } = await cliente.query(
+    "select coalesce(max(id), 0)::bigint::text as m from realtime.subscription",
+  );
+  return rows[0].m;
+}
+
+/**
+ * Assinaturas criadas DEPOIS da marca — evidência de que o SERVIDOR registrou as MINHAS, e não
+ * contagem de linhas velhas de outro cliente (foi assim que a medição se confundiu antes).
+ */
+async function contarAssinaturas(marca) {
   const { rows } = await cliente.query(
     `select count(*)::int as n from realtime.subscription
-      where entity::text in ('core.conversa','core.mensagem')`,
+      where entity::text in ('core.conversa','core.mensagem') and id > $1::bigint`,
+    [marca],
   );
   return rows[0].n;
+}
+
+/** Espera LIMITADA pela evidência do servidor. Devolve {n, ms} ou {n:0} no teto. */
+async function esperarEvidenciaServidor(marca, quantas) {
+  const t0 = Date.now();
+  let n = 0;
+  while (Date.now() - t0 < ESPERA_EVIDENCIA_SERVIDOR_MS) {
+    n = await contarAssinaturas(marca);
+    if (n >= quantas) return { n, ms: Date.now() - t0 };
+    await espera(50);
+  }
+  return { n, ms: Date.now() - t0 };
+}
+
+/**
+ * O Realtime aceita conexão? Espera LIMITADA e IMPRESSA — um container recém-subido responde
+ * CLOSED e nada disso é culpa do código que o portão julga.
+ */
+async function esperarRealtimeDePe() {
+  const t0 = Date.now();
+  let ultimo = "(sem resposta)";
+  while (Date.now() - t0 < ESPERA_REALTIME_DE_PE_MS) {
+    try {
+      const r = await fetch(`${URL}/realtime/v1/api/ping`, { headers: { apikey: ANON } });
+      ultimo = String(r.status);
+      if (r.status < 500) return { pronto: true, ms: Date.now() - t0, ultimo };
+    } catch (e) {
+      ultimo = String(e?.cause?.code ?? e?.message ?? e);
+    }
+    await espera(250);
+  }
+  return { pronto: false, ms: Date.now() - t0, ultimo };
 }
 
 async function politicaBroadcast(ligar) {
@@ -242,6 +293,15 @@ let entregasNovas = 0;
 let entregasAntigas = 0;
 
 try {
+  // ── 1-bis · o Realtime está de pé? (espera LIMITADA e impressa, nunca retry silencioso) ────
+  {
+    const pe = await esperarRealtimeDePe();
+    if (pe.pronto) ok(`(0) Realtime aceitou conexão após ${pe.ms} ms de espera (teto ${ESPERA_REALTIME_DE_PE_MS} ms)`);
+    else {
+      nok(`(0) Realtime não respondeu em ${ESPERA_REALTIME_DE_PE_MS} ms (última resposta: ${pe.ultimo}) — ambiente, não código`);
+    }
+  }
+
   // ── 2 · CONTROLE NEGATIVO ─────────────────────────────────────────────────────────────────
   // Sem política em realtime.messages, a fiação ANTIGA tem de perder o postgres_changes junto
   // com o canal privado. Se ela sobreviver aqui, este portão não mede nada.
@@ -269,6 +329,7 @@ try {
 
   // ── 3 · a fiação NOVA, no MESMO ambiente hostil ───────────────────────────────────────────
   {
+    const marca = await marcaDeAssinaturas();
     const cli = createClient(URL, ANON, { auth: { persistSession: false } });
     cli.realtime.setAuth(TOKEN);
     const porCanal = new Map();
@@ -281,9 +342,14 @@ try {
     if (subiu) ok(`(2) todos os ${fontes.length} canais SUBSCRIBED sem política de broadcast · ${st}`);
     else nok(`(2) nem todos os canais subiram · ${st}`);
 
-    const nSub = await contarAssinaturas();
-    if (nSub > 0) ok(`(4) realtime.subscription para core.conversa/core.mensagem = ${nSub} (> 0) com o cliente conectado`);
-    else nok(`(4) realtime.subscription para core.conversa/core.mensagem = 0 — o app não está assinando nada`);
+    // (4) EVIDÊNCIA DO SERVIDOR — e é ela, não o SUBSCRIBED, que abre a contagem dos 3 s.
+    const ev = await esperarEvidenciaServidor(marca, fontes.length);
+    if (ev.n >= fontes.length)
+      ok(`(4) realtime.subscription registrou as ${ev.n} assinaturas DESTE cliente ${ev.ms} ms após o SUBSCRIBED`);
+    else
+      nok(`(4) o servidor não registrou as assinaturas em ${ESPERA_EVIDENCIA_SERVIDOR_MS} ms (achei ${ev.n} de ${fontes.length}) — SUBSCRIBED sem assinatura no servidor`);
+    if (ev.ms > 0)
+      console.log(`  (nota) janela SUBSCRIBED → assinatura no servidor: ${ev.ms} ms. Escrita feita nessa janela se PERDE; por isso o selo só acende com evidência, e o portão só conta os ${LIMITE_ENTREGA_MS} ms a partir daqui.`);
 
     // (3a) mensagem nova NA CONVERSA ABERTA → o canal filtrado por conversa_id tem de acender.
     entregasNovas = 0;
@@ -312,8 +378,8 @@ try {
     else nok(`(3b) a mudança da lista NÃO chegou ao canal ${CANAL_LISTA} em ${LIMITE_ENTREGA_MS} ms`);
 
     // VACUIDADE — o portão precisa ter observado alguma coisa para poder dizer verde.
-    if (entregasNovas > 0 && nSub > 0)
-      ok(`(vacuidade) o portão observou ${entregasNovas} evento(s) e ${nSub} assinatura(s) — não passou vazio`);
+    if (entregasNovas > 0 && ev.n > 0)
+      ok(`(vacuidade) o portão observou ${entregasNovas} evento(s) e ${ev.n} assinatura(s) do próprio cliente — não passou vazio`);
     else nok(`(vacuidade) o portão não observou evento nem assinatura; verde aqui seria falso`);
 
     await cli.removeAllChannels();
@@ -341,5 +407,5 @@ if (falhas.length > 0) {
   console.log(`PORTÃO F5 · VERMELHO — ${falhas.length} asserção(ões) falharam.`);
   process.exit(1);
 }
-console.log("PORTÃO F5 · VERDE — 4/4 asserções + controle negativo + vacuidade.");
+console.log("PORTÃO F5 · VERDE — 4/4 asserções + evidência de servidor + controle negativo + vacuidade.");
 process.exit(0);
