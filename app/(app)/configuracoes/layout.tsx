@@ -94,7 +94,10 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
       {/* A COLUNA de 720px é do layout, não de cada tela: Membros, Clara e Templates já contavam
           com ela, e a decisão do Orquestrador sobre o r10 manteve os 720px também no F9 — lá o
           que resolve a largura não é esticar a coluna, é a coluna de valor único sumir. */}
-      <main className="min-w-0 flex-1 px-12 pb-16 pt-11 max-md:px-5 max-md:pt-8">
+      {/* pb-[120px]: o respiro que o Croqui MEDIU para a barra de publicacao (sticky) pousar no
+          fim da rolagem sem cobrir o campo "O que mudou" que fica logo acima dela. E a mesma
+          familia do E-029 — camada de cima esconde produto —, so que aqui a camada e do produto. */}
+      <main className="min-w-0 flex-1 px-12 pb-[120px] pt-11 max-md:px-5 max-md:pt-8">
         <div className="max-w-[720px]">{children}</div>
       </main>
     </div>
