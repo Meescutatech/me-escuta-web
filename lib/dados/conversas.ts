@@ -1,6 +1,14 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { caminhosParaAssinar } from "@/lib/conversas/midia";
 import {
+  TTL_ASSINATURA_SEG,
+  criarArmazem,
+  expirar,
+  guardar,
+  obter as obterDoCache,
+  precisaAssinar,
+} from "@/lib/conversas/cache-midia";
+import {
   LIMITE_PAGINA,
   decodificar,
   filtroKeyset,
@@ -391,13 +399,30 @@ export async function lerConversas(
   }
 }
 
+/**
+ * F13 — cache de URL assinada, POR PROCESSO. Não é cache de dado: é cache de credencial de leitura,
+ * e some no deploy. Módulo, e não parâmetro, de propósito: o ganho depende de sobreviver ENTRE
+ * requisições (é a cada `router.refresh()` que a URL mudava), e um cache por requisição não faria
+ * nada. O que ele nunca faz é estender a validade — quem decide isso é o TTL da assinatura.
+ */
+const ARMAZEM_MIDIA = criarArmazem();
+
 /** Colunas da projeção de entrega (Trilha A, migration 0024 — contrato fechado, SPEC RF-5/6). */
 const COLUNAS_BASE = "id,direcao,tipo_conteudo,corpo,criado_em";
 const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor,timestamp_origem`;
 /** + colunas da pipeline de mídia (contrato rodada 5, migration em paralelo). */
 const COLUNAS_COM_MIDIA = `${COLUNAS_COM_STATUS},midia_caminho,midia_mime`;
 
-export async function lerMensagens(conversaId: string, cliente?: Supabase): Promise<Mensagem[]> {
+export async function lerMensagens(
+  conversaId: string,
+  cliente?: Supabase,
+  /**
+   * Instante da leitura. Existe para que a expiração do cache de mídia seja MEDÍVEL: "a URL muda
+   * depois do TTL" é asserção de portão, e sem esta costura ela só poderia ser afirmada (ou o
+   * portão teria de esperar 50 minutos). Em produção ninguém passa — o padrão é o relógio.
+   */
+  agoraMs?: number,
+): Promise<Mensagem[]> {
   try {
     const supabase = cliente ?? criarClienteServidor();
     const buscar = (colunas: string) =>
@@ -447,15 +472,23 @@ export async function lerMensagens(conversaId: string, cliente?: Supabase): Prom
     const caminhos = caminhosParaAssinar(linhas);
     if (caminhos.length) {
       try {
-        const { data: assinadas } = await supabase.storage
-          .from("midia-whatsapp")
-          .createSignedUrls(caminhos, 3600);
-        const urlPorCaminho = new Map<string, string>();
-        for (const a of assinadas ?? []) {
-          if (!a.error && a.path && a.signedUrl) urlPorCaminho.set(a.path, a.signedUrl);
+        // F13: a URL assinada É a chave de cache do navegador. `createSignedUrls` devolve token
+        // novo a cada chamada, e `lerMensagens` roda a cada router.refresh() — então, sem isto, o
+        // mesmo `src` muda e a foto é BAIXADA DE NOVO, a cada refresh, para sempre.
+        const agora = agoraMs ?? Date.now();
+        expirar(ARMAZEM_MIDIA, agora); // poda: cache de processo que só cresce vira vazamento
+        const faltando = precisaAssinar(ARMAZEM_MIDIA, caminhos, agora);
+        if (faltando.length) {
+          const { data: assinadas } = await supabase.storage
+            .from("midia-whatsapp")
+            .createSignedUrls(faltando, TTL_ASSINATURA_SEG);
+          for (const a of assinadas ?? []) {
+            if (!a.error && a.path && a.signedUrl) guardar(ARMAZEM_MIDIA, a.path, a.signedUrl, agora);
+          }
         }
         for (const m of linhas) {
-          const url = m.midia_caminho ? urlPorCaminho.get(m.midia_caminho.trim()) : undefined;
+          const caminho = m.midia_caminho?.trim();
+          const url = caminho ? obterDoCache(ARMAZEM_MIDIA, caminho, agora) : null;
           if (url) m.midia_url = url;
         }
       } catch {
