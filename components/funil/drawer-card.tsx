@@ -111,11 +111,23 @@ export function DrawerCard({
     }
   }
 
-  function acionarLevindo() {
+  // F6 — `levindo_acionado` é EXCEÇÃO DECLARADA: tipo deliberadamente sem projetor (vive só no
+  // ledger, para o runtime consumir). O que a UI pode confirmar é que o evento entrou, e é isso que
+  // registrarEventoUI confere. Deixou de ser `void`: dizer "registrada" sem olhar a resposta era
+  // exatamente o defeito que o F6 existe para tirar.
+  async function acionarLevindo() {
     if (!leadId) return;
     setLevindoSolicitado(true);
-    void registrarEventoUI("levindo_acionado", { lead_id: leadId, motivo: "solicitado no card" }, leadId);
-    avisar("Solicitação registrada no ledger.");
+    const res = await registrarEventoUI(
+      "levindo_acionado",
+      { lead_id: leadId, motivo: "solicitado no card" },
+      leadId,
+    );
+    if (res.ok) avisar("Solicitação registrada no ledger.");
+    else {
+      setLevindoSolicitado(false);
+      avisar(`Não foi possível registrar: ${res.motivo ?? "erro"}`);
+    }
   }
 
   return (

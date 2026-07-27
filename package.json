@@ -15,7 +15,8 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "e2e": "node scripts/verificacao-e2e.mjs",
     "portao:f5": "node --experimental-strip-types scripts/portao-f5-tempo-real.mjs",
-    "portao:f4": "node --experimental-strip-types --test tests/debounce-compartilhado.test.ts"
+    "portao:f4": "node --experimental-strip-types --test tests/debounce-compartilhado.test.ts",
+    "portao:f6": "node --experimental-strip-types scripts/portao-f6-readback.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -3,10 +3,17 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { confirmarProjecao, type RespostaRegistrarEvento } from "@/lib/eventos/confirmar-projecao";
 
 export interface ResultadoEvento {
   ok: boolean;
   motivo?: string;
+  /**
+   * true = a porta absorveu por idempotência (mesma `id_externo`). É SUCESSO, não falha — mas
+   * sucesso distinguível: nada novo foi gravado, e a projeção vigente é a do evento original.
+   * Quem trata "salvei" e "já estava salvo" igual está mentindo por omissão.
+   */
+  duplicado?: boolean;
 }
 
 /**
@@ -37,12 +44,19 @@ export async function registrarEventoUI(
   };
   if (leadId) envelope.lead_id = leadId;
 
-  const { error } = await supabase.schema("api").rpc("registrar_evento", { p: envelope });
+  const { data, error } = await supabase.schema("api").rpc("registrar_evento", { p: envelope });
   if (error) return { ok: false, motivo: error.message };
+
+  // F6 — o corpo da resposta era JOGADO FORA aqui, e com ele a única prova de que a escrita virou
+  // dado. Verificado por execução: reenviar a mesma id_externo com texto diferente devolve
+  // {"duplicado":true}, o texto novo some, e a tela dizia que salvou.
+  const resposta = (data ?? null) as RespostaRegistrarEvento | null;
+  const conferido = await confirmarProjecao(supabase, tipo, payload, resposta);
+  if (!conferido.ok) return conferido;
 
   revalidatePath("/funil");
   revalidatePath("/timeline");
-  return { ok: true };
+  return { ok: true, ...(resposta?.duplicado ? { duplicado: true } : {}) };
 }
 
 /**

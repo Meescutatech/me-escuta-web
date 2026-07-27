@@ -12,14 +12,16 @@ import { acaoPresencaValida, montarCorpoPresenca, type AcaoPresenca } from "@/li
  * mode=HUMANO/IA e dono_atual (= ator forçado humano:<uid> quando não vier no payload).
  */
 export async function assumirConversa(conversaId: string): Promise<ResultadoEvento> {
+  // F6: registrarEventoUI só devolve ok:true depois de confirmar core.conversa.posse_posicao —
+  // a posse é o dado que decide se a Clara volta a responder, e não pode ser declarada de boca.
   const r = await registrarEventoUI("conversa_assumida", { conversa_id: conversaId });
-  revalidatePath("/conversas");
+  if (r.ok) revalidatePath("/conversas");
   return r;
 }
 
 export async function devolverConversa(conversaId: string): Promise<ResultadoEvento> {
   const r = await registrarEventoUI("conversa_devolvida", { conversa_id: conversaId });
-  revalidatePath("/conversas");
+  if (r.ok) revalidatePath("/conversas");
   return r;
 }
 
@@ -58,8 +60,15 @@ export async function enviarMensagem(
   }
   // chaveIdem = id da bolha otimista: "Tentar de novo" da mesma bolha reusa a chave e o dedupe da
   // porta absorve (se a 1ª chamada gravou mas a resposta se perdeu, não sai duplicado no WhatsApp).
+  //
+  // F6 — a spec da Fase 1 declarava esta escrita como EXCEÇÃO permanente ("a linha só nasce quando
+  // o sender confirma"). Fui conferir no projetor vivo e não é o caso: `proj_mensagem_saida` insere
+  // em core.mensagem na MESMA transação, com id = id do evento e status_entrega='na_fila'. Ou seja,
+  // a escrita mais cara do app — mensagem para um paciente — É conferível, e agora é conferida.
+  // O que continua sendo do sender é o `mensagem_enviada` (saiu de fato); a bolha segue em
+  // "aguardando" até lá, que é o comportamento honesto e já era o de hoje.
   const r = await registrarEventoUI("enviar_mensagem_humana", payload, undefined, chaveIdem);
-  revalidatePath("/conversas");
+  if (r.ok) revalidatePath("/conversas");
   return r;
 }
 
