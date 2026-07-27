@@ -247,6 +247,12 @@ begin
   -- regra: v_config_vigente · nome = payload.nome AND versao = payload.versao_base + 1
   --        (conferir só o nome passaria com a versão VELHA — é a diferença que importa)
   select max(versao) into v_cfg_vig from core.config where nome = 'convite';
+  -- vacuidade local: sem a chave, `versao_base` iria nula e a porta recusaria com "obrigatorio" —
+  -- vermelho verdadeiro, mensagem enganosa. Melhor dizer que faltou a semente.
+  if v_cfg_vig is null then
+    raise exception 'VACUIDADE: a config "convite" nao existe neste banco (a 0035 semeia) — '
+                    'sem ela a prova de config_publicada mediria a mensagem errada';
+  end if;
   perform api.registrar_evento(jsonb_build_object(
     'tipo','config_publicada','id_externo','b2-6','versao_payload',1,
     'payload', jsonb_build_object('nome','convite','versao_base', v_cfg_vig,
