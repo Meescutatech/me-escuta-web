@@ -66,6 +66,12 @@ const ICONES: Record<string, React.ReactNode> = {
       <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" />
     </>
   ),
+  suporte: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 8.2v4.6M12 15.6v.2" />
+    </>
+  ),
 };
 
 function iniciais(email: string): string {
@@ -126,6 +132,12 @@ export function Sidebar({
       rotulo: "Configurações",
       icone: ICONES.configuracoes,
       ativa: pathname.startsWith("/configuracoes"),
+    },
+    {
+      href: "/configuracoes/suporte",
+      rotulo: "Relatar problema",
+      icone: ICONES.suporte,
+      ativa: pathname.startsWith("/configuracoes/suporte"),
     },
   ];
 
