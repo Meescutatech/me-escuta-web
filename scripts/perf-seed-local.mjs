@@ -1,21 +1,45 @@
 /*
- * SEED SINTÉTICO no Supabase LOCAL (127.0.0.1) — volumes espelhando produção de 22/07
- * (680 leads, 86 conversas, ~420 mensagens, ~5.5k eventos, 437 sugestões) pra medição
- * E2E de TTFB por rota. NUNCA roda contra produção: recusa host que não seja local.
+ * SEED SINTÉTICO no Supabase LOCAL — volumes espelhando produção de 22/07 (680 leads, 86 conversas,
+ * ~420 mensagens, ~5.5k eventos, 437 sugestões) pra medição E2E de TTFB por rota.
+ *
+ * ESTE script é o do incidente das 21:59 (E-009): ele tinha a conexão FIXA no código, apontando
+ * para `127.0.0.1:54422`, e escreveu no banco de outro agente. A guarda que existia —
+ * `if (!DB.includes("127.0.0.1")) throw` — protegia contra PRODUÇÃO e não fazia nada contra o
+ * VIZINHO: o 54422 do outro passava sempre.
+ *
+ * Agora: a conexão vem do ambiente, sem default, e a checagem acontece ANTES de qualquer conexão.
+ * As duas guardas coexistem — a de host (produção) continua, e a de ausência (vizinho) é nova.
  */
 import { readFileSync } from "node:fs";
 import pg from "pg";
 
-const DB = "postgresql://postgres:postgres@127.0.0.1:54422/postgres";
-const AUTH = "http://127.0.0.1:54421/auth/v1";
+/** Exige a variável e aborta ANTES de abrir conexão. Sem default: default é o que causou o incidente. */
+function exigir(nome, dica) {
+  const valor = process.env[nome];
+  if (!valor) {
+    console.error(`ABORTADO: ${nome} não está definida.`);
+    console.error(`  ${dica}`);
+    console.error("  este script ESCREVE no banco: sem alvo declarado ele não roda, para não");
+    console.error("  escrever no ambiente de outro agente (E-009).");
+    process.exit(2);
+  }
+  return valor;
+}
+
+const DB = exigir("DATABASE_URL", "ex.: DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:<SUA_ME_DB_PORT>/postgres");
+const AUTH = exigir("AUTH_URL", "ex.: AUTH_URL=http://127.0.0.1:<SUA_ME_API_PORT>/auth/v1");
 const SERVICE =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"; // service_role DEMO do supabase local — público
 const EMAIL = "perf@meescuta.local";
 const SENHA = "perf-local-123";
 
-if (!DB.includes("127.0.0.1")) throw new Error("seed só roda local");
-const CONFIGS = process.env.CONFIGS_JSON;
-if (!CONFIGS) throw new Error("defina CONFIGS_JSON=<caminho do json com payloads funil_vendas/ficha_lead>");
+// Guarda de PRODUÇÃO (a que já existia). Não substitui a de cima: esta impede o banco remoto,
+// aquela impede o banco do vizinho.
+if (!DB.includes("127.0.0.1")) {
+  console.error("ABORTADO: seed só roda local — DATABASE_URL não aponta para 127.0.0.1.");
+  process.exit(2);
+}
+const CONFIGS = exigir("CONFIGS_JSON", "caminho do json com payloads funil_vendas/ficha_lead");
 const configs = JSON.parse(readFileSync(CONFIGS, "utf8"));
 
 const c = new pg.Client({ connectionString: DB });

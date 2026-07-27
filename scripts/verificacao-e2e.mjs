@@ -27,8 +27,15 @@ try {
   /* .env.local ausente — segue com envs do processo / defaults */
 }
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:54422/postgres";
+// Sem default (F7): o `?? "…:54422/postgres"` que existia aqui é o mesmo padrão que fez o seed
+// escrever no banco do vizinho (E-009). Este script também escreve — aborta antes de conectar.
+if (!process.env.DATABASE_URL) {
+  console.error("ABORTADO: DATABASE_URL não está definida (nem no ambiente, nem no .env.local).");
+  console.error("  ex.: DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:<SUA_ME_DB_PORT>/postgres");
+  console.error("  este script ESCREVE no banco: sem alvo declarado ele não roda.");
+  process.exit(2);
+}
+const DATABASE_URL = process.env.DATABASE_URL;
 const RUNTIME_DIR = resolve(aqui, "..", process.env.RUNTIME_DIR ?? "../me-escuta-runtime");
 
 const cliente = new pg.Client({ connectionString: DATABASE_URL });
