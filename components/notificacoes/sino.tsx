@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useProjecaoViva } from "@/components/projecao-viva";
+import { INTERVALOS } from "@/lib/intervalos-vivos";
 import { contarNaoLidas, maisRecentes, type Notificacao } from "@/lib/notificacoes";
 import { marcarTodasLidas } from "@/app/(app)/notificacoes/actions";
 import { ItemNotificacao } from "./item";
@@ -41,7 +42,7 @@ export function Sino({
       { tabela: { schema: "core", table: "mencao" } },
       { tabela: { schema: "core", table: "tarefa" } },
     ],
-    { intervaloMs: 30000 },
+    { intervaloMs: INTERVALOS.sino },
   );
 
   useEffect(() => setAgoraMs(Date.now()), [inicial]);
