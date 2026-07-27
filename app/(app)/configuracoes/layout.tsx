@@ -66,7 +66,7 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
       >
         {GRUPOS.map((g) => (
           <div key={g.rotulo} className="mb-6 last:mb-0">
-            <div className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-mute">
+            <div className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-suave">
               {g.rotulo}
             </div>
             {g.itens.map((i) => (

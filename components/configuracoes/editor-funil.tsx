@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { publicarConfig } from "@/app/(app)/configuracoes/avancado/actions";
 import {
   conteudoIgual,
@@ -57,7 +58,10 @@ export function EditorFunil({
   meuPapel: Papel | null;
   indisponivel: boolean;
 }) {
+  const router = useRouter();
   const gestor = podePublicarConfig(meuPapel);
+  // a VIGENTE do histórico, não a primeira linha por acaso: recibo e lista leem o mesmo dado.
+  const vigenteHist = historico.find((h) => h.vigente) ?? historico[0];
   const original = useMemo<EtapaFunil[]>(() => lerEtapas(vigente?.payload), [vigente]);
   const [etapas, setEtapas] = useState<EtapaFunil[]>(original);
   const [justificativa, setJustificativa] = useState("");
@@ -84,6 +88,7 @@ export function EditorFunil({
       });
       if (r.ok) {
         setJustificativa("");
+        router.refresh(); // B2: o recibo e o historico se derivam do DADO relido, nunca de string local
         return;
       }
       if (r.conflito) setConflito(r.motivo ?? null);
@@ -99,7 +104,7 @@ export function EditorFunil({
         descricao={
           <>
             As etapas que o quadro mostra.
-            {historico[0] ? ` Publicada ${reciboDe(historico[0])}.` : ""}
+            {vigenteHist ? ` Publicada ${reciboDe(vigenteHist)}.` : ""}
           </>
         }
       />
@@ -154,7 +159,7 @@ export function EditorFunil({
           ) : undefined
         }
       >
-        <div className="grid grid-cols-[20px_minmax(0,1fr)_112px_116px_56px] items-center gap-3 border-b border-linha px-2 pb-2 pt-2.5 text-[11.5px] font-medium uppercase tracking-[0.05em] text-mute">
+        <div className="grid grid-cols-[20px_minmax(0,1fr)_112px_116px_56px] items-center gap-3 border-b border-linha px-2 pb-2 pt-2.5 text-[11.5px] font-medium uppercase tracking-[0.05em] text-suave">
           <span />
           <span>Nome</span>
           <span>Tipo</span>
@@ -367,10 +372,17 @@ function diferencas(antes: EtapaFunil[], depois: EtapaFunil[]): Diferenca[] {
  * data+autor sai da mesma versão, sempre. Recibo com a data de uma versão e o autor de outra é o
  * tipo de mentira que ninguém confere.
  */
+/**
+ * B2 (parecer do Vitrine ME) · o recibo é a PROVA DE ESCRITA do cabeçalho, e ele se deriva da
+ * versão vigente do histórico — nunca de string escrita no handler, que o primeiro re-render
+ * desmente. E não credita migration como se fosse gente: versão sem `evento_id` não teve autor
+ * humano, e dizer "por migration 0033" no lugar de um nome é a tela inventando autoria.
+ */
 function reciboDe(v: VersaoHistorico): string {
   const quando = v.vigente_desde
     ? new Date(v.vigente_desde).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
     : "—";
-  const quem = v.publicado_por_nome ?? v.publicado_por_email ?? v.criado_por ?? "—";
-  return `${quando} por ${quem}`;
+  const humano = v.publicado_por_nome ?? v.publicado_por_email ?? null;
+  if (humano) return `${quando} por ${humano}`;
+  return `${quando} — versão de migration/seed (${v.criado_por ?? "origem desconhecida"}), sem autor humano`;
 }

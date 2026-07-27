@@ -392,6 +392,43 @@ export const PORTAO_TIPOS_DECLARADOS: Portao = {
   },
 };
 
+
+// ───────────────── 9 · contraste: --pt não carrega informação (C1 do parecer) ─────────────────
+
+/**
+ * `--pt` (#9AA1AA) dá 2,61:1 sobre branco — o mínimo AA para texto é 4,5:1, e `--suave` (#67707B)
+ * dá 5,02:1. O r9-tokens declara `--pt` como "placeholder, desabilitado". Usá-lo em RÓTULO
+ * ESTRUTURAL (cabeçalho de coluna, nome de seção, grupo da sub-nav) apaga a diferença entre "isto
+ * está vazio" e "isto é o nome da coluna", e joga o menor texto da interface para 2,6:1.
+ *
+ * A regra mira a assinatura de rótulo estrutural — `uppercase` com `tracking-` — porque é ela que
+ * distingue um label de um placeholder sem precisar julgar a palavra.
+ */
+const ROTULO_ESTRUTURAL = /uppercase[^"`]*tracking-\[|tracking-\[[^"`]*uppercase/;
+
+export const PORTAO_CONTRASTE: Portao = {
+  nome: "contraste",
+  prova:
+    "nenhum rótulo estrutural (uppercase + tracking) usa text-mute — --pt fica em placeholder e desabilitado, onde 2,6:1 não carrega informação",
+  avaliar(arquivos) {
+    const v: Violacao[] = [];
+    for (const a of arquivos) {
+      if (!/\.tsx$/.test(a.caminho)) continue;
+      for (const { n, texto } of linhas(a)) {
+        if (ROTULO_ESTRUTURAL.test(texto) && /text-mute/.test(texto)) {
+          v.push({
+            portao: "contraste",
+            caminho: a.caminho,
+            linha: n,
+            motivo: "rótulo estrutural em text-mute (--pt, 2,61:1) — use text-suave (--suave, 5,02:1)",
+          });
+        }
+      }
+    }
+    return v;
+  },
+};
+
 export const PORTOES: Portao[] = [
   PORTAO_SEGREDO,
   PORTAO_CLIENTE,
@@ -401,6 +438,7 @@ export const PORTOES: Portao[] = [
   PORTAO_FRONTEIRA,
   PORTAO_TOKEN_NA_UI,
   PORTAO_TIPOS_DECLARADOS,
+  PORTAO_CONTRASTE,
 ];
 
 export function avaliarTodos(arquivos: Arquivo[]): Violacao[] {

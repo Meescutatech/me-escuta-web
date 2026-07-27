@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   criarSessao,
   desconectarSessao,
@@ -173,7 +174,7 @@ export function PainelSessao({
 function CodigoPareamento({ codigo }: { codigo: string }) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 overflow-hidden">
-      <span className="text-[11.5px] uppercase tracking-[0.06em] text-mute">código de pareamento</span>
+      <span className="text-[11.5px] uppercase tracking-[0.06em] text-suave">código de pareamento</span>
       <code className="max-h-[150px] w-full overflow-auto break-all px-1 text-center font-mono text-[10px] leading-tight text-tinta">
         {codigo}
       </code>
@@ -191,7 +192,7 @@ function ContadorCego({ painel }: { painel: PainelDescartes | null }) {
   return (
     <div className="mt-5 border-t border-linha pt-3.5">
       <div className="flex flex-wrap items-baseline gap-2.5">
-        <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-mute">
+        <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-suave">
           Descartado na borda
         </span>
         <span className="font-mono text-[13px] tabular-nums text-tinta">{resumo.total}</span>
@@ -223,6 +224,7 @@ function ContadorCego({ painel }: { painel: PainelDescartes | null }) {
  * recusa a ativação e `podeCriarSessao` recusa o pareamento — a tela apenas conta isso antes.
  */
 function TermoConsentimento({ canal, podePapel }: { canal: Canal; podePapel: boolean }) {
+  const router = useRouter();
   const [form, setForm] = useState<FormConsentimento>({
     canalId: canal.canal_id,
     titularNome: canal.nome,
@@ -310,6 +312,7 @@ function TermoConsentimento({ canal, podePapel }: { canal: Canal; podePapel: boo
                     aceitoEm: new Date(form.aceitoEm).toISOString(),
                   });
                   if (!r.ok) setErro(r.motivo ?? "não deu para registrar o consentimento");
+                  else router.refresh(); // o portão da sessão só abre quando o DADO muda
                 })
               }
             >

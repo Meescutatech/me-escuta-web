@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { abrirChamado } from "@/app/(app)/configuracoes/suporte/actions";
 import {
   ACCEPT_ANEXO_SUPORTE,
@@ -36,6 +37,7 @@ export function FormularioRelato({
   meuPapel: Papel | null;
   aoSair: () => void;
 }) {
+  const router = useRouter();
   const [tipo, setTipo] = useState<TipoChamado>(TIPO_PADRAO);
   const [texto, setTexto] = useState("");
   const [arquivos, setArquivos] = useState<File[]>([]);
@@ -84,6 +86,7 @@ export function FormularioRelato({
         setEnviado(r.ticketId ?? "");
         setTexto("");
         setArquivos([]);
+        router.refresh(); // o relato tem de aparecer na lista ao voltar
         return;
       }
       setErro(r.motivo ?? "não deu para enviar o relato");

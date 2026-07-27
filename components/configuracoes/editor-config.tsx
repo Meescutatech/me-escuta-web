@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { publicarConfig } from "@/app/(app)/configuracoes/avancado/actions";
 import {
@@ -41,7 +42,10 @@ export function EditorConfig({
   contexto: ContextoValidacao;
   meuPapel: Papel | null;
 }) {
+  const router = useRouter();
   const gestor = podePublicarConfig(meuPapel);
+  // a VIGENTE do histórico, não a primeira linha por acaso: recibo e lista leem o mesmo dado.
+  const vigenteHist = historico.find((h) => h.vigente) ?? historico[0];
   const contrato = contratoDe(nome);
   const original = vigente?.payload ?? {};
   const [texto, setTexto] = useState(() => JSON.stringify(original, null, 2));
@@ -64,6 +68,7 @@ export function EditorConfig({
       const r = await publicarConfig({ nome, versaoBase: vigente.versao, conteudo, justificativa });
       if (r.ok) {
         setJustificativa("");
+        router.refresh(); // B2: recibo, versao e historico voltam do servidor juntos
         return;
       }
       if (r.conflito) setConflito(r.motivo ?? null);
@@ -89,7 +94,7 @@ export function EditorConfig({
         descricao={
           <>
             {contrato?.consequencia ?? "Valor que o sistema lê como dado."}
-            {historico[0] ? ` Publicada ${reciboDe(historico[0])}.` : ""}
+            {vigenteHist ? ` Publicada ${reciboDe(vigenteHist)}.` : ""}
           </>
         }
       />
@@ -168,7 +173,7 @@ export function EditorConfig({
 
       {contrato ? (
         <div className="mt-4 rounded-md border border-linha bg-board p-3.5">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-mute">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-suave">
             O que muda quando publicar
           </p>
           <p className="mt-1.5 text-[13px] text-tinta">{contrato.consequencia}</p>
@@ -262,7 +267,8 @@ function FormularioDerivado({
               {typeof v === "boolean" ? (
                 <button
                   type="button"
-                  aria-pressed={v}
+                  role="switch"
+                  aria-checked={v}
                   disabled={somenteLeitura}
                   onClick={() => trocar(k, !v)}
                   className="inline-flex items-center gap-2 text-[13px] text-suave disabled:cursor-not-allowed"
@@ -362,10 +368,17 @@ function analisar(texto: string): Analise {
   }
 }
 
+/**
+ * B2 (parecer do Vitrine ME) · o recibo é a PROVA DE ESCRITA do cabeçalho, e ele se deriva da
+ * versão vigente do histórico — nunca de string escrita no handler, que o primeiro re-render
+ * desmente. E não credita migration como se fosse gente: versão sem `evento_id` não teve autor
+ * humano, e dizer "por migration 0033" no lugar de um nome é a tela inventando autoria.
+ */
 function reciboDe(v: VersaoHistorico): string {
   const quando = v.vigente_desde
     ? new Date(v.vigente_desde).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
     : "—";
-  const quem = v.publicado_por_nome ?? v.publicado_por_email ?? v.criado_por ?? "—";
-  return `${quando} por ${quem}`;
+  const humano = v.publicado_por_nome ?? v.publicado_por_email ?? null;
+  if (humano) return `${quando} por ${humano}`;
+  return `${quando} — versão de migration/seed (${v.criado_por ?? "origem desconhecida"}), sem autor humano`;
 }

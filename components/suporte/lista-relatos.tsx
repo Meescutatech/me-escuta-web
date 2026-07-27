@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { resolverChamado } from "@/app/(app)/configuracoes/suporte/actions";
 import {
   codigoTicket,
@@ -35,6 +36,7 @@ export function ListaRelatos({
   indisponivel: boolean;
   rotaAtual: string;
 }) {
+  const router = useRouter();
   const gestor = podeResolverChamado(meuPapel);
   const [aba, setAba] = useState<AbaTicket>("abertos");
   const [relatando, setRelatando] = useState(false);
@@ -82,7 +84,7 @@ export function ListaRelatos({
             }`}
           >
             {r}
-            <span className="ml-1.5 font-mono text-[11.5px] tabular-nums text-mute">{contagem[k]}</span>
+            <span className="ml-1.5 font-mono text-[11.5px] tabular-nums text-suave">{contagem[k]}</span>
           </button>
         ))}
       </div>
@@ -104,8 +106,8 @@ export function ListaRelatos({
       <div role="tabpanel">
         {indisponivel ? (
           <>
-            <Fantasma larguras={[48, 38, 240]} />
-            <Fantasma larguras={[48, 38, 240]} />
+            <Fantasma larguras={[48, 38, 240]} segunda={[150]} />
+            <Fantasma larguras={[48, 38, 240]} segunda={[150]} />
           </>
         ) : visiveis.length === 0 ? (
           <BlocoVazio
@@ -151,7 +153,10 @@ export function ListaRelatos({
       {resolvendo ? (
         <DialogoResolver
           ticket={resolvendo}
-          aoFechar={() => setResolvendo(null)}
+          aoFechar={() => {
+            setResolvendo(null);
+            router.refresh();
+          }}
           aoErro={(m) => {
             setErro(m);
             setResolvendo(null);

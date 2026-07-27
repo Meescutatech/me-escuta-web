@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   ativarCanal,
   desativarCanal,
@@ -59,6 +60,7 @@ export function TabelaCanais({
   indisponivel: boolean;
   f8Pronto: boolean;
 }) {
+  const router = useRouter();
   const gestor = podeGerirCanais(meuPapel);
   const [busca, setBusca] = useState("");
   const [abrindo, setAbrindo] = useState(false);
@@ -95,7 +97,10 @@ export function TabelaCanais({
       const r = await desativarCanal(canal.canal_id, { confirmado: true });
       setConfirmar(null);
       if (!r.ok) setErro(r.motivo ?? "não deu para desligar");
-      else setAviso(AVISO_APLICACAO_RUNTIME);
+      else {
+        setAviso(AVISO_APLICACAO_RUNTIME);
+        router.refresh(); // B1: sem isto a linha na tela continua a de antes da escrita
+      }
     });
   }
 
@@ -104,7 +109,10 @@ export function TabelaCanais({
     iniciar(async () => {
       const r = await ativarCanal(canal.canal_id, corte);
       if (!r.ok) setErro(r.motivo ?? "não deu para ligar");
-      else setAviso(AVISO_APLICACAO_RUNTIME);
+      else {
+        setAviso(AVISO_APLICACAO_RUNTIME);
+        router.refresh();
+      }
     });
   }
 
@@ -167,7 +175,7 @@ export function TabelaCanais({
       <div className="mt-1">
         <div
           style={{ gridTemplateColumns: grade }}
-          className="sticky top-0 z-[5] grid items-center gap-3 border-b border-linha bg-branco px-2 pb-2 pt-2.5 text-[11.5px] font-medium uppercase tracking-[0.05em] text-mute"
+          className="sticky top-0 z-[5] grid items-center gap-3 border-b border-linha bg-branco px-2 pb-2 pt-2.5 text-[11.5px] font-medium uppercase tracking-[0.05em] text-suave"
         >
           <span>Nome</span>
           <span>Número</span>
@@ -179,8 +187,8 @@ export function TabelaCanais({
 
         {indisponivel ? (
           <>
-            <Fantasma larguras={[150, 104, 62, 70]} />
-            <Fantasma larguras={[150, 104, 62, 70]} />
+            <Fantasma larguras={[150, 104, 62, 70]} segunda={[120]} />
+            <Fantasma larguras={[150, 104, 62, 70]} segunda={[120]} />
           </>
         ) : filtrados.length === 0 && busca.trim() ? (
           <div className="flex items-center gap-2.5 px-2 py-6 text-[13px] text-suave">
@@ -291,7 +299,7 @@ function LinhaCanal({
           : { txt: "Desconectado", cls: "text-vermelho" }
     : canal.ativo
       ? { txt: "Ativo", cls: "text-tinta" }
-      : { txt: rotuloEstadoCanal(estado), cls: "text-mute" };
+      : { txt: rotuloEstadoCanal(estado), cls: "text-suave" };
 
   return (
     <div className="border-b border-linha">
@@ -406,6 +414,7 @@ function BlocoAdicionar({
   aoErro: (m: string | null) => void;
   aoAviso: (m: string) => void;
 }) {
+  const router = useRouter();
   const [provedor, setProvedor] = useState<Provedor>("waba");
   const [form, setForm] = useState<FormCanal>({
     canalId: "",
@@ -428,6 +437,7 @@ function BlocoAdicionar({
       else {
         aoAviso("Número registrado. Ele nasce DESLIGADO — ligar é um segundo passo, com data de corte.");
         aoFechar();
+        router.refresh(); // B1: o primeiro número TEM de aparecer na lista e no contador
       }
     });
   }

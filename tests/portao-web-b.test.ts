@@ -7,6 +7,7 @@ import {
   ENV_SEGREDO_PERMITIDO,
   ESCRITA_SEM_READBACK_HERDADA,
   PORTAO_CAMINHO_ANEXO,
+  PORTAO_CONTRASTE,
   PORTAO_CLIENTE,
   PORTAO_FRONTEIRA,
   PORTAO_PAPEL,
@@ -88,7 +89,7 @@ test("cada portão declara o que prova", () => {
   for (const p of PORTOES) {
     assert.ok(p.prova.length > 20, p.nome);
   }
-  assert.equal(PORTOES.length, 8);
+  assert.equal(PORTOES.length, 9);
 });
 
 // ═══════════════════════ o sentido que REPROVA ═══════════════════════
@@ -317,4 +318,33 @@ test("a herança NÃO isenta arquivo novo: a mesma violação num arquivo fora d
   ]);
   assert.equal(v.length, 1);
   assert.equal(v[0].caminho, "app/(app)/configuracoes/novo/actions.ts");
+});
+
+// ═══ C1 do parecer do Vitrine ME · --pt não carrega informação (2,61:1) ═══
+
+test("CONTRASTE reprova rótulo estrutural em text-mute", () => {
+  const v = PORTAO_CONTRASTE.avaliar(
+    arq(
+      "components/configuracoes/x.tsx",
+      '<span className="text-[11.5px] uppercase tracking-[0.06em] text-mute">ETAPAS</span>',
+    ),
+  );
+  assert.equal(v.length, 1);
+  assert.match(v[0].motivo, /2,61:1/);
+});
+
+test("CONTRASTE aprova o mesmo rótulo em text-suave, e não incomoda placeholder", () => {
+  assert.deepEqual(
+    PORTAO_CONTRASTE.avaliar(
+      arq("components/configuracoes/x.tsx", '<span className="uppercase tracking-[0.06em] text-suave">ETAPAS</span>'),
+    ),
+    [],
+  );
+  // placeholder e desabilitado continuam podendo usar --pt: é para isso que o token existe
+  assert.deepEqual(
+    PORTAO_CONTRASTE.avaliar(
+      arq("components/configuracoes/x.tsx", '<input className="placeholder:text-mute" />'),
+    ),
+    [],
+  );
 });

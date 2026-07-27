@@ -58,7 +58,7 @@ export function ListaChaves({
         </Faixa>
       ) : null}
 
-      <div className="grid grid-cols-[minmax(0,1fr)_56px_100px_118px_100px] items-center gap-3 border-b border-linha px-2 pb-2 pt-2.5 text-[11.5px] font-medium uppercase tracking-[0.05em] text-mute">
+      <div className="grid grid-cols-[minmax(0,1fr)_56px_100px_118px_100px] items-center gap-3 border-b border-linha px-2 pb-2 pt-2.5 text-[11.5px] font-medium uppercase tracking-[0.05em] text-suave">
         <span>Chave</span>
         <span>Versão</span>
         <span>Publicada</span>

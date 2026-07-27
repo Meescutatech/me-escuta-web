@@ -14,7 +14,7 @@
  *  · dado de máquina em mono, número que muda em `tabular-nums`.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 
 export function Cabecalho({
   titulo,
@@ -111,7 +111,7 @@ export function Secao({
   return (
     <section className="mt-7">
       <div className="flex items-center gap-2.5 border-b border-linha pb-2">
-        <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-mute">{rotulo}</span>
+        <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-suave">{rotulo}</span>
         {contador !== undefined ? (
           <span className="ml-auto font-mono text-[11.5px] tabular-nums text-suave">{contador}</span>
         ) : null}
@@ -122,17 +122,35 @@ export function Secao({
   );
 }
 
-/** Linha-fantasma do carregando: copia o BOX MODEL da linha real, para o dado não empurrar nada. */
-export function Fantasma({ larguras }: { larguras: number[] }) {
+/**
+ * Linha-fantasma do carregando: copia o BOX MODEL da linha real — não um número solto —, senão o
+ * layout salta quando o dado chega.
+ *
+ * C2 do parecer: a linha de F12 tem DUAS faixas (título + autor·rota·carimbo), e um fantasma de uma
+ * faixa só deslocava 24px por linha. Quem tem duas faixas passa `segunda`.
+ */
+export function Fantasma({
+  larguras,
+  segunda,
+}: {
+  larguras: number[];
+  /** larguras da 2ª faixa; presente = a linha real tem duas faixas e o fantasma acompanha. */
+  segunda?: number[];
+}) {
+  const barra = (l: number, i: number) => (
+    <i key={i} style={{ width: l }} className="block h-[9px] animate-pulse rounded-[3px] bg-hover" />
+  );
+  if (!segunda) {
+    return (
+      <div aria-hidden="true" className="flex h-12 items-center gap-3 border-b border-linha px-2">
+        {larguras.map(barra)}
+      </div>
+    );
+  }
   return (
-    <div aria-hidden="true" className="flex h-12 items-center gap-3 border-b border-linha px-2">
-      {larguras.map((l, i) => (
-        <i
-          key={i}
-          style={{ width: l }}
-          className="block h-[9px] animate-pulse rounded-[3px] bg-hover"
-        />
-      ))}
+    <div aria-hidden="true" className="flex flex-col gap-3 border-b border-linha px-2 py-2">
+      <div className="flex min-h-[30px] items-center gap-3">{larguras.map(barra)}</div>
+      <div className="mt-0.5 flex min-h-[18px] items-center gap-3">{segunda.map(barra)}</div>
     </div>
   );
 }
@@ -169,6 +187,22 @@ export function BarraPublicacao({ texto, acoes }: { texto: ReactNode; acoes: Rea
   );
 }
 
+const FOCAVEIS =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Diálogo. Duas correções do parecer do Vitrine ME moram aqui, e as duas são de ALCANCE, não de
+ * estética:
+ *
+ *  C4 · a ação primária tem de receber clique em qualquer viewport. O caso medido foi "Registrar
+ *       resposta" (F12) inalcançável abaixo de 768px — sem rolagem e sem Esc, o painel crescia
+ *       além da tela e a linha de ações caía fora. Agora o painel tem teto de altura e rola por
+ *       dentro; o rodapé de ações é sempre alcançável.
+ *  C5 · `aria-modal` manda o leitor de tela ignorar tudo fora do diálogo. Sem mover o foco para
+ *       dentro, quem usa teclado fica numa região que a tecnologia assistiva considera morta. O
+ *       foco vai para a AÇÃO SEGURA ao abrir (a primeira focável é sempre Cancelar/Fechar), o Tab
+ *       fica preso dentro, Esc fecha, e o foco volta ao gatilho ao sair.
+ */
 export function Dialogo({
   titulo,
   children,
@@ -182,22 +216,55 @@ export function Dialogo({
   largura?: number;
   aoFechar: () => void;
 }) {
+  const painel = useRef<HTMLDivElement>(null);
+  const gatilho = useRef<Element | null>(null);
+
+  useEffect(() => {
+    gatilho.current = document.activeElement;
+    painel.current?.querySelector<HTMLElement>(FOCAVEIS)?.focus();
+    return () => {
+      if (gatilho.current instanceof HTMLElement) gatilho.current.focus();
+    };
+  }, []);
+
+  function teclado(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      aoFechar();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const focaveis = painel.current?.querySelectorAll<HTMLElement>(FOCAVEIS);
+    if (!focaveis || focaveis.length === 0) return;
+    const primeiro = focaveis[0];
+    const ultimo = focaveis[focaveis.length - 1];
+    if (e.shiftKey && document.activeElement === primeiro) {
+      e.preventDefault();
+      ultimo.focus();
+    } else if (!e.shiftKey && document.activeElement === ultimo) {
+      e.preventDefault();
+      primeiro.focus();
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(31,35,40,.28)] p-5"
+      onKeyDown={teclado}
       onClick={(e) => {
         if (e.target === e.currentTarget) aoFechar();
       }}
     >
       <div
+        ref={painel}
         role="dialog"
         aria-modal="true"
         style={{ maxWidth: largura }}
-        className="w-full rounded-[10px] bg-branco p-5 shadow-forte"
+        className="flex max-h-[calc(100vh-40px)] w-full flex-col overflow-y-auto rounded-[10px] bg-branco p-5 shadow-forte"
       >
-        <h2 className="mb-1.5 text-[15px] font-semibold text-tinta">{titulo}</h2>
+        <h2 className="mb-1.5 flex-none text-[15px] font-semibold text-tinta">{titulo}</h2>
         {children}
-        <div className="mt-4 flex items-center justify-end gap-2.5">{acoes}</div>
+        <div className="mt-4 flex flex-none items-center justify-end gap-2.5">{acoes}</div>
       </div>
     </div>
   );
