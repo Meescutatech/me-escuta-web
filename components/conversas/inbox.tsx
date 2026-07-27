@@ -20,6 +20,7 @@ import { useConversaViva } from "@/components/conversas/tempo-real";
 import { criarClienteBrowser } from "@/lib/supabase/client";
 import { montarEnvelopeAtividade } from "@/lib/presenca";
 import {
+  dataDaLista,
   fronteiraNaoLidas,
   montarBlocos,
   motivoErroPermanente,
@@ -549,7 +550,11 @@ export function Inbox({
                     <span className={cn("flex-1 truncate text-[0.86rem] font-semibold text-navy", ruim && "tabular-nums")}>
                       {rotulo}
                     </span>
-                    <span className="shrink-0 text-[0.72rem] text-mute">{tempoLista(c.atualizado_em)}</span>
+                    {/* F21: a hora da MENSAGEM (dataDaLista), nunca `atualizado_em` — sem data
+                        na conversa sem mensagem é honesto; data de gravação disfarçada não é. */}
+                    <span className="shrink-0 text-[0.72rem] text-mute">
+                      {dataDaLista(c) ? tempoLista(dataDaLista(c)) : "sem data"}
+                    </span>
                   </div>
                   <div className={cn("mt-0.5 truncate text-[0.78rem]", c.previa ? "text-suave" : "text-mute")}>
                     {prev}

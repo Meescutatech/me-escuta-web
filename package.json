@@ -2,7 +2,7 @@
   "name": "me-escuta-web",
   "version": "0.1.0",
   "private": true,
-  "description": "UI do sistema Me Escuta \u2014 W1: auth + timeline crua do ledger + fila HITL (aprovar/rejeitar via RPC-porta). Sprint 1/F1 (RF-7).",
+  "description": "UI do sistema Me Escuta — W1: auth + timeline crua do ledger + fila HITL (aprovar/rejeitar via RPC-porta). Sprint 1/F1 (RF-7).",
   "engines": {
     "node": ">=22"
   },
@@ -16,7 +16,9 @@
     "e2e": "node scripts/verificacao-e2e.mjs",
     "portao:f5": "node --experimental-strip-types scripts/portao-f5-tempo-real.mjs",
     "portao:f4": "node --experimental-strip-types --test tests/debounce-compartilhado.test.ts",
-    "portao:f6": "node --experimental-strip-types scripts/portao-f6-readback.mjs"
+    "portao:f6": "node --experimental-strip-types scripts/portao-f6-readback.mjs",
+    "portao:f21": "node --experimental-strip-types scripts/portao-f21-data-inbox.mjs",
+    "bateria:f21": "node --experimental-strip-types scripts/bateria-f21.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

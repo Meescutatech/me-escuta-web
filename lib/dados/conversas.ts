@@ -32,6 +32,18 @@ export interface ConversaResumo {
   dono_atual: string | null;
   status: string | null;
   atualizado_em: string | null;
+  /**
+   * F21 — quando a conversa recebeu a última mensagem de ENTRADA (core.conversa.ultima_entrada_em,
+   * mantido pelo projetor com `greatest()`). É por este campo que a lista ORDENA. NULL para
+   * conversa nascida de disparo (só saída) — daí o `nulls last` na consulta.
+   */
+  ultima_entrada_em?: string | null;
+  /**
+   * F21 — hora da última mensagem de QUALQUER direção, carimbada pela prévia (custo zero: o dado
+   * já vinha). É por este campo que a lista EXIBE a data. Ausente quando a prévia não pôde ser
+   * lida; a exibição então degrada por `dataDaLista`, nunca de volta pra `atualizado_em`.
+   */
+  ultima_msg_em?: string | null;
   // enriquecimento p/ a lista (prévia) + painel de contexto do redesign (conversa-v2).
   lead_id?: string | null;
   etapa?: string | null; // chave
@@ -77,9 +89,49 @@ export interface SugestaoMensagem {
 
 // ─────────────── leitura real ───────────────
 
-export async function lerConversas(): Promise<ConversaResumo[]> {
+/**
+ * Cliente de leitura. O parâmetro opcional `cliente` das funções abaixo existe por exigência de
+ * spec, não por conveniência de teste: os portões do F24a e do F25 precisam injetar um cliente
+ * FALSO QUE CONTA CHAMADAS para medir requisições, e os portões que falam com o banco de verdade
+ * precisam injetar um cliente AUTENTICADO (a sessão do app vem de cookie, que não existe fora de
+ * uma requisição). Sem o parâmetro, o portão teria de reimplementar a consulta — e um portão que
+ * testa uma cópia da lógica não testa o produto.
+ * Omitido, o comportamento é exatamente o de antes: a sessão do usuário, com o RLS dele.
+ */
+type Supabase = ReturnType<typeof criarClienteServidor>;
+
+/** Colunas da prévia. `timestamp_origem` é a hora REAL da mensagem no WhatsApp (RF-6). */
+const PREVIA_COM_ORIGEM = "conversa_id,direcao,corpo,criado_em,timestamp_origem";
+const PREVIA_BASE = "conversa_id,direcao,corpo,criado_em";
+
+/**
+ * Últimas mensagens das conversas da página, em ordem cronológica REAL decrescente. Dela saem
+ * três coisas: a prévia (corpo da última), o carimbo do F21 (`ultima_msg_em`) e a contagem de
+ * não-lidas — esta última só faz sentido em ordem decrescente, porque conta as entradas até
+ * esbarrar na última saída.
+ *
+ * Ordena por `timestamp_origem`, não por `criado_em`, pelo mesmo motivo que existe o F21: um é a
+ * hora em que a mensagem existiu, o outro é a hora em que nós a processamos, e webhook atrasado
+ * não pode fingir que a mensagem é nova. Mesma cascata de degrade da `lerMensagens`: se a coluna
+ * ainda não existir no ambiente, cai pro select base — produção não quebra se o front sair antes
+ * da migration.
+ */
+async function lerPrevias(supabase: Supabase, ids: string[]): Promise<any[]> {
+  const buscar = (colunas: string, porOrigem: boolean) => {
+    const base = supabase.schema("core").from("mensagem").select(colunas).in("conversa_id", ids);
+    const ordenada = porOrigem
+      ? base.order("timestamp_origem", { ascending: false, nullsFirst: false })
+      : base;
+    return ordenada.order("criado_em", { ascending: false }).limit(800);
+  };
+  let { data, error } = await buscar(PREVIA_COM_ORIGEM, true);
+  if (error) ({ data, error } = await buscar(PREVIA_BASE, false));
+  return error || !data ? [] : (data as any[]);
+}
+
+export async function lerConversas(cliente?: Supabase): Promise<ConversaResumo[]> {
   try {
-    const supabase = criarClienteServidor();
+    const supabase = cliente ?? criarClienteServidor();
     // rótulo de exibição da etapa (chave → nome) via config vigente do funil — não depende da
     // lista, então dispara junto com a query principal (era a 3ª de 4 queries em série)
     const configPromise = supabase
@@ -91,12 +143,19 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
 
     // Contrato 0025 (Trilha A): o inbox lista core.v_conversa WHERE visivel_inbox — conversa só
     // aparece quando satisfaz o filtro (inbound real). Lista vazia é estado HONESTO.
+    // F21: ordena por `ultima_entrada_em` — "quem falou com a gente por último", que é o critério
+    // de uma FILA DE ATENDIMENTO. `atualizado_em` segue no select porque é o que o tempo real usa
+    // pra detectar mudança (NÃO apagar), mas deixou de mandar na ordem: ele é a hora em que a
+    // LINHA foi tocada, e o import do Kommo tocou todas de uma vez.
+    // O desempate por `id` é obrigatório e não decorativo: sem ele a ordem entre carimbos iguais é
+    // indefinida, e é sobre este PAR (ultima_entrada_em, id) que o keyset do F22 se apoia.
     const { data, error } = await supabase
       .schema("core")
       .from("v_conversa")
-      .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em")
+      .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em")
       .eq("visivel_inbox", true)
-      .order("atualizado_em", { ascending: false, nullsFirst: false })
+      .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
       .limit(50);
     if (error || !data || data.length === 0) return [];
 
@@ -113,13 +172,7 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
             .select("lead_id,nome,etapa,valor,origem,entrou_etapa_em,tags,kommo_lead_id")
             .in("lead_id", leadIds)
         : Promise.resolve({ data: null } as { data: any[] | null }),
-      supabase
-        .schema("core")
-        .from("mensagem")
-        .select("conversa_id,direcao,corpo,criado_em")
-        .in("conversa_id", ids)
-        .order("criado_em", { ascending: false })
-        .limit(800),
+      lerPrevias(supabase, ids),
       configPromise,
     ]);
 
@@ -135,12 +188,18 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
     // prévia = última mensagem por conversa + contagem de não-lidas (proxy RF-30/31: mensagens de
     // entrada após a última saída — sem rastreio de leitura no banco ainda, é o proxy honesto);
     // erro de leitura degrada pra lista sem prévia, como antes
-    const previa = new Map<string, { corpo: string | null; saida: boolean }>();
+    const previa = new Map<string, { corpo: string | null; saida: boolean; em: string | null }>();
     const naoLidas = new Map<string, number>();
     const fechada = new Set<string>(); // conversa já encontrou uma saída — para de contar
-    for (const m of msgsRes.data ?? []) {
+    for (const m of msgsRes) {
       const k = String(m.conversa_id);
-      if (!previa.has(k)) previa.set(k, { corpo: m.corpo ?? null, saida: m.direcao === "saida" });
+      // primeira linha da conversa nesta ordem = a mais recente de verdade (F21: qualquer direção)
+      if (!previa.has(k))
+        previa.set(k, {
+          corpo: m.corpo ?? null,
+          saida: m.direcao === "saida",
+          em: m.timestamp_origem ?? m.criado_em ?? null,
+        });
       if (!fechada.has(k)) {
         if (m.direcao === "saida") fechada.add(k);
         else naoLidas.set(k, (naoLidas.get(k) ?? 0) + 1);
@@ -159,6 +218,8 @@ export async function lerConversas(): Promise<ConversaResumo[]> {
         dono_atual: c.dono_atual ?? null,
         status: c.status ?? null,
         atualizado_em: c.atualizado_em ?? null,
+        ultima_entrada_em: c.ultima_entrada_em ?? null,
+        ultima_msg_em: p?.em ?? null,
         lead_id: c.lead_id ?? null,
         etapa: etapaChave,
         etapa_nome: etapaChave ? etapaNome.get(etapaChave) ?? null : null,
@@ -185,9 +246,9 @@ const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor,tim
 /** + colunas da pipeline de mídia (contrato rodada 5, migration em paralelo). */
 const COLUNAS_COM_MIDIA = `${COLUNAS_COM_STATUS},midia_caminho,midia_mime`;
 
-export async function lerMensagens(conversaId: string): Promise<Mensagem[]> {
+export async function lerMensagens(conversaId: string, cliente?: Supabase): Promise<Mensagem[]> {
   try {
-    const supabase = criarClienteServidor();
+    const supabase = cliente ?? criarClienteServidor();
     const buscar = (colunas: string) =>
       supabase
         .schema("core")
