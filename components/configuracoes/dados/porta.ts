@@ -10,12 +10,10 @@
  * O READBACK É O DO F6 (Agent 1, `lib/eventos/confirmar-projecao.ts`) — importado, não reescrito.
  * Duas coisas somam a ele, e as duas são necessárias hoje:
  *
- *  1. FAIL-CLOSED PARA OS TIPOS DESTA NOITE. `confirmarProjecao` devolve `{ok:true}` quando a ação
- *     não está na tabela dele — prudente para os 20 caminhos antigos, e exatamente o defeito que o
- *     readback existe para pegar nos tipos NOVOS: eles estreiam junto com o ramo do dispatcher, e
- *     "tipo sem ramo passa calado" é o modo de falha nº 1 do projeto. Aqui, tipo sem conferência
- *     declarada é FALHA. As 10 linhas vivem em `regras/porta.ts` e migram para a tabela do F6 na
- *     fase 2, JUNTO do portão que as exercita com escrita real (regra do Orquestrador; E-020).
+ *  1. FAIL-CLOSED. As 10 linhas desta trilha JÁ MIGRARAM para a tabela do F6 (27/07, junto do caso
+ *     que as exercita com escrita real). O que fica aqui é a recusa de tipo NÃO declarado:
+ *     `confirmarProjecao` devolve `{ok:true}` nesse caso — prudente para os 20 caminhos antigos, e
+ *     o defeito exato para um tipo que estreia junto com o ramo novo do dispatcher.
  *  2. CLASSE DO ERRO POR ERRCODE (ARB-21): o texto continua sendo o do banco; o errcode decide o
  *     que a tela faz depois.
  *
@@ -25,22 +23,13 @@
 
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
-import {
-  MOTIVO_NAO_PROJETADO,
-  confirmarProjecao,
-  excecaoDe,
-  motivoFalhaVerificacao,
-  temConferencia,
-  type RespostaRegistrarEvento,
-} from "@/lib/eventos/confirmar-projecao";
+import { confirmarProjecao, type RespostaRegistrarEvento } from "@/lib/eventos/confirmar-projecao";
 import {
   classificarErroPorta,
-  excecaoWebB,
   montarEnvelope,
   motivoTipoSemConferencia,
   payloadSeguro,
-  regraWebB,
-  resolverFiltros,
+  tipoDeclarado,
   type ClasseErroPorta,
 } from "../regras/porta.ts";
 
@@ -72,11 +61,11 @@ export async function registrarEventoComReadback(pedido: PedidoEscrita): Promise
   const seguro = payloadSeguro(pedido.payload);
   if (!seguro.ok) return { ok: false, motivo: seguro.motivo, classe: "recusa" };
 
-  // fail-closed ANTES de escrever: recusar depois de gravar no ledger append-only seria tarde.
-  const conhecidoPeloF6 = temConferencia(pedido.tipo) || excecaoDe(pedido.tipo) !== null;
-  const regra = regraWebB(pedido.tipo);
-  const excecao = excecaoWebB(pedido.tipo);
-  if (!conhecidoPeloF6 && !regra && !excecao) {
+  // FAIL-CLOSED, e ele continua sendo meu: `confirmarProjecao` devolve {ok:true} para ação fora da
+  // tabela, o que é prudente para os 20 caminhos antigos e é o defeito exato num tipo que estreia
+  // junto com o ramo novo do dispatcher. Aqui, tipo sem conferência declarada recusa ANTES de
+  // escrever — depois de gravar num ledger append-only seria tarde.
+  if (!tipoDeclarado(pedido.tipo)) {
     return { ok: false, motivo: motivoTipoSemConferencia(pedido.tipo), classe: "outro" };
   }
 
@@ -97,63 +86,11 @@ export async function registrarEventoComReadback(pedido: PedidoEscrita): Promise
     return { ok: true, duplicado: true, eventoId: resposta.evento_id };
   }
 
-  const veredito = conhecidoPeloF6
-    ? await confirmarProjecao(supabase, pedido.tipo, pedido.payload, resposta)
-    : await conferir(supabase, pedido.tipo, pedido.payload, resposta);
-
+  const veredito = await confirmarProjecao(supabase, pedido.tipo, pedido.payload, resposta);
   if (!veredito.ok) return { ok: false, motivo: veredito.motivo, classe: "outro" };
 
   revalidar(pedido.revalidar);
   return { ok: true, eventoId: resposta?.evento_id };
-}
-
-/**
- * A releitura dos tipos novos. Determinística, não polling: os projetores rodam na mesma transação
- * da porta — quando o RPC volta, a linha existe ou nunca vai existir.
- *
- * "não achei" e "não consegui ler" ficam SEPARADOS: o primeiro acusa ramo perdido no dispatcher, o
- * segundo é rede ou RLS e não prova nada sobre a projeção. Tratar os dois igual manda alguém caçar
- * bug de banco por causa de wifi.
- */
-async function conferir(
-  supabase: Supabase,
-  tipo: string,
-  payload: Record<string, unknown>,
-  resposta: RespostaRegistrarEvento | null,
-): Promise<{ ok: boolean; motivo?: string }> {
-  const excecao = excecaoWebB(tipo);
-  if (excecao) {
-    if (!excecao.conferirLedger || !resposta?.evento_id) return { ok: true };
-    const { data, error } = await supabase
-      .schema("core")
-      .from("evento")
-      .select("id")
-      .eq("id", resposta.evento_id)
-      .limit(1);
-    if (error) return { ok: false, motivo: motivoFalhaVerificacao(error.message) };
-    return (data ?? []).length > 0 ? { ok: true } : { ok: false, motivo: MOTIVO_NAO_PROJETADO };
-  }
-
-  const regra = regraWebB(tipo);
-  if (!regra) return { ok: false, motivo: motivoTipoSemConferencia(tipo) };
-
-  const filtros = resolverFiltros(regra, payload, resposta?.evento_id ?? null);
-  if (!filtros) {
-    // Um filtro sem valor transformaria "esta linha" em "qualquer linha" — a conferência passaria
-    // a aprovar a escrita de outra pessoa. Melhor recusar e mandar recarregar.
-    return {
-      ok: false,
-      motivo: motivoFalhaVerificacao("faltou dado no payload para montar a releitura da projeção"),
-    };
-  }
-
-  let consulta = supabase.schema("core").from(regra.fonte).select(regra.coluna);
-  for (const f of filtros) {
-    consulta = f.tipo === "naoNulo" ? consulta.not(f.campo, "is", null) : consulta.eq(f.campo, f.valor);
-  }
-  const { data, error } = await consulta.limit(1);
-  if (error) return { ok: false, motivo: motivoFalhaVerificacao(error.message) };
-  return (data ?? []).length > 0 ? { ok: true } : { ok: false, motivo: MOTIVO_NAO_PROJETADO };
 }
 
 function revalidar(rotas: string[] | undefined): void {

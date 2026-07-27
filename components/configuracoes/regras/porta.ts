@@ -142,218 +142,51 @@ export function payloadSeguro(payload: Record<string, unknown>): VereditoEscrita
 }
 
 /*
- * ── A tabela ação → conferência dos TIPOS NOVOS ────────────────────────────────────────────────
+ * ── A tabela ação → conferência ────────────────────────────────────────────────────────────────
  *
- * POR QUE ELA EXISTE EM VEZ DE LINHAS NA TABELA DO F6, hoje: a regra do Orquestrador é que a linha
- * só entra lá JUNTO de um caso de portão que a exercite com ESCRITA REAL (E-020: cobertura
- * declarada sem exercício). As migrations 0069/0075/0081/0082 não existem ainda — não há banco
- * contra o qual escrever de verdade. Então as 10 linhas ficam aqui, declaradas e testadas puras,
- * e migram para `CONFERENCIA` do F6 na fase 2, no mesmo commit do portão de escrita real.
- * O vocabulário é o DELES de propósito: a migração é mover linhas, não reescrever.
+ * ELA NÃO MORA MAIS AQUI. As dez linhas migraram para `CONFERENCIA`/`EXCECOES` do F6
+ * (`lib/eventos/confirmar-projecao.ts`) em 27/07, junto do caso que as exercita com ESCRITA REAL —
+ * `supabase/verificacao/web-b-escrita-real.sql`, verde no db-r16-c. Era a condição do E-020:
+ * cobertura declarada sem exercício é cobertura que ninguém viu funcionar.
  *
- * A DIFERENÇA DELIBERADA, e ela é uma correção: `confirmarProjecao` devolve `{ok:true}` para tipo
- * que não está na tabela (`if (!temConferencia(acao)) return { ok: true }`). Para os 20 caminhos
- * antigos isso é prudente — não inventar veredito sobre o que ninguém mapeou. Para os tipos DESTA
- * NOITE é o defeito exato que o readback existe para pegar: eles são novos, o ramo no dispatcher é
- * novo, e "tipo sem ramo passa calado" é o modo de falha nº 1 do projeto. Aqui, tipo sem
- * conferência declarada é FALHA, não sucesso. Fail-closed.
+ * Ficam aqui só a lista dos tipos que ESTA trilha escreve — derivada da tabela do F6, para não
+ * existirem duas verdades — e o motivo do fail-closed, que continua sendo do meu limite de escrita.
  */
 
-export type FiltroConferencia =
-  | { campo: string; op: "igualPayload"; dePayload: string }
-  | { campo: string; op: "igualPayloadMais1"; dePayload: string }
-  | { campo: string; op: "igualEvento" }
-  | { campo: string; op: "igual"; valor: string | number | boolean }
-  | { campo: string; op: "naoNulo" };
+// caminho RELATIVO com extensão, não o alias `@/`: este módulo é carregado por `node --test`, que
+// não resolve o alias do tsconfig. O alias fica nos módulos que só o Next carrega.
+import { CONFERENCIA, EXCECOES } from "../../../lib/eventos/confirmar-projecao.ts";
 
-export interface RegraConferenciaWebB {
-  /** view ou tabela em `core` a reler. */
-  fonte: string;
-  /** coluna barata para o select. */
-  coluna: string;
-  filtros: FiltroConferencia[];
-  /** por que ESTA é a chave certa. Errar uma linha reprova toda escrita bem-sucedida. */
-  porque: string;
-}
-
-/** Ausência de projeção DECLARADA, com motivo — mesmo formato do F6. */
-export interface ExcecaoConferenciaWebB {
-  motivo: string;
-  conferirLedger: boolean;
-}
-
-/**
- * NOTA DE CONTRATO que decide a forma de todas as linhas: as views da Web-B
- * (`core.v_canal_whatsapp`, `core.v_suporte_ticket`, `core.v_config_vigente`) NÃO expõem
- * `ultima_posicao`. Então a conferência é POR ESTADO ESPERADO — o canal existe, o canal está
- * ligado, a versão subiu — e não por posição carimbada. É mais forte como promessa ao usuário
- * (confere o efeito, não o carimbo) e mais fraca contra leitura atrasada, o que não acontece aqui
- * porque a projeção é síncrona na mesma transação. Pedido de `ultima_posicao` nas views registrado
- * no adendo ao Agent 3.
- */
-export const CONFERENCIA_WEB_B: Readonly<Record<string, RegraConferenciaWebB>> = {
-  canal_registrado: {
-    fonte: "v_canal_whatsapp",
-    coluna: "canal_id",
-    filtros: [{ campo: "canal_id", op: "igualPayload", dePayload: "canal_id" }],
-    porque: "o efeito de registrar é a linha existir. `canal_registrado` nasce ativo=false, então ativo não serve de prova.",
-  },
-  canal_atualizado: {
-    fonte: "v_canal_whatsapp",
-    coluna: "nome",
-    filtros: [
-      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
-      { campo: "nome", op: "igualPayload", dePayload: "nome" },
-    ],
-    porque: "patch parcial: confere o campo que a tela mandou. Só existir a linha provaria nada — ela já existia antes.",
-  },
-  canal_ativado: {
-    fonte: "v_canal_whatsapp",
-    coluna: "ativo",
-    filtros: [
-      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
-      { campo: "ativo", op: "igual", valor: true },
-    ],
-    porque: "o efeito É o estado. Ligar e a linha continuar ativo=false é exatamente o que o readback tem de pegar.",
-  },
-  canal_desativado: {
-    fonte: "v_canal_whatsapp",
-    coluna: "ativo",
-    filtros: [
-      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
-      { campo: "ativo", op: "igual", valor: false },
-    ],
-    porque: "idem, ao contrário — e este é o caminho que mata mensagem em voo, então mentir aqui custa caro.",
-  },
-  canal_consentimento_registrado: {
-    fonte: "v_canal_whatsapp",
-    coluna: "consentimento_em",
-    filtros: [
-      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
-      { campo: "consentimento_em", op: "naoNulo" },
-    ],
-    porque: "consentimento é o portão da sessão: 'registrado' sem a coluna preenchida deixaria a tela liberar o pareamento sem base.",
-  },
-  config_publicada: {
-    fonte: "v_config_vigente",
-    coluna: "versao",
-    filtros: [
-      { campo: "nome", op: "igualPayload", dePayload: "nome" },
-      { campo: "versao", op: "igualPayloadMais1", dePayload: "versao_base" },
-    ],
-    porque:
-      "a porta carimba versao = vigente+1 e a tela mandou versao_base. Conferir a VERSÃO RESULTANTE prova a publicação; conferir só o nome passaria com a versão velha.",
-  },
-  suporte_ticket_aberto: {
-    fonte: "v_suporte_ticket",
-    coluna: "id",
-    filtros: [{ campo: "id", op: "igualEvento" }],
-    porque:
-      "ARB-26: a identidade do ticket NASCE DO EVENTO (0070 crava id = evento.id e nunca lê payload.ticket_id na abertura). " +
-      "A minha regra conferia por um ticket_id que eu mesmo gerava — e que o banco ignorava —, então a releitura devolvia ZERO " +
-      "para toda abertura BEM-SUCEDIDA. É a Constituição §1.1 aplicada a um id: quem manda id de fora está inventando identidade.",
-  },
-  suporte_ticket_comentado: {
-    fonte: "suporte_ticket_comentario",
-    coluna: "id",
-    filtros: [{ campo: "id", op: "igualEvento" }],
-    porque: "o comentário nasce com id = evento.id (CONTRATO-C §6.1). Não há coluna de posição nessa tabela.",
-  },
-  suporte_ticket_resolvido: {
-    fonte: "v_suporte_ticket",
-    coluna: "status",
-    filtros: [
-      { campo: "id", op: "igualPayload", dePayload: "ticket_id" },
-      { campo: "status", op: "igual", valor: "resolvido" },
-    ],
-    porque: "o efeito é a transição de estado; a linha já existia.",
-  },
-};
-
-export const EXCECOES_WEB_B: Readonly<Record<string, ExcecaoConferenciaWebB>> = {
-  aceite_contato_registrado: {
-    motivo:
-      "ledger-only POR DESENHO (CONTRATO-C §5.5): não tem projeção, e `core.contraparte_conhecida()` consulta o evento direto. Ausência de projeção aqui é o desenho, não ramo perdido.",
-    conferirLedger: true,
-  },
-};
-
-/** Os tipos que ESTA trilha escreve. O portão prova que nenhum outro aparece nas actions. */
+/** Os tipos que a Web-B escreve. O portão `tipos_declarados` reprova literal fora desta lista. */
 export const TIPOS_ESCRITOS_WEB_B: string[] = [
-  ...Object.keys(CONFERENCIA_WEB_B),
-  ...Object.keys(EXCECOES_WEB_B),
+  "canal_registrado",
+  "canal_atualizado",
+  "canal_ativado",
+  "canal_desativado",
+  "canal_consentimento_registrado",
+  "config_publicada",
+  "suporte_ticket_aberto",
+  "suporte_ticket_comentado",
+  "suporte_ticket_resolvido",
+  "aceite_contato_registrado",
 ].sort();
 
-export function regraWebB(tipo: string): RegraConferenciaWebB | null {
-  return Object.prototype.hasOwnProperty.call(CONFERENCIA_WEB_B, tipo) ? CONFERENCIA_WEB_B[tipo] : null;
-}
-
-export function excecaoWebB(tipo: string): ExcecaoConferenciaWebB | null {
-  return Object.prototype.hasOwnProperty.call(EXCECOES_WEB_B, tipo) ? EXCECOES_WEB_B[tipo] : null;
-}
-
+/**
+ * Todo tipo desta trilha tem conferência OU exceção declarada na tabela do F6. Se alguém acrescentar
+ * um tipo à lista acima sem a linha lá, isto devolve false e o limite de escrita RECUSA antes de
+ * gravar — recusar depois de gravar num ledger append-only seria tarde.
+ */
 export function tipoDeclarado(tipo: string): boolean {
-  return regraWebB(tipo) !== null || excecaoWebB(tipo) !== null;
+  return (
+    Object.prototype.hasOwnProperty.call(CONFERENCIA, tipo) ||
+    Object.prototype.hasOwnProperty.call(EXCECOES, tipo)
+  );
 }
 
 export function motivoTipoSemConferencia(tipo: string): string {
   return (
     `escrita recusada: o tipo "${tipo}" não tem conferência de projeção declarada. ` +
     "Tipo novo sem ramo no dispatcher entra no ledger e não projeta — a tela diria 'salvo' para sempre. " +
-    "Declare a conferência (ou a exceção, com motivo) antes de escrever."
+    "Declare a conferência (ou a exceção, com motivo) em lib/eventos/confirmar-projecao.ts antes de escrever."
   );
-}
-
-/** Valor concreto de um filtro. Puro: é o que o teste consegue exercer sem banco. */
-export type FiltroResolvido =
-  | { campo: string; tipo: "igual"; valor: string | number | boolean }
-  | { campo: string; tipo: "naoNulo" };
-
-export function resolverFiltro(
-  filtro: FiltroConferencia,
-  payload: Record<string, unknown>,
-  eventoId: string | null,
-): FiltroResolvido | null {
-  switch (filtro.op) {
-    case "igual":
-      return { campo: filtro.campo, tipo: "igual", valor: filtro.valor };
-    case "naoNulo":
-      return { campo: filtro.campo, tipo: "naoNulo" };
-    case "igualEvento":
-      return eventoId ? { campo: filtro.campo, tipo: "igual", valor: eventoId } : null;
-    case "igualPayload": {
-      const v = payload[filtro.dePayload];
-      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-        return { campo: filtro.campo, tipo: "igual", valor: v };
-      }
-      return null;
-    }
-    case "igualPayloadMais1": {
-      const v = payload[filtro.dePayload];
-      return typeof v === "number" && Number.isFinite(v)
-        ? { campo: filtro.campo, tipo: "igual", valor: v + 1 }
-        : null;
-    }
-    default:
-      return null;
-  }
-}
-
-/**
- * Resolve todos os filtros. `null` = algum filtro não tem valor — e isso NÃO vira "confere sem
- * ele": um filtro que some transforma "esta linha" em "qualquer linha", e a conferência passaria
- * a aprovar a escrita de outra pessoa.
- */
-export function resolverFiltros(
-  regra: RegraConferenciaWebB,
-  payload: Record<string, unknown>,
-  eventoId: string | null,
-): FiltroResolvido[] | null {
-  const resolvidos: FiltroResolvido[] = [];
-  for (const f of regra.filtros) {
-    const r = resolverFiltro(f, payload, eventoId);
-    if (!r) return null;
-    resolvidos.push(r);
-  }
-  return resolvidos;
 }

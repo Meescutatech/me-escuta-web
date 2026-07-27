@@ -19,21 +19,32 @@ import {
 } from "../components/configuracoes/regras/config.ts";
 import {
   CHAVE_SUSPEITA,
-  CONFERENCIA_WEB_B,
-  EXCECOES_WEB_B,
   TIPOS_ESCRITOS_WEB_B,
   chavesSuspeitas,
   classificarErroPorta,
-  excecaoWebB,
   exigeRecarregar,
   montarEnvelope,
   motivoTipoSemConferencia,
   payloadSeguro,
-  regraWebB,
-  resolverFiltro,
-  resolverFiltros,
   tipoDeclarado,
 } from "../components/configuracoes/regras/porta.ts";
+// as 10 linhas vivem AQUI desde 27/07 — a migração do E-020, com a escrita real verde por trás.
+import {
+  CONFERENCIA,
+  EXCECOES,
+  resolverFiltro,
+  resolverFiltros,
+  type ConferenciaProjecao,
+  type FiltroProjecao,
+} from "../lib/eventos/confirmar-projecao.ts";
+
+/** a regra da Web-B, já estreitada para o modo `filtros` — que é o que estas telas usam. */
+function regraWebB(tipo: string): Extract<ConferenciaProjecao, { por: "filtros" }> {
+  const r = CONFERENCIA[tipo];
+  assert.ok(r && r.por === "filtros", `${tipo} deveria conferir por filtros`);
+  return r as Extract<ConferenciaProjecao, { por: "filtros" }>;
+}
+const excecaoWebB = (t: string) => (Object.prototype.hasOwnProperty.call(EXCECOES, t) ? EXCECOES[t] : null);
 
 /*
  * F14 (editor de configuração) + o limite de escrita das quatro telas.
@@ -363,21 +374,25 @@ test("tipo NÃO declarado é FALHA, não sucesso — é a correção sobre o hel
   assert.match(motivoTipoSemConferencia("canal_inventado"), /dispatcher/);
 });
 
-test("cada regra diz POR QUE aquela é a chave certa", () => {
-  for (const [tipo, r] of Object.entries(CONFERENCIA_WEB_B)) {
-    assert.ok(r.porque.length > 20, tipo);
+test("toda regra desta trilha confere por EFEITO — nunca só pela existência da linha", () => {
+  // As telas B leem views sem `ultima_posicao`, então a conferência é pelo estado esperado. Se
+  // alguma destas voltar a ser `por: posicao`, é porque alguém achou que a coluna existe.
+  for (const tipo of TIPOS_ESCRITOS_WEB_B) {
+    if (Object.prototype.hasOwnProperty.call(EXCECOES, tipo)) continue;
+    const r = regraWebB(tipo);
     assert.ok(r.filtros.length > 0, tipo);
+    assert.ok(r.tabela.length > 0, tipo);
   }
 });
 
 test("ativar confere o ESTADO, não só a existência da linha", () => {
-  const r = regraWebB("canal_ativado")!;
+  const r = regraWebB("canal_ativado");
   assert.ok(r.filtros.some((f) => f.campo === "ativo" && f.op === "igual" && f.valor === true));
 });
 
 test("config_publicada confere a VERSÃO RESULTANTE (base + 1), não o nome", () => {
-  const r = regraWebB("config_publicada")!;
-  const filtros = resolverFiltros(r, { nome: "convite", versao_base: 3 }, null)!;
+  const r = regraWebB("config_publicada");
+  const filtros = resolverFiltros(r.filtros, { nome: "convite", versao_base: 3 }, null)!;
   assert.deepEqual(filtros, [
     { campo: "nome", tipo: "igual", valor: "convite" },
     { campo: "versao", tipo: "igual", valor: 4 },
@@ -385,23 +400,23 @@ test("config_publicada confere a VERSÃO RESULTANTE (base + 1), não o nome", ()
 });
 
 test("comentário de ticket confere pelo id do EVENTO (a tabela não tem posição)", () => {
-  const r = regraWebB("suporte_ticket_comentado")!;
-  assert.deepEqual(resolverFiltros(r, {}, "evt-1"), [{ campo: "id", tipo: "igual", valor: "evt-1" }]);
+  const r = regraWebB("suporte_ticket_comentado");
+  assert.deepEqual(resolverFiltros(r.filtros, {}, "evt-1"), [{ campo: "id", tipo: "igual", valor: "evt-1" }]);
   // sem evento_id não dá para conferir — e a resolução falha em vez de conferir "qualquer linha"
-  assert.equal(resolverFiltros(r, {}, null), null);
+  assert.equal(resolverFiltros(r.filtros, {}, null), null);
 });
 
 test("consentimento confere a COLUNA PREENCHIDA, não a linha", () => {
-  const r = regraWebB("canal_consentimento_registrado")!;
-  assert.deepEqual(resolverFiltros(r, { canal_id: "lite:jade" }, null), [
+  const r = regraWebB("canal_consentimento_registrado");
+  assert.deepEqual(resolverFiltros(r.filtros, { canal_id: "lite:jade" }, null), [
     { campo: "canal_id", tipo: "igual", valor: "lite:jade" },
     { campo: "consentimento_em", tipo: "naoNulo" },
   ]);
 });
 
 test("filtro sem valor derruba a conferência inteira — senão 'esta linha' vira 'qualquer linha'", () => {
-  const r = regraWebB("canal_atualizado")!;
-  assert.equal(resolverFiltros(r, { canal_id: "lite:jade" }, null), null); // faltou `nome`
+  const r = regraWebB("canal_atualizado");
+  assert.equal(resolverFiltros(r.filtros, { canal_id: "lite:jade" }, null), null); // faltou `nome`
   assert.equal(resolverFiltro({ campo: "x", op: "igualPayload", dePayload: "y" }, {}, null), null);
   assert.equal(resolverFiltro({ campo: "v", op: "igualPayloadMais1", dePayload: "b" }, { b: "3" }, null), null);
 });
@@ -410,8 +425,11 @@ test("aceite_contato_registrado é exceção DECLARADA (ledger-only), com motivo
   const e = excecaoWebB("aceite_contato_registrado")!;
   assert.ok(e.conferirLedger);
   assert.match(e.motivo, /ledger-only|CONTRATO-C/);
-  assert.equal(regraWebB("aceite_contato_registrado"), null);
-  assert.equal(Object.keys(EXCECOES_WEB_B).length, 1);
+  assert.ok(!Object.prototype.hasOwnProperty.call(CONFERENCIA, "aceite_contato_registrado"));
+  // a tabela do F6 agora tem DUAS exceções: a minha (ledger-only por desenho) e a do Agent 1
+  // (levindo_acionado, que vive só no ledger para o runtime consumir). Ambas com motivo escrito.
+  assert.equal(Object.keys(EXCECOES).length, 2);
+  for (const [tipo, e] of Object.entries(EXCECOES)) assert.ok(e.motivo.length > 40, tipo);
 });
 
 // ═══ ARB-26 · a identidade do ticket nasce do EVENTO, não de um id mandado pela tela ═══
@@ -421,22 +439,21 @@ test("a abertura de ticket confere pelo evento_id — foi o portão de escrita r
   // `id = evento.id` e NUNCA lê esse campo: a releitura devolvia ZERO para toda abertura
   // bem-sucedida — a tela acusaria falha em cima de uma escrita que funcionou, que é pior que o
   // defeito que o readback existe para pegar.
-  const r = regraWebB("suporte_ticket_aberto")!;
+  const r = regraWebB("suporte_ticket_aberto");
   assert.deepEqual(r.filtros, [{ campo: "id", op: "igualEvento" }]);
-  assert.deepEqual(resolverFiltros(r, {}, "evt-abertura"), [
+  assert.deepEqual(resolverFiltros(r.filtros, {}, "evt-abertura"), [
     { campo: "id", tipo: "igual", valor: "evt-abertura" },
   ]);
   // sem evento_id não há como conferir — e a resolução falha em vez de conferir "qualquer linha"
-  assert.equal(resolverFiltros(r, { ticket_id: "inventado" }, null), null);
-  assert.match(r.porque, /ARB-26|nasce do evento/i);
+  assert.equal(resolverFiltros(r.filtros, { ticket_id: "inventado" }, null), null);
 });
 
 test("nenhuma regra desta trilha confere por um id que a própria tela inventou", () => {
   // o padrão que produziu o defeito: filtrar por um campo do payload que o projetor ignora.
   // `ticket_id` só é legítimo em comentar/resolver, onde ele APONTA para um ticket que já existe.
-  for (const [tipo, r] of Object.entries(CONFERENCIA_WEB_B)) {
-    if (tipo === "suporte_ticket_aberto") continue;
-    const porPayload = r.filtros.filter((f) => f.op === "igualPayload");
+  for (const tipo of TIPOS_ESCRITOS_WEB_B) {
+    if (tipo === "suporte_ticket_aberto" || Object.prototype.hasOwnProperty.call(EXCECOES, tipo)) continue;
+    const porPayload = regraWebB(tipo).filtros.filter((f) => f.op === "igualPayload");
     for (const f of porPayload) {
       assert.ok(
         f.dePayload !== "ticket_id" || tipo !== "suporte_ticket_aberto",
