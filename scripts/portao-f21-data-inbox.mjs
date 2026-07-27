@@ -10,6 +10,13 @@
 //
 // LOCAL, NUNCA PRODUÇÃO (ARB-09): a URL vem do .env.local e é recusada se não for 127.0.0.1.
 //
+//
+// MESA: estes portões escrevem no cluster LOCAL e criam usuário no GoTrue local. Rodam bem em
+// sequência, mas exigem MESA ISOLADA — nada de dois portões no mesmo stack ao mesmo tempo, e nada
+// de rodar contra um stack que outro agente está usando. Sob concorrência o GoTrue devolve
+// 504/AuthRetryableFetchError; a criação de usuário retenta com espera crescente e, se ainda assim
+// não passar, o portão RECUSA (rc=2) dizendo que o problema é de mesa — nunca reprova o produto
+// por ambiente apertado.
 // As três partes exigidas pela ARB-07:
 //   VACUIDADE     — se o portão não semeou conversa, ou a lista voltou vazia, ou nenhuma conversa
 //                   tinha mensagem, REPROVA. Um portão sobre lista vazia não julga nada.
@@ -30,6 +37,8 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { erroLegivel } from "./erro-legivel.mjs";
+import { criarUsuarioDoPortao } from "./usuario-portao.mjs";
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const raiz = resolve(aqui, "..");
@@ -197,20 +206,12 @@ async function limpar() {
 }
 
 // ── 3 · usuário autenticado de verdade (a consulta roda sob o RLS dele) ─────────────────────
-const EMAIL = `portao-f21-${randomUUID().slice(0, 8)}@meescuta.local`;
-const SENHA = "portao-f21-senha-forte-local";
-const admin = createClient(URL, SERVICE, { auth: { persistSession: false } });
-const { data: criado, error: erroCriar } = await admin.auth.admin.createUser({
-  email: EMAIL,
-  password: SENHA,
-  email_confirm: true,
-});
-if (erroCriar) reprovar(`não consegui criar o usuário do portão: ${erroCriar.message}`);
-const UID = criado.user.id;
-
-const supabase = createClient(URL, ANON, { auth: { persistSession: false } });
-const { error: erroLogin } = await supabase.auth.signInWithPassword({ email: EMAIL, password: SENHA });
-if (erroLogin) reprovar(`não consegui autenticar: ${erroLogin.message}`);
+let admin, supabase, UID;
+try {
+  ({ admin, supabase, UID } = await criarUsuarioDoPortao({ URL, ANON, SERVICE, prefixo: "portao-f21" }));
+} catch (e) {
+  reprovar(`${e.message} — os portões precisam de mesa isolada; ver o cabeçalho`);
+}
 
 async function encerrar(codigo) {
   await limpar();
@@ -247,7 +248,15 @@ async function medir({ datar, ordenar, rotuloDoModo }) {
   const minhas = todas.filter((c) => semeadas.some((s) => s.id === c.id));
   const verdade = await verdadePorSql(semeadas.map((s) => s.id));
 
-  const res = { exibicao: true, ordem: true, semGravacao: true, vistas: minhas.length };
+  const res = {
+    exibicao: true,
+    ordem: true,
+    semGravacao: true,
+    vistas: minhas.length,
+    // quantas conversas exibiram uma data DE VERDADE. Sem isto, "a data confere" pode ser verdade
+    // sobre um conjunto inteiro de nulos — a forma mais silenciosa de verde vazio.
+    naoNulas: minhas.filter((c) => datar(c) != null).length,
+  };
   if (minhas.length === 0) return { ...res, exibicao: false, ordem: false, semGravacao: false };
 
   // (1) data exibida == max(timestamp_origem) das mensagens da conversa
@@ -342,12 +351,50 @@ if (SO_NEGATIVO) {
 }
 
 // ── 7 · VACUIDADE ───────────────────────────────────────────────────────────────────────────
-const comMensagem = semeadas.filter((s) => s.rotulo !== "sem-mensagem").length;
-if (semeadas.length < 4) nok(`(0) vacuidade: semeei só ${semeadas.length} conversas — não julga nada`);
-else if (produto.vistas < semeadas.length)
-  nok(`(0) vacuidade: a lista devolveu ${produto.vistas} das ${semeadas.length} semeadas`);
-else if (comMensagem < 3) nok(`(0) vacuidade: só ${comMensagem} conversas com mensagem`);
-else ok(`(0) vacuidade: ${produto.vistas} conversas semeadas E devolvidas pela lerConversas real`);
+//
+// Conta o BANCO, não a constante RECEITA (achado do Portão no R16-23). A versão anterior derivava
+// "conversas com mensagem" da própria receita — um número que existe no arquivo, não no cluster.
+// Consequência medida por ele: com ZERO mensagem no banco o portão ficava VERDE, porque a receita
+// continuava dizendo que havia cinco. Vacuidade que se pergunta a si mesma não é vacuidade.
+//
+// Também exige DATA EXIBIDA de verdade: "a data confere" sobre um conjunto de nulos é a forma mais
+// silenciosa de verde vazio — todo null bate com todo null.
+const censo = (
+  await sql.query(
+    `select count(*)::int                                            as conversas,
+            count(*) filter (where m.n > 0)::int                     as com_mensagem,
+            coalesce(sum(m.n), 0)::int                               as mensagens,
+            count(*) filter (where c.ultima_entrada_em is null)::int as sem_entrada
+       from core.conversa c
+       cross join lateral (select count(*)::int as n from core.mensagem where conversa_id = c.id) m
+      where c.id = any($1::uuid[])`,
+    [semeadas.map((s) => s.id)],
+  )
+).rows[0];
+const datasExibidas = produto.naoNulas ?? 0;
+
+if (censo.conversas < 4)
+  nok(`(0) vacuidade: o banco tem só ${censo.conversas} das conversas semeadas — não julga nada`);
+else if (produto.vistas < censo.conversas)
+  nok(`(0) vacuidade: a lista devolveu ${produto.vistas} das ${censo.conversas} que existem no banco`);
+else if (censo.com_mensagem < 3 || censo.mensagens < 4)
+  nok(
+    `(0) vacuidade: o BANCO tem ${censo.mensagens} mensagens em ${censo.com_mensagem} conversas — ` +
+      "abaixo disso as asserções de data comparam quase nada",
+  );
+else if (censo.sem_entrada < 1)
+  nok("(0) vacuidade: nenhuma conversa sem ultima_entrada_em — a asserção (3) não teria caso");
+else if (datasExibidas < 3)
+  nok(
+    `(0) vacuidade: só ${datasExibidas} conversas exibiram data não-nula — ` +
+      '"a data confere" sobre nulos é verdade vazia (todo null bate com todo null)',
+  );
+else
+  ok(
+    `(0) vacuidade MEDIDA NO BANCO: ${censo.conversas} conversas · ${censo.mensagens} mensagens em ` +
+      `${censo.com_mensagem} delas · ${censo.sem_entrada} sem entrada · ${datasExibidas} datas ` +
+      "não-nulas exibidas pela lerConversas real",
+  );
 
 // ── 8 · MEDIDA ──────────────────────────────────────────────────────────────────────────────
 if (produto.exibicao) ok("(1) data exibida == max(timestamp_origem) das mensagens, em todas");

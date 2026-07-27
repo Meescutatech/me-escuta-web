@@ -23,10 +23,27 @@ await rodarBateria({
       id: "MUT-F6-4",
       protege: "o retorno REAL de registrarEventoUI propaga `duplicado`",
       arquivo: p("app/(app)/funil/actions.ts"),
-      // exatamente a mutação que sobrevivia antes do conserto
+      // a mutação original: apaga a propagação. A prova estática por grep pega esta.
       de: `  return { ok: true, ...(resposta?.duplicado ? { duplicado: true } : {}) };`,
       para: `  return { ok: true };`,
-      esperaVermelho: /VERMELHO· \(5\) o retorno de registrarEventoUI NÃO propaga `duplicado`/,
+      esperaVermelho: /VERMELHO· \((5|2-bis)\)/,
+    },
+    {
+      id: "MUT-F6-4b",
+      protege: "o ARTEFATO REAL propaga duplicado — mesmo com a string do grep intacta",
+      arquivo: p("app/(app)/funil/actions.ts"),
+      // O ATAQUE DO PORTÃO, literal: um `return { ok: true }` colocado ANTES do revalidatePath.
+      // A linha que a prova estática procura continua no arquivo, byte por byte — ela só virou
+      // código morto. Grep não distingue código vivo de código inalcançável; só executar distingue.
+      // Esta mutação existe para provar que a asserção (2-bis) executa o artefato de verdade.
+      de: `  revalidatePath("/funil");
+  revalidatePath("/timeline");
+  return { ok: true, ...(resposta?.duplicado ? { duplicado: true } : {}) };`,
+      para: `  return { ok: true };
+  revalidatePath("/funil");
+  revalidatePath("/timeline");
+  return { ok: true, ...(resposta?.duplicado ? { duplicado: true } : {}) };`,
+      esperaVermelho: /VERMELHO· \(2-bis\) o registrarEventoUI REAL não propagou o duplicado/,
     },
   ],
 });

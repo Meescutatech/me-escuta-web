@@ -22,6 +22,27 @@ import { resolve, dirname } from "node:path";
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXTENSOES = [".ts", ".tsx", ".mjs", ".js", "/index.ts", "/index.tsx"];
 
+/**
+ * Substituições que existem só para o portão conseguir executar o ARTEFATO REAL — não uma réplica.
+ * Ligadas sob demanda por `ligarStubsDeServidor()`, para que os portões que não precisam delas
+ * sigam vendo os módulos de verdade.
+ *
+ * `next/cache` e `@/lib/supabase/server` são os dois únicos pontos que amarram uma server action ao
+ * ciclo de requisição do Next: um revalida rota, o outro lê cookie. Nenhum dos dois participa do
+ * que os portões julgam (valor de retorno, conferência da projeção, consulta emitida) — mas ambos
+ * estouram fora do Next, e foi por causa deles que o portão do F6 testava uma réplica.
+ */
+const SUBSTITUTOS = new Map([
+  ["next/cache", resolve(raiz, "scripts/stubs/next-cache.mjs")],
+  ["@/lib/supabase/server", resolve(raiz, "scripts/stubs/supabase-server.mjs")],
+]);
+let stubsLigados = false;
+
+/** Chame ANTES do primeiro import dinâmico do código que depende do ciclo de requisição. */
+export function ligarStubsDeServidor() {
+  stubsLigados = true;
+}
+
 /** Caminho que existe em disco para um arquivo escrito sem extensão (estilo TypeScript). */
 function comExtensao(caminho) {
   if (existsSync(caminho) && !caminho.endsWith("/")) return caminho;
@@ -33,6 +54,9 @@ function comExtensao(caminho) {
 
 registerHooks({
   resolve(especificador, contexto, seguinte) {
+    if (stubsLigados && SUBSTITUTOS.has(especificador)) {
+      return { url: pathToFileURL(SUBSTITUTOS.get(especificador)).href, shortCircuit: true };
+    }
     if (especificador.startsWith("@/")) {
       const achado = comExtensao(resolve(raiz, especificador.slice(2)));
       if (achado) return { url: pathToFileURL(achado).href, shortCircuit: true };

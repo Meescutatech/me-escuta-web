@@ -13,6 +13,13 @@
 //
 // LOCAL, NUNCA PRODUÇÃO (ARB-09).
 //
+//
+// MESA: estes portões escrevem no cluster LOCAL e criam usuário no GoTrue local. Rodam bem em
+// sequência, mas exigem MESA ISOLADA — nada de dois portões no mesmo stack ao mesmo tempo, e nada
+// de rodar contra um stack que outro agente está usando. Sob concorrência o GoTrue devolve
+// 504/AuthRetryableFetchError; a criação de usuário retenta com espera crescente e, se ainda assim
+// não passar, o portão RECUSA (rc=2) dizendo que o problema é de mesa — nunca reprova o produto
+// por ambiente apertado.
 // As três partes (ARB-07):
 //   VACUIDADE     — sem mídia na thread, "as URLs são idênticas" é verdade vazia (dois nadas são
 //                   iguais). Se o cenário não tiver foto assinada, REPROVA.
@@ -30,6 +37,8 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { erroLegivel } from "./erro-legivel.mjs";
+import { criarUsuarioDoPortao } from "./usuario-portao.mjs";
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const raiz = resolve(aqui, "..");
@@ -159,18 +168,12 @@ async function semear() {
 }
 
 // ── 2 · usuário autenticado ─────────────────────────────────────────────────────────────────
-const EMAIL = `portao-f13-${randomUUID().slice(0, 8)}@meescuta.local`;
-const SENHA = "portao-f13-senha-forte-local";
-const { data: criado, error: erroCriar } = await admin.auth.admin.createUser({
-  email: EMAIL,
-  password: SENHA,
-  email_confirm: true,
-});
-if (erroCriar) reprovar(`não consegui criar o usuário do portão: ${erroCriar.message}`);
-const UID = criado.user.id;
-const supabase = createClient(URL, ANON, { auth: { persistSession: false } });
-const { error: erroLogin } = await supabase.auth.signInWithPassword({ email: EMAIL, password: SENHA });
-if (erroLogin) reprovar(`não consegui autenticar: ${erroLogin.message}`);
+let admin, supabase, UID;
+try {
+  ({ admin, supabase, UID } = await criarUsuarioDoPortao({ URL, ANON, SERVICE, prefixo: "portao-f13" }));
+} catch (e) {
+  reprovar(`${e.message} — os portões precisam de mesa isolada; ver o cabeçalho`);
+}
 
 async function encerrar(codigo) {
   await purgar();

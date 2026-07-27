@@ -8,6 +8,13 @@
 // LOCAL, NUNCA PRODUÇÃO (ARB-09): a URL vem do .env.local e é recusada se não for 127.0.0.1.
 // O alvo é impresso com system_identifier antes de qualquer asserção (guarda G1 do wrapper `db`).
 //
+// MESA: estes portões escrevem no cluster LOCAL e criam usuário no GoTrue local. Rodam bem em
+// sequência, mas exigem MESA ISOLADA — nada de dois portões no mesmo stack ao mesmo tempo, e nada
+// de rodar contra um stack que outro agente está usando. Sob concorrência o GoTrue devolve
+// 504/AuthRetryableFetchError; a criação de usuário retenta com espera crescente e, se ainda assim
+// não passar, o portão RECUSA (rc=2) dizendo que o problema é de mesa — nunca reprova o produto
+// por ambiente apertado.
+//
 // As três partes exigidas pela ARB-07:
 //   VACUIDADE     — se o portão não exercitou ação nenhuma, ou não encontrou linha nenhuma, REPROVA.
 //   CONTROLE NEG. — um evento que ENTRA no ledger e NÃO projeta tem de devolver ok:false com o
@@ -17,12 +24,16 @@
 //
 // Uso:  cd ~/Developer/me-escuta/me-escuta-web && npm run portao:f6
 
+import "./portao-resolver.mjs";
 import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
+import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { erroLegivel } from "./erro-legivel.mjs";
+import { criarUsuarioDoPortao } from "./usuario-portao.mjs";
 import {
   CONFERENCIA,
   EXCECOES,
@@ -83,26 +94,20 @@ console.log(`  cluster sid=${alvo.sid} · migrations=${alvo.migrations}`);
 console.log("");
 
 // ── 1 · usuário real, autenticado, membro ativo do workspace ────────────────────────────────
-const EMAIL = `portao-f6-${randomUUID().slice(0, 8)}@meescuta.local`;
-const SENHA = "portao-f6-senha-forte-local";
-const admin = createClient(URL, SERVICE, { auth: { persistSession: false } });
-const { data: criado, error: erroCriar } = await admin.auth.admin.createUser({
-  email: EMAIL,
-  password: SENHA,
-  email_confirm: true,
-});
-if (erroCriar) reprovar(`não criei o usuário local: ${erroCriar.message}`);
-const UID = criado.user.id;
+let admin, supabase, UID, EMAIL;
+try {
+  ({ admin, supabase, UID, EMAIL } = await criarUsuarioDoPortao({
+    URL,
+    ANON,
+    SERVICE,
+    prefixo: "portao-f6",
+  }));
+} catch (e) {
+  reprovar(`${e.message} — os portões precisam de mesa isolada; ver o cabeçalho`);
+}
 await sql.query("select porta.semear_usuario($1::jsonb)", [
   JSON.stringify({ usuario_id: UID, email: EMAIL, nome: "Portão F6", papel: "owner" }),
 ]);
-
-const supabase = createClient(URL, ANON, { auth: { persistSession: false } });
-const { error: erroLogin } = await supabase.auth.signInWithPassword({
-  email: EMAIL,
-  password: SENHA,
-});
-if (erroLogin) reprovar(`login local falhou: ${erroLogin.message}`);
 
 // ── 2 · o mesmo caminho de escrita da UI, sem cópia da lógica ───────────────────────────────
 /** Réplica exata de registrarEventoUI, menos o revalidatePath (que só existe dentro do Next). */
@@ -311,6 +316,51 @@ try {
     else nok(`(2) o texto projetado é "${texto}", esperava "primeira"`);
   }
 
+  // ── 5-bis · O DUPLICADO PELO ARTEFATO REAL, não pela réplica (A-3, achado do Portão) ───────
+  //
+  // Tudo acima passa por `escreverComoAUI`, uma RÉPLICA — ela existe porque a action de verdade
+  // chama `revalidatePath`, que estoura fora do Next. E réplica prova réplica: o Portão moveu o
+  // `return { ok: true }` para ANTES do revalidatePath no arquivo REAL, a string que a prova
+  // estática procurava continuou lá, e o portão passou verde sobre um artefato quebrado.
+  //
+  // Aqui o `registrarEventoUI` REAL é importado e executado. O que destravou isso não foi mudar o
+  // produto: foi o resolvedor do portão trocar `next/cache` (revalidatePath vira no-op) e
+  // `@/lib/supabase/server` (devolve o cliente autenticado que o portão já criou). Nada do produto
+  // muda — em produção os dois módulos continuam sendo os de verdade.
+  {
+    globalThis.__PORTAO_CLIENTE__ = supabase;
+    const { ligarStubsDeServidor } = await import("./portao-resolver.mjs");
+    ligarStubsDeServidor();
+    const { registrarEventoUI } = await import("../app/(app)/funil/actions.ts");
+
+    const chave = randomUUID();
+    const primeira = await registrarEventoUI(
+      "anotacao_adicionada",
+      { texto: "real primeira", tipo: "interna" },
+      LEAD,
+      chave,
+    );
+    const repetida = await registrarEventoUI(
+      "anotacao_adicionada",
+      { texto: "real SEGUNDA" },
+      LEAD,
+      chave,
+    );
+
+    if (primeira?.ok === true && primeira.duplicado !== true)
+      ok("(2-bis) artefato REAL: a 1ª escrita é sucesso comum");
+    else nok(`(2-bis) artefato REAL: 1ª escrita veio ${JSON.stringify(primeira)}`);
+
+    if (repetida?.ok === true && repetida.duplicado === true)
+      ok("(2-bis) artefato REAL: repetir a id_externo devolve {ok:true, duplicado:true} — é o registrarEventoUI de produção que respondeu, não uma cópia");
+    else
+      nok(
+        `(2-bis) o registrarEventoUI REAL não propagou o duplicado: veio ${JSON.stringify(repetida)}. ` +
+          "É exatamente o defeito que a prova estática por grep NÃO pega (a string pode continuar viva " +
+          "com um `return` colocado antes dela).",
+      );
+  }
+
   // ── 6 · CONTROLE NEGATIVO: entrou no ledger, não projetou → a UI TEM de negar sucesso ──────
   {
     // `lead_atualizado` sem a chave `campos`: a porta ACEITA e o evento entra no ledger, mas
@@ -367,6 +417,69 @@ try {
 
   // ── 8 · nenhuma escrita da UI escapa da conferência (a prova estática) ────────────────────
   {
+    // O UNIVERSO É DERIVADO, NÃO LISTADO À MÃO (achado do Portão no R16-23). A lista fixa de 5
+    // arquivos afirmava um choke point que não existe: varrendo app/ e components/ há OITO sítios
+    // chamando `api.registrar_evento`. Lista escrita à mão envelhece calada — quem acrescenta o 9º
+    // não é obrigado a lembrar de vir aqui. Derivar faz o portão reprovar sozinho.
+    const varrer = (dir) =>
+      execSync(
+        `find ${dir} -type f \\( -name '*.ts' -o -name '*.tsx' \\) -not -path '*/node_modules/*'`,
+        { cwd: raiz, encoding: "utf8" },
+      )
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+    const todosArquivos = [...varrer("app"), ...varrer("components")].sort();
+    const fonte = Object.fromEntries(
+      todosArquivos.map((f) => [f, readFileSync(resolve(raiz, f), "utf8")]),
+    );
+    const chamamAPorta = todosArquivos.filter((f) =>
+      /rpc\(\s*\n?\s*["']registrar_evento["']/.test(fonte[f]),
+    );
+
+    /**
+     * Cada sítio que fala com a porta tem de estar DECLARADO aqui, com o motivo. Um sítio novo que
+     * ninguém declarou reprova — que é o comportamento que a lista à mão não tinha.
+     *
+     * `telemetria` = melhor esforço, fire-and-forget, NUNCA declara sucesso ao operador. É o que
+     * dispensa readback: não há tela dizendo "salvo" para o readback desmentir. Conferido um a um
+     * no código, não presumido pelo nome do arquivo.
+     */
+    const DECLARADOS = {
+      "app/(app)/funil/actions.ts": { classe: "choke", motivo: "é o registrarEventoUI — o ponto único que confere a projeção" },
+      "app/auth/signout/route.ts": { classe: "telemetria", motivo: "sessao_encerrada, .then(()=>undefined) duplo: nunca bloqueia o logout nem reporta sucesso" },
+      "app/login/actions.ts": { classe: "telemetria", motivo: "sessao_iniciada, melhor esforço: falha da métrica não pode barrar o login" },
+      "components/presenca-batimento.tsx": { classe: "telemetria", motivo: "batimento de presença em `void` — nenhuma tela espera resposta" },
+      "components/conversas/inbox.tsx": { classe: "telemetria", motivo: "conversa_aberta em `void` + .then duplo — métrica não atrapalha a operação" },
+      "app/(app)/configuracoes/clara/actions.ts": { classe: "outra-trilha", motivo: "Web-B (Agent 2): readback próprio, modo `filtros` enxertado pelo ARB-28-bis" },
+      "app/(app)/configuracoes/membros/actions.ts": { classe: "outra-trilha", motivo: "Web-B (Agent 2): idem" },
+      "app/(app)/configuracoes/templates/actions.ts": { classe: "outra-trilha", motivo: "Web-B (Agent 2): idem" },
+    };
+
+    const naoDeclarados = chamamAPorta.filter((f) => !DECLARADOS[f]);
+    const declaradosSumidos = Object.keys(DECLARADOS).filter((f) => !chamamAPorta.includes(f));
+    if (chamamAPorta.length === 0)
+      nok("(5) a varredura não achou NENHUM sítio chamando api.registrar_evento — o grep quebrou");
+    else if (naoDeclarados.length)
+      nok(
+        `(5) ${naoDeclarados.length} sítio(s) chamam api.registrar_evento sem declaração: ` +
+          `${naoDeclarados.join(", ")} — cada um precisa de choke, telemetria ou outra-trilha, com motivo`,
+      );
+    else if (declaradosSumidos.length)
+      nok(`(5) declarações órfãs (o arquivo não chama mais a porta): ${declaradosSumidos.join(", ")}`);
+    else {
+      const porClasse = Object.values(DECLARADOS).reduce((m, d) => {
+        m[d.classe] = (m[d.classe] ?? 0) + 1;
+        return m;
+      }, {});
+      ok(
+        `(5) os ${chamamAPorta.length} sítios que falam com api.registrar_evento estão DECLARADOS ` +
+          `(derivados por varredura de app/ e components/): ${porClasse.choke} choke, ` +
+          `${porClasse.telemetria} telemetria fire-and-forget, ${porClasse["outra-trilha"]} de outra trilha`,
+      );
+    }
+
+    // Os arquivos DESTA trilha, para as provas que só valem aqui.
     const meus = [
       "app/(app)/funil/actions.ts",
       "app/(app)/lead/actions.ts",
@@ -374,14 +487,8 @@ try {
       "app/(app)/notificacoes/actions.ts",
       "components/funil/drawer-card.tsx",
     ];
-    const fonte = Object.fromEntries(
-      meus.map((f) => [f, readFileSync(resolve(raiz, f), "utf8")]),
-    );
-
-    const rpcDireto = meus.filter((f) => /rpc\(\s*["']registrar_evento["']/.test(fonte[f]));
-    if (rpcDireto.length === 1 && rpcDireto[0] === "app/(app)/funil/actions.ts")
-      ok("(5) só registrarEventoUI fala com api.registrar_evento — um choke point, não vinte");
-    else nok(`(5) api.registrar_evento é chamada direto em: ${rpcDireto.join(", ") || "(nenhum)"} — esperava só funil/actions.ts`);
+    const foraDeMim = meus.filter((f) => !fonte[f]);
+    if (foraDeMim.length) nok(`(5) arquivos desta trilha sumiram da varredura: ${foraDeMim.join(", ")}`);
 
     const corpo = fonte["app/(app)/funil/actions.ts"];
     if (/const conferido = await confirmarProjecao\(/.test(corpo) && /if \(!conferido\.ok\) return conferido;/.test(corpo))
@@ -445,18 +552,52 @@ try {
   {
     // Um tipo que ninguém declarou, escrito pela porta de verdade. Antes isto devolvia ok:true —
     // o defeito do F6 entrando pela porta dos fundos, e justamente nos tipos que estreiam.
+    // FIXTURE PÓS-0073 (pendência do Aferidor, resolvida aqui). O caso ANTES entrava pela porta,
+    // e a 0073 passou a recusar tipo não registrado com PMEE1 — a partir dela o cenário deixaria de
+    // ser encenado e a asserção viraria vácuo (ou pior: verde por "não deu para testar").
+    //
+    // Rota escolhida das duas que o Portão ofereceu: INSERT DIRETO em core.evento +
+    // porta.aplicar_projetores, o mesmo caminho dos venenos históricos do pgTAP. Escolhida porque
+    // não depende de nenhuma migration — funciona antes e depois da 0073, e neste cluster (54
+    // migrations) e no de união. A outra rota (registrar com sem_projetor=true) exigiria
+    // porta.projetor_registro, que não existe aqui: o portão passaria a depender do ambiente.
+    //
+    // O que se encena é exatamente o estado perigoso: evento REAL no ledger, sem projeção e sem
+    // linha em CONFERENCIA. É o que a UI vê quando um tipo estreia sem ninguém declarar.
     const inventada = "acao_inventada_do_portao_f6";
-    const r = await escreverComoAUI(inventada, { lead_id: LEAD }, LEAD);
+    const eventoId = (
+      await sql.query(
+        `insert into core.evento (tipo, ator, origem, id_externo, versao_payload, payload)
+         values ($1, 'sistema', 'portao-f6', $2, 1, $3::jsonb) returning id::text`,
+        [inventada, `f6-fail-open-${randomUUID()}`, JSON.stringify({ lead_id: LEAD })],
+      )
+    ).rows[0].id;
+    await sql.query("select porta.aplicar_projetores($1::uuid)", [eventoId]);
     const noLedger =
-      r.resposta?.evento_id &&
-      (await sql.query("select 1 from core.evento where id = $1", [r.resposta.evento_id]))
-        .rowCount > 0;
+      (await sql.query("select 1 from core.evento where id = $1", [eventoId])).rowCount > 0;
+    // e o dispatcher REALMENTE não conhece o tipo — senão não é o caso que queremos encenar
+    const semRamo = !(
+      await sql.query("select pg_get_functiondef('porta.aplicar_projetores'::regproc) as src")
+    ).rows[0].src.includes(inventada);
+
+    const resultado = await confirmarProjecao(
+      supabase,
+      inventada,
+      { lead_id: LEAD },
+      { evento_id: eventoId, posicao_global: null, duplicado: false },
+    );
+
     if (!noLedger)
       nok("(7) a ação inventada nem entrou no ledger — o caso de fail-open não foi encenado");
-    else if (r.resultado.ok === false && (r.resultado.motivo ?? "").includes(inventada))
-      ok(`(7) ação NÃO declarada reprova e o motivo a nomeia — fail-closed: "${r.resultado.motivo}"`);
+    else if (!semRamo)
+      nok(`(7) o dispatcher CONHECE "${inventada}" — o cenário de tipo não declarado não foi encenado`);
+    else if (resultado.ok === false && (resultado.motivo ?? "").includes(inventada))
+      ok(
+        `(7) evento REAL no ledger, sem projeção e fora de CONFERENCIA → reprova nomeando a ação ` +
+          `(fixture por insert direto + aplicar_projetores, imune à recusa PMEE1 da 0073): "${resultado.motivo}"`,
+      );
     else
-      nok(`(7) ação não declarada devolveu ${JSON.stringify(r.resultado)} — fail-open: qualquer tipo novo declara sucesso sem conferir`);
+      nok(`(7) ação não declarada devolveu ${JSON.stringify(resultado)} — fail-open: qualquer tipo novo declara sucesso sem conferir`);
   }
 
   // ── 8-bis · COBERTURA: nenhuma linha do mapa fica sem escrita real ───────────────────────
