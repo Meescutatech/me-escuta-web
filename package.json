@@ -28,7 +28,8 @@
     "bateria:f24": "node --experimental-strip-types scripts/bateria-f24.mjs",
     "bateria:f6-a3": "node --experimental-strip-types scripts/bateria-f6-a3.mjs",
     "portao:f13": "node --experimental-strip-types scripts/portao-f13-midia.mjs",
-    "bateria:f13": "node --experimental-strip-types scripts/bateria-f13.mjs"
+    "bateria:f13": "node --experimental-strip-types scripts/bateria-f13.mjs",
+    "portao:m7-degrau": "node --experimental-strip-types scripts/portao-m7-degrau-leitura.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
