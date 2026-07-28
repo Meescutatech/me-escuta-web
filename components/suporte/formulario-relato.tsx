@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { abrirChamado } from "@/app/(app)/configuracoes/suporte/actions";
+import { abrirChamado } from "@/app/(app)/suporte/actions";
 import {
   ACCEPT_ANEXO_SUPORTE,
   AVISO_PII,

@@ -37,6 +37,15 @@ const RAIZ = new URL("..", import.meta.url).pathname;
 
 const PASTAS_DA_TRILHA = [
   "app/(app)/configuracoes",
+  // M5 (R18): o suporte SAIU de baixo de /configuracoes e virou rota de primeiro nível. Sem esta
+  // linha, `app/(app)/suporte/actions.ts` some do conjunto varrido — e a suíte fica VERDE, porque
+  // `varrer()` engole pasta inexistente com `catch { return acc }`. Medido no momento do move:
+  //   arquivos varridos em 4af84bd .......... 37   (com suporte/actions.ts)
+  //   arquivos varridos logo após o move .... 35   (sem ele)
+  //   `node --test tests/portao-web-b.test.ts` ..... 29 pass, 0 fail   ← o portão cego, verde
+  // O portão que ficou cego é o CAMINHO_ANEXO, que guarda o contrato `<uid>/` de que a RLS do
+  // bucket depende. Registrado em E-110.
+  "app/(app)/suporte",
   "components/configuracoes",
   "components/suporte",
 ];
@@ -78,6 +87,37 @@ test("a varredura encontra os arquivos da trilha — portão sobre lista vazia p
   assert.ok(nomes.some((n) => n.endsWith("regras/canais.ts")));
   assert.ok(nomes.some((n) => n.endsWith("regras/suporte.ts")));
   assert.ok(nomes.some((n) => n.endsWith("canais/actions.ts")));
+});
+
+/*
+ * INVARIANTE QUE RECUPERA A PROTEÇÃO (E-110, e MÉTODO §5: trocar a régua remove um alarme).
+ *
+ * Acrescentar `app/(app)/suporte` à lista acima conserta ESTE move. Não conserta o PRÓXIMO: a
+ * varredura é por PASTA, e um arquivo que muda de pasta sai do conjunto em silêncio, porque
+ * `varrer()` trata pasta inexistente como zero arquivos — que é indistinguível de "a pasta está
+ * vazia" e de "a pasta nunca existiu".
+ *
+ * A defesa não é lembrar de editar a lista: é ancorar o portão nos ARQUIVOS que ele existe para
+ * proteger, por nome, onde quer que eles morem. Se um deles sair do conjunto, isto fica VERMELHO
+ * e diz o que fazer — em vez de o portão inteiro ficar verde sobre um arquivo a menos.
+ */
+const ARQUIVOS_QUE_O_PORTAO_PROTEGE = [
+  { fim: "suporte/actions.ts", porque: "monta o caminho `<uid>/` de que a RLS do bucket depende (CAMINHO_ANEXO)" },
+  { fim: "canais/actions.ts", porque: "escreve canal, e é onde o readback foi exigido" },
+  { fim: "regras/suporte.ts", porque: "é a única forma de montar caminho de anexo nesta trilha" },
+  { fim: "regras/canais.ts", porque: "define Papel e a validação de canal" },
+];
+
+test("os arquivos que os portões existem para proteger continuam DENTRO do conjunto varrido", () => {
+  const nomes = REAIS.map((a) => a.caminho);
+  for (const { fim, porque } of ARQUIVOS_QUE_O_PORTAO_PROTEGE) {
+    assert.ok(
+      nomes.some((n) => n.endsWith(fim)),
+      `${fim} saiu da varredura — os portões passam a dar VERDE sem olhar para ele. ` +
+        `Ele ${porque}. Se o arquivo mudou de pasta, acrescente a pasta em PASTAS_DA_TRILHA; ` +
+        `se foi removido de propósito, tire-o desta lista NO MESMO commit.`,
+    );
+  }
 });
 
 test("TODOS os portões aprovam os arquivos reais da Web-B", () => {

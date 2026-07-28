@@ -39,7 +39,14 @@ import {
  *     identidade do ticket nasce do evento (ARB-26).
  */
 
-const ROTA = "/configuracoes/suporte";
+/**
+ * M5 (R18): a tela mudou para `/suporte`. O DETALHE (`/suporte/<numero>`) NÃO entra aqui: é rota
+ * dinâmica, e `revalidatePath` sobre ela exigiria o segundo argumento `'page'` — que o helper
+ * `revalidar()` não passa. Quem está no detalhe se atualiza por `router.refresh()`, que é o mesmo
+ * caminho que o diálogo de resolver já usa. Revalidar a LISTA daqui continua sendo necessário:
+ * ela carrega o contador de abertos e a contagem de comentários.
+ */
+const ROTA = "/suporte";
 
 export interface ArquivoParaSubir {
   nome: string;

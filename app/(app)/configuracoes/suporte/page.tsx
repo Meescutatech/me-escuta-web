@@ -1,33 +1,15 @@
-import { headers } from "next/headers";
-import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
-import { lerTickets } from "@/components/suporte/dados/suporte";
-import { ListaRelatos } from "@/components/suporte/lista-relatos";
-
-export const dynamic = "force-dynamic";
+import { permanentRedirect } from "next/navigation";
 
 /**
- * F12 · /configuracoes/suporte.
+ * M5 (R18) · o suporte MUDOU de endereço: `/configuracoes/suporte` → `/suporte`.
  *
- * A rota de origem do relato é a que o usuário VEIO, não esta — quem abre o formulário daqui está
- * relatando algo de outra tela. O `referer` é a melhor aproximação disponível no servidor; quando
- * o gatilho global entrar (sidebar), ele passa a rota real e este palpite deixa de ser usado.
+ * Esta rota não some — ela redireciona, e o redirect entra NO MESMO commit que move a tela. Link
+ * de chamado já compartilhado (num grupo, num e-mail, colado numa tarefa) não pode quebrar porque
+ * a navegação foi reorganizada: quem clica quer o chamado, não a rota.
+ *
+ * `permanentRedirect` (308) e não `redirect` (307), de propósito: a mudança é definitiva, o método
+ * é preservado, e o navegador e os buscadores param de perguntar.
  */
-export default async function SuportePage() {
-  const [papel, lidos] = await Promise.all([lerPapelAtual(), lerTickets()]);
-  const ref = headers().get("referer") ?? "";
-  let rota = "/configuracoes/suporte";
-  try {
-    if (ref) rota = new URL(ref).pathname;
-  } catch {
-    /* referer ilegível: fica a própria rota, que é honesto */
-  }
-
-  return (
-    <ListaRelatos
-      tickets={lidos.tickets}
-      meuPapel={papel}
-      indisponivel={lidos.indisponivel}
-      rotaAtual={rota}
-    />
-  );
+export default function SuporteMudouDeEndereco(): never {
+  permanentRedirect("/suporte");
 }
