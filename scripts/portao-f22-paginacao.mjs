@@ -9,6 +9,13 @@
 //
 // LOCAL, NUNCA PRODUÇÃO (ARB-09): a URL vem do .env.local e é recusada se não for 127.0.0.1.
 //
+//
+// MESA: estes portões escrevem no cluster LOCAL e criam usuário no GoTrue local. Rodam bem em
+// sequência, mas exigem MESA ISOLADA — nada de dois portões no mesmo stack ao mesmo tempo, e nada
+// de rodar contra um stack que outro agente está usando. Sob concorrência o GoTrue devolve
+// 504/AuthRetryableFetchError; a criação de usuário retenta com espera crescente e, se ainda assim
+// não passar, o portão RECUSA (rc=2) dizendo que o problema é de mesa — nunca reprova o produto
+// por ambiente apertado.
 // As três partes exigidas pela ARB-07:
 //   VACUIDADE     — se o portão não semeou MAIS que uma página, ou a lista voltou vazia, REPROVA.
 //                   Paginação medida sobre 3 conversas não julga nada.
@@ -29,6 +36,8 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { erroLegivel } from "./erro-legivel.mjs";
+import { criarUsuarioDoPortao } from "./usuario-portao.mjs";
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const raiz = resolve(aqui, "..");
@@ -103,6 +112,29 @@ async function purgar() {
 }
 
 const semeadas = [];
+const INVISIVEIS = 3; // conversas FORA do inbox — ver o porquê em `semearInvisiveis`
+
+/**
+ * Conversas que existem e NÃO são visíveis no inbox (phone_number_id de canal inativo).
+ *
+ * Não é enfeite de cenário: o total do inbox é `count(*) WHERE visivel_inbox`, e num banco onde
+ * TODA conversa é visível esse filtro não muda nada — uma contagem sem o filtro devolveria o mesmo
+ * número, e a asserção (1) ficaria verde sobre uma consulta errada. Foi o que o Portão mediu: a
+ * mutação que remove o filtro sobrevivia por falta de contra-exemplo no banco. Com estas aqui, o
+ * filtro passa a ter consequência mensurável.
+ */
+async function semearInvisiveis() {
+  for (let i = 0; i < INVISIVEIS; i++) {
+    await sql.query(
+      `insert into core.conversa (id, telefone, phone_number_id, area, criado_em, atualizado_em,
+                                  primeira_posicao, ultima_posicao, mode, status, ultima_entrada_em)
+       values (gen_random_uuid(), $1, 'CANAL_INATIVO_F22', 'comercial', now(), now(), 0, 0, 'IA',
+               'nova', now())`,
+      [`${PREFIXO}9${String(i).padStart(5, "0")}`],
+    );
+  }
+}
+
 async function semear() {
   const empate = new Date(Date.now() - 10 * 86400_000).toISOString();
   for (let i = 0; i < QUANTAS; i++) {
@@ -142,19 +174,12 @@ async function semear() {
 }
 
 // ── 2 · usuário autenticado (a consulta roda sob o RLS dele) ────────────────────────────────
-const EMAIL = `portao-f22-${randomUUID().slice(0, 8)}@meescuta.local`;
-const SENHA = "portao-f22-senha-forte-local";
-const admin = createClient(URL, SERVICE, { auth: { persistSession: false } });
-const { data: criado, error: erroCriar } = await admin.auth.admin.createUser({
-  email: EMAIL,
-  password: SENHA,
-  email_confirm: true,
-});
-if (erroCriar) reprovar(`não consegui criar o usuário do portão: ${erroCriar.message}`);
-const UID = criado.user.id;
-const supabase = createClient(URL, ANON, { auth: { persistSession: false } });
-const { error: erroLogin } = await supabase.auth.signInWithPassword({ email: EMAIL, password: SENHA });
-if (erroLogin) reprovar(`não consegui autenticar: ${erroLogin.message}`);
+let admin, supabase, UID;
+try {
+  ({ admin, supabase, UID } = await criarUsuarioDoPortao({ URL, ANON, SERVICE, prefixo: "portao-f22" }));
+} catch (e) {
+  reprovar(`${e.message} — os portões precisam de mesa isolada; ver o cabeçalho`);
+}
 
 async function encerrar(codigo) {
   await purgar();
@@ -203,6 +228,7 @@ async function varrerPaginas(limite) {
 // ── 4 · execução ────────────────────────────────────────────────────────────────────────────
 await purgar();
 await semear();
+await semearInvisiveis();
 const TOTAL_SQL = await totalPorSql();
 console.log(`  semeadas ${semeadas.length} conversas (${EMPATADAS} com carimbo EMPATADO, ${SEM_ENTRADA} sem entrada)`);
 console.log(`  total visível no cluster (SQL): ${TOTAL_SQL}`);
@@ -225,9 +251,22 @@ if (semeadas.length <= LIMITE || TOTAL_SQL <= LIMITE || pagina1.conversas.length
   console.log("\nPORTÃO F22 · VERMELHO — 1 asserção(ões) falharam.");
   await encerrar(1);
 }
+const invisiveisNoBanco = Number(
+  (await sql.query("select count(*)::int as n from core.v_conversa where not visivel_inbox")).rows[0].n,
+);
+if (invisiveisNoBanco === 0) {
+  nok(
+    "(0) vacuidade: o banco não tem NENHUMA conversa fora do inbox — sem contra-exemplo, uma " +
+      "contagem SEM o filtro visivel_inbox devolveria o mesmo total e a asserção (1) ficaria verde " +
+      "sobre a consulta errada",
+  );
+  console.log(linhas.join("\n"));
+  console.log("\nPORTÃO F22 · VERMELHO — 1 asserção(ões) falharam.");
+  await encerrar(1);
+}
 ok(
-  `(0) vacuidade: ${TOTAL_SQL} conversas visíveis (> ${LIMITE}), página 1 devolveu ` +
-    `${pagina1.conversas.length} pela lerConversas real`,
+  `(0) vacuidade: ${TOTAL_SQL} conversas visíveis (> ${LIMITE}) e ${invisiveisNoBanco} FORA do inbox ` +
+    `(contra-exemplo do filtro); página 1 devolveu ${pagina1.conversas.length} pela lerConversas real`,
 );
 
 // ── CONTROLE NEGATIVO ───────────────────────────────────────────────────────────────────────

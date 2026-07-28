@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { erroLegivel } from "./erro-legivel.mjs";
 import { montarFontesConversa } from "../lib/tempo-real.ts";
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -150,7 +151,7 @@ const { data: sessao, error: erroLogin } = await login.auth.signInWithPassword({
   email: EMAIL,
   password: SENHA,
 });
-if (erroLogin) reprovar(`login local falhou: ${erroLogin.message}`);
+if (erroLogin) reprovar(`login local falhou: ${erroLegivel(erroLogin)}`);
 const TOKEN = sessao.session.access_token;
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -13,6 +13,13 @@
 //
 // LOCAL, NUNCA PRODUÇÃO (ARB-09).
 //
+//
+// MESA: estes portões escrevem no cluster LOCAL e criam usuário no GoTrue local. Rodam bem em
+// sequência, mas exigem MESA ISOLADA — nada de dois portões no mesmo stack ao mesmo tempo, e nada
+// de rodar contra um stack que outro agente está usando. Sob concorrência o GoTrue devolve
+// 504/AuthRetryableFetchError; a criação de usuário retenta com espera crescente e, se ainda assim
+// não passar, o portão RECUSA (rc=2) dizendo que o problema é de mesa — nunca reprova o produto
+// por ambiente apertado.
 // As três partes (ARB-07):
 //   VACUIDADE     — números todos nulos/zero aprovariam qualquer implementação. Se o painel não
 //                   tiver nada para contar, REPROVA.
@@ -30,6 +37,8 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { erroLegivel } from "./erro-legivel.mjs";
+import { criarUsuarioDoPortao } from "./usuario-portao.mjs";
 import { criarClienteFalso } from "./cliente-falso.mjs";
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -117,17 +126,27 @@ async function semear() {
   if (!conv) reprovar("a porta não criou a conversa do cenário");
   await sql.query("delete from core.mensagem where conversa_id = $1", [conv]);
 
-  // 6 dias × (2 entradas + 2 saídas), com estados variados — para que TODOS os blocos do painel
-  // tenham o que contar e a igualdade número a número signifique alguma coisa
-  // contador PRÓPRIO das saídas: com um contador só, as entradas consumiam índices e as saídas
-  // caíam sempre nos mesmos dois estados — o cenário nunca continha "enviado" nem "lido", e uma
-  // mutação que confundisse esses dois com "entregue" passaria despercebida (achado da bateria).
+  // 6 dias × (3 entradas + 1 saída), com estados variados — para que TODOS os blocos do painel
+  // tenham o que contar e a igualdade número a número signifique alguma coisa.
+  //
+  // A ASSIMETRIA É DELIBERADA (achado do Portão no R16-23). Antes eram 2 entradas + 2 saídas por
+  // dia, e com entrada == saída uma mutação que TROCA os dois baldes não muda número nenhum: ela
+  // só disparava graças a dado AMBIENTE do cluster, não ao cenário. Cenário simétrico não distingue
+  // as duas direções — e distinguir as duas direções é metade do que o bloco mede.
+  //
+  // O contador de saídas também é PRÓPRIO: com um contador só, as entradas consumiam índices e as
+  // saídas caíam sempre nos mesmos dois estados; o cenário nunca continha "enviado" nem "lido", e
+  // uma mutação que confundisse esses com "entregue" passava despercebida.
   const estados = ["enviado", "entregue", "lido", "falhou"];
+  const POR_DIA = [
+    ["entrada", "entrada", "entrada", "saida"], // 3×1: nunca empata
+  ][0];
   let saidas = 0;
   let n = 0;
   for (let dia = 0; dia < 6; dia++) {
-    for (let k = 0; k < 2; k++) {
-      for (const direcao of ["entrada", "saida"]) {
+    for (let k = 0; k < POR_DIA.length; k++) {
+      {
+        const direcao = POR_DIA[k];
         const quando = new Date(Date.now() - dia * 86400_000 - (k + 1) * 3600_000).toISOString();
         const evento = (
           await sql.query(
@@ -157,19 +176,12 @@ async function semear() {
 }
 
 // ── 2 · usuário autenticado ─────────────────────────────────────────────────────────────────
-const EMAIL = `portao-f24-${randomUUID().slice(0, 8)}@meescuta.local`;
-const SENHA = "portao-f24-senha-forte-local";
-const admin = createClient(URL, SERVICE, { auth: { persistSession: false } });
-const { data: criado, error: erroCriar } = await admin.auth.admin.createUser({
-  email: EMAIL,
-  password: SENHA,
-  email_confirm: true,
-});
-if (erroCriar) reprovar(`não consegui criar o usuário do portão: ${erroCriar.message}`);
-const UID = criado.user.id;
-const supabase = createClient(URL, ANON, { auth: { persistSession: false } });
-const { error: erroLogin } = await supabase.auth.signInWithPassword({ email: EMAIL, password: SENHA });
-if (erroLogin) reprovar(`não consegui autenticar: ${erroLogin.message}`);
+let admin, supabase, UID;
+try {
+  ({ admin, supabase, UID } = await criarUsuarioDoPortao({ URL, ANON, SERVICE, prefixo: "portao-f24" }));
+} catch (e) {
+  reprovar(`${e.message} — os portões precisam de mesa isolada; ver o cabeçalho`);
+}
 
 async function encerrar(codigo) {
   await purgar();

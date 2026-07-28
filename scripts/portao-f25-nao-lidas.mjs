@@ -15,6 +15,13 @@
 //
 // LOCAL, NUNCA PRODUÇÃO (ARB-09).
 //
+//
+// MESA: estes portões escrevem no cluster LOCAL e criam usuário no GoTrue local. Rodam bem em
+// sequência, mas exigem MESA ISOLADA — nada de dois portões no mesmo stack ao mesmo tempo, e nada
+// de rodar contra um stack que outro agente está usando. Sob concorrência o GoTrue devolve
+// 504/AuthRetryableFetchError; a criação de usuário retenta com espera crescente e, se ainda assim
+// não passar, o portão RECUSA (rc=2) dizendo que o problema é de mesa — nunca reprova o produto
+// por ambiente apertado.
 // As três partes (ARB-07):
 //   VACUIDADE     — se não houver conversa não-lida E lida no cenário, REPROVA: um contador que
 //                   devolve 0 num banco vazio bate com qualquer implementação, inclusive errada.
@@ -34,6 +41,8 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { erroLegivel } from "./erro-legivel.mjs";
+import { criarUsuarioDoPortao } from "./usuario-portao.mjs";
 import { criarClienteFalso } from "./cliente-falso.mjs";
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -159,19 +168,12 @@ async function semear() {
 }
 
 // ── 2 · usuário autenticado ─────────────────────────────────────────────────────────────────
-const EMAIL = `portao-f25-${randomUUID().slice(0, 8)}@meescuta.local`;
-const SENHA = "portao-f25-senha-forte-local";
-const admin = createClient(URL, SERVICE, { auth: { persistSession: false } });
-const { data: criado, error: erroCriar } = await admin.auth.admin.createUser({
-  email: EMAIL,
-  password: SENHA,
-  email_confirm: true,
-});
-if (erroCriar) reprovar(`não consegui criar o usuário do portão: ${erroCriar.message}`);
-const UID = criado.user.id;
-const supabase = createClient(URL, ANON, { auth: { persistSession: false } });
-const { error: erroLogin } = await supabase.auth.signInWithPassword({ email: EMAIL, password: SENHA });
-if (erroLogin) reprovar(`não consegui autenticar: ${erroLogin.message}`);
+let admin, supabase, UID;
+try {
+  ({ admin, supabase, UID } = await criarUsuarioDoPortao({ URL, ANON, SERVICE, prefixo: "portao-f25" }));
+} catch (e) {
+  reprovar(`${e.message} — os portões precisam de mesa isolada; ver o cabeçalho`);
+}
 
 async function encerrar(codigo) {
   await purgar();
@@ -300,10 +302,67 @@ if (!tocouConfig) ok("(4) o contador NÃO lê a config do funil (não precisa de
 else nok("(4) o contador ainda lê v_config_vigente");
 
 {
-  const teto = 4000; // bytes: o cenário tem 12 conversas com corpo de 400 chars cada
-  if (falsoDepois.bytes <= teto)
-    ok(`(5) payload do contador ${falsoDepois.bytes} B <= teto declarado ${teto} B (antes: ${falsoAntes.bytes} B)`);
-  else nok(`(5) payload do contador ${falsoDepois.bytes} B passou do teto ${teto} B`);
+  // Os números do headline viram ASSERÇÃO, com PISO e TETO (achado do Portão no R16-23). Só teto
+  // não basta: ele conseguiu verde com um contador de constante fixa, cuja saída celebrava
+  // "0 requisições, 0 B" — zero passa em qualquer teto. Piso é o que separa "barato" de "não leu".
+  const PISO_REQ = 2; // ids das conversas visíveis + direção da última mensagem. Menos que isso é invenção.
+  const TETO_REQ = 3; // folga de uma; a quarta seria o join/config que o item existe pra tirar.
+  const TETO_BYTES = 4000; // o cenário tem 12 conversas com corpo de 400 chars cada
+  const req = falsoDepois.total;
+  const bytes = falsoDepois.bytes;
+  // fonte MEDIDA NÃO-VAZIA: se o cliente falso não devolveu linha nenhuma, "poucos bytes" é
+  // consequência de não ter lido nada, não de ter lido barato
+  const linhasLidas = falsoDepois.chamadas.reduce(
+    (s, c) => s + (Array.isArray(c.bytes) ? 0 : c.head ? 0 : 1),
+    0,
+  );
+  const fonteNaoVazia = bytes > 0 && linhasLidas > 0;
+
+  if (req < PISO_REQ)
+    nok(
+      `(5) o contador fez ${req} requisição(ões), abaixo do piso ${PISO_REQ} — contador que não ` +
+        "lê o banco não está contando, está inventando",
+    );
+  else if (req > TETO_REQ) nok(`(5) o contador fez ${req} requisições, acima do teto ${TETO_REQ}`);
+  else if (!fonteNaoVazia)
+    nok(`(5) a fonte medida está VAZIA (${bytes} B em ${linhasLidas} leituras com payload) — teto cumprido por não ter lido nada`);
+  else if (bytes > TETO_BYTES) nok(`(5) payload do contador ${bytes} B passou do teto ${TETO_BYTES} B`);
+  else
+    ok(
+      `(5) ${req} requisições dentro de [${PISO_REQ},${TETO_REQ}] e ${bytes} B em (0,${TETO_BYTES}] ` +
+        `sobre fonte não-vazia (antes: ${falsoAntes.total} req · ${falsoAntes.bytes} B)`,
+    );
+}
+
+{
+  // MATA O CONTADOR DE CONSTANTE FIXA. O Portão passou com `return 7` porque o cenário do banco
+  // tinha 7 não-lidas — a igualdade batia por coincidência. Aqui o MESMO código roda sobre um
+  // segundo cenário, montado para dar OUTRO número: se o resultado não mudar, o contador não está
+  // olhando para o dado.
+  const outrasConversas = conversasFalsas.slice(0, 5);
+  const todasLidas = outrasConversas.map((c) => ({
+    conversa_id: c.id,
+    direcao: "saida", // última mensagem é NOSSA em todas → zero não-lidas
+    corpo: "resposta",
+    criado_em: new Date().toISOString(),
+    timestamp_origem: new Date().toISOString(),
+  }));
+  const falsoOutro = criarClienteFalso((q) => {
+    if (q.tabela === "v_conversa" && !q.head) {
+      const cols = (q.colunas ?? "").split(",");
+      return { data: outrasConversas.map((c) => Object.fromEntries(cols.map((k) => [k, c[k]]))) };
+    }
+    if (q.tabela === "mensagem") return { data: todasLidas };
+    return responder(q);
+  });
+  const nOutro = await contarNaoLidas(falsoOutro);
+  if (nOutro === 0 && nDepois !== 0)
+    ok(`(5-bis) o contador RESPONDE ao cenário: ${nDepois} num, 0 no outro — não é constante`);
+  else
+    nok(
+      `(5-bis) o contador devolveu ${nOutro} num cenário sem nenhuma não-lida (e ${nDepois} no outro) — ` +
+        "número que não muda com o dado é constante disfarçada de contagem",
+    );
 }
 
 if (nDepois === nAntes)
