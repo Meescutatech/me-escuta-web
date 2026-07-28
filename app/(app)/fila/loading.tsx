@@ -3,7 +3,6 @@ export default function CarregandoFila() {
   return (
     <section className="mx-auto max-w-4xl space-y-4 px-6 py-6">
       <div>
-        <h1 className="font-serif text-xl font-semibold text-navy">Fila de sugestões pendentes</h1>
         <p className="text-sm text-suave">carregando…</p>
       </div>
       <ul className="space-y-2">

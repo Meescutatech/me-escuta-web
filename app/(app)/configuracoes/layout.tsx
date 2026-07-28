@@ -59,7 +59,7 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
   const ativo = (href: string) => rota === href || rota.startsWith(href + "/");
 
   return (
-    <div className="flex min-h-[calc(100vh-58px)] bg-branco">
+    <div className="flex min-h-[calc(100vh-var(--altura-topo))] bg-branco">
       <nav
         aria-label="Configurações"
         className="w-[224px] flex-none border-r border-linha bg-board px-3 pb-8 pt-6"

@@ -54,7 +54,11 @@ export function PainelJarvis() {
             J
           </span>
           <div>
-            <h1 className="font-serif text-xl font-semibold leading-none text-navy">@jarvis</h1>
+            {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título). O que fica é a
+                identidade do agente ao lado do avatar — que é do painel, não do shell — e ela sai
+                da Fraunces, a tipografia que o `r9-tokens.md` §7.1 mandou apagar do app inteiro e
+                que sobrevivia exatamente nas 3 rotas fora do menu. `h2`: um `h1` por documento. */}
+            <h2 className="text-[15px] font-[650] leading-none text-tinta">@jarvis</h2>
             <p className="mt-1 text-xs text-mute">
               Melhore o prompt da Clara sem deploy — o Jarvis propõe, você valida, vira evento.
             </p>

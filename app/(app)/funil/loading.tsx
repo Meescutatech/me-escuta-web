@@ -6,9 +6,8 @@ const COLUNAS = ["Incoming leads", "LEAD", "Interessado", "QUALIFICADO", "AUDIOM
 
 export default function CarregandoFunil() {
   return (
-    <div className="flex h-[calc(100vh-58px)] flex-col bg-board">
+    <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
       <div className="flex flex-shrink-0 items-baseline gap-x-5 border-b border-linha bg-branco px-6 pb-3 pt-4">
-        <h1 className="font-serif text-2xl font-semibold leading-none text-navy">Funil</h1>
         <span className="text-[0.78rem] text-mute">carregando…</span>
       </div>
       <div className="flex flex-1 gap-3 overflow-hidden px-6 pb-5 pt-2">

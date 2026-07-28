@@ -5,7 +5,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useProjecaoViva } from "@/components/projecao-viva";
 import { INTERVALOS } from "@/lib/intervalos-vivos";
-import { contarNaoLidas, maisRecentes, type Notificacao } from "@/lib/notificacoes";
+import { contarNaoLidas, maisRecentes, rotuloNaoLidas, type Notificacao } from "@/lib/notificacoes";
 import { marcarTodasLidas } from "@/app/(app)/notificacoes/actions";
 import { ItemNotificacao } from "./item";
 
@@ -22,8 +22,14 @@ import { ItemNotificacao } from "./item";
  * a dica chega por postgres_changes e o refetch é o router.refresh() do useProjecaoViva
  * (a verdade continua sendo a releitura server-side). O polling de 30s é a rede de segurança.
  *
- * O app não tem barra de topo compartilhada (a navegação é a sidebar de ícones da R9): o sino
- * é fixo no topo direito, acima do conteúdo, na mesma altura de 52px da topbar do mockup.
+ * M6/R18 — O SINO PASSOU A MORAR DENTRO DO HEADER, e foi MOVIDO, não reescrito. Até aqui ele era
+ * um órfão: `fixed right-4 top-2.5 z-40`, posicionado por coordenada absoluta para simular estar
+ * dentro de uma barra que não existia — o comentário anterior dizia isso com todas as letras ("o
+ * app não tem barra de topo compartilhada... na mesma altura de 52px da topbar do mockup"). A barra
+ * existe agora, então o posicionamento órfão morre e o componente vira um filho comum do header.
+ * NADA do comportamento mudou: popover, Esc, clique-fora, tempo real e o contador continuam os
+ * mesmos, e o C3 vigia que exista UM sino só (pelo path do SVG, que é assinatura de verdade —
+ * `aria-expanded` casaria com filtros e ações de tarefa, que são o idioma genérico de popover).
  */
 export function Sino({
   inicial,
@@ -68,13 +74,13 @@ export function Sino({
   const curtas = maisRecentes(inicial, 4, agoraMs || Date.now());
 
   return (
-    <div ref={caixa} className="fixed right-4 top-2.5 z-40">
+    <div ref={caixa} className="relative">
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
         aria-label={
-          disponivel ? `Notificações: ${naoLidas} não lidas` : "Notificações indisponíveis"
+          disponivel ? `Notificações: ${rotuloNaoLidas(naoLidas)} não lidas` : "Notificações indisponíveis"
         }
         className={cn(
           "relative flex h-8 w-8 items-center justify-center rounded-[6px] text-suave hover:bg-hover hover:text-tinta",
@@ -94,10 +100,12 @@ export function Sino({
           <path d="M18 9.5a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6" />
           <path d="M10 19a2.2 2.2 0 0 0 4 0" />
         </svg>
-        {/* contador só aparece quando há não-lidas; nunca vira "9+" */}
+        {/* contador só aparece quando há não-lidas; nunca vira "9+" — mas SATURA em "200+", que é
+            o teto real da leitura (`lib/notificacoes.ts`, `rotuloNaoLidas`). "9+" seria esconder um
+            número que a pessoa consegue zerar; "200+" é dizer a verdade sobre um teto que existe. */}
         {disponivel && naoLidas > 0 && (
           <span className="absolute -right-0.5 -top-px min-w-[16px] rounded-full border-[1.5px] border-branco bg-laranja px-1 text-center font-mono text-[10px] font-semibold leading-4 tabular-nums text-branco">
-            {naoLidas}
+            {rotuloNaoLidas(naoLidas)}
           </span>
         )}
       </button>
@@ -112,7 +120,7 @@ export function Sino({
           <div className="flex items-center gap-2 border-b border-linha py-[10px] pl-3.5 pr-3">
             <h2 className="text-[13.5px] font-[650]">Notificações</h2>
             <span className="font-mono text-[11.5px] tabular-nums text-suave">
-              {naoLidas} não lidas
+              {rotuloNaoLidas(naoLidas)} não lidas
             </span>
             <span className="ml-auto flex items-center">
               <Link

@@ -101,12 +101,23 @@ const nAntes = listaAntiga.filter((c) => c.nao_lida).length;`,
       id: "M8",
       protege: "(8) a barra lateral não passa mais pela leitura inteira do inbox",
       arquivo: p("lib/dados/sidebar.ts"),
-      de: `      contarNaoLidas(),`,
+      // M6/R18: o alvo textual mudou junto com a chamada (o contador passou a receber o escopo)
+      de: `      contarNaoLidas(undefined, escopo),`,
       para: `      (async () => {
         const { conversas } = await (await import("./conversas")).lerConversas();
         return conversas.filter((c) => c.nao_lida).length;
       })(),`,
       esperaVermelho: /VERMELHO· \(8\) a barra lateral ainda passa por lerConversas/,
+    },
+    {
+      id: "M9",
+      protege: "(8-bis) o contador da barra lateral respeita o escopo da tela para a qual aponta",
+      arquivo: p("lib/dados/sidebar.ts"),
+      // O defeito que M9 encena é o que a régua afrouxada do (8) deixaria passar: a chamada volta a
+      // ser global, o número da barra conta o inbox inteiro e a lista escopada mostra outro.
+      de: `      contarNaoLidas(undefined, escopo),`,
+      para: `      contarNaoLidas(),`,
+      esperaVermelho: /VERMELHO· \(8-bis\) contarNaoLidas sem escopo/,
     },
   ],
 });

@@ -33,7 +33,10 @@ export function Cabecalho({
     <div className="mb-[18px]">
       {voltar}
       <div className="flex items-baseline gap-3">
-        <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">{titulo}</h1>
+        {/* M6: `h2`, não `h1`. Este `Cabecalho` é de SEÇÃO e é reusado dentro de diálogos e da
+            folha de relato que o header abre — um `h1` aqui produziria dois no documento, e o
+            nome da tela agora vem do header. */}
+        <h2 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">{titulo}</h2>
         {contador ? (
           <span className="ml-auto font-mono text-[12.5px] tabular-nums text-suave">{contador}</span>
         ) : null}

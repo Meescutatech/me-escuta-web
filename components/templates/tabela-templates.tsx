@@ -123,7 +123,8 @@ export function TabelaTemplates({
     <div>
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Templates</h1>
+          {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
+              A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
           <p className="mt-1.5 text-[13.5px] text-suave">
             Respostas prontas para o campo de conversa. A equipe insere com{" "}
             <kbd className="rounded border border-linha bg-board px-1.5 py-px font-mono text-[11px] text-suave">/</kbd>

@@ -97,7 +97,8 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
   return (
     <main className="mx-auto max-w-[1180px] px-6 pb-12 pt-6">
       <div className="mb-5 flex items-baseline gap-3.5">
-        <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Visão geral</h1>
+        {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
+            A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
         <span className="ml-auto">
           <CarimboVivo geradoEm={geradoEm} />
         </span>

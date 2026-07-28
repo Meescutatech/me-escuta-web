@@ -28,7 +28,6 @@ export default async function TimelinePage() {
   return (
     <section className="mx-auto max-w-4xl space-y-4 px-6 py-6">
       <div>
-        <h1 className="font-serif text-xl font-semibold text-navy">Timeline do ledger</h1>
         <p className="text-sm text-suave">
           Últimos eventos por{" "}
           <code className="rounded bg-creme px-1.5 py-0.5 font-mono text-xs">posicao_global</code> (desc).

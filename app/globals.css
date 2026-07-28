@@ -7,6 +7,22 @@
  * As cores/fontes vivem no tailwind.config.ts; aqui só o essencial de base + scrollbar.
  */
 
+/*
+ * M6 · A ALTURA DO HEADER MORA AQUI, E SÓ AQUI.
+ *
+ * Antes existiam TRÊS números para a mesma barra inexistente: 52 (mockup v3 + o comentário do sino
+ * + a topbar morta de `146c69f`), 58 (`configuracoes/layout.tsx` e `funil/loading.tsx`, subtraindo
+ * de uma barra que não existia) e 0 (o funil de verdade, o inbox, as tarefas). O esqueleto do funil
+ * e o funil real discordavam em 58px na MESMA rota.
+ *
+ * O token é o que impede o 52/58/0 de voltar: quem precisa da altura referencia
+ * `var(--altura-topo)`, e ninguém repete o literal. Espírito da Constituição §4 — o número é
+ * configuração, não literal espalhado. É o que o C2 mede.
+ */
+:root {
+  --altura-topo: 52px;
+}
+
 * {
   box-sizing: border-box;
 }

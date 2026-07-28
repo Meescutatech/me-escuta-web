@@ -6,6 +6,7 @@ import { registrarEventoUI, type ResultadoEvento } from "@/app/(app)/funil/actio
 import { caminhoValido } from "@/lib/conversas/midia";
 import { acaoPresencaValida, montarCorpoPresenca, type AcaoPresenca } from "@/lib/conversas/presenca";
 import { lerConversas, type PaginaConversas } from "@/lib/dados/conversas";
+import { lerEstadoEscopo } from "@/lib/dados/departamentos";
 
 /**
  * F22 — próxima página do inbox (keyset). Leitura pura, mesma sessão/RLS do resto do app: o
@@ -14,12 +15,18 @@ import { lerConversas, type PaginaConversas } from "@/lib/dados/conversas";
  *
  * `jaCarregadas` vem do cliente porque é ele quem acumula; serve só para decidir se AINDA há
  * corte, nunca para escolher linha.
+ *
+ * M6/R18 — O ESCOPO ENTRA AQUI TAMBÉM, e esquecê-lo seria um vazamento de verdade, não de teoria:
+ * a primeira página respeitaria o departamento ativo e a segunda traria o inbox inteiro. O escopo é
+ * relido NO SERVIDOR a cada chamada, e de propósito não vem do cliente — o cliente pede "mais",
+ * nunca "mais de qual escopo".
  */
 export async function carregarMaisConversas(
   cursor: string,
   jaCarregadas: number,
 ): Promise<PaginaConversas> {
-  return lerConversas({ cursor, jaCarregadas });
+  const { escopo } = await lerEstadoEscopo();
+  return lerConversas({ cursor, jaCarregadas, escopo });
 }
 
 /**

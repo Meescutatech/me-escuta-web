@@ -312,10 +312,11 @@ export function Quadro({
   const etapaAberta = dados.etapas.find((e) => e.chave === leadAberto?.etapa) ?? null;
 
   return (
-    <div className="flex h-screen flex-col bg-board">
+    <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
       {/* ── cab do board (r9): título + total mono + busca + ao vivo ── */}
       <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-5 pb-3 pt-4">
-        <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Funil de vendas</h1>
+        {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
+            A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
         <span className="font-mono text-[12px] text-suave">
           {filtroAtivo
             ? `${leadsAtivosFiltrados.toLocaleString("pt-BR")} de ${leadsAtivos.toLocaleString("pt-BR")} leads ativos`

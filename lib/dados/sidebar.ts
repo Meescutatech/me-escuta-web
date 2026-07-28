@@ -2,6 +2,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { ETAPAS_PADRAO, lerEtapasReais } from "./funil";
 import { contarNaoLidas } from "./conversas";
 import { contarVencidas } from "./tarefas-visao";
+import type { Escopo } from "@/lib/departamentos/escopo";
 
 /**
  * Contadores da sidebar (r9-tokens §6) — mesma sessão/RLS:
@@ -20,7 +21,19 @@ export interface ContadoresSidebar {
   tarefasVencidas: number | null;
 }
 
-export async function lerContadoresSidebar(): Promise<ContadoresSidebar> {
+/**
+ * M6 · O ESCOPO ENTRA EM UM DOS TRÊS CONTADORES, E A INCOERÊNCIA RESULTANTE É A CERTA.
+ *
+ * `naoLidas` aponta para `/conversas`, que é a tela de referência do escopo (ARB-R17-11) — então
+ * ele respeita o escopo. `funil` e `tarefasVencidas` apontam para telas que NÃO recebem escopo
+ * nesta rodada, então continuam globais.
+ *
+ * Isso parece incoerente e é a incoerência certa: **cada contador bate com a tela para a qual ele
+ * aponta.** Um contador escopado apontando para tela não escopada mentiria sobre a tela de destino,
+ * que é o erro mais caro dos dois. A incoerência some quando as outras telas adotarem escopo, e
+ * fica declarada aqui para ninguém "consertar" pelo lado errado.
+ */
+export async function lerContadoresSidebar(escopo?: Escopo | null): Promise<ContadoresSidebar> {
   try {
     const supabase = criarClienteServidor();
     const [funil, naoLidas, tarefasVencidas] = await Promise.all([
@@ -34,7 +47,7 @@ export async function lerContadoresSidebar(): Promise<ContadoresSidebar> {
           .in("etapa", abertas);
         return error ? null : count ?? 0;
       })(),
-      contarNaoLidas(),
+      contarNaoLidas(undefined, escopo),
       contarVencidas(),
     ]);
     return { funil, naoLidas, tarefasVencidas };

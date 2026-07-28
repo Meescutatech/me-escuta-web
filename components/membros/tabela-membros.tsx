@@ -122,7 +122,8 @@ export function TabelaMembros({
 
   return (
     <div>
-      <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Membros</h1>
+      {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
+          A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
       <p className="mt-1.5 text-[13.5px] text-suave">Convide pessoas, defina o papel de cada uma e remova acessos.</p>
 
       {/* convite: uma linha de formulário (V1 = LINK; email fica atrás de flag de config) */}

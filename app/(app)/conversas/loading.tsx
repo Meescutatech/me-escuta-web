@@ -4,10 +4,10 @@
  */
 export default function CarregandoConversas() {
   return (
-    <div className="flex h-screen bg-board">
+    <div className="flex h-[calc(100vh-var(--altura-topo))] bg-board">
       <aside className="flex w-[272px] shrink-0 flex-col border-r border-linha bg-branco">
         <div className="px-4 pb-2.5 pt-3.5">
-          <h1 className="mb-2.5 text-[15px] font-[650] leading-none text-tinta">Conversas</h1>
+          <h2 className="mb-2.5 text-[15px] font-[650] leading-none text-tinta">Conversas</h2>
           <div className="h-8 animate-pulse rounded-lg border border-linha bg-board" />
         </div>
         <div className="flex flex-col gap-px px-2 pt-1">

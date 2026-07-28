@@ -41,6 +41,34 @@ export function contarNaoLidas(itens: readonly Notificacao[]): number {
 }
 
 /**
+ * O TETO DA LISTA — `lib/dados/notificacoes.ts:15` lê com `.limit(200)`, e `contarNaoLidas` conta
+ * sobre o array JÁ TRUNCADO, não sobre a tabela. Não há nenhum `count` no banco em ponto nenhum do
+ * caminho. Logo o número satura em 200 e subnotifica em silêncio a partir daí.
+ */
+export const TETO_NAO_LIDAS = 200;
+
+/**
+ * M6 · O número do sino, como TEXTO, e é onde o teto deixa de ser implícito.
+ *
+ * Acima do teto mostra **`200+`**, nunca `200` seco. É de uma linha, e é a diferença entre um número
+ * errado e um número honesto: `200` parado é indistinguível de "200 notificações" e de "muitas, não
+ * sei quantas".
+ *
+ * Por que isto entra AGORA, com o valor real valendo 0: o §3 da SPEC-M6 diz que o header não
+ * conserta os zeros; esta função é o avesso — **no dia em que os zeros virarem números grandes, o
+ * header é o primeiro lugar onde a mentira apareceria.** As duas coisas precisam existir juntas,
+ * senão quem lê só a primeira acha que o header é imune a volume.
+ *
+ * O que NÃO muda nesta rodada, de propósito: o mecanismo de leitura. Reescrever o caminho por um
+ * cenário que hoje vale 0 é consertar o que não está quebrado. **Dívida com endereço:** contagem
+ * real exige `count` no banco (`core.v_notificacao` com `lida_em is null`), independente do
+ * `limit` da lista, e ela entra naturalmente com a paginação da visão expandida.
+ */
+export function rotuloNaoLidas(qtd: number): string {
+  return qtd >= TETO_NAO_LIDAS ? `${TETO_NAO_LIDAS}+` : String(qtd);
+}
+
+/**
  * A frase da linha 1 — o TIPO vem escrito, nunca por ícone.
  * Menção: "<Fulano> mencionou você numa nota|tarefa".
  * Tarefa: "<Fulano> atribuiu uma tarefa a você" · "Tarefa venceu — <título>".

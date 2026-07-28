@@ -16,6 +16,15 @@ import {
   proximoCursor,
 } from "@/lib/conversas/paginacao";
 import { parseTags } from "./ficha-calculos";
+import { clausulaEscopo, type Escopo } from "@/lib/departamentos/escopo";
+
+/**
+ * M6 · O PREDICADO DE ESCOPO vem de `lib/departamentos/escopo.ts` — puro, sem rede, testável por
+ * `node --test` sem resolver o alias `@/`. É a linha que o C9 mede, e um predicado que só pode ser
+ * exercitado subindo o Next inteiro é um predicado que ninguém exercita.
+ */
+export { clausulaEscopo } from "@/lib/departamentos/escopo";
+
 
 /**
  * Leitura de CONVERSAS (inbox WhatsApp) + mensagens + propostas da Clara. Schema real (0009):
@@ -73,6 +82,13 @@ export interface ConversaResumo {
   previa_saida?: boolean; // última msg foi de saída (Você/Clara)
   nao_lida?: boolean; // proxy: última msg foi do cliente (entrada), sem resposta
   nao_lidas_qtd?: number; // proxy: qtde de mensagens de entrada após a última saída (RF-30/31)
+  /**
+   * M6 — o carimbo de roteamento congelado (`core.conversa.area`, imutável). Vem para a lista por
+   * UM motivo só: separar a faixa "Sem departamento" (D6-g) do resto. NÃO vira rótulo na linha da
+   * conversa nesta rodada — ARB-R18-03: o chip que entra na linha é o NÚMERO (M7); o departamento
+   * seria a segunda marca competindo por atenção, e constante em 85% dos casos (73 de 86).
+   */
+  area?: string | null;
 }
 
 /**
@@ -178,15 +194,83 @@ async function lerPrevias(
  *
  * Erro → `null`, e `null` faz a UI mostrar "50+" ou omitir. Nunca um total inventado.
  */
-export async function contarConversasVisiveis(cliente?: Supabase): Promise<number | null> {
+export async function contarConversasVisiveis(
+  cliente?: Supabase,
+  escopo?: Escopo | null,
+): Promise<number | null> {
   try {
     const supabase = cliente ?? criarClienteServidor();
-    const { count, error } = await supabase
+    const base = supabase
       .schema("core")
       .from("v_conversa")
       .select("*", { count: "exact", head: true })
       .eq("visivel_inbox", true);
+    const clausula = clausulaEscopo(escopo);
+    const { count, error } = await (clausula ? base.or(clausula) : base);
     return error ? null : count ?? 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * M6 · Pendência POR DEPARTAMENTO — o insumo do ponto no departamento INATIVO (D6-f).
+ *
+ * Por que existe: sem a opção "Todos" (morta pelo D6-f), quem opera em duas áreas fica CEGO na área
+ * que não está olhando. O ponto é o que impede "só um por vez" de virar armadilha — é o padrão do
+ * Slack (BENCHMARK §3-bis.2): marca de pendência no contexto que NÃO está ativo.
+ *
+ * TEM/NÃO TEM, nunca número: número no header cai na ARB-R17-33 e no 755 do Kommo
+ * (`components/sidebar.tsx:119-120`). O `Map` devolve contagem porque quem chama decide o corte, e o
+ * header usa só `> 0`.
+ *
+ * "Pendência" aqui é EXATAMENTE o proxy do inbox — "a última mensagem é de entrada". Não invento um
+ * segundo conceito de pendência: dois conceitos com o mesmo nome divergem, e é a doença que este
+ * schema já tem em `dono`/`dono_id` (E-053).
+ *
+ * O CUSTO, declarado em vez de escondido: é uma leitura A MAIS no layout. O `PLANO-TECNICO-M6.md`
+ * §5.3 previu "zero consulta a mais" reaproveitando a consulta de `contarNaoLidas`, e isso está
+ * ERRADO — `contarNaoLidas` passou a ser ESCOPADA (ela alimenta o contador que aponta para a tela
+ * escopada), e derivar o mapa por-área a partir dela devolveria só as áreas dentro do escopo ativo,
+ * que é justamente o contrário do que o ponto precisa saber. Derivar o contador escopado deste mapa
+ * também não serve: as duas leituras têm o mesmo teto de `LIMITE_PAGINA`, e somar as áreas do escopo
+ * dentro das 50 mais recentes GLOBAIS daria um número diferente do badge da lista escopada — e o
+ * código exige por escrito que os dois batam.
+ */
+export async function contarNaoLidasPorArea(
+  cliente?: Supabase,
+): Promise<Map<string | null, number> | null> {
+  try {
+    const supabase = cliente ?? criarClienteServidor();
+    const { data: convs, error } = await supabase
+      .schema("core")
+      .from("v_conversa")
+      .select("id,area")
+      .eq("visivel_inbox", true)
+      .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
+      .limit(LIMITE_PAGINA);
+    if (error || !convs) return null;
+    const porConversa = new Map<string, string | null>();
+    for (const c of convs as any[]) porConversa.set(String(c.id), c.area ? String(c.area) : null);
+    if (porConversa.size === 0) return new Map();
+
+    const previas = await lerPrevias(
+      supabase,
+      [...porConversa.keys()],
+      "conversa_id,direcao,timestamp_origem,criado_em",
+    );
+    const ultimaDirecao = new Map<string, string>();
+    for (const m of previas) {
+      const k = String(m.conversa_id);
+      if (!ultimaDirecao.has(k)) ultimaDirecao.set(k, String(m.direcao));
+    }
+    const mapa = new Map<string | null, number>();
+    for (const [id, area] of porConversa) {
+      if (ultimaDirecao.get(id) !== "entrada") continue;
+      mapa.set(area, (mapa.get(area) ?? 0) + 1);
+    }
+    return mapa;
   } catch {
     return null;
   }
@@ -209,14 +293,19 @@ export async function contarConversasVisiveis(cliente?: Supabase): Promise<numbe
  *
  * Indisponível é `null` (a barra lateral esconde o contador), nunca zero inventado.
  */
-export async function contarNaoLidas(cliente?: Supabase): Promise<number | null> {
+export async function contarNaoLidas(
+  cliente?: Supabase,
+  escopo?: Escopo | null,
+): Promise<number | null> {
   try {
     const supabase = cliente ?? criarClienteServidor();
-    const { data: convs, error } = await supabase
+    const clausula = clausulaEscopo(escopo);
+    const comEscopo = supabase
       .schema("core")
       .from("v_conversa")
       .select("id")
-      .eq("visivel_inbox", true)
+      .eq("visivel_inbox", true);
+    const { data: convs, error } = await (clausula ? comEscopo.or(clausula) : comEscopo)
       .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
       .order("id", { ascending: true })
       .limit(LIMITE_PAGINA);
@@ -274,9 +363,21 @@ export async function lerConversas(
      * que uma página voltasse incompleta, e erraria escondendo conversa.
      */
     jaCarregadas?: number;
+    /**
+     * M6 — o escopo de departamento ativo. Omitido, a leitura é exatamente a de antes (é o que os
+     * portões F21/F22/F25 exercitam). Presente, ele entra como PREDICADO NA CONSULTA — é esta
+     * linha que o C9 mede, e é o que separa escopo de filtro de cliente.
+     */
+    escopo?: Escopo | null;
   } = {},
 ): Promise<PaginaConversas> {
-  const { cliente, cursor: cursorCru, limite = LIMITE_PAGINA, jaCarregadas = 0 } = opcoes;
+  const {
+    cliente,
+    cursor: cursorCru,
+    limite = LIMITE_PAGINA,
+    jaCarregadas = 0,
+    escopo = null,
+  } = opcoes;
   try {
     const supabase = cliente ?? criarClienteServidor();
     // rótulo de exibição da etapa (chave → nome) via config vigente do funil — não depende da
@@ -299,14 +400,18 @@ export async function lerConversas(
     // F22: o total do filtro vem do servidor, em paralelo com a página. Cursor inválido vira
     // `null` (= começar do começo) em vez de derrubar a lista ou, pior, virar consulta sem filtro.
     const cursor = decodificar(cursorCru);
-    const totalPromise = contarConversasVisiveis(supabase);
+    const totalPromise = contarConversasVisiveis(supabase, escopo);
 
     const base = supabase
       .schema("core")
       .from("v_conversa")
-      .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em")
+      .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em,area")
       .eq("visivel_inbox", true);
-    const comCursor = cursor ? base.or(filtroKeyset(cursor)) : base;
+    // M6 — o escopo é a PRIMEIRA cláusula, antes do keyset: as duas são `or` e o PostgREST as une
+    // por AND, então a ordem não muda o resultado; a ordem aqui é para quem lê ver que a página é
+    // um recorte DO ESCOPO, e não o escopo um recorte da página.
+    const comEscopo = clausulaEscopo(escopo) ? base.or(clausulaEscopo(escopo)!) : base;
+    const comCursor = cursor ? comEscopo.or(filtroKeyset(cursor)) : comEscopo;
     const { data, error } = await comCursor
       .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
       .order("id", { ascending: true })
@@ -388,6 +493,7 @@ export async function lerConversas(
         previa_saida: p?.saida ?? false,
         nao_lida: p ? !p.saida : false,
         nao_lidas_qtd: naoLidas.get(String(c.id)) ?? 0,
+        area: c.area ? String(c.area) : null,
       };
     });
 

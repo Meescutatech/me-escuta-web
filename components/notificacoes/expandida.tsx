@@ -37,7 +37,8 @@ export function Expandida({ itens }: { itens: Notificacao[] }) {
   return (
     <div className="min-h-screen bg-branco">
       <div className="px-6 pt-5">
-        <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Notificações</h1>
+        {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
+            A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
         <p className="mt-[5px] text-[13.5px] text-suave">
           Menções em notas e tarefas atribuídas a você.
         </p>

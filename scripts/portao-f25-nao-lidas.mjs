@@ -389,9 +389,27 @@ else
 const fonteSidebar = readFileSync(resolve(raiz, "lib/dados/sidebar.ts"), "utf8")
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/\/\/.*$/gm, "");
-if (/contarNaoLidas\(\)/.test(fonteSidebar) && !/lerConversas/.test(fonteSidebar))
+// M6/R18 — RÉGUA ATUALIZADA, com a proteção recuperada logo abaixo. A régua antiga casava o
+// literal `contarNaoLidas()`, e o M6 passou a chamar `contarNaoLidas(undefined, escopo)` porque o
+// contador que aponta para /conversas passou a respeitar o escopo de departamento. Manter o
+// literal reprovaria código correto — e portão que grita sem motivo treina a operação a
+// ignorá-lo (MÉTODO §26). O que a asserção SEMPRE protegeu, e continua protegendo, é a segunda
+// metade: a barra lateral não voltar a passar pela leitura inteira do inbox.
+if (/contarNaoLidas\(/.test(fonteSidebar) && !/lerConversas/.test(fonteSidebar))
   ok("(8) lerContadoresSidebar usa contarNaoLidas e não chama mais lerConversas (fora de comentário)");
 else nok("(8) a barra lateral ainda passa por lerConversas");
+
+// ── 7-bis · INVARIANTE NOVO, que recupera o que a régua afrouxada deixou de cobrir ──────────
+// Afrouxar `contarNaoLidas()` para `contarNaoLidas(` remove um alarme: passa a aceitar a chamada
+// SEM o escopo. E a chamada sem escopo é um defeito de verdade, não hipotético — o contador da
+// barra lateral aponta para /conversas, que é a tela ESCOPADA (ARB-R17-11). Sem o escopo, o número
+// da barra conta o inbox inteiro e a lista mostra um recorte: divergem em silêncio, que é
+// exatamente o que o F25 existe para impedir ("um número diferente do badge da lista seria pior
+// que o custo da consulta"). Atualizar a régua sem isto seria remover a proteção junto com o
+// alarme (ANTIPADRÕES: "o teste quebrou porque a definição mudou").
+if (/contarNaoLidas\(\s*undefined\s*,\s*escopo\s*\)/.test(fonteSidebar))
+  ok("(8-bis) o contador da barra lateral recebe o ESCOPO — bate com a tela para a qual aponta");
+else nok("(8-bis) contarNaoLidas sem escopo: a barra lateral conta o inbox inteiro e a lista mostra um recorte");
 
 // ── 8 · veredito ────────────────────────────────────────────────────────────────────────────
 console.log(`  MEDIDA antes×depois (cliente falso, mesmo cenário):`);

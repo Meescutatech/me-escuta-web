@@ -140,7 +140,9 @@ export function PainelClara(props: Props) {
       {/* ===== cabeçalho-disjuntor: o estado vivo da Clara ===== */}
       <div className="flex items-start justify-between gap-6">
         <div className="min-w-0">
-          <h1 className="text-[19px] font-semibold text-tinta">Clara</h1>
+          {/* M6: `h2` — o nome da tela vem do header; o que fica aqui é a identidade do agente
+              ao lado do estado vivo dele, que é do painel. */}
+          <h2 className="text-[19px] font-semibold text-tinta">Clara</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-suave">
             Agente de pré-venda no WhatsApp: responde sozinha, preenche a ficha do lead e passa o
             bastão pro time nos pontos certos.

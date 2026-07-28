@@ -122,6 +122,7 @@ export function Inbox({
   tiposTarefa,
   templates,
   etapas,
+  departamentoAtivo,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -143,6 +144,12 @@ export function Inbox({
   /** Templates ativos pro menu / do composer (SPEC-TEMPLATES §6). */
   templates: TemplateMensagem[];
   etapas: EtapaFunil[];
+  /**
+   * M6 · O departamento ativo, só para o ESTADO VAZIO ter nome e caminho de saída (C10). A lista
+   * em si já chega escopada pelo servidor — este prop não filtra nada, e não pode passar a filtrar:
+   * o dia em que ele decidir o que aparece, o escopo virou filtro de cliente.
+   */
+  departamentoAtivo?: { chave: string; rotulo: string } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -540,52 +547,25 @@ export function Inbox({
     ...(nomeAtendente ? { atendente: nomeAtendente } : {}),
   };
 
-  return (
-    <div className="flex h-screen bg-board">
-      {/* ═══════════ ZONA 1 · LISTA ═══════════ */}
-      <aside className="flex w-[272px] shrink-0 flex-col border-r border-linha bg-branco">
-        <div className="px-4 pb-2.5 pt-3.5">
-          <h1 className="mb-2.5 text-[15px] font-[650] leading-none text-tinta">Conversas</h1>
-          <label className="flex items-center gap-2 rounded-lg border border-linha bg-board px-2.5 py-1.5 focus-within:border-linha-forte">
-            <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-[14px] w-[14px] shrink-0 stroke-mute" fill="none">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-3.5-3.5" />
-            </svg>
-            <input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar conversa, telefone…"
-              className="w-full bg-transparent text-[0.82rem] text-tinta outline-none placeholder:text-mute"
-            />
-          </label>
-        </div>
-        <div className="flex gap-3 px-4 pb-1.5 pt-2.5">
-          {([
-            ["todas", `Todas · ${rotuloContagem("todas")}`],
-            ["clara", `Clara · ${rotuloContagem("clara")}`],
-            ["humano", `Humano · ${rotuloContagem("humano")}`],
-            ["nao_lidas", `Não lidas · ${rotuloContagem("nao_lidas")}`],
-          ] as [Aba, string][]).map(([k, rot]) => (
-            <button
-              key={k}
-              onClick={() => setAba(k)}
-              className={cn(
-                "border-b-[1.5px] pb-1.5 text-[0.8rem] transition-colors focus-visible:outline-none",
-                aba === k ? "border-navy font-semibold text-navy" : "border-transparent text-mute hover:text-tinta",
-              )}
-            >
-              {rot}
-            </button>
-          ))}
-        </div>
+  // A separação é por `area` NULA, o carimbo de roteamento congelado que a leitura já traz. NÃO é
+  // recorte de cliente sobre um resultado global: o escopo já entrou como predicado na consulta
+  // (`clausulaEscopo`), e o que chega aqui é só o que o departamento ativo cobre. O que esta linha
+  // faz é dizer QUAL PARTE do que chegou ainda não tem classificação.
+  //
+  // LIMITE, e é ARB-R18-03: o rótulo de departamento NÃO entra na linha da conversa nesta rodada.
+  // Quem entra na linha é o chip de NÚMERO, do M7. Duas marcas competindo por atenção, uma delas
+  // constante em 85% dos casos (73 de 86 conversas em `comercial`), é a coluna de valor único que
+  // o próprio inbox já manda esconder.
+  const comDepartamento = conversasVisiveis.filter((c) => c.area != null);
+  const semDepartamento = conversasVisiveis.filter((c) => c.area == null);
 
-        <div className="flex-1 overflow-y-auto px-2 pb-4 pt-0.5">
-          {conversasVisiveis.length === 0 && (
-            <p className="px-3 pt-6 text-center text-[0.8rem] text-mute">
-              {conversas.length === 0 ? "Nenhuma conversa ainda." : "Nenhuma conversa aqui."}
-            </p>
-          )}
-          {conversasVisiveis.map((c) => {
+
+  /**
+   * Uma linha da lista. Virou função porque a lista passou a ter DUAS seções — as conversas
+   * classificadas e a faixa "Sem departamento" (D6-g). Duplicar 50 linhas de JSX para pintar a
+   * mesma linha em dois lugares é exatamente como as duas versões divergem três rodadas depois.
+   */
+  function linhaDaConversa(c: ConversaResumo) {
             const ativa = c.id === selecionadaId;
             const ia = c.mode === "IA";
             const ruim = nomeRuim(c.nome);
@@ -639,7 +619,91 @@ export function Inbox({
                 ) : null}
               </button>
             );
-          })}
+  }
+
+  return (
+    <div className="flex h-[calc(100vh-var(--altura-topo))] bg-board">
+      {/* ═══════════ ZONA 1 · LISTA ═══════════ */}
+      <aside className="flex w-[272px] shrink-0 flex-col border-r border-linha bg-branco">
+        <div className="px-4 pb-2.5 pt-3.5">
+          {/* M6: vira `h2` e FICA. Não é título de página — é o cabeçalho da coluna de 272px
+              (`<aside className="flex w-[272px] ...">`). Um critério que a apagasse quebraria a
+              coluna do inbox (SPEC-M6 §5.4, fronteira 2). */}
+          <h2 className="mb-2.5 text-[15px] font-[650] leading-none text-tinta">Conversas</h2>
+          <label className="flex items-center gap-2 rounded-lg border border-linha bg-board px-2.5 py-1.5 focus-within:border-linha-forte">
+            <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-[14px] w-[14px] shrink-0 stroke-mute" fill="none">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar conversa, telefone…"
+              className="w-full bg-transparent text-[0.82rem] text-tinta outline-none placeholder:text-mute"
+            />
+          </label>
+        </div>
+        <div className="flex gap-3 px-4 pb-1.5 pt-2.5">
+          {([
+            ["todas", `Todas · ${rotuloContagem("todas")}`],
+            ["clara", `Clara · ${rotuloContagem("clara")}`],
+            ["humano", `Humano · ${rotuloContagem("humano")}`],
+            ["nao_lidas", `Não lidas · ${rotuloContagem("nao_lidas")}`],
+          ] as [Aba, string][]).map(([k, rot]) => (
+            <button
+              key={k}
+              onClick={() => setAba(k)}
+              className={cn(
+                "border-b-[1.5px] pb-1.5 text-[0.8rem] transition-colors focus-visible:outline-none",
+                aba === k ? "border-navy font-semibold text-navy" : "border-transparent text-mute hover:text-tinta",
+              )}
+            >
+              {rot}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-2 pb-4 pt-0.5">
+          {conversasVisiveis.length === 0 && (
+            /*
+              C10 · DEPARTAMENTO VAZIO MOSTRA TEXTO, NUNCA TELA BRANCA — e o texto vem com o
+              CAMINHO DE SAÍDA. Medido: `pos_venda` nasce com 0 conversas, 0 números e 1 agente
+              desligado. Quem trocar para lá no dia 1 vê o app inteiro vazio, e sem uma frase que
+              explique isso a pessoa lê como defeito do seletor novo.
+              É a TERCEIRA vez nesta rodada que uma superfície nova nasceria sobre dado vazio (o
+              sino, a tela de agentes e agora este) — por isso virou regra: superfície nova sobre
+              dado vazio nasce com o texto que explica o vazio.
+            */
+            <p className="px-3 pt-6 text-center text-[0.8rem] text-mute">
+              {conversas.length > 0
+                ? "Nenhuma conversa aqui."
+                : departamentoAtivo
+                  ? `${departamentoAtivo.rotulo} ainda não tem conversa nem número. Configure um número para este departamento em Configurações → Números de WhatsApp.`
+                  : "Nenhuma conversa ainda."}
+            </p>
+          )}
+          {comDepartamento.map(linhaDaConversa)}
+
+          {/*
+            FAIXA "SEM DEPARTAMENTO" (D6-g) — e ela é ESCOPO, não enfeite.
+            Sem a opção "Todos" (morta pelo D6-f), escopo estrito sobre a cobertura de hoje
+            esconderia a maior parte do acervo: 608 de 680 leads não têm NENHUM dos dois caminhos
+            de herança de departamento (cobertura medida: 10,6%). O que não tem classificação
+            aparece aqui, nomeado, DENTRO do escopo ativo — incomoda em vez de desaparecer. A frase
+            do Estaleiro, que entra com crédito porque é melhor que a minha: *sem essa faixa,
+            escopo é indistinguível de perda de dado.*
+            APARECE QUANDO TEM ITEM, SOME QUANDO NÃO TEM — regra da casa: zero é silêncio, não "0"
+            (`app/(app)/configuracoes/layout.tsx:14-17`).
+          */}
+          {semDepartamento.length > 0 && (
+            <div className="flex items-center gap-2 px-3 pb-1 pt-3">
+              <span className="text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-mute">
+                Sem departamento
+              </span>
+              <span aria-hidden className="h-px flex-1 bg-linha" />
+            </div>
+          )}
+          {semDepartamento.map(linhaDaConversa)}
 
           {/* F22 · o corte é DECLARADO, no molde do aviso do funil. Enquanto a busca for local,
               isso precisa estar na cara: ela só encontra o que já veio. */}
@@ -669,9 +733,11 @@ export function Inbox({
       <section className="flex min-w-0 flex-1 flex-col bg-board">
         {!selecionada ? (
           <div className="m-auto text-center text-sm text-mute">
-            {conversas.length === 0
-              ? "Nenhuma conversa ainda — a primeira mensagem recebida no WhatsApp abre aqui."
-              : "Selecione uma conversa."}
+            {conversas.length > 0
+              ? "Selecione uma conversa."
+              : departamentoAtivo
+                ? `${departamentoAtivo.rotulo} ainda não tem conversa. A primeira mensagem recebida num número deste departamento abre aqui — e o número se configura em Configurações → Números de WhatsApp.`
+                : "Nenhuma conversa ainda — a primeira mensagem recebida no WhatsApp abre aqui."}
           </div>
         ) : (
           <>
