@@ -44,7 +44,7 @@ const PASTAS_DA_TRILHA = [
   //   arquivos varridos logo após o move .... 35   (sem ele)
   //   `node --test tests/portao-web-b.test.ts` ..... 29 pass, 0 fail   ← o portão cego, verde
   // O portão que ficou cego é o CAMINHO_ANEXO, que guarda o contrato `<uid>/` de que a RLS do
-  // bucket depende. Registrado em E-110.
+  // bucket depende. Registrado em E-192.
   "app/(app)/suporte",
   "components/configuracoes",
   "components/suporte",
@@ -90,7 +90,7 @@ test("a varredura encontra os arquivos da trilha — portão sobre lista vazia p
 });
 
 /*
- * INVARIANTE QUE RECUPERA A PROTEÇÃO (E-110, e MÉTODO §5: trocar a régua remove um alarme).
+ * INVARIANTE QUE RECUPERA A PROTEÇÃO (E-192, e MÉTODO §5: trocar a régua remove um alarme).
  *
  * Acrescentar `app/(app)/suporte` à lista acima conserta ESTE move. Não conserta o PRÓXIMO: a
  * varredura é por PASTA, e um arquivo que muda de pasta sai do conjunto em silêncio, porque
