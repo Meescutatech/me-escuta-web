@@ -4,6 +4,13 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ConversaResumo, Mensagem, ModoConversa, SugestaoMensagem } from "@/lib/dados/conversas";
 import {
+  ROTULO_NAO_VISIVEL,
+  chipDoNumero,
+  rotuloSelo,
+  vereditoEnvio,
+  type SeloChip,
+} from "./regras/numero.ts";
+import {
   assumirConversa,
   carregarMaisConversas,
   devolverConversa,
@@ -111,6 +118,7 @@ export function Inbox({
   total,
   corte,
   proximoCursor,
+  origemLegivel,
   selecionadaId,
   mensagens,
   sugestoes,
@@ -130,6 +138,13 @@ export function Inbox({
   corte: boolean;
   /** F22 · cursor keyset da próxima página; `null` quando acabou. */
   proximoCursor: string | null;
+  /**
+   * M7 · `false` = `core.v_conversa` ainda não tem as colunas do chip (a `0094` não subiu neste
+   * ambiente). O chip então **não é desenhado**, e isso é deliberado: sem `numero_apelido` todas
+   * as conversas de número cadastrado sairiam como "número desconhecido", que é falso. Marca
+   * ausente é honesta; marca errada não é.
+   */
+  origemLegivel: boolean;
   selecionadaId: string | null;
   mensagens: Mensagem[];
   sugestoes: SugestaoMensagem[];
@@ -629,6 +644,10 @@ export function Inbox({
                   <div className={cn("mt-0.5 truncate text-[0.78rem]", c.previa ? "text-suave" : "text-mute")}>
                     {prev}
                   </div>
+                  {/* M7 · o chip de número: POR ONDE esta conversa entrou. Medido: 12 das 13
+                      conversas visíveis hoje são do mesmo canal, e é justamente por serem quase
+                      todas do mesmo que ninguém percebe qual. */}
+                  {origemLegivel ? <ChipNumeroLinha c={c} /> : null}
                 </div>
                 {(c.nao_lidas_qtd ?? 0) > 0 ? (
                   <span className="mt-2.5 grid h-[17px] min-w-[17px] shrink-0 place-items-center self-start rounded-full bg-laranja px-1 text-[0.66rem] font-semibold leading-none text-branco">
@@ -684,6 +703,9 @@ export function Inbox({
                   {selecionada.etapa_nome && ` · ${selecionada.etapa_nome}`}
                   {` · ${modoClara ? "Clara" : "Sara"}`}
                 </div>
+                {/* M7 · no cabeçalho o número COMPLETO cabe: há espaço, e a pessoa já decidiu
+                    olhar esta conversa. Na lista ele seria ruído — e é a coluna sensível. */}
+                {origemLegivel ? <ChipNumeroCabecalho c={selecionada} /> : null}
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
                 <span
@@ -883,6 +905,19 @@ export function Inbox({
 
             {/* composer sensível ao modo — texto + anexo + gravador (rodada 6, composer.tsx) */}
             <Composer
+              origem={
+                origemLegivel
+                  ? vereditoEnvio({
+                      phone_number_id: selecionada.phone_number_id ?? null,
+                      numero_apelido: selecionada.numero_apelido ?? null,
+                      numero_e164: selecionada.numero_e164 ?? null,
+                      finalidade: selecionada.finalidade ?? null,
+                      // a view não expõe `ativo` do canal; `visivel_inbox` já depende dele, e a
+                      // conversa está NA LISTA, então o canal está ligado. "não sei" honesto.
+                      canal_ativo: null,
+                    })
+                  : null
+              }
               modoClara={modoClara}
               pending={pending}
               leadId={selecionada.lead_id ?? null}
@@ -1091,5 +1126,91 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
         <span className="text-[0.76rem] italic text-mute">visualização chega com a pipeline de mídia</span>
       )}
     </span>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// M7 · O CHIP DE NÚMERO (SPEC-M7 §5.1)
+//
+// Responde "por onde ela falou comigo?", que a tela hoje não responde. A regra pura vive em
+// `regras/numero.ts` e é testada lá; aqui é só desenho.
+//
+// DUAS COISAS QUE NÃO PODEM SER "SIMPLIFICADAS":
+//
+//  1. O selo TESTE **não se esconde por valor único**, e o chip é por LINHA justamente para que
+//     isso seja impossível de burlar — ele não tem como consultar as outras linhas. Hoje 100% das
+//     conversas do inbox são de número de teste e NADA na tela diz isso; a regra genérica da casa
+//     ("coluna de valor único some") apagaria exatamente o alarme. Valor único aqui não é
+//     redundância: é o achado (ARB-R18-05).
+//
+//  2. O rótulo NUNCA é o `phone_number_id`. Em canal não oficial ele é `lite:<nome-da-fono>`, e
+//     `core.conversa` é legível por todo `authenticated` — usar o id como rótulo contornaria a RLS
+//     que existe para esconder o nome dela (CA-9).
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+function Selos({ selos }: { selos: SeloChip[] }) {
+  return (
+    <>
+      {selos.map((s) => (
+        <span
+          key={s}
+          className="rounded-[3px] bg-amarelo/15 px-1 py-px text-[0.6rem] font-bold uppercase leading-[1.25] tracking-[0.04em] text-amarelo"
+        >
+          {rotuloSelo(s)}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function ChipNumeroLinha({ c }: { c: ConversaResumo }) {
+  const chip = chipDoNumero({
+    phone_number_id: c.phone_number_id ?? null,
+    numero_apelido: c.numero_apelido ?? null,
+    numero_e164: c.numero_e164 ?? null,
+    finalidade: c.finalidade ?? null,
+  });
+  return (
+    <div className="mt-1 flex items-center gap-1 overflow-hidden" title={chip.titulo}>
+      <span
+        className={cn(
+          "truncate rounded-[3px] px-1 py-px text-[0.62rem] leading-[1.3]",
+          chip.atencao ? "bg-amarelo/10 text-amarelo" : "bg-hover text-mute",
+        )}
+      >
+        {chip.rotulo}
+      </span>
+      <Selos selos={chip.selos} />
+    </div>
+  );
+}
+
+function ChipNumeroCabecalho({ c }: { c: ConversaResumo }) {
+  const chip = chipDoNumero({
+    phone_number_id: c.phone_number_id ?? null,
+    numero_apelido: c.numero_apelido ?? null,
+    numero_e164: c.numero_e164 ?? null,
+    finalidade: c.finalidade ?? null,
+  });
+  // O E.164 aparece AQUI e não na lista. Quando ele for nulo por RLS, o texto DIZ isso — nunca
+  // fica em branco e nunca é inventado. Mesmo padrão honesto de TEXTO_CREDENCIAL_DESCONHECIDA.
+  const numero =
+    chip.caso === "cadastrado" || chip.caso === "cadastrado_sem_identidade"
+      ? c.numero_e164 ?? ROTULO_NAO_VISIVEL
+      : null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      <span className="text-[0.7rem] text-mute">recebida por</span>
+      <span
+        className={cn(
+          "rounded-[3px] px-1.5 py-px text-[0.7rem] font-medium",
+          chip.atencao ? "bg-amarelo/10 text-amarelo" : "bg-hover text-suave",
+        )}
+      >
+        {chip.rotulo}
+      </span>
+      {numero ? <span className="font-mono text-[0.7rem] text-mute">{numero}</span> : null}
+      <Selos selos={chip.selos} />
+    </div>
   );
 }

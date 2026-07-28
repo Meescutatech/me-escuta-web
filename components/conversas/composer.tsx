@@ -35,6 +35,7 @@ import { criarAnotacaoLead, criarTarefaLead } from "@/app/(app)/lead/actions";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { iniciaisDe } from "@/lib/dados/tarefa-calculos";
 import { cn } from "@/lib/utils";
+import type { VereditoEnvio } from "./regras/numero.ts";
 
 /*
  * Composer do /conversas.
@@ -85,9 +86,21 @@ export function Composer({
   onDigitar,
   aoPublicar,
   avisar,
+  origem,
 }: {
   modoClara: boolean;
   pending: boolean;
+  /**
+   * M7 · POR QUAL NÚMERO esta resposta sai, e se ela pode sair (SPEC-M7 §5.2).
+   *
+   * `null` = a view ainda não expõe as colunas do chip; então nada é dito e nada é bloqueado —
+   * "não sei" não vira aviso nem trava. Ver `regras/numero.ts`.
+   *
+   * Não há SELETOR, e a ausência é deliberada: a resposta sai SEMPRE pelo mesmo número que
+   * recebeu. Enquanto isso for a regra, a classe inteira de "respondeu pelo chip errado" não
+   * tem como acontecer.
+   */
+  origem: VereditoEnvio | null;
   /** null = conversa ainda sem lead: nota e tarefa não têm onde nascer. */
   leadId: string | null;
   conversaId: string | null;
@@ -649,6 +662,42 @@ export function Composer({
             </div>
           )}
 
+          {/* ═════ M7 · O AVISO ANTES DO CLIQUE (SPEC-M7 §5.2, CA-13) ═════
+              Ele é VISÍVEL, não tooltip: um aviso que só aparece ao passar o mouse não existe
+              para quem está digitando. E a distinção entre AVISAR e BLOQUEAR é o ponto do
+              critério, que tem de reprovar nos DOIS sentidos:
+               · teste  -> avisa e DEIXA enviar. Ensaio por número de teste é legítimo — foi assim
+                 que as 12 mensagens de 27/07 chegaram ao telefone do Diogo. Bloquear quebraria o
+                 ensaio. O que não é legítimo é descobrir DEPOIS.
+               · não cadastrado / desligado -> DESABILITA, com o motivo nomeado. */}
+          {!interno && origem && (origem.motivo || origem.aviso || origem.respondePor) ? (
+            <div
+              className={cn(
+                "flex items-start gap-2 border-b px-3.5 py-[7px] text-[12px]",
+                origem.motivo
+                  ? "border-vermelho-bd bg-vermelho-bg text-vermelho"
+                  : origem.aviso
+                    ? "border-nota-linha bg-nota-faixa text-amarelo"
+                    : "border-linha bg-board text-mute",
+              )}
+            >
+              {origem.motivo ? (
+                <span className="font-[650]">Não dá para responder:</span>
+              ) : origem.aviso ? (
+                <span className="font-[650]">Atenção:</span>
+              ) : null}
+              <span className="min-w-0 flex-1">
+                {origem.motivo ??
+                  origem.aviso ??
+                  (origem.respondePor ? `responde por: ${origem.respondePor}` : "")}
+              </span>
+              {/* o número que responde fica visível MESMO quando há aviso — é a informação que
+                  o §5.2 exige do composer, e ela não some por causa do alarme. */}
+              {(origem.motivo || origem.aviso) && origem.respondePor ? (
+                <span className="shrink-0 opacity-80">· responde por: {origem.respondePor}</span>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex items-end gap-1.5 py-2 pl-2 pr-2">
             {!interno && (
               <>
@@ -702,8 +751,17 @@ export function Composer({
             {!interno && (
               <button
                 onClick={() => void enviarAoCliente()}
-                disabled={pending || subindo || gravando || (!anexo && !rascunho.trim())}
-                title={subindo ? "Enviando anexo…" : "Enviar"}
+                disabled={
+                  pending || subindo || gravando || (!anexo && !rascunho.trim()) ||
+                  // M7 · o sender já devolveria `falha_permanente` (sender.ts:313-322) e a
+                  // mensagem não volta sozinha. Falha permanente DEPOIS do clique é pior que
+                  // botão desabilitado ANTES dele.
+                  (!interno && origem !== null && !origem.pode)
+                }
+                title={
+                  origem && !origem.pode ? origem.motivo ?? "envio indisponível"
+                  : subindo ? "Enviando anexo…" : "Enviar"
+                }
                 className={cn(
                   "grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-navy text-branco transition-colors hover:bg-navy-esc focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/40 disabled:opacity-50",
                   subindo && "animate-pulse",

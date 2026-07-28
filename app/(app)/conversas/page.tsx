@@ -62,6 +62,7 @@ export default async function ConversasPage({
       total={pagina.total}
       corte={pagina.corte}
       proximoCursor={pagina.proximoCursor}
+      origemLegivel={pagina.origemLegivel}
       selecionadaId={selecionadaId}
       mensagens={mensagens}
       sugestoes={sugestoes}
