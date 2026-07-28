@@ -78,9 +78,24 @@ function mapear(linha: Record<string, unknown>, temCorte: boolean, temM7: boolea
   };
 }
 
-export async function lerCanais(): Promise<CanaisLidos> {
+/**
+ * O parâmetro `cliente` existe pela MESMA razão que o de `lerConversas`, e a razão está escrita lá
+ * — *"por exigência de spec, não por conveniência de teste: os portões precisam injetar um cliente
+ * falso… um portão que testa uma cópia da consulta não testa o produto"*.
+ *
+ * Aqui ele importa mais que na média, porque esta função tem **três degraus de coluna** e o de
+ * BAIXO é o que roda **hoje** em produção. Sem ponto de injeção, o único caminho exercitável é o
+ * de cima — o que só existe depois da `0094`.
+ *
+ * Forma **idêntica** à de `lerConversas`, por condição do GO: mesmo objeto de opções, mesmo
+ * `type Supabase`, mesmo `cliente ?? criarClienteServidor()`. Nenhuma variante.
+ */
+type Supabase = ReturnType<typeof criarClienteServidor>;
+
+export async function lerCanais(opcoes: { cliente?: Supabase } = {}): Promise<CanaisLidos> {
+  const { cliente } = opcoes;
   try {
-    const supabase = criarClienteServidor();
+    const supabase = cliente ?? criarClienteServidor();
     const consulta = (colunas: string) =>
       supabase.schema("core").from("v_canal_whatsapp").select(colunas).limit(100);
 

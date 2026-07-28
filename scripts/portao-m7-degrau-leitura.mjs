@@ -37,6 +37,7 @@ import { criarClienteFalso } from "./cliente-falso.mjs";
 // e o ESM resolve todo o grafo estático antes de avaliar qualquer coisa. Import estático daqui
 // falha com ERR_MODULE_NOT_FOUND em `@/lib` — medido.
 const { lerConversas } = await import("../lib/dados/conversas.ts");
+const { lerCanais } = await import("../components/configuracoes/dados/canais.ts");
 
 const COLUNAS_M7 = ["numero_apelido", "numero_e164", "finalidade"];
 
@@ -148,6 +149,78 @@ exigir(
 );
 console.log(`controle negativo OK — sem degrau a lista vem vazia (${semDegrau.conversas.length})`);
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// PARTE 2 · dados/canais.ts — TRÊS degraus, e o de baixo é o que roda HOJE
+//
+// Mesmo raciocínio da parte 1, com um degrau a mais. Aqui a queda tem DOIS eixos independentes:
+// `inbox_desde` (que já existia antes do M7) e as duas colunas novas. Um degrau que caia demais
+// custa a tela de canais inteira; um que caia de menos devolve lista vazia.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+const CANAIS = [
+  { canal_id: "627327023793464", nome: "producao", provedor: "waba", ativo: true,
+    numero: null, waba_id: null, area_efetiva: "comercial", pareado_em: null,
+    consentimento_em: null, consentimento_titular: null, consentimento_texto_versao: null,
+    risco_ban_aceito: false, desativado_em: null, criado_em: "2026-07-20T20:16:55Z",
+    inbox_desde: "2026-07-20T00:30:17Z", finalidade: "teste", consentimento_por: null },
+  { canal_id: "608866985643828", nome: "teste_meta", provedor: "waba", ativo: true,
+    numero: "+15556418435", waba_id: "1063927472233881", area_efetiva: "comercial", pareado_em: null,
+    consentimento_em: null, consentimento_titular: null, consentimento_texto_versao: null,
+    risco_ban_aceito: false, desativado_em: null, criado_em: "2026-07-20T20:16:55Z",
+    inbox_desde: "2026-07-20T20:25:00Z", finalidade: "teste", consentimento_por: null },
+];
+
+/** @param {"m7"|"corte"|"base"|"nenhum"} ate  o degrau mais alto que o "banco" aceita. */
+function responderCanais(ate) {
+  const ordem = { m7: 3, corte: 2, base: 1, nenhum: 0 };
+  return (q) => {
+    if (q.tabela !== "v_canal_whatsapp") return { data: [] };
+    const cols = q.colunas ?? "";
+    const nivel = cols.includes("finalidade") ? 3 : cols.includes("inbox_desde") ? 2 : 1;
+    if (nivel > ordem[ate]) {
+      return { data: null, error: { message: `column v_canal_whatsapp.x does not exist` } };
+    }
+    const pedidas = cols.split(",").map((c) => c.trim());
+    return { data: CANAIS.map((l) => Object.fromEntries(pedidas.map((c) => [c, l[c] ?? null]))) };
+  };
+}
+
+const cM7 = await lerCanais({ cliente: criarClienteFalso(responderCanais("m7")) });
+if (cM7.canais.length === 0) {
+  console.error("PORTÃO RECUSA POR VACUIDADE: o fixture de canais não devolveu linha nenhuma.");
+  process.exit(2);
+}
+exigir(cM7.indisponivel === false && cM7.corteLegivel && cM7.m7Legivel, "canais degrau M7: os três sinais deviam estar ligados");
+if (cM7.canais.length === CANAIS.length) {
+  exigir(cM7.canais[0].finalidade === "teste", "canais degrau M7: finalidade não chegou");
+  exigir(cM7.canais[0].inbox_desde !== null, "canais degrau M7: inbox_desde não chegou");
+}
+
+// degrau do meio: a view tem `inbox_desde` mas não as colunas do M7 — É O MUNDO DE HOJE.
+const cHoje = await lerCanais({ cliente: criarClienteFalso(responderCanais("corte")) });
+exigir(cHoje.canais.length === CANAIS.length,
+  `CANAIS · DEGRAU DE HOJE PERDEU LINHA: esperava ${CANAIS.length}, veio ${cHoje.canais.length}. A tela de canais ficaria vazia`);
+exigir(cHoje.indisponivel === false, "canais degrau de hoje: indisponivel devia ser false — a tela não pode dizer que a view sumiu");
+exigir(cHoje.m7Legivel === false, "canais degrau de hoje: m7Legivel devia ser false");
+exigir(cHoje.corteLegivel === true, "canais degrau de hoje: corteLegivel devia continuar true");
+if (cHoje.canais.length > 0) {
+  exigir(cHoje.canais[0].finalidade === null, "canais degrau de hoje: finalidade devia vir NULA, e a tela diz 'Não declarada'");
+  exigir(cHoje.canais[0].inbox_desde !== null, "canais degrau de hoje: inbox_desde devia continuar chegando");
+}
+
+// degrau de baixo: nem `inbox_desde`. Continua tendo de listar.
+const cBase = await lerCanais({ cliente: criarClienteFalso(responderCanais("base")) });
+exigir(cBase.canais.length === CANAIS.length, `CANAIS · DEGRAU BASE PERDEU LINHA: veio ${cBase.canais.length}`);
+exigir(cBase.corteLegivel === false, "canais degrau base: corteLegivel devia ser false — a ativação passa a exigir o corte sempre");
+
+// CONTROLE NEGATIVO: nenhum degrau responde -> `indisponivel`, e a tela DIZ isso em vez de fingir
+// lista vazia. Sem esta parte, "a lista veio cheia" não prova que foram os degraus que a salvaram.
+const cNada = await lerCanais({ cliente: criarClienteFalso(responderCanais("nenhum")) });
+exigir(cNada.canais.length === 0, "canais controle negativo: com tudo recusado a lista devia vir vazia");
+exigir(cNada.indisponivel === true,
+  "canais controle negativo: `indisponivel` devia ser TRUE. É o que faz a tela dizer 'indisponível' em vez de fingir 'não há canais'");
+console.log(`controle negativo de canais OK — tudo recusado -> indisponivel=${cNada.indisponivel}`);
+
 // ─────────────────────── veredito ───────────────────────
 if (falhas.length > 0) {
   console.error(`\nPORTÃO REPROVA — ${falhas.length} asserção(ões):`);
@@ -155,6 +228,9 @@ if (falhas.length > 0) {
   process.exit(1);
 }
 console.log(`\nPORTÃO APROVA — degrau alto e degrau baixo medidos, controle negativo disparou.`);
-console.log(`  alto:  ${alto.conversas.length} conversas · origemLegivel=${alto.origemLegivel}`);
-console.log(`  baixo: ${baixo.conversas.length} conversas · origemLegivel=${baixo.origemLegivel}`);
+console.log(`  conversas · alto:  ${alto.conversas.length} · origemLegivel=${alto.origemLegivel}`);
+console.log(`  conversas · baixo: ${baixo.conversas.length} · origemLegivel=${baixo.origemLegivel}`);
+console.log(`  canais    · m7:    ${cM7.canais.length} · m7Legivel=${cM7.m7Legivel} corte=${cM7.corteLegivel}`);
+console.log(`  canais    · hoje:  ${cHoje.canais.length} · m7Legivel=${cHoje.m7Legivel} corte=${cHoje.corteLegivel}`);
+console.log(`  canais    · base:  ${cBase.canais.length} · m7Legivel=${cBase.m7Legivel} corte=${cBase.corteLegivel}`);
 process.exit(0);
