@@ -73,6 +73,20 @@ export interface ConversaResumo {
   previa_saida?: boolean; // última msg foi de saída (Você/Clara)
   nao_lida?: boolean; // proxy: última msg foi do cliente (entrada), sem resposta
   nao_lidas_qtd?: number; // proxy: qtde de mensagens de entrada após a última saída (RF-30/31)
+  /**
+   * M7 — POR QUAL NÚMERO esta conversa entrou. Os quatro campos vêm juntos ou não vêm (ver
+   * `origemLegivel`), e cada ausência tem significado próprio: `phone_number_id` nulo é conversa
+   * sem contraparte; `numero_apelido` nulo é número não cadastrado OU não legível pela RLS;
+   * `numero_e164` nulo é isso mais "identidade nunca registrada"; `finalidade` nula é "não
+   * declarada", e NUNCA "produção".
+   *
+   * O rótulo do chip NUNCA é o `phone_number_id` — em canal não oficial ele é `lite:<nome-da-fono>`
+   * e `core.conversa` é legível por todo `authenticated`. Ver `components/conversas/regras/numero.ts`.
+   */
+  phone_number_id?: string | null;
+  numero_apelido?: string | null;
+  numero_e164?: string | null;
+  finalidade?: "teste" | "producao" | null;
 }
 
 /**
@@ -90,6 +104,13 @@ export interface PaginaConversas {
   corte: boolean;
   /** Cursor da próxima página; `null` quando acabou de verdade. */
   proximoCursor: string | null;
+  /**
+   * M7. `false` = `core.v_conversa` ainda não expõe as colunas do chip (a `0094` não está aplicada
+   * neste ambiente). A tela então **não desenha chip nenhum** — e isso é deliberado: sem
+   * `numero_apelido`, as 69 conversas de número cadastrado sairiam todas como "número
+   * desconhecido", que é falso. Marca ausente é honesta; marca errada não é.
+   */
+  origemLegivel: boolean;
 }
 
 export interface Mensagem {
@@ -261,7 +282,12 @@ const PAGINA_VAZIA: PaginaConversas = {
   total: null,
   corte: false,
   proximoCursor: null,
+  origemLegivel: false,
 };
+
+/** M7 · as colunas do chip. `phone_number_id` já existe hoje; as outras três vêm da `0094`. */
+const COLUNAS_LISTA_BASE = "id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em";
+const COLUNAS_LISTA_M7 = `${COLUNAS_LISTA_BASE},phone_number_id,numero_apelido,numero_e164,finalidade`;
 
 export async function lerConversas(
   opcoes: {
@@ -301,18 +327,30 @@ export async function lerConversas(
     const cursor = decodificar(cursorCru);
     const totalPromise = contarConversasVisiveis(supabase);
 
-    const base = supabase
-      .schema("core")
-      .from("v_conversa")
-      .select("id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em")
-      .eq("visivel_inbox", true);
-    const comCursor = cursor ? base.or(filtroKeyset(cursor)) : base;
-    const { data, error } = await comCursor
-      .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
-      .order("id", { ascending: true })
-      .limit(limite);
+    // M7 · o chip de número. `phone_number_id` JÁ existe em `v_conversa` hoje (medido); as outras
+    // três vêm da `0094`. A consulta é tentada com as quatro e cai para a lista antiga se a view
+    // ainda não as tiver — PostgREST recusa a consulta INTEIRA por uma coluna inexistente, e sem o
+    // degrau o inbox ficaria VAZIO num ambiente onde não há defeito nenhum.
+    //
+    // E o degrau desliga o chip por INTEIRO em vez de degradá-lo: sem `numero_apelido`, todas as
+    // 69 conversas de número cadastrado exibiriam "número desconhecido", que é FALSO. Ausência da
+    // marca é honesta; marca errada não é.
+    const montar = (colunas: string) => {
+      const b = supabase.schema("core").from("v_conversa").select(colunas).eq("visivel_inbox", true);
+      const comCursor = cursor ? b.or(filtroKeyset(cursor)) : b;
+      return comCursor
+        .order("ultima_entrada_em", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: true })
+        .limit(limite);
+    };
+    let origemLegivel = true;
+    let { data, error } = await montar(COLUNAS_LISTA_M7);
+    if (error) {
+      origemLegivel = false;
+      ({ data, error } = await montar(COLUNAS_LISTA_BASE));
+    }
     const total = await totalPromise;
-    if (error || !data || data.length === 0) return { ...PAGINA_VAZIA, total };
+    if (error || !data || data.length === 0) return { ...PAGINA_VAZIA, total, origemLegivel };
 
     const leadIds = data.map((c: any) => c.lead_id).filter(Boolean);
     const ids = data.map((c: any) => String(c.id));
@@ -388,12 +426,18 @@ export async function lerConversas(
         previa_saida: p?.saida ?? false,
         nao_lida: p ? !p.saida : false,
         nao_lidas_qtd: naoLidas.get(String(c.id)) ?? 0,
+        // M7 · vêm os quatro juntos ou nenhum. Quando `origemLegivel` é false a tela não desenha
+        // chip, então o valor aqui é irrelevante — mas fica `null`, nunca `undefined` disfarçado.
+        phone_number_id: origemLegivel ? c.phone_number_id ?? null : null,
+        numero_apelido: origemLegivel ? c.numero_apelido ?? null : null,
+        numero_e164: origemLegivel ? c.numero_e164 ?? null : null,
+        finalidade: origemLegivel ? c.finalidade ?? null : null,
       };
     });
 
     // Quantas o operador tem na mão depois desta página vs. quantas existem no filtro.
     const corte = houveCorte(jaCarregadas + conversas.length, total, limite);
-    return { conversas, total, corte, proximoCursor: proximoCursor(conversas, corte) };
+    return { conversas, total, corte, proximoCursor: proximoCursor(conversas, corte), origemLegivel };
   } catch {
     return PAGINA_VAZIA;
   }

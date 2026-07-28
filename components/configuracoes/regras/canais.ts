@@ -511,9 +511,24 @@ export function colunasVisiveis(canais: Canal[]): ColunasVisiveis {
   };
 }
 
+/**
+ * Ordem de ATENÇÃO, não de importância — e a chave nova vem ANTES de `ativo` (recomendação do
+ * Croqui, decisão minha, reversível em uma linha).
+ *
+ * `não declarada` → `teste` → `producao`. O que não alcança paciente sobe; o que está em ordem
+ * desce. É a mesma lógica da ARB-R18-05 aplicada à ordenação: um número que não pode falar com
+ * ninguém, sentado calado no fim de um inventário, é como ele é esquecido.
+ *
+ * Hoje não muda nada visível — os dois canais são `teste`. Ela existe para o dia em que houver um
+ * número de produção de verdade e os de teste passarem a se misturar com ele.
+ */
+const PESO_FINALIDADE: Record<string, number> = { producao: 2, teste: 1 };
+
 export function ordenarCanais(canais: Canal[]): Canal[] {
+  const peso = (c: Canal) => (c.finalidade ? PESO_FINALIDADE[c.finalidade] ?? 0 : 0);
   return [...canais].sort(
     (a, b) =>
+      peso(a) - peso(b) ||
       Number(b.ativo) - Number(a.ativo) ||
       a.provedor.localeCompare(b.provedor) ||
       a.nome.localeCompare(b.nome, "pt-BR"),

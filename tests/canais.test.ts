@@ -557,3 +557,33 @@ test("finalidade nula NÃO impede ativar — coluna ausente é degrade, não rec
   });
   assert.equal(semProblemas(p), true);
 });
+
+// ─────────────────── ordem de ATENÇÃO (recomendação do Croqui, ARB-R18-02) ───────────────────
+
+test("a ordem põe o que NÃO alcança paciente em cima: não declarada → teste → produção", () => {
+  const lista = ordenarCanais([
+    canal({ canal_id: "c", nome: "Real BR", finalidade: "producao", ativo: true }),
+    canal({ canal_id: "a", nome: "Sem declarar", finalidade: null, ativo: true }),
+    canal({ canal_id: "b", nome: "De teste", finalidade: "teste", ativo: true }),
+  ]);
+  assert.deepEqual(lista.map((c) => c.nome), ["Sem declarar", "De teste", "Real BR"]);
+});
+
+test("finalidade vem ANTES de ativo — um número de teste LIGADO não se esconde atrás de um de produção", () => {
+  const lista = ordenarCanais([
+    canal({ canal_id: "p", nome: "Producao", finalidade: "producao", ativo: true }),
+    canal({ canal_id: "t", nome: "Teste", finalidade: "teste", ativo: false }),
+  ]);
+  assert.equal(lista[0]!.nome, "Teste", "o desligado de teste sobe: é o que precisa de atenção");
+});
+
+test("com todos na mesma finalidade, a ordem antiga sobrevive intacta (ativo → provedor → nome)", () => {
+  // O estado de HOJE: dois canais, os dois `teste`. A chave nova não pode ter mudado nada agora —
+  // se mudou, ela não é ordenação de atenção, é rearranjo gratuito de tela em produção.
+  const lista = ordenarCanais([
+    canal({ canal_id: "b", nome: "Zulu", ativo: false, finalidade: "teste" }),
+    canal({ canal_id: "a", nome: "Alfa", ativo: true, finalidade: "teste" }),
+    canal({ canal_id: "c", nome: "Bravo", ativo: false, finalidade: "teste" }),
+  ]);
+  assert.deepEqual(lista.map((c) => c.nome), ["Alfa", "Bravo", "Zulu"]);
+});

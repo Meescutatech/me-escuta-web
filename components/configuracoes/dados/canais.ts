@@ -14,12 +14,27 @@
  */
 
 import { criarClienteServidor } from "@/lib/supabase/server";
-import { provedorValido, type Canal, type Provedor } from "../regras/canais.ts";
+import { finalidadeValida, provedorValido, type Canal, type Provedor } from "../regras/canais.ts";
 
-const COLUNAS_COM_CORTE =
-  "canal_id,nome,provedor,ativo,numero,waba_id,area_efetiva,inbox_desde,pareado_em,consentimento_em,consentimento_titular,consentimento_texto_versao,risco_ban_aceito,desativado_em,criado_em";
-const COLUNAS_SEM_CORTE =
-  "canal_id,nome,provedor,ativo,numero,waba_id,area_efetiva,pareado_em,consentimento_em,consentimento_titular,risco_ban_aceito,desativado_em,criado_em";
+/**
+ * M7 · As colunas são pedidas em DEGRAUS, do mais completo para o mais antigo, e a razão é de
+ * sequenciamento de deploy: a web pode subir ANTES da migration que acrescenta `finalidade` e
+ * `consentimento_por` à view. PostgREST recusa a consulta INTEIRA quando uma coluna não existe —
+ * sem os degraus, a tela de canais ficaria vazia num ambiente onde não há defeito nenhum, e lista
+ * vazia é indistinguível de "não há canais".
+ *
+ * O degrau NÃO substitui a migration: sem a coluna, a funcionalidade não existe. O que ele compra
+ * é que a falta apareça como "não sei", com o motivo, em vez de tela morta.
+ */
+const COLUNAS_BASE =
+  "canal_id,nome,provedor,ativo,numero,waba_id,area_efetiva,pareado_em,consentimento_em,consentimento_titular,consentimento_texto_versao,risco_ban_aceito,desativado_em,criado_em";
+
+/** Do mais completo para o mais pobre. O primeiro que responder vence. */
+const DEGRAUS: { colunas: string; corte: boolean; m7: boolean }[] = [
+  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por`, corte: true, m7: true },
+  { colunas: `${COLUNAS_BASE},inbox_desde`, corte: true, m7: false },
+  { colunas: COLUNAS_BASE, corte: false, m7: false },
+];
 
 export interface CanaisLidos {
   canais: Canal[];
@@ -27,9 +42,15 @@ export interface CanaisLidos {
   indisponivel: boolean;
   /** false = a view não expõe `inbox_desde`; a ativação passa a exigir o corte sempre. */
   corteLegivel: boolean;
+  /**
+   * M7. `false` = a view ainda não tem `finalidade` nem `consentimento_por` (a `0094` não está
+   * aplicada neste ambiente). A tela DIZ isso — senão mostra "Não declarada" em toda linha e a
+   * gestora conclui que ninguém preencheu, quando o que falta é a coluna.
+   */
+  m7Legivel: boolean;
 }
 
-function mapear(linha: Record<string, unknown>, temCorte: boolean): Canal | null {
+function mapear(linha: Record<string, unknown>, temCorte: boolean, temM7: boolean): Canal | null {
   const canalId = String(linha.canal_id ?? "").trim();
   if (!canalId) return null;
   const provedorBruto = String(linha.provedor ?? "waba");
@@ -50,6 +71,10 @@ function mapear(linha: Record<string, unknown>, temCorte: boolean): Canal | null
     desativado_em: linha.desativado_em ? String(linha.desativado_em) : null,
     criado_em: linha.criado_em ? String(linha.criado_em) : null,
     inbox_desde: temCorte && linha.inbox_desde ? String(linha.inbox_desde) : null,
+    consentimento_por: temM7 && linha.consentimento_por ? String(linha.consentimento_por) : null,
+    // `null` aqui significa "não declarada" OU "coluna ausente" — nunca "produção". Quem decide
+    // qual dos dois é o `m7Legivel`, e a tela mostra textos diferentes para cada um.
+    finalidade: temM7 && finalidadeValida(linha.finalidade) ? linha.finalidade : null,
   };
 }
 
@@ -59,20 +84,18 @@ export async function lerCanais(): Promise<CanaisLidos> {
     const consulta = (colunas: string) =>
       supabase.schema("core").from("v_canal_whatsapp").select(colunas).limit(100);
 
-    let corteLegivel = true;
-    let { data, error } = await consulta(COLUNAS_COM_CORTE);
-    if (error) {
-      corteLegivel = false;
-      ({ data, error } = await consulta(COLUNAS_SEM_CORTE));
+    for (const degrau of DEGRAUS) {
+      const { data, error } = await consulta(degrau.colunas);
+      if (error || !data) continue;
+      const canais = (data as unknown as Record<string, unknown>[])
+        .map((l) => mapear(l, degrau.corte, degrau.m7))
+        .filter((c): c is Canal => c !== null);
+      return { canais, indisponivel: false, corteLegivel: degrau.corte, m7Legivel: degrau.m7 };
     }
-    if (error || !data) return { canais: [], indisponivel: true, corteLegivel: false };
-
-    const canais = (data as unknown as Record<string, unknown>[])
-      .map((l) => mapear(l, corteLegivel))
-      .filter((c): c is Canal => c !== null);
-    return { canais, indisponivel: false, corteLegivel };
+    // Nenhum degrau respondeu: a view não existe, ou a leitura falhou por outro motivo.
+    return { canais: [], indisponivel: true, corteLegivel: false, m7Legivel: false };
   } catch {
-    return { canais: [], indisponivel: true, corteLegivel: false };
+    return { canais: [], indisponivel: true, corteLegivel: false, m7Legivel: false };
   }
 }
 

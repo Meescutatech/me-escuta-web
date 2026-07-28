@@ -17,8 +17,11 @@ import {
   ordenarCanais,
   podeGerirCanais,
   rotuloEstadoCanal,
+  rotuloFinalidade,
   semProblemas,
   validarRegistroCanal,
+  TEXTO_FINALIDADE_AUSENTE,
+  TEXTO_NUMERO_DE_TESTE,
   type Canal,
   type FormCanal,
   type Papel,
@@ -47,6 +50,19 @@ export interface CanalNaTela extends Canal {
   sessao?: { status: string; viva?: boolean } | null;
 }
 
+/**
+ * ⚠ VOCABULÁRIO INVENTADO, e fica aqui até o M8 trocá-lo — isto NÃO é endosso.
+ *
+ * Esta lista é byte a byte a do mockup `numeros-whatsapp-r10.html`, que provavelmente é a origem
+ * dela. Medido em produção: `financeiro` não existe em lugar nenhum, e `clinica` × `clinico` é
+ * divergência real. Ou seja: **mockup e código concordam entre si e divergem só do banco** — quem
+ * abrir os dois encontra duas fontes coerentes e nenhuma correta, e sai mais confiante do que
+ * entrou.
+ *
+ * O M8 substitui este `<select>` por `core.v_departamento` (config, não constante) e entra neste
+ * arquivo como SEGUNDO commit (ARB-R18-02). Não mexo: não é meu, e consertar por conta própria
+ * criaria uma TERCEIRA versão do vocabulário. O que cabe a mim é deixar a armadilha nomeada.
+ */
 const AREAS = ["comercial", "clinica", "financeiro", "pos_venda"];
 
 export function TabelaCanais({
@@ -83,6 +99,8 @@ export function TabelaCanais({
   const grade = [
     "minmax(150px,1fr)",
     "152px",
+    // M7 / ARB-R18-05 · `finalidade` entra antes de Provedor e NÃO é condicional a valor único.
+    cols.finalidade ? "110px" : null,
     cols.provedor ? "96px" : null,
     cols.area ? "104px" : null,
     "182px",
@@ -179,6 +197,7 @@ export function TabelaCanais({
         >
           <span>Nome</span>
           <span>Número</span>
+          {cols.finalidade ? <span>Finalidade</span> : null}
           {cols.provedor ? <span>Provedor</span> : null}
           {cols.area ? <span>Área</span> : null}
           <span>Estado</span>
@@ -275,7 +294,7 @@ function LinhaCanal({
 }: {
   canal: CanalNaTela;
   grade: string;
-  cols: { provedor: boolean; area: boolean };
+  cols: { provedor: boolean; area: boolean; finalidade: boolean; consentimento: boolean };
   gestor: boolean;
   pendente: boolean;
   expandido: boolean;
@@ -314,11 +333,35 @@ function LinhaCanal({
           {canal.numero ? (
             <span className="font-mono text-[12.5px] text-tinta">{canal.numero}</span>
           ) : (
-            <span className="font-mono text-[12.5px] text-mute" title="número ainda não aprovado na Meta">
+            /* BUG CONSERTADO (achado do Croqui). O texto anterior dizia "número ainda não aprovado
+               na Meta" — e isso é falso e caro: medido na Graph API, a Meta DEVOLVE o número
+               (`627327023793464` → `+1 555 725 2751`, GREEN, VERIFIED). Quem nunca registrou
+               fomos nós. A tela explicava um vazio NOSSO com causa ALHEIA, e deixava quem lê
+               esperando por terceiro em vez de agir. */
+            <span
+              className="font-mono text-[12.5px] text-amarelo"
+              title="a identidade deste número nunca foi registrada no nosso banco — a Meta tem o número; nós é que não gravamos. Enquanto faltar, ninguém sabe pelo banco qual número está falando com a paciente"
+            >
               —
             </span>
           )}
         </div>
+        {/* M7 / ARB-R18-05 · finalidade. Âmbar quando é TESTE e quando NÃO FOI DECLARADA — os dois
+            são aviso, não metadado. Cinza só quando é produção, que é o caso sem novidade. */}
+        {cols.finalidade ? (
+          <div className="flex min-h-[30px] items-center self-center">
+            <span
+              className={
+                canal.finalidade === "producao"
+                  ? "text-[13px] text-suave"
+                  : "rounded-full bg-amarelo/12 px-2 py-0.5 text-[12px] font-semibold text-amarelo"
+              }
+              title={canal.finalidade === "teste" ? TEXTO_NUMERO_DE_TESTE : canal.finalidade === null ? TEXTO_FINALIDADE_AUSENTE : undefined}
+            >
+              {rotuloFinalidade(canal.finalidade)}
+            </span>
+          </div>
+        ) : null}
         {cols.provedor ? (
           <div className="flex min-h-[30px] items-center self-center">
             <span className={lite ? "text-[13px] text-amarelo" : "text-[13px] text-suave"}>
@@ -423,6 +466,8 @@ function BlocoAdicionar({
     numeroE164: "",
     wabaId: "",
     area: "comercial",
+    // sem valor: quem cadastra é quem sabe. Ver o campo lá embaixo.
+    finalidade: "",
   });
   const [pendente, iniciar] = useTransition();
   const atual: FormCanal = { ...form, provedor };
@@ -505,6 +550,21 @@ function BlocoAdicionar({
             />
           </Campo>
         ) : null}
+        {/* M7 · O CAMPO QUE NÃO EXISTIA. `wabaId` estava no estado inicial do form e não tinha
+            entrada nenhuma na tela — logo o `if (waba)` de `payloadCanalRegistrado` era
+            inalcançável com valor, e TODO canal cadastrado pela tela nasceria sem identidade,
+            calado. É a assinatura exata do `canal_registrado` do `627327023793464` no ledger.
+            Registrado em ERROS-E-BLOQUEIOS como E-142. */}
+        {provedor === "waba" ? (
+          <Campo rotulo="WABA id (Meta)" erro={problemas.wabaId}>
+            <input
+              className={`${ENTRADA} font-mono text-[12.5px]`}
+              value={form.wabaId}
+              onChange={(e) => setForm({ ...form, wabaId: e.target.value })}
+              placeholder="966114259004051"
+            />
+          </Campo>
+        ) : null}
         <Campo rotulo={provedor === "waba" ? "Número (E.164)" : "Número (opcional)"} erro={problemas.numeroE164}>
           <input
             className={`${ENTRADA} font-mono text-[12.5px]`}
@@ -512,6 +572,20 @@ function BlocoAdicionar({
             onChange={(e) => setForm({ ...form, numeroE164: e.target.value })}
             placeholder="+5511999998888"
           />
+        </Campo>
+        {/* M7 · finalidade: NASCE SEM ESCOLHA. A opção vazia não é placeholder decorativo — é o
+            que impede o default por conveniência, que foi o que produziu dois números vivos que
+            ninguém ligou. Enquanto ninguém escolher, `validarRegistroCanal` recusa. */}
+        <Campo rotulo="Finalidade" erro={problemas.finalidade}>
+          <select
+            className={ENTRADA}
+            value={form.finalidade}
+            onChange={(e) => setForm({ ...form, finalidade: e.target.value as FormCanal["finalidade"] })}
+          >
+            <option value="">— escolha —</option>
+            <option value="teste">Teste — só entrega a destinatários em lista</option>
+            <option value="producao">Produção — fala com paciente</option>
+          </select>
         </Campo>
         <Campo rotulo="Área">
           <select
