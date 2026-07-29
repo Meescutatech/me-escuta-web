@@ -601,6 +601,7 @@ export function Quadro({
       <DrawerCard
         lead={leadAberto}
         etapa={etapaAberta}
+        etapas={dados.etapas}
         autorEmail={autorEmail}
         autorId={autorId}
         mencionaveis={mencionaveis}

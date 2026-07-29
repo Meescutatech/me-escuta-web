@@ -1,5 +1,12 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { parseConfigFicha, type GrupoFicha } from "./ficha-calculos";
+import {
+  LIMITE_HISTORICO,
+  TIPOS_HISTORICO,
+  tipoDoHistorico,
+  type EventoHistorico,
+  type TipoHistorico,
+} from "@/components/lead/regras/historico.ts";
 
 /**
  * Leitura do PAINEL DO LEAD (Rodada 8; evoluído na Rodada 13 / Bloco C) — ficha + tarefas +
@@ -68,6 +75,13 @@ export interface PainelLead {
   anotacoes: AnotacaoLead[];
   /** vazio também quando core.mencao ainda não existe (Bloco B). */
   mencoes: MencaoLead[];
+  /**
+   * M4 · histórico de status e responsável. `historico.eventos: null` significa **a leitura
+   * falhou** e é DIFERENTE de `[]`, que significa "este lead não tem eventos". A aba precisa
+   * distinguir os dois: dizer "sem histórico" quando a consulta morreu ensina a pessoa a parar
+   * de procurar.
+   */
+  historico: HistoricoDoLead;
 }
 
 type Supabase = ReturnType<typeof criarClienteServidor>;
@@ -184,17 +198,112 @@ async function lerMencoes(supabase: Supabase, leadId: string): Promise<MencaoLea
   }));
 }
 
+/**
+ * M4 · o histórico do lead a partir do LEDGER. É a primeira vez que a ficha lê `core.evento` —
+ * ela lia `tarefa`, `anotacao`, `mencao` e `lead_campo`, todas projeções. Não há precedente de
+ * custo para herdar, então o custo foi medido: 0,098 ms / 14 buffers, contra 0,149 ms da
+ * `core.mencao` que já está no conjunto.
+ *
+ * FONTE ÚNICA COM DEGRADAÇÃO, no padrão que este arquivo já usa (`COLUNAS_TAREFA_R13` → `R8`):
+ * tenta `core.v_evento_lead` (entregável do M1) e cai para `core.evento` cru. E aqui a degradação
+ * é **mais rápida**, não mais lenta — 14 buffers contra 19 —, porque os três tipos do M4 têm
+ * `lead_id` em 100% e não precisam dos degraus de resolução que a view faz. O custo da view é o
+ * preço da fonte única, e é aceitável **porque está declarado**, não porque é invisível.
+ *
+ * NUNCA `payload` inteiro: 7.087 bytes contra 157 no lead mais pesado, 45×. As cinco chaves são
+ * projetadas no PostgREST (`etapa_de:payload->>etapa_de`) — sintaxe medida contra um stack local
+ * antes de entrar, porque não havia precedente dela neste repo e o modo de falha seria silencioso:
+ * select que erra vira histórico vazio, e vazio parece resposta.
+ */
+const PROJECAO_HISTORICO =
+  "id,posicao_global,tipo,ator,origem,criado_em," +
+  "etapa_de:payload->>etapa_de,etapa_para:payload->>etapa_para," +
+  "etapa_inicial:payload->>etapa,dono_id:payload->>dono_id,motivo:payload->>motivo";
+
+export interface HistoricoDoLead {
+  /** `null` = a leitura FALHOU. `[]` = este lead não tem eventos. São coisas diferentes. */
+  eventos: EventoHistorico[] | null;
+  /**
+   * `core.lead.dono` — o responsável vindo do sistema antigo, texto livre (`kommo:10248863`).
+   *
+   * ⚠ NÃO CONFUNDIR com `core.conversa.dono_atual`, que é quem assumiu a CONVERSA da IA. São dois
+   * conceitos com nome parecido em tabelas diferentes, e trocá-los faria a aba afirmar que a
+   * pessoa que atendeu no chat é a responsável pelo lead. É a armadilha do nome sobrecarregado.
+   */
+  donoLegado: string | null;
+}
+
+async function lerHistorico(supabase: Supabase, leadId: string): Promise<HistoricoDoLead> {
+  const consulta = (fonte: string) =>
+    supabase
+      .schema("core")
+      .from(fonte)
+      .select(PROJECAO_HISTORICO)
+      .eq("lead_id", leadId)
+      .in("tipo", TIPOS_HISTORICO as unknown as string[])
+      .order("posicao_global", { ascending: false })
+      .limit(LIMITE_HISTORICO);
+
+  // as duas em PARALELO: o dono legado é um lookup por chave primária e não tem por que
+  // serializar atrás do ledger.
+  const [eventosRes, donoRes] = await Promise.all([
+    (async () => {
+      let r = await consulta("v_evento_lead");
+      if (r.error) r = await consulta("evento");
+      return r;
+    })(),
+    supabase.schema("core").from("lead").select("dono").eq("id", leadId).maybeSingle(),
+  ]);
+
+  const donoLegado = donoRes.error || !donoRes.data ? null : ((donoRes.data as any).dono ?? null);
+
+  const { data, error } = eventosRes;
+  // `null` e `[]` são respostas DIFERENTES, e é aqui que a diferença nasce.
+  if (error || !data) return { eventos: null, donoLegado };
+
+  const eventos = (data as any[])
+    .filter((e) => tipoDoHistorico(e.tipo))
+    .map((e) => ({
+      id: String(e.id),
+      posicao_global: Number(e.posicao_global ?? 0),
+      tipo: e.tipo as TipoHistorico,
+      ator: String(e.ator ?? ""),
+      origem: String(e.origem ?? ""),
+      criado_em: String(e.criado_em ?? ""),
+      etapa_de: e.etapa_de ?? null,
+      etapa_para: e.etapa_para ?? null,
+      etapa_inicial: e.etapa_inicial ?? null,
+      dono_id: e.dono_id ?? null,
+      motivo: e.motivo ?? null,
+    }));
+  return { eventos, donoLegado };
+}
+
 export async function lerPainelLead(leadId: string): Promise<PainelLead> {
   const supabase = criarClienteServidor();
   try {
-    const [ficha, tarefas, anotacoes, mencoes] = await Promise.all([
+    // O histórico entra COMO SEXTA CONSULTA CONCORRENTE, não em carregamento tardio no clique.
+    // Trocar 0,098 ms de graça no paralelo por uma volta HTTP inteira até a us-west-2 no clique
+    // seria pagar caro para economizar nada.
+    //
+    // ⚠ E `lerHistorico` NUNCA pode levantar: o `catch` externo abaixo devolve TUDO vazio, então
+    // um erro escapando daqui mataria a ficha inteira por causa de uma aba. É a armadilha mais
+    // provável desta implementação — o `catch` que zera tudo já estava aqui antes de mim.
+    const [ficha, tarefas, anotacoes, mencoes, historico] = await Promise.all([
       lerFicha(supabase, leadId),
       lerTarefas(supabase, leadId),
       lerAnotacoes(supabase, leadId),
       lerMencoes(supabase, leadId),
+      lerHistorico(supabase, leadId).catch(() => ({ eventos: null, donoLegado: null })),
     ]);
-    return { ficha, tarefas, anotacoes, mencoes };
+    return { ficha, tarefas, anotacoes, mencoes, historico };
   } catch {
-    return { ficha: { grupos: null, valores: null }, tarefas: [], anotacoes: [], mencoes: [] };
+    return {
+      ficha: { grupos: null, valores: null },
+      tarefas: [],
+      anotacoes: [],
+      mencoes: [],
+      historico: { eventos: null, donoLegado: null },
+    };
   }
 }
