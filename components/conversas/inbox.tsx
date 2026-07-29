@@ -1018,6 +1018,22 @@ export function Inbox({
                         />
                       ),
                     },
+                    {
+                      // M4 · histórico. ÚLTIMA da régua e SEM contagem: o número seria 1, 2 ou 3
+                      // em 100% dos leads (73 com 1 linha, 588 com 2, 19 com 3), e badge de "2"
+                      // não informa nada — só ocupa a única coisa escassa da régua.
+                      chave: "aba-historico",
+                      rotulo: "Histórico",
+                      conteudo: (
+                        <AbaHistorico
+                          historico={painel.historico.eventos}
+                          donoLegado={painel.historico.donoLegado}
+                          pessoas={mapaDePessoas(mencionaveis)}
+                          agentes={mapaDeAgentes(mencionaveis)}
+                          etapas={mapaDeEtapas(etapas)}
+                        />
+                      ),
+                    },
                   ]}
                 />
               </div>
