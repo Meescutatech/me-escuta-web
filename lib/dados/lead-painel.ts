@@ -189,10 +189,13 @@ async function lerMencoes(supabase: Supabase, leadId: string): Promise<MencaoLea
  * `core.mencao` que já está no conjunto.
  *
  * FONTE ÚNICA COM DEGRADAÇÃO, no padrão que este arquivo já usa (`COLUNAS_TAREFA_R13` → `R8`):
- * tenta `core.v_evento_lead` (entregável do M1) e cai para `core.evento` cru. E aqui a degradação
- * é **mais rápida**, não mais lenta — 14 buffers contra 19 —, porque os três tipos do M4 têm
- * `lead_id` em 100% e não precisam dos degraus de resolução que a view faz. O custo da view é o
- * preço da fonte única, e é aceitável **porque está declarado**, não porque é invisível.
+ * tenta `core.v_evento_lead` (entregável do M1) e cai para `core.evento` cru. A degradação é
+ * **equivalente**, não mais rápida: medido contra a view REAL (não contra a simulação por CTE da
+ * spec), **11 buffers contra 11**, mesmo `Index Scan using evento_lead_id_idx`. O "14 contra 19"
+ * que esta linha afirmava antes era da simulação e **não sobreviveu à view real** — as pernas 2, 3
+ * e 0 não são podadas sob `.eq("lead_id", …)`, mas resolvem por índice com `rows=0` e o lateral do
+ * degrau 3 fica `never executed`. A view não custa nada aqui, e a fonte única é escolha de
+ * arquitetura (ARB-R18-39), não uma dívida de desempenho.
  *
  * NUNCA `payload` inteiro: 7.087 bytes contra 157 no lead mais pesado, 45×. As cinco chaves são
  * projetadas no PostgREST (`etapa_de:payload->>etapa_de`) — sintaxe medida contra um stack local
@@ -236,7 +239,10 @@ async function lerHistorico(supabase: Supabase, leadId: string): Promise<Histori
       if (r.error) r = await consulta("evento");
       return r;
     })(),
-    supabase.schema("core").from("lead").select("dono").eq("id", leadId).maybeSingle(),
+    // `lead_id`, NÃO `id`: `core.lead` não tem coluna `id` (E-197). Com `id`, o PostgREST devolvia
+    // 400/42703 e o `donoRes.error` abaixo transformava o erro em `null` — o dono legado era nulo em
+    // 100% dos casos, e a tela mostrava o mesmo que mostraria para um lead legitimamente sem dono.
+    supabase.schema("core").from("lead").select("dono").eq("lead_id", leadId).maybeSingle(),
   ]);
 
   const donoLegado = donoRes.error || !donoRes.data ? null : ((donoRes.data as any).dono ?? null);
