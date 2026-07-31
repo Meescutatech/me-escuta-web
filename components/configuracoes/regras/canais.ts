@@ -18,12 +18,64 @@
  *  4. Ativar sem `inbox_desde` DESPEJA O HISTÓRICO INTEIRO NO INBOX (0025:31-34, medido: o canal
  *     de produção está hoje nesse estado). ARB-18.1 fez disso guarda na porta; aqui é campo
  *     obrigatório do formulário, para a recusa não ser a primeira notícia.
+ *
+ * ─────────────────────────── M7 · R18 (SPEC-M7 §4.1-bis, §5.3) ───────────────────────────
+ *
+ *  5. IDENTIDADE É PRÉ-CONDIÇÃO DE VIDA. Número oficial (`waba`) não fica ativo sem `waba_id` E
+ *     `numero_e164`. Medido em produção 28/07/2026: a linha `627327023793464` está `ativo=t` com
+ *     os DOIS nulos — um número vivo que ninguém sabe qual é. A defesa real é a constraint
+ *     `canal_waba_ativo_exige_identidade`; aqui é o que impede a recusa do banco de ser a
+ *     primeira notícia. E `waba_id` passa a ser exigido no REGISTRO: hoje ele nunca é validado, e
+ *     `payloadCanalRegistrado` só inclui a chave `if (waba)` — foi exatamente essa forma que
+ *     gravou no ledger um `canal_registrado` sem identidade, calado.
+ *
+ *  6. TODO NÚMERO DECLARA A SUA FINALIDADE, e a tela nunca esconde qual é. Os dois números da Me
+ *     Escuta são `+1 555` — faixa reservada da NANP, a que a Meta usa para TESTE — e o
+ *     `627327023793464` carrega `verified_name = "Me Escuta"` com selo VERIFIED. Exibido sem
+ *     qualificação, ele PARECE o número da empresa. `finalidade` é `NOT NULL` e SEM DEFAULT:
+ *     default conveniente foi o que produziu o problema do item 2 (`ativo` nasceu `true` porque
+ *     alguém escolheu um). Limite honesto da guarda: ver `ehFaixaTesteMeta`.
  */
 
 import { montarEnvelope, payloadSeguro, type EnvelopeEvento, type VereditoEscrita } from "./porta.ts";
 
 export type Provedor = "waba" | "nao_oficial";
 export type Papel = "owner" | "admin" | "membro";
+
+/**
+ * O que este número está autorizado a fazer. Domínio fechado por
+ * `check (finalidade in ('teste','producao'))` — igual a `provedor`, que é o precedente da casa.
+ */
+export type Finalidade = "teste" | "producao";
+
+export const FINALIDADES: Finalidade[] = ["teste", "producao"];
+
+export function finalidadeValida(v: unknown): v is Finalidade {
+  return typeof v === "string" && (FINALIDADES as string[]).includes(v);
+}
+
+export function rotuloFinalidade(f: Finalidade | null): string {
+  if (f === "producao") return "Produção";
+  if (f === "teste") return "Teste";
+  return "Não declarada";
+}
+
+/**
+ * A faixa de teste da Meta, e os DOIS limites honestos que impedem alguém de superestimá-la.
+ *
+ * `+1 555` é a faixa reservada da NANP e é a que a Meta usa hoje para número de teste. Isto é uma
+ * REDE sobre o engano medido nesta rodada, **não um classificador**: um número de teste fora dessa
+ * faixa passa declarado como `producao` e esta função não tem como saber.
+ *
+ * E ela NÃO vale ao contrário: um número BR real declarado `teste` é permitido de propósito —
+ * declarar MENOS privilégio do que se tem é sempre seguro, e proibir isso atrapalharia ensaio
+ * legítimo. Foi assim que as 12 mensagens de 27/07 chegaram ao telefone do Diogo.
+ */
+export const FAIXA_TESTE_META = /^\+1555\d{7}$/;
+
+export function ehFaixaTesteMeta(numero: string | null): boolean {
+  return FAIXA_TESTE_META.test((numero ?? "").trim());
+}
 
 /**
  * Uma linha de `core.v_canal_whatsapp`.
@@ -45,11 +97,22 @@ export interface Canal {
   consentimento_em: string | null;
   consentimento_titular: string | null;
   consentimento_texto_versao: string | null;
+  /** uuid do usuário que registrou o consentimento. A tela renderiza o NOME, nunca o uuid. */
+  consentimento_por: string | null;
   risco_ban_aceito: boolean;
   desativado_em: string | null;
   criado_em: string | null;
   /** null = ausente OU não legível por esta tela. Os dois casos exigem o corte na ativação. */
   inbox_desde: string | null;
+  /**
+   * M7. `null` significa **"a coluna ainda não existe neste ambiente OU não é legível"**, e NUNCA
+   * "produção" — a tela mostra "não declarada", que é a verdade. É o mesmo degrade honesto de
+   * `inbox_desde`, e existe porque a web pode subir ANTES da migration que cria a coluna: sem
+   * isso, o deploy da web ficaria acorrentado ao deploy do banco, e o D18 exige o contrário.
+   *
+   * Depois da migration a coluna é `NOT NULL`, então `null` volta a significar só "não legível".
+   */
+  finalidade: Finalidade | null;
 }
 
 export const PROVEDORES: Provedor[] = ["waba", "nao_oficial"];
@@ -100,10 +163,18 @@ export interface FormCanal {
   numeroE164: string;
   wabaId: string;
   area: string;
+  /**
+   * M7. `""` = **não escolhido**, e é o estado inicial do formulário por decisão de desenho: o
+   * campo nasce SEM valor pré-selecionado. Pré-selecionar é dar um default por outro nome, e
+   * default foi o que produziu dois números vivos que ninguém ligou.
+   */
+  finalidade: Finalidade | "";
 }
 
 /** Campo → motivo em PT-BR. Motivo NOMEIA o limite violado, nunca "valor inválido". */
-export type Problemas = Partial<Record<keyof FormCanal | "inboxDesde" | "consentimento" | "papel", string>>;
+export type Problemas = Partial<
+  Record<keyof FormCanal | "inboxDesde" | "consentimento" | "papel" | "identidade", string>
+>;
 
 /** E.164: '+' e 8 a 15 dígitos, o primeiro diferente de zero. */
 export const E164 = /^\+[1-9]\d{7,14}$/;
@@ -126,6 +197,12 @@ export function validarRegistroCanal(f: FormCanal): Problemas {
     p.provedor = "escolha oficial (WABA) ou não oficial — o banco só aceita esses dois, e o valor decide se o filtro da borda roda";
   }
 
+  // M7 · a finalidade é declarada ou não existe — vale para os dois provedores, e não tem default.
+  if (!finalidadeValida(f.finalidade)) {
+    p.finalidade =
+      "declare para que serve este número: TESTE (só entrega a destinatários em lista) ou PRODUÇÃO (fala com paciente). Não há valor padrão — quem cadastra é quem sabe";
+  }
+
   if (f.provedor === "waba") {
     const id = (f.canalId ?? "").trim();
     if (id.length === 0) {
@@ -135,6 +212,17 @@ export function validarRegistroCanal(f: FormCanal): Problemas {
     }
     if (!numeroE164Valido(f.numeroE164)) {
       p.numeroE164 = "informe o número em E.164 (+55 e DDD, sem espaço) — ex.: +5511999998888";
+    }
+    // M7 · `waba_id` passa a ser OBRIGATÓRIO. Sem ele o evento sai calado e sem identidade, que é
+    // exatamente a assinatura do `canal_registrado` do `627327023793464` gravado no ledger.
+    if ((f.wabaId ?? "").trim().length === 0) {
+      p.wabaId =
+        "o canal oficial precisa do WABA id — sem ele ninguém sabe, pelo banco, de qual conta da Meta este número saiu, e o canal não pode ser ligado";
+    }
+    // M7 · o detector de CONTRADIÇÃO, espelho da guarda da porta. Só recusa o sentido perigoso.
+    if (f.finalidade === "producao" && ehFaixaTesteMeta(f.numeroE164)) {
+      p.finalidade =
+        "número +1 555 é da faixa de teste da Meta e não pode ser declarado de produção. Se este número é de produção de verdade, o dado da Meta está contradizendo a declaração — confira antes de insistir";
     }
   } else if (f.provedor === "nao_oficial") {
     // id derivado: o apelido é o nome da fono, e é o que torna `lite:jade` legível no ledger.
@@ -182,6 +270,27 @@ export function validarAtivacao(pedido: PedidoAtivacao): Problemas {
   if (canal.provedor === "nao_oficial" && !canal.consentimento_em) {
     p.consentimento =
       "este número é de uma pessoa: sem o consentimento dela registrado, o canal não liga. O banco recusa a linha, não só a tela";
+  }
+
+  // M7 · IDENTIDADE É PRÉ-CONDIÇÃO DE VIDA, e só para o canal oficial.
+  //
+  // `nao_oficial` fica DE FORA de propósito, e não é esquecimento: `numero_e164` é opcional lá (o
+  // número é de terceiro e pode nem ser conhecido no cadastro) e `waba_id` é proibido lá pela
+  // própria natureza do provedor. A constraint do banco faz o mesmo recorte.
+  //
+  // Aqui a recusa é ERGONOMIA; a defesa real é `canal_waba_ativo_exige_identidade`, porque quem
+  // ligou o canal `producao` em 28/07 foi um UPDATE direto, que guarda de tela nenhuma alcança.
+  if (canal.provedor === "waba") {
+    const semWaba = (canal.waba_id ?? "").trim().length === 0;
+    const semNumero = (canal.numero ?? "").trim().length === 0;
+    if (semWaba || semNumero) {
+      const faltam = [semWaba ? "WABA id" : null, semNumero ? "número em E.164" : null]
+        .filter(Boolean)
+        .join(" e ");
+      p.identidade =
+        `falta ${faltam} neste canal — sem isso ninguém sabe, pelo banco, qual número está falando com a paciente. ` +
+        "Complete a identidade antes de ligar; o banco recusa a linha, não só a tela";
+    }
   }
 
   if (!canal.inbox_desde && (pedido.inboxDesde ?? "").trim().length === 0) {
@@ -255,6 +364,10 @@ export function payloadCanalRegistrado(f: FormCanal): PayloadECanalId {
   if (numero) payload.numero_e164 = numero;
   if (waba) payload.waba_id = waba;
   if (area) payload.area = area;
+  // M7 · a finalidade viaja no payload. O `if` aqui NÃO é o mesmo caso do `waba_id`: lá o campo
+  // sumir calado era o defeito; aqui `validarRegistroCanal` já barrou o vazio antes de chegar,
+  // e a omissão só acontece num ambiente onde a coluna ainda não existe.
+  if (finalidadeValida(f.finalidade)) payload.finalidade = f.finalidade;
   return { canalId, payload };
 }
 
@@ -264,13 +377,15 @@ export function payloadCanalRegistrado(f: FormCanal): PayloadECanalId {
  */
 export function payloadCanalAtualizado(
   canalId: string,
-  patch: { nome?: string; numeroE164?: string; wabaId?: string; area?: string },
+  patch: { nome?: string; numeroE164?: string; wabaId?: string; area?: string; finalidade?: Finalidade },
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = { canal_id: canalId };
   if (patch.nome !== undefined) payload.nome = patch.nome.trim();
   if (patch.numeroE164 !== undefined) payload.numero_e164 = patch.numeroE164.trim();
   if (patch.wabaId !== undefined) payload.waba_id = patch.wabaId.trim();
   if (patch.area !== undefined) payload.area = patch.area.trim();
+  // M7 · depois da migration, `finalidade` muda POR EVENTO, nunca por UPDATE. É esta chave.
+  if (patch.finalidade !== undefined) payload.finalidade = patch.finalidade;
   return payload;
 }
 
@@ -334,6 +449,24 @@ export const TEXTO_CREDENCIAL_DESCONHECIDA =
   "A credencial deste canal vive no ambiente do runtime — esta tela não lê, não mostra e não guarda token.";
 
 /**
+ * M7 · O AVISO QUE A TELA É OBRIGADA A DAR, e ele existe por um engano MEDIDO, não hipotético.
+ *
+ * O `627327023793464` tem `verified_name = "Me Escuta"` e `code_verification_status = VERIFIED` na
+ * Graph API. Três lugares independentes — o nome verificado, o selo verde e o apelido `producao`
+ * no banco — descrevem algo que ele NÃO é. Foi esse conjunto que produziu a frase errada no
+ * relatório de deploy, no despacho da rodada e na primeira versão da própria SPEC-M7.
+ *
+ * O engano é estrutural: o dado se APRESENTA como produção. Por isso a tela não pode mostrar só
+ * QUAL é o número — tem de dizer QUE TIPO de número é.
+ */
+export const TEXTO_NUMERO_DE_TESTE =
+  "Número de TESTE da Meta: só entrega a destinatários em lista de permissão. Mensagem para qualquer outra pessoa FALHA. O nome verificado e o selo da Meta não mudam isso.";
+
+/** Sem finalidade declarada a tela diz que não sabe. Nunca supõe produção — supor é o engano. */
+export const TEXTO_FINALIDADE_AUSENTE =
+  "Este número não declara para que serve. Enquanto não declarar, trate como não confiável para falar com paciente.";
+
+/**
  * COLUNA COM VALOR ÚNICO SOME (decisão do Orquestrador sobre o mockup r10).
  *
  * Uma coluna em que todas as linhas dizem a mesma coisa não é informação: é ruído com custo de
@@ -343,22 +476,59 @@ export const TEXTO_CREDENCIAL_DESCONHECIDA =
  *
  * Regra deliberadamente NÃO aplicada a `nome`, `numero` e `estado`: essas três são a identidade e
  * o estado da linha, e sumir com elas deixaria a tabela sem sujeito mesmo quando o valor coincide.
+ *
+ * ───────────────── ARB-R18-05 · o que a regra realmente esconde ─────────────────
+ *
+ * A regra esconde **REDUNDÂNCIA**, nunca **ALARME**. Valor constante em 100% das linhas significa
+ * "não informa" quando o valor é banal, e "isto é SISTÊMICO" quando o valor é o problema.
+ *
+ * `finalidade` é o segundo caso e por isso **nunca se esconde**: hoje os dois canais são `teste`,
+ * e a regra genérica apagaria exatamente o aviso de que o sistema inteiro está em número de teste.
+ * Coluna cujo valor único É o risco não é redundante — é o achado.
+ *
+ * O contraste que prova que é a mesma regra, e não uma exceção de conveniência: a ARB-R18-03
+ * manteve o rótulo de departamento FORA do inbox pelo mesmo mecanismo, porque `comercial` em 73
+ * de 86 conversas é redundância pura. Mesma regra, resultados opostos, porque o conteúdo é oposto.
  */
 export interface ColunasVisiveis {
   provedor: boolean;
   area: boolean;
+  /** ARB-R18-05: SEMPRE visível quando há linha. Não é config — é invariante. */
+  finalidade: boolean;
+  /** As 4 colunas de LGPD só fazem sentido onde existe titular terceiro (`nao_oficial`). */
+  consentimento: boolean;
 }
 
 export function colunasVisiveis(canais: Canal[]): ColunasVisiveis {
-  if (canais.length === 0) return { provedor: false, area: false };
+  if (canais.length === 0) return { provedor: false, area: false, finalidade: false, consentimento: false };
   const provedores = new Set(canais.map((c) => c.provedor));
   const areas = new Set(canais.map((c) => c.area_efetiva ?? "comercial"));
-  return { provedor: provedores.size > 1, area: areas.size > 1 };
+  return {
+    provedor: provedores.size > 1,
+    area: areas.size > 1,
+    finalidade: true,
+    consentimento: canais.some((c) => c.provedor === "nao_oficial"),
+  };
 }
 
+/**
+ * Ordem de ATENÇÃO, não de importância — e a chave nova vem ANTES de `ativo` (recomendação do
+ * Croqui, decisão minha, reversível em uma linha).
+ *
+ * `não declarada` → `teste` → `producao`. O que não alcança paciente sobe; o que está em ordem
+ * desce. É a mesma lógica da ARB-R18-05 aplicada à ordenação: um número que não pode falar com
+ * ninguém, sentado calado no fim de um inventário, é como ele é esquecido.
+ *
+ * Hoje não muda nada visível — os dois canais são `teste`. Ela existe para o dia em que houver um
+ * número de produção de verdade e os de teste passarem a se misturar com ele.
+ */
+const PESO_FINALIDADE: Record<string, number> = { producao: 2, teste: 1 };
+
 export function ordenarCanais(canais: Canal[]): Canal[] {
+  const peso = (c: Canal) => (c.finalidade ? PESO_FINALIDADE[c.finalidade] ?? 0 : 0);
   return [...canais].sort(
     (a, b) =>
+      peso(a) - peso(b) ||
       Number(b.ativo) - Number(a.ativo) ||
       a.provedor.localeCompare(b.provedor) ||
       a.nome.localeCompare(b.nome, "pt-BR"),
