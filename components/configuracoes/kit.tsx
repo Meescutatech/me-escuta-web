@@ -14,7 +14,11 @@
  *  · dado de máquina em mono, número que muda em `tabular-nums`.
  */
 
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { type ReactNode } from "react";
+
+// O `Dialogo` mora em modulo proprio ("use client") porque e a UNICA peca do kit que usa hooks.
+// Reexportado aqui para nenhum import existente mudar de forma. Ver `dialogo.tsx`.
+export { Dialogo } from "./dialogo";
 
 export function Cabecalho({
   titulo,
@@ -186,89 +190,6 @@ export function BarraPublicacao({ texto, acoes }: { texto: ReactNode; acoes: Rea
     <div className="sticky bottom-0 z-20 -mx-8 mt-6 flex items-center gap-3 border-t border-linha bg-branco px-8 py-3 text-[13px] text-suave max-md:-mx-4 max-md:px-4">
       <span>{texto}</span>
       <div className="ml-auto flex items-center gap-2.5">{acoes}</div>
-    </div>
-  );
-}
-
-const FOCAVEIS =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-/**
- * Diálogo. Duas correções do parecer do Vitrine ME moram aqui, e as duas são de ALCANCE, não de
- * estética:
- *
- *  C4 · a ação primária tem de receber clique em qualquer viewport. O caso medido foi "Registrar
- *       resposta" (F12) inalcançável abaixo de 768px — sem rolagem e sem Esc, o painel crescia
- *       além da tela e a linha de ações caía fora. Agora o painel tem teto de altura e rola por
- *       dentro; o rodapé de ações é sempre alcançável.
- *  C5 · `aria-modal` manda o leitor de tela ignorar tudo fora do diálogo. Sem mover o foco para
- *       dentro, quem usa teclado fica numa região que a tecnologia assistiva considera morta. O
- *       foco vai para a AÇÃO SEGURA ao abrir (a primeira focável é sempre Cancelar/Fechar), o Tab
- *       fica preso dentro, Esc fecha, e o foco volta ao gatilho ao sair.
- */
-export function Dialogo({
-  titulo,
-  children,
-  acoes,
-  largura = 440,
-  aoFechar,
-}: {
-  titulo: ReactNode;
-  children?: ReactNode;
-  acoes: ReactNode;
-  largura?: number;
-  aoFechar: () => void;
-}) {
-  const painel = useRef<HTMLDivElement>(null);
-  const gatilho = useRef<Element | null>(null);
-
-  useEffect(() => {
-    gatilho.current = document.activeElement;
-    painel.current?.querySelector<HTMLElement>(FOCAVEIS)?.focus();
-    return () => {
-      if (gatilho.current instanceof HTMLElement) gatilho.current.focus();
-    };
-  }, []);
-
-  function teclado(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      aoFechar();
-      return;
-    }
-    if (e.key !== "Tab") return;
-    const focaveis = painel.current?.querySelectorAll<HTMLElement>(FOCAVEIS);
-    if (!focaveis || focaveis.length === 0) return;
-    const primeiro = focaveis[0];
-    const ultimo = focaveis[focaveis.length - 1];
-    if (e.shiftKey && document.activeElement === primeiro) {
-      e.preventDefault();
-      ultimo.focus();
-    } else if (!e.shiftKey && document.activeElement === ultimo) {
-      e.preventDefault();
-      primeiro.focus();
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(31,35,40,.28)] p-5"
-      onKeyDown={teclado}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) aoFechar();
-      }}
-    >
-      <div
-        ref={painel}
-        role="dialog"
-        aria-modal="true"
-        style={{ maxWidth: largura }}
-        className="flex max-h-[calc(100vh-40px)] w-full flex-col overflow-y-auto rounded-[10px] bg-branco p-5 shadow-forte"
-      >
-        <h2 className="mb-1.5 flex-none text-[15px] font-semibold text-tinta">{titulo}</h2>
-        {children}
-        <div className="mt-4 flex flex-none items-center justify-end gap-2.5">{acoes}</div>
-      </div>
     </div>
   );
 }

@@ -122,6 +122,12 @@ export async function lerTicketPorNumero(numero: number): Promise<TicketLido> {
 
 // o tipo vive em `regras/suporte.ts` (modulo PURO) porque o fio de conversa e componente CLIENT
 // e o portao `cliente` reprova client que importe de `dados/`. Uma definicao so, reexportada.
+//
+// O `export type { X } from` NAO traz o nome para o escopo LOCAL -- so o reencaminha. A assinatura
+// de `lerComentarios` logo abaixo usa o tipo, entao o import proprio e' obrigatorio. Sem ele:
+// TS2304 "Cannot find name 'ComentarioTicket'". (Consertado na integracao r18/integracao-web;
+// o defeito e' pre-existente em r18/m5-suporte-web, nao veio do merge.)
+import type { ComentarioTicket } from "../regras/suporte.ts";
 export type { ComentarioTicket } from "../regras/suporte.ts";
 
 export async function lerComentarios(ticketId: string): Promise<ComentarioTicket[]> {

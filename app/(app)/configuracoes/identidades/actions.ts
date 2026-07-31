@@ -1,8 +1,7 @@
 "use server";
 
 import { randomUUID } from "crypto";
-import { revalidatePath } from "next/cache";
-import { criarClienteServidor } from "@/lib/supabase/server";
+import { registrarEventoComReadback } from "@/components/configuracoes/dados/porta";
 
 /**
  * Ações da tela Configurações > Identidades externas (R18 · M3).
@@ -54,31 +53,24 @@ export async function vincularIdentidadeExterna(
     };
   }
 
-  const supabase = criarClienteServidor();
-  const { error } = await supabase.schema("api").rpc("registrar_evento", {
-    p: {
-      tipo: "identidade_externa_vinculada",
-      id_externo: randomUUID(),
-      versao_payload: 1,
-      // `lead_id` NÃO se aplica: não é evento de lead. Declarado para ninguém "consertar" pondo um.
-      payload: {
-        sistema,
-        entidade,
-        // ID CRU, sem prefixo. `kommo:10248863` aqui quebraria o portão do backfill em silêncio.
-        id_externo: idExterno,
-        // A chave vai SEMPRE presente; o valor é que pode ser null (descarte).
-        id_interno: descartar ? null : idInterno,
-      },
+  // PONTO ÚNICO DE ESCRITA (portão `readback` do Web-B). A versão original desta ação chamava
+  // `api.registrar_evento` direto — o que faz o readback virar opcional, e foi o que o portão
+  // acusou quando a M3 encontrou o Web-B no merge da integração. `registrarEventoComReadback`
+  // monta o envelope, recusa tipo sem conferência declarada ANTES de escrever, e confere a
+  // projeção depois. A recusa da porta continua voltando LITERAL para a tela: as mensagens
+  // distinguem não-membro, revogado e sem permissão, e o usuário precisa saber qual das três foi.
+  return registrarEventoComReadback({
+    tipo: "identidade_externa_vinculada",
+    idExterno: randomUUID(),
+    // `lead_id` NÃO se aplica: não é evento de lead. Declarado para ninguém "consertar" pondo um.
+    payload: {
+      sistema,
+      entidade,
+      // ID CRU, sem prefixo. `kommo:10248863` aqui quebraria o portão do backfill em silêncio.
+      id_externo: idExterno,
+      // A chave vai SEMPRE presente; o valor é que pode ser null (descarte).
+      id_interno: descartar ? null : idInterno,
     },
+    revalidar: ["/configuracoes/identidades", "/funil"],
   });
-
-  if (error) {
-    // A recusa da porta volta LITERAL para a tela. As mensagens distinguem não-membro, revogado e
-    // sem permissão — e o usuário precisa saber qual das três foi, não "algo deu errado".
-    return { ok: false, motivo: error.message };
-  }
-
-  revalidatePath("/configuracoes/identidades");
-  revalidatePath("/funil");
-  return { ok: true };
 }

@@ -198,6 +198,22 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
     naoNulo: "lida_em",
   },
 
+  /*
+   * M3 (R18) — o de-para de identidade externa. Declarado na INTEGRAÇÃO `r18/integracao-web`, não na
+   * trilha: a M3 saiu de uma linhagem que divergiu ANTES de produção, então ela nunca viu este
+   * arquivo nem o portão do Web-B que exige o ponto único de escrita. O merge é que os apresentou.
+   *
+   * Modo `posicao` e não `filtros`: `core.identidade_externa` TEM `ultima_posicao` (0097), e o
+   * projetor a carimba com a `posicao_global` do evento. Conferir por ela prova que ESTE evento
+   * projetou. Conferir pela chave (sistema, entidade, id_externo) provaria só que a linha existe —
+   * e ela existe ANTES da ação em todo revínculo, que é o caso mais comum desta tela.
+   */
+  identidade_externa_vinculada: {
+    tabela: "identidade_externa",
+    por: "posicao",
+    coluna: "ultima_posicao",
+  },
+
   lead_atualizado: { tabela: "lead_campo", por: "posicao", coluna: "ultima_posicao" },
   etapa_alterada: { tabela: "estado_lead", por: "posicao", coluna: "ultima_posicao" },
   dono_atribuido: { tabela: "lead", por: "posicao", coluna: "ultima_posicao" },

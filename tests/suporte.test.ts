@@ -60,6 +60,10 @@ function ticket(p: Partial<Ticket> = {}): Ticket {
     autor_nome: "Diogo",
     autor_email: "d@e.com",
     resolvido_por_nome: null,
+    // `versao` faltava no literal base, entao o `...p` (Partial<Ticket>) era a UNICA fonte dela e
+    // trazia `undefined` junto -- TS2322 contra `versao: string | null`. Com o campo no base, o
+    // spread une os dois tipos e o `undefined` some. (Pre-existente em r18/m5-suporte-web.)
+    versao: null,
     comentarios: 0,
     anexos: 0,
     ...p,
