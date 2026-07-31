@@ -134,10 +134,26 @@ export function Sidebar({
       ativa: pathname.startsWith("/configuracoes"),
     },
     {
-      href: "/configuracoes/suporte",
+      // M5 (R18) · DUAS mudanças, e a segunda é a que importa.
+      //
+      // 1. O href sai de `/configuracoes/suporte` para `/suporte`. O rótulo NÃO muda: "Relatar
+      //    problema" nomeia a AÇÃO, e é melhor que "Suporte", que nomeia um departamento que não
+      //    existe aqui.
+      //
+      // 2. `?de=` LEVA A ROTA REAL. Este era o contrato que eu tinha declarado como dependência do
+      //    header do M6 — e a dependência DISSOLVEU quando eu medi (E-066): `pathname` já está em
+      //    escopo 41 linhas acima, porque a sidebar já é client component. Sem isto, a tela de
+      //    suporte adivinha a origem do relato pelo `referer`, e `onde` é o campo mais útil de um
+      //    relato de bug.
+      //
+      // ⚠ COLISÃO DECLARADA: o M6 também toca este arquivo (o seletor de departamento). A
+      //    PONTO-DE-PARADA-R18 arbitrou `canais.ts` (ARB-R18-02) e a linha do inbox (ARB-R18-03),
+      //    mas NÃO a sidebar. Por isso esta mudança está num COMMIT ISOLADO de duas linhas: quem
+      //    for declarado dono pega ou descarta sem desfazer mais nada.
+      href: `/suporte?de=${encodeURIComponent(pathname)}`,
       rotulo: "Relatar problema",
       icone: ICONES.suporte,
-      ativa: pathname.startsWith("/configuracoes/suporte"),
+      ativa: pathname.startsWith("/suporte"),
     },
   ];
 

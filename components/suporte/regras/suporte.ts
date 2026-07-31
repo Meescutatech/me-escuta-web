@@ -41,6 +41,11 @@ export interface Ticket {
   titulo: string;
   descricao: string;
   onde: string | null;
+  /**
+   * Build em que o relato aconteceu (0115). ANULÁVEL: chamado aberto antes de o front carimbar
+   * o SHA não tem versão, e inventar "desconhecida" seria dado falso. A tela mostra "—".
+   */
+  versao: string | null;
   status: StatusTicket;
   resolucao: string | null;
   aberto_em: string;
@@ -65,6 +70,44 @@ export function podeResolverChamado(papel: Papel | null): boolean {
 /** EARS opcional: gestor escolhe bug ou ideia; para os demais o padrão é bug. */
 export function podeEscolherTipo(papel: Papel | null): boolean {
   return papel === "admin" || papel === "owner";
+}
+
+/**
+ * Comenta quem é AUTOR do chamado ou GESTÃO. Ninguém mais.
+ *
+ * É o ESPELHO EXATO da policy de SELECT da 0070 (`autor_id = auth.uid() or api.papel_atual() in
+ * ('admin','owner')`). Sem esta regra a ESCRITA fica mais larga que a LEITURA: um membro comenta
+ * num chamado que a RLS não deixa ele ler, e ninguém nunca lê a resposta.
+ *
+ * ISTO NÃO É A GUARDA — a guarda é a da porta (0115 parte D), com a mensagem literal
+ * `sem permissao: comentar exige ser o autor do chamado ou gestao`. Esta função existe para a
+ * tela não OFERECER o que o banco vai recusar: campo de comentar ausente é honesto, campo
+ * desabilitado sem explicação não é (SPEC-M5 §5.5).
+ */
+export function podeComentarChamado(
+  papel: Papel | null,
+  autorIdDoTicket: string | null,
+  meuUid: string | null,
+): boolean {
+  if (papel === null) return false;
+  if (papel === "admin" || papel === "owner") return true;
+  if (!meuUid || !autorIdDoTicket) return false;
+  return meuUid === autorIdDoTicket;
+}
+
+/**
+ * `/suporte/14` → `14`. Devolve `null` para qualquer coisa que não seja inteiro positivo.
+ *
+ * Endereçar por `numero` e não por uuid é decisão de SPEC (§5.1): o número é o que um humano
+ * cita ("o chamado 14"). O link canônico interno continua sendo o uuid — o número é `row_number`
+ * e pode deslizar se um evento de abertura entrar fora de ordem no replay.
+ */
+export function numeroDaRota(param: string | string[] | undefined): number | null {
+  const bruto = Array.isArray(param) ? param[0] : param;
+  const s = (bruto ?? "").trim();
+  if (!/^[0-9]+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
 /** Quem não escolhe, reporta bug: é o caso de 9 em cada 10 e evita um clique obrigatório. */
@@ -326,3 +369,31 @@ export function contarPorAba(tickets: Ticket[]): Record<AbaTicket, number> {
  */
 export const MOTIVO_UPLOAD_FALHOU =
   "a imagem não subiu, então o chamado não foi enviado. Tente de novo ou escolha enviar sem a imagem.";
+
+/**
+ * UMA FRASE SÓ para os dois casos, e é de propósito (SPEC-M5 §5.5).
+ *
+ * A RLS devolve VAZIO tanto para "este chamado não existe" quanto para "existe e não é seu" — ela
+ * não distingue, e não deve. Distinguir na tela vazaria a EXISTÊNCIA de chamado alheio: quem
+ * varresse /suporte/1, /suporte/2... aprenderia quantos chamados o sistema tem e quais são de
+ * outra pessoa. E note que isto NÃO é "erro": erro é a leitura ter falhado, e são coisas
+ * diferentes que a tela não pode confundir.
+ */
+export const MOTIVO_CHAMADO_INACESSIVEL = "este chamado não existe ou não é seu";
+
+/**
+ * Uma linha de `core.suporte_ticket_comentario`.
+ *
+ * O tipo mora AQUI, no módulo puro, e não junto do leitor em `dados/suporte.ts` — porque o fio de
+ * conversa é componente CLIENT e precisa dele. O portão `cliente` reprova qualquer `"use client"`
+ * que importe de `dados/`, e reprova mesmo sendo `import type`: ele casa o CAMINHO, não a forma do
+ * import. Isso parece severo demais e não é — `import type` some na compilação, mas a linha fica, e
+ * a próxima pessoa que precisar de um valor do mesmo módulo tira a palavra `type` e o cliente do
+ * Supabase desce para o browser sem que nada acuse. O portão mede o que dura.
+ */
+export interface ComentarioTicket {
+  id: string;
+  autor_id: string | null;
+  texto: string;
+  criado_em: string;
+}

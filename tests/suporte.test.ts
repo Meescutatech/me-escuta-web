@@ -16,6 +16,9 @@ import {
   filtrarTickets,
   nomeArquivoSeguro,
   normalizarRota,
+  numeroDaRota,
+  podeComentarChamado,
+  MOTIVO_CHAMADO_INACESSIVEL,
   payloadTicketAberto,
   payloadTicketComentado,
   payloadTicketResolvido,
@@ -275,4 +278,59 @@ test("a prévia mostra o traço enquanto não há texto — nunca 'undefined'", 
 test("o par título/descrição derivado passa na validação do chamado", () => {
   const { titulo, descricao } = dividirRelato("Board não carrega\nabri e girou");
   assert.ok(semProblemasChamado(validarChamado({ tipo: "bug", titulo, descricao, onde: "/funil" })));
+});
+
+// ═══════════════════ M5 (R18) · a ida e volta do chamado ═══════════════════
+//
+// As três regras novas, cada uma exercida nos DOIS sentidos. Regra que nunca se viu recusando
+// não prova nada — e verde decorativo é pior que teste nenhum, porque dá confiança.
+
+test("podeComentarChamado: GESTÃO comenta em chamado alheio", () => {
+  assert.equal(podeComentarChamado("admin", "uid-de-outro", "uid-meu"), true);
+  assert.equal(podeComentarChamado("owner", "uid-de-outro", "uid-meu"), true);
+});
+
+test("podeComentarChamado: o AUTOR comenta no próprio chamado", () => {
+  assert.equal(podeComentarChamado("membro", "uid-meu", "uid-meu"), true);
+});
+
+test("podeComentarChamado RECUSA membro que não é o autor — é o espelho da RLS de leitura", () => {
+  // sem isto a ESCRITA fica mais larga que a LEITURA: um membro comenta em ticket que a policy
+  // de SELECT da 0070 não deixa ele ler, e ninguém nunca lê a resposta.
+  assert.equal(podeComentarChamado("membro", "uid-de-outro", "uid-meu"), false);
+});
+
+test("podeComentarChamado RECUSA quem não tem papel, e recusa quando falta o uid ou o autor", () => {
+  assert.equal(podeComentarChamado(null, "uid-meu", "uid-meu"), false);
+  assert.equal(podeComentarChamado("membro", "uid-meu", null), false);
+  assert.equal(podeComentarChamado("membro", null, "uid-meu"), false);
+  // e a recusa por falta de dado NÃO pode virar permissão por coincidência de nulos
+  assert.equal(podeComentarChamado("membro", null, null), false);
+});
+
+test("numeroDaRota aceita inteiro positivo e devolve null para o resto", () => {
+  assert.equal(numeroDaRota("14"), 14);
+  assert.equal(numeroDaRota(["14"]), 14);
+  assert.equal(numeroDaRota(" 14 "), 14);
+  assert.equal(numeroDaRota("0"), null);       // `numero` da view começa em 1
+  assert.equal(numeroDaRota("-3"), null);
+  assert.equal(numeroDaRota("1.5"), null);
+  assert.equal(numeroDaRota("abc"), null);
+  assert.equal(numeroDaRota(undefined), null);
+  assert.equal(numeroDaRota(""), null);
+  // o que a rota recebe é texto de URL: nada disto pode virar consulta
+  assert.equal(numeroDaRota("1 or 1=1"), null);
+  assert.equal(numeroDaRota("1;drop"), null);
+  assert.equal(numeroDaRota("../../etc"), null);
+});
+
+test("numeroDaRota recusa número grande demais para ser inteiro seguro", () => {
+  // Number("999...") vira float e perde precisão em silêncio; a consulta iria com outro número.
+  assert.equal(numeroDaRota("9007199254740993"), null);
+});
+
+test("a frase de chamado inacessível NÃO distingue 'não existe' de 'não é seu'", () => {
+  // distinguir vazaria a EXISTÊNCIA de chamado alheio para quem varresse /suporte/1, /2, /3
+  assert.match(MOTIVO_CHAMADO_INACESSIVEL, /não existe ou não é seu/);
+  assert.doesNotMatch(MOTIVO_CHAMADO_INACESSIVEL, /permiss|proibid|negad/i);
 });

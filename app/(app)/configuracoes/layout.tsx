@@ -49,7 +49,9 @@ const GRUPOS: { rotulo: string; itens: ItemNav[] }[] = [
     rotulo: "Avançado",
     itens: [
       { href: "/configuracoes/avancado", rotulo: "Todas as configurações" },
-      { href: "/configuracoes/suporte", rotulo: "Suporte" },
+      // M5 (R18): "Suporte" saiu daqui. Não é ajuste de workspace — é o canal entre quem usa e
+      // quem constrói, e enquanto vivia sob /configuracoes ele acendia "Configurações" como seção
+      // ativa em quem estava relatando um bug. Agora é /suporte, primeiro nível, na sidebar.
     ],
   },
 ];

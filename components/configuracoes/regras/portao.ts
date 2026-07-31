@@ -288,6 +288,20 @@ export const PORTAO_CAMINHO_ANEXO: Portao = {
 
 export const PREFIXOS_PERMITIDOS = [
   "app/(app)/configuracoes/",
+  // M5 (R18): o suporte SAIU de baixo de /configuracoes. Não é ajuste de workspace — é o canal
+  // entre quem usa e quem constrói, e enquanto vivia lá ele acendia "Configurações" como seção
+  // ativa em quem estava relatando um bug (SPEC-M5 §5.1).
+  //
+  // ISTO É A DEFINIÇÃO QUE MUDOU, NÃO O PORTÃO QUE ESTAVA ERRADO — e a distinção decide se
+  // acrescentar esta linha é conserto ou contorno. A fronteira DECLARA o território da trilha;
+  // o território cresceu por decisão de spec, então a declaração acompanha. O que o portão
+  // protege continua protegido: `lib/`, `middleware.ts` e `components/conversas/` seguem fora, e
+  // o teste "FRONTEIRA reprova arquivo fora da Web-B" continua exercendo isso.
+  //
+  // O que NÃO valeria era o inverso — deixar os três arquivos de `app/(app)/suporte/` reprovando
+  // e desligar o portão para a suíte passar. Portão que grita sem motivo treina a operação a
+  // ignorá-lo (MÉTODO §26), e o remédio errado é sempre o mais rápido.
+  "app/(app)/suporte/",
   "components/configuracoes/",
   "components/suporte/",
   "tests/",

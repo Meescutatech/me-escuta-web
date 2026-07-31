@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { resolverChamado } from "@/app/(app)/configuracoes/suporte/actions";
+import { resolverChamado } from "@/app/(app)/suporte/actions";
 import {
   codigoTicket,
   contarPorAba,
@@ -125,18 +126,34 @@ export function ListaRelatos({
               key={t.id}
               className="grid min-h-[48px] grid-cols-[58px_54px_minmax(0,1fr)_78px] items-center gap-3 border-b border-linha px-2 py-1.5 hover:bg-hover"
             >
-              <span className="font-mono text-[12.5px] tabular-nums text-tinta">
-                {codigoTicket(t.numero)}
-              </span>
-              <span className="text-[11.5px] text-suave">{rotuloTipo(t.tipo)}</span>
-              <span className="min-w-0">
-                <span className="block truncate text-[14px] font-medium text-tinta">{t.titulo}</span>
-                <span className="mt-0.5 block truncate text-[11.5px] text-suave">
-                  {t.autor_nome ?? t.autor_email ?? "—"}
-                  {t.onde ? <span className="ml-1.5 font-mono text-mute">{t.onde}</span> : null}
-                  {t.anexos > 0 ? <span className="ml-1.5 text-mute">{t.anexos} img</span> : null}
+              {/* A LINHA INTEIRA abre o detalhe, menos o botão de resolver. `Link` de verdade e
+                  não `onClick` com router.push: assim "abrir em nova aba" e "copiar link"
+                  funcionam — e este é exatamente o link que as pessoas colam para citar um
+                  chamado. O botão fica FORA do Link, senão resolver seria um clique dentro de
+                  uma âncora e o navegador navegaria junto. */}
+              <Link
+                href={`/suporte/${t.numero}`}
+                className="contents"
+                aria-label={`Abrir ${codigoTicket(t.numero)} — ${t.titulo}`}
+              >
+                <span className="font-mono text-[12.5px] tabular-nums text-tinta">
+                  {codigoTicket(t.numero)}
                 </span>
-              </span>
+                <span className="text-[11.5px] text-suave">{rotuloTipo(t.tipo)}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[14px] font-medium text-tinta">{t.titulo}</span>
+                  <span className="mt-0.5 block truncate text-[11.5px] text-suave">
+                    {t.autor_nome ?? t.autor_email ?? "—"}
+                    {t.onde ? <span className="ml-1.5 font-mono text-mute">{t.onde}</span> : null}
+                    {t.anexos > 0 ? <span className="ml-1.5 text-mute">{t.anexos} img</span> : null}
+                    {t.comentarios > 0 ? (
+                      <span className="ml-1.5 text-mute">
+                        {t.comentarios} {t.comentarios === 1 ? "resposta" : "respostas"}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+              </Link>
               <span className="flex items-center justify-end gap-2">
                 <span className="text-[12.5px] tabular-nums text-suave">{dataCurta(t.aberto_em)}</span>
                 {gestor && t.status === "aberto" ? (
