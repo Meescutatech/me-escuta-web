@@ -117,8 +117,15 @@ function LeadsPorEtapa({ faixas }: { faixas: FaixaEtapa[] }) {
 function TendenciaMensagens({ dias }: { dias: DiaMensagens[] }) {
   const max = Math.max(1, ...dias.flatMap((d) => [d.entrada ?? 0, d.saida ?? 0]));
   const altura = 64; // px da área de plotagem
+  // Janela inteira em zero MEDIDO (não null): dizer, não deixar o vazio parecer falha de render.
+  const tudoZero = dias.length > 0 && dias.every((d) => d.entrada === 0 && d.saida === 0);
   return (
-    <div>
+    <div className="relative">
+      {tudoZero && (
+        <span className="absolute inset-x-0 top-5 text-center text-[12px] text-mute">
+          sem mensagens nos últimos 7 dias
+        </span>
+      )}
       <div className="flex items-end gap-1.5 border-b border-linha pb-px" style={{ height: altura + 1 }}>
         {dias.map((d, i) => {
           const semLeitura = d.entrada == null && d.saida == null;
