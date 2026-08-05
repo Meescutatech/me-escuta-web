@@ -8,9 +8,13 @@ import {
   inicioDoDiaSP,
   janelasUltimosDias,
   mediana,
+  idadeCurta,
   minutosPrimeiraResposta,
+  percentualChegouAteAqui,
   percentualEntrega,
+  resumirSugestoes,
   rotuloDiaSP,
+  taxaFechamento,
   somaValores,
   ymdEmSaoPaulo,
   type MensagemMinima,
@@ -216,4 +220,71 @@ test("F24a · 'enviado' NÃO é entregue — confundir os dois infla a taxa do p
     entregues: 0,
     falhas: 0,
   });
+});
+
+// ─────────────── R19 · Trilha 2 — as contas novas do painel ───────────────
+
+test("R19 · percentualChegouAteAqui: cumulativo, monotônico, 1ª etapa = 100%", () => {
+  // 10 no topo, 6 no meio, 4 no fim → total 20; "até aqui" = 100%, 50%, 20%
+  assert.deepEqual(percentualChegouAteAqui([10, 6, 4]), [100, 50, 20]);
+});
+
+test("R19 · percentualChegouAteAqui: etapa vazia no meio não quebra a monotonia", () => {
+  assert.deepEqual(percentualChegouAteAqui([8, 0, 2]), [100, 20, 20]);
+});
+
+test("R19 · percentualChegouAteAqui: QUALQUER null → tudo null (total desconhecido não vira %)", () => {
+  assert.deepEqual(percentualChegouAteAqui([10, null, 4]), [null, null, null]);
+});
+
+test("R19 · percentualChegouAteAqui: funil todo zerado → null, nunca 0% inventado", () => {
+  assert.deepEqual(percentualChegouAteAqui([0, 0]), [null, null]);
+});
+
+test("R19 · taxaFechamento: razão dos fechados, com a base junto", () => {
+  assert.deepEqual(taxaFechamento(3, 1), { pct: 75, base: 4 });
+});
+
+test("R19 · taxaFechamento: base zero ou contagem indisponível → pct null", () => {
+  assert.deepEqual(taxaFechamento(0, 0), { pct: null, base: 0 });
+  assert.deepEqual(taxaFechamento(null, 5), { pct: null, base: null });
+  assert.deepEqual(taxaFechamento(5, null), { pct: null, base: null });
+});
+
+test("R19 · resumirSugestoes: total, quebra por agente (maior primeiro) e a mais antiga", () => {
+  const r = resumirSugestoes([
+    { agente: "clara", criado_em: "2026-07-16T20:35:12+00:00" },
+    { agente: "clara", criado_em: "2026-08-01T10:00:00+00:00" },
+    { agente: "jarvis", criado_em: "2026-07-16T14:21:59+00:00" },
+  ]);
+  assert.equal(r.pendentes, 3);
+  assert.deepEqual(r.porAgente, [
+    { agente: "clara", qtd: 2 },
+    { agente: "jarvis", qtd: 1 },
+  ]);
+  assert.equal(r.maisAntigaEm, "2026-07-16T14:21:59+00:00");
+});
+
+test("R19 · resumirSugestoes: empate ordena por nome; agente vazio vira 'sem agente'", () => {
+  const r = resumirSugestoes([{ agente: "b" }, { agente: "a" }, { agente: null }]);
+  assert.deepEqual(r.porAgente, [
+    { agente: "a", qtd: 1 },
+    { agente: "b", qtd: 1 },
+    { agente: "sem agente", qtd: 1 },
+  ]);
+  assert.equal(r.maisAntigaEm, null); // sem criado_em não se inventa idade
+});
+
+test("R19 · resumirSugestoes: fila vazia é 0 medido (o teste cria o sujeito — §17 do MÉTODO)", () => {
+  assert.deepEqual(resumirSugestoes([]), { pendentes: 0, porAgente: [], maisAntigaEm: null });
+});
+
+test("R19 · idadeCurta: faixas de exibição e honestidade no inválido", () => {
+  const agora = new Date("2026-08-04T12:00:00Z");
+  assert.equal(idadeCurta("2026-08-04T11:59:30Z", agora), "30s");
+  assert.equal(idadeCurta("2026-08-04T11:15:00Z", agora), "45min");
+  assert.equal(idadeCurta("2026-08-04T03:00:00Z", agora), "9h");
+  assert.equal(idadeCurta("2026-07-16T14:21:59Z", agora), "18d");
+  assert.equal(idadeCurta(null, agora), null);
+  assert.equal(idadeCurta("nao-e-data", agora), null);
 });

@@ -1,5 +1,11 @@
-import type { DadosDashboard, FaixaEtapa } from "@/lib/dados/dashboard";
-import { formatarDuracaoMin } from "@/lib/dados/dashboard-calculos";
+import Link from "next/link";
+import type { DadosDashboard, DiaMensagens, FaixaEtapa } from "@/lib/dados/dashboard";
+import {
+  formatarDuracaoMin,
+  idadeCurta,
+  percentualChegouAteAqui,
+  taxaFechamento,
+} from "@/lib/dados/dashboard-calculos";
 import { segmentosReguaAgregada } from "@/lib/dados/funil-calculos";
 import { ReguaFunil } from "@/components/regua-funil";
 import { CarimboVivo } from "./carimbo-vivo";
@@ -47,6 +53,10 @@ function Num({ children }: { children: React.ReactNode }) {
 
 function LeadsPorEtapa({ faixas }: { faixas: FaixaEtapa[] }) {
   const max = Math.max(1, ...faixas.map((f) => f.qtd ?? 0));
+  // R19 (2.3): funil com queda — % dos leads ativos que estão na etapa ou além (leitura
+  // honesta de um snapshot; razão entre etapas vizinhas mediria estoque, não conversão).
+  const chegouAteAqui = percentualChegouAteAqui(faixas.map((f) => f.qtd));
+  const temPct = chegouAteAqui.some((p) => p != null);
   return (
     <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
       <div className="mb-3.5 flex items-baseline gap-2.5">
@@ -58,8 +68,19 @@ function LeadsPorEtapa({ faixas }: { faixas: FaixaEtapa[] }) {
       <div className="mb-4">
         <ReguaFunil segmentos={segmentosReguaAgregada(faixas)} rotulo="Etapas do funil com leads" />
       </div>
-      {faixas.map(({ etapa, qtd }) => {
+      {temPct && (
+        <div className="mb-1.5 flex items-center gap-3">
+          <span className="w-[190px] min-w-[190px]" />
+          <span className="flex-1" />
+          <span className="w-11 text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute">leads</span>
+          <span className="w-14 text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute" title="% dos leads ativos que estão nesta etapa ou além">
+            até aqui
+          </span>
+        </div>
+      )}
+      {faixas.map(({ etapa, qtd }, i) => {
         const alerta = /faltou/i.test(etapa.chave) || /faltou/i.test(etapa.nome);
+        const pct = chegouAteAqui[i];
         return (
           <div key={etapa.chave} className="flex min-h-8 items-center gap-3">
             <span className={cn("w-[190px] min-w-[190px] truncate text-[13px]", alerta ? "text-amarelo" : "text-tinta")} title={etapa.nome}>
@@ -74,9 +95,121 @@ function LeadsPorEtapa({ faixas }: { faixas: FaixaEtapa[] }) {
               )}
             </span>
             <span className="w-11 text-right font-mono text-[12px] tabular-nums text-tinta">{n(qtd)}</span>
+            {temPct && (
+              <span className="w-14 text-right font-mono text-[11px] tabular-nums text-suave">
+                {pct == null ? "—" : `${pct.toLocaleString("pt-BR")}%`}
+              </span>
+            )}
           </div>
         );
       })}
+    </section>
+  );
+}
+
+// ─────────────── mensagens · 7 dias (R19, 2.1) ───────────────
+
+/**
+ * A série `mensagens7d` sempre foi lida inteira e mostrada só no último dia. Barras finas
+ * pareadas por dia: recebidas (laranja) / enviadas (azul-gráfico) — o par validado pela bateria
+ * CVD. Dia sem leitura mostra "—" no lugar do par (null não vira barra zero).
+ */
+function TendenciaMensagens({ dias }: { dias: DiaMensagens[] }) {
+  const max = Math.max(1, ...dias.flatMap((d) => [d.entrada ?? 0, d.saida ?? 0]));
+  const altura = 64; // px da área de plotagem
+  return (
+    <div>
+      <div className="flex items-end gap-1.5 border-b border-linha pb-px" style={{ height: altura + 1 }}>
+        {dias.map((d, i) => {
+          const semLeitura = d.entrada == null && d.saida == null;
+          const hoje = i === dias.length - 1;
+          const rotuloCompleto = `${d.rotulo} · ${n(d.entrada)} recebidas / ${n(d.saida)} enviadas`;
+          return (
+            <div key={d.rotulo} className="flex flex-1 items-end justify-center gap-[2px]" title={rotuloCompleto}>
+              {semLeitura ? (
+                <span className="pb-0.5 font-mono text-[10.5px] text-mute">—</span>
+              ) : (
+                <>
+                  <span
+                    className={cn("w-2 rounded-t-[2px] bg-laranja", !hoje && "opacity-75")}
+                    style={{ height: `${d.entrada ? Math.max(3, (d.entrada / max) * altura) : 0}px` }}
+                  />
+                  <span
+                    className={cn("w-2 rounded-t-[2px] bg-azul-graf", !hoje && "opacity-75")}
+                    style={{ height: `${d.saida ? Math.max(3, (d.saida / max) * altura) : 0}px` }}
+                  />
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-1 flex gap-1.5">
+        {dias.map((d, i) => (
+          <span
+            key={d.rotulo}
+            className={cn(
+              "flex-1 text-center font-mono text-[10px] tabular-nums",
+              i === dias.length - 1 ? "font-semibold text-tinta" : "text-mute",
+            )}
+          >
+            {d.rotulo.slice(0, 3)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────── operação de agentes (R19, 2.2) ───────────────
+
+/**
+ * A fila de `core.sugestao_ia` pendente — o coração do human-on-the-loop, antes invisível no
+ * painel. Total sempre; quebra por agente quando a leitura estreita coube no teto.
+ */
+function OperacaoAgentes({ dados, geradoEm }: { dados: DadosDashboard["sugestoes"]; geradoEm: string }) {
+  const idade = idadeCurta(dados.maisAntigaEm, new Date(geradoEm));
+  const parada = dados.maisAntigaEm != null && Date.parse(geradoEm) - Date.parse(dados.maisAntigaEm) >= 86400_000;
+  const maxAgente = Math.max(1, ...(dados.porAgente ?? []).map((a) => a.qtd));
+  return (
+    <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
+      <div className="mb-1 flex items-baseline gap-2.5">
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Operação de agentes</h2>
+        <Link href="/fila" className="ml-auto text-[12px] font-semibold text-laranja-esc hover:underline">
+          Ver fila →
+        </Link>
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-[34px] font-[650] leading-[1.15] tracking-[-0.02em] tabular-nums text-tinta">
+          {n(dados.pendentes)}
+        </span>
+        <span className="text-[12.5px] text-suave">propostas aguardando validação</span>
+      </div>
+      {idade && (
+        <div className={cn("mt-1 text-[12.5px]", parada ? "font-semibold text-amarelo" : "text-suave")}>
+          mais antiga há {idade}
+        </div>
+      )}
+      {dados.porAgente && dados.porAgente.length > 0 && (
+        <div className="mt-3 border-t border-linha/60 pt-2">
+          {dados.porAgente.map((a) => (
+            <div key={a.agente} className="flex min-h-7 items-center gap-3">
+              <span className="w-[72px] min-w-[72px] truncate text-[13px] text-tinta" title={a.agente}>
+                {a.agente}
+              </span>
+              <span className="h-1 flex-1 overflow-hidden rounded-[2px] bg-board">
+                <span
+                  className="block h-full rounded-[2px] bg-laranja opacity-70"
+                  style={{ width: `${Math.max(2, (a.qtd / maxAgente) * 100)}%` }}
+                />
+              </span>
+              <span className="w-11 text-right font-mono text-[12px] tabular-nums text-tinta">
+                {a.qtd.toLocaleString("pt-BR")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -91,6 +224,7 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
   const perdidos = dados.leadsPorEtapa.filter((f) => f.etapa.tipo === "perdido");
   const somaOuNull = (fs: FaixaEtapa[]) =>
     fs.length === 0 || fs.some((f) => f.qtd == null) ? null : fs.reduce((s, f) => s + (f.qtd ?? 0), 0);
+  const fechamento = taxaFechamento(somaOuNull(ganhos), somaOuNull(perdidos));
   const snapshot = ddmmhhmm(dados.ultimoEventoEm);
   const semDados = dados.ultimoEventoEm == null && (dados.leadsAtivos ?? 0) === 0;
 
@@ -163,15 +297,29 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
             <LeadsPorEtapa faixas={abertas} />
 
             <div className="flex flex-col gap-3">
-              {/* mensagens */}
+              {/* operação de agentes (R19, 2.2) */}
+              <OperacaoAgentes dados={dados.sugestoes} geradoEm={geradoEm} />
+
+              {/* mensagens (R19, 2.1: a série de 7 dias que já era lida vira gráfico) */}
               <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
-                <div className="mb-2 flex items-baseline gap-2.5">
-                  <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Mensagens · hoje</h2>
+                <div className="mb-3 flex items-baseline gap-2.5">
+                  <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Mensagens · 7 dias</h2>
                   {/* F5: idem — o carimbo do cabeçalho é o único selo de frescor da página. */}
+                  <span className="ml-auto flex items-center gap-3 text-[11px] text-suave">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-2 w-2 rounded-[2px] bg-laranja" aria-hidden />
+                      recebidas
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-2 w-2 rounded-[2px] bg-azul-graf" aria-hidden />
+                      enviadas
+                    </span>
+                  </span>
                 </div>
-                <div className="grid grid-cols-2 gap-x-5">
-                  <Metrica rot="Recebidas" val={n(hoje?.entrada ?? null)} />
-                  <Metrica rot="Enviadas" val={n(hoje?.saida ?? null)} />
+                <TendenciaMensagens dias={dados.mensagens7d} />
+                <div className="mt-3 grid grid-cols-2 gap-x-5">
+                  <Metrica rot="Recebidas hoje" val={n(hoje?.entrada ?? null)} />
+                  <Metrica rot="Enviadas hoje" val={n(hoje?.saida ?? null)} />
                   <Metrica
                     rot="Entrega"
                     val={entrega.pct != null ? `${entrega.pct.toLocaleString("pt-BR")}%` : "—"}
@@ -181,7 +329,7 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
                 </div>
               </section>
 
-              {/* fechamentos */}
+              {/* fechamentos (R19, 2.4: os 2 números soltos ganham a razão entre eles) */}
               <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
                 <div className="mb-3 flex items-baseline gap-2.5">
                   <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Fechamentos</h2>
@@ -196,6 +344,17 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
                     <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-vermelho">Venda perdida</div>
                     <div className="mt-1 text-2xl font-[650] tracking-[-0.02em] tabular-nums">{n(somaOuNull(perdidos))}</div>
                   </div>
+                </div>
+                <div className="mt-3 flex items-baseline justify-between border-t border-linha/60 pt-2.5">
+                  <span className="text-[13px] text-suave">Taxa de ganho</span>
+                  <span className="text-[16px] font-[650] tracking-[-0.01em] tabular-nums text-tinta">
+                    {fechamento.pct == null ? "—" : `${fechamento.pct.toLocaleString("pt-BR")}%`}
+                    {fechamento.pct != null && fechamento.base != null && (
+                      <span className="ml-1.5 font-mono text-[10.5px] font-normal text-mute">
+                        de {fechamento.base.toLocaleString("pt-BR")} fechados
+                      </span>
+                    )}
+                  </span>
                 </div>
               </section>
             </div>

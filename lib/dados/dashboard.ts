@@ -11,7 +11,9 @@ import {
   mediana,
   minutosPrimeiraResposta,
   percentualEntrega,
+  resumirSugestoes,
   somaValores,
+  TETO_SUGESTOES_AGREGACAO,
   type JanelaDia,
   type MensagemMinima,
 } from "./dashboard-calculos";
@@ -64,6 +66,12 @@ export interface DadosDashboard {
     total: number; // soma dos `valor` não-null em etapas abertas
     comValor: number;
     semValor: number | null; // honesto: Kommo só preenche price no fechamento
+  };
+  /** R19: a operação de agentes (core.sugestao_ia pendente) — a identidade do sistema, visível. */
+  sugestoes: {
+    pendentes: number | null;
+    porAgente: Array<{ agente: string; qtd: number }> | null; // null = quebra indisponível (teto/erro)
+    maisAntigaEm: string | null;
   };
 }
 
@@ -232,6 +240,25 @@ async function lerValorNegociacao(
 }
 
 /**
+ * R19 · fila dos agentes: 1 leitura estreita das pendentes (`agente,criado_em`, teto+1 como
+ * detector — F24a). Acima do teto ou com erro na leitura larga, volta ao head-count: o TOTAL
+ * continua certo e a quebra por agente fica indisponível (null), nunca inventada.
+ */
+async function lerSugestoes(supabase: Supabase): Promise<DadosDashboard["sugestoes"]> {
+  const { data, error } = await supabase
+    .schema("core")
+    .from("sugestao_ia")
+    .select("agente,criado_em")
+    .eq("status", "pendente")
+    .limit(TETO_SUGESTOES_AGREGACAO + 1);
+  if (!error && data && data.length <= TETO_SUGESTOES_AGREGACAO) {
+    return resumirSugestoes(data as Array<{ agente?: string | null; criado_em?: string | null }>);
+  }
+  const pendentes = await contar(supabase, "sugestao_ia", (q) => q.eq("status", "pendente"));
+  return { pendentes, porAgente: null, maisAntigaEm: null };
+}
+
+/**
  * PONTO DE TROCA do F24b (contrato no §F24b da Trilha D): no dia em que
  * `api.painel_resumo(p_dias int default 7)` existir — devolvendo UM jsonb com as chaves que
  * `DadosDashboard` já tem —, `lerDashboard` vira UMA chamada e tudo abaixo passa a ser o caminho
@@ -267,6 +294,7 @@ export async function lerDashboard(
     { base, entregues, falhas },
     primeiraResposta,
     { etapas, contagensEtapa, valorNegociacao },
+    sugestoes,
   ] = await Promise.all([
     lerUltimoEvento(supabase),
     contar(supabase, "lead", (q) => q.gte("criado_em", inicioHojeIso)),
@@ -275,6 +303,7 @@ export async function lerDashboard(
     lerEntrega(supabase),
     lerPrimeiraResposta(supabase, inicio7dIso),
     dependentesDeEtapas,
+    lerSugestoes(supabase),
   ]);
 
   const leadsPorEtapa: FaixaEtapa[] = etapas.map((etapa, i) => ({ etapa, qtd: contagensEtapa[i] }));
@@ -298,5 +327,6 @@ export async function lerDashboard(
     },
     primeiraResposta,
     valorNegociacao,
+    sugestoes,
   };
 }

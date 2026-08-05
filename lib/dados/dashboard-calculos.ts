@@ -182,6 +182,87 @@ export function contarEntrega(linhas: Array<{ status_entrega?: string | null }>)
   return { base, entregues, falhas };
 }
 
+/*
+ * ── R19 · Trilha 2 — as contas novas do painel ──────────────────────────────────────────────
+ * Mesma disciplina do resto do arquivo: puras, sem I/O, e o null é honesto — conta que não
+ * pode ser feita devolve null, nunca um número inventado.
+ */
+
+/**
+ * Funil cumulativo sobre o SNAPSHOT das etapas: % dos leads ativos que estão na etapa i OU além.
+ * É a única leitura de "conversão" honesta num retrato do estoque (razão entre etapas vizinhas
+ * pode passar de 100% e não mede coorte nenhuma). Monotônica por construção; 1ª etapa = 100%.
+ * Qualquer contagem null → null em TODAS (o total é desconhecido, o percentual seria invenção).
+ */
+export function percentualChegouAteAqui(qtds: Array<number | null>): Array<number | null> {
+  if (qtds.length === 0 || qtds.some((q) => q == null)) return qtds.map(() => null);
+  const total = qtds.reduce<number>((s, q) => s + (q ?? 0), 0);
+  if (total <= 0) return qtds.map(() => null);
+  let acumulado = total;
+  return qtds.map((q) => {
+    const pct = Math.round((acumulado / total) * 1000) / 10;
+    acumulado -= q ?? 0;
+    return pct;
+  });
+}
+
+/**
+ * Taxa de ganho dos FECHADOS: ganhos / (ganhos + perdidos). Base zero ou contagem
+ * indisponível → null (não existe taxa de um conjunto vazio ou desconhecido).
+ */
+export function taxaFechamento(
+  ganhos: number | null,
+  perdidos: number | null,
+): { pct: number | null; base: number | null } {
+  if (ganhos == null || perdidos == null) return { pct: null, base: null };
+  const base = ganhos + perdidos;
+  if (base <= 0) return { pct: null, base };
+  return { pct: Math.round((ganhos / base) * 1000) / 10, base };
+}
+
+/** Acima disto, ler a coluna `agente` das pendentes sai mais caro que o head-count. Medido hoje: 405. */
+export const TETO_SUGESTOES_AGREGACAO = 2000;
+
+export interface ResumoSugestoes {
+  pendentes: number;
+  porAgente: Array<{ agente: string; qtd: number }>; // ordem: maior fila primeiro
+  maisAntigaEm: string | null;
+}
+
+/** Total, quebra por agente e a mais antiga — de UMA leitura estreita das pendentes. */
+export function resumirSugestoes(
+  linhas: Array<{ agente?: string | null; criado_em?: string | null }>,
+): ResumoSugestoes {
+  const porAgente = new Map<string, number>();
+  let maisAntigaEm: string | null = null;
+  for (const l of linhas) {
+    const a = l.agente == null || l.agente === "" ? "sem agente" : String(l.agente);
+    porAgente.set(a, (porAgente.get(a) ?? 0) + 1);
+    if (l.criado_em && (maisAntigaEm == null || l.criado_em < maisAntigaEm)) maisAntigaEm = l.criado_em;
+  }
+  return {
+    pendentes: linhas.length,
+    porAgente: [...porAgente.entries()]
+      .map(([agente, qtd]) => ({ agente, qtd }))
+      .sort((x, y) => y.qtd - x.qtd || x.agente.localeCompare(y.agente)),
+    maisAntigaEm,
+  };
+}
+
+/** Idade curta de um instante: "45s", "12min", "5h", "18d". Inválido/ausente → null. */
+export function idadeCurta(iso: string | null, agora: Date): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  const seg = Math.max(0, Math.floor((agora.getTime() - t) / 1000));
+  if (seg < 60) return `${seg}s`;
+  const min = Math.floor(seg / 60);
+  if (min < 60) return `${min}min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
 /** Duração amigável a partir de minutos: "45s", "12 min", "1h 05min", "2d 3h". */
 export function formatarDuracaoMin(min: number | null): string {
   if (min == null) return "—";

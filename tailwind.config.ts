@@ -36,7 +36,10 @@ const config: Config = {
         // laranja NÃO entra aqui — segue reservado a ação primária e foco.
         nota: { fundo: "#FDF8EC", linha: "#E4D2A6", faixa: "#F9EFD8" },
         tarefa: { fundo: "#EFF1F8", linha: "#C9CFE4", faixa: "#E7EAF5" },
-        azul: { DEFAULT: "#143691", bg: "#EEF1FB", bd: "#D5DDF3" },
+        // azul.graf (R19): degrau de GRÁFICO do azul — par categórico com o laranja no painel
+        // (validado CVD/contraste pela bateria da skill dataviz; o DEFAULT reprova banda de
+        // luminância como cor de barra). Só pra marca de dado; texto segue nos tons de tinta.
+        azul: { DEFAULT: "#143691", bg: "#EEF1FB", bd: "#D5DDF3", graf: "#3D53B8" },
         creme: "#F7F7F4", // morreu o creme quente — vira o fundo frio
         fundo: "#F7F7F4",
         branco: "#FFFFFF",
