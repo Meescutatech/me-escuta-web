@@ -67,15 +67,64 @@ export async function atribuirDono(leadId: string, donoId: string | null): Promi
   return registrarEventoUI("dono_atribuido", { lead_id: leadId, dono_id: donoId }, leadId);
 }
 
-/** Açúcar do arrastar-card: emite etapa_alterada no shape do contrato. */
+/**
+ * Açúcar do arrastar-card: emite etapa_alterada no shape do contrato.
+ *
+ * R20 — `motivo` só existe na saída para etapa de tipo `perdido`, e vai no MESMO evento, não num
+ * evento seguinte: perder o lead e dizer por quê é um ato só. Dois eventos criariam a janela em que
+ * o lead está perdido sem motivo, que é exatamente o estado que o campo existe para impedir.
+ */
 export async function moverCardEtapa(
   leadId: string,
   etapaDe: string,
   etapaPara: string,
+  motivo?: { chave: string; detalhe?: string },
 ): Promise<ResultadoEvento> {
-  return registrarEventoUI(
-    "etapa_alterada",
-    { lead_id: leadId, etapa_de: etapaDe, etapa_para: etapaPara },
-    leadId,
-  );
+  const payload: Record<string, unknown> = {
+    lead_id: leadId,
+    etapa_de: etapaDe,
+    etapa_para: etapaPara,
+  };
+  if (motivo?.chave) {
+    payload.motivo_perda = motivo.chave;
+    if (motivo.detalhe?.trim()) payload.motivo_detalhe = motivo.detalhe.trim();
+  }
+  return registrarEventoUI("etapa_alterada", payload, leadId);
+}
+
+/** Campos do lead criado à mão. Só `nome` é obrigatório — telefone entra depois, pela ficha. */
+export interface NovoLead {
+  nome: string;
+  telefone?: string;
+  origem?: string;
+  etapa: string;
+  /** uuid de core.usuario — quem fica com o lead. Ausente = sem dono (a faixa de alarme acusa). */
+  donoId?: string | null;
+}
+
+/**
+ * R20 · CRIAR LEAD À MÃO — o ato que faltava para isto ser um sistema e não um receptor de WhatsApp.
+ *
+ * Quem chega por ligação, indicação ou pela mão da fono não tem conversa de WhatsApp para nascer
+ * de, e hoje simplesmente não existe no board (medido no gap: A6 = NÃO TEM).
+ *
+ * O `lead_id` é gerado AQUI e vai no envelope: `proj_lead` usa o lead_id do evento como chave da
+ * projeção. O `id_externo` é o MESMO uuid — assim o duplo-clique no botão cai no dedupe da porta
+ * (UNIQUE(origem,id_externo)) em vez de criar dois leads iguais, que é o defeito clássico desta tela.
+ */
+export async function criarLeadManual(dados: NovoLead): Promise<ResultadoEvento & { leadId?: string }> {
+  const nome = dados.nome.trim();
+  if (!nome) return { ok: false, motivo: "Nome é obrigatório." };
+
+  const leadId = randomUUID();
+  const payload: Record<string, unknown> = { lead_id: leadId, nome, etapa: dados.etapa };
+  const tel = dados.telefone?.trim();
+  if (tel) payload.telefone = tel;
+  // origem fica sob vocabulário da config de captação; 'manual' é o valor honesto para quem foi
+  // digitado por uma pessoa — nunca herdar 'meta'/'wa' de um lead que não veio de canal nenhum.
+  payload.origem = dados.origem?.trim() || "manual";
+  if (dados.donoId) payload.dono_id = dados.donoId;
+
+  const res = await registrarEventoUI("lead_criado", payload, leadId, leadId);
+  return res.ok ? { ...res, leadId } : res;
 }

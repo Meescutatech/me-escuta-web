@@ -7,6 +7,7 @@ import {
   buscaCasa,
   contarFiltrosAtivos,
   dentroDoPeriodo,
+  contarSemProximaAcao,
   filtrarCards,
   haFiltro,
   opcoesResponsavel,
@@ -36,6 +37,10 @@ function base(sobre: Partial<CardLead> = {}): CardLead {
     tags: [],
     proposta: null,
     kommo_lead_id: null,
+    // R20 — o card do fixture TEM próxima ação por padrão: assim o teste do filtro "sem próxima
+    // ação" precisa dizer explicitamente `false` para casar, e nenhum teste antigo muda de
+    // resultado por causa de um default silencioso.
+    tem_tarefa_pendente: true,
     ...sobre,
   };
 }
@@ -171,4 +176,49 @@ test("alternarValor liga/desliga sem mutar a lista original", () => {
   assert.deepEqual(alternarValor(l, "FORA"), ["SUS", "FORA"]);
   assert.deepEqual(alternarValor(l, "SUS"), []);
   assert.deepEqual(l, ["SUS"]);
+});
+
+// ─────────────── R20 · sem próxima ação ───────────────
+
+test("R20 · filtro sem-próxima-ação passa só quem NÃO tem tarefa pendente", () => {
+  const cards = [
+    base({ lead_id: "com", tem_tarefa_pendente: true }),
+    base({ lead_id: "sem", tem_tarefa_pendente: false }),
+  ];
+  const r = filtrarCards(cards, { ...FILTROS_VAZIOS, semProximaAcao: true });
+  assert.deepEqual(r.map((c) => c.lead_id), ["sem"]);
+});
+
+test("R20 · leitura de tarefas indisponível (null) NÃO acusa o lead — o card passa", () => {
+  // discrimina: o defeito que este teste mira é "filtro engole card por falha de leitura",
+  // que esconderia justamente o lead que o filtro existe para achar.
+  const cards = [base({ lead_id: "desconhecido", tem_tarefa_pendente: null })];
+  assert.equal(filtrarCards(cards, { ...FILTROS_VAZIOS, semProximaAcao: true }).length, 0);
+  assert.equal(filtrarCards(cards, FILTROS_VAZIOS).length, 1);
+});
+
+test("R20 · sem-próxima-ação combina com as outras dimensões por AND", () => {
+  const cards = [
+    base({ lead_id: "a", etapa: "novo", tem_tarefa_pendente: false }),
+    base({ lead_id: "b", etapa: "qualificado", tem_tarefa_pendente: false }),
+  ];
+  const r = filtrarCards(cards, { ...FILTROS_VAZIOS, semProximaAcao: true, etapas: ["qualificado"] });
+  assert.deepEqual(r.map((c) => c.lead_id), ["b"]);
+});
+
+test("R20 · contarSemProximaAcao devolve null se QUALQUER card for desconhecido", () => {
+  assert.equal(
+    contarSemProximaAcao([base({ tem_tarefa_pendente: false }), base({ tem_tarefa_pendente: null })]),
+    null,
+  );
+  assert.equal(
+    contarSemProximaAcao([base({ tem_tarefa_pendente: false }), base({ tem_tarefa_pendente: true })]),
+    1,
+  );
+  assert.equal(contarSemProximaAcao([]), 0);
+});
+
+test("R20 · sem-próxima-ação conta como filtro ativo no cabeçalho", () => {
+  assert.ok(haFiltro({ ...FILTROS_VAZIOS, semProximaAcao: true }));
+  assert.ok(!haFiltro(FILTROS_VAZIOS));
 });

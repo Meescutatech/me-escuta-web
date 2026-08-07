@@ -31,6 +31,14 @@ export interface FiltrosFunil {
   ate: string | null;
   /** "meus leads" (0060): corta por dono_id === uuid do usuário logado — chip próprio, fora do painel */
   meus: boolean;
+  /**
+   * R20 · "sem próxima ação": lead ativo sem NENHUMA tarefa pendente. É a pergunta que expõe o
+   * vazamento — no Kommo há 642 tarefas vencidas (58% de 1.091) e ninguém sabe quem está largado.
+   *
+   * Note a diferença de `vencida`, e ela é o ponto: tarefa vencida ao menos EXISTE e aparece em
+   * vermelho para alguém. Lead sem tarefa nenhuma não aparece em lugar nenhum — some em silêncio.
+   */
+  semProximaAcao: boolean;
 }
 
 export const FILTROS_VAZIOS: FiltrosFunil = {
@@ -41,6 +49,7 @@ export const FILTROS_VAZIOS: FiltrosFunil = {
   de: null,
   ate: null,
   meus: false,
+  semProximaAcao: false,
 };
 
 /**
@@ -79,6 +88,10 @@ export function filtrarCards(cards: CardLead[], f: FiltrosFunil, meuId: string |
     if (f.etapas.length > 0 && !f.etapas.includes(c.etapa)) return false;
     if (f.tags.length > 0 && !c.tags.some((t) => f.tags.includes(t))) return false;
     if (!dentroDoPeriodo(c.entrou_etapa_em, f.de, f.ate)) return false;
+    // sem próxima ação: só corta quando SABEMOS que não há tarefa pendente. `null` = a leitura de
+    // tarefas falhou, e aí o card PASSA — filtro que engole card por falha de leitura esconde
+    // justamente o lead que o filtro existe para achar.
+    if (f.semProximaAcao && c.tem_tarefa_pendente !== false) return false;
     return true;
   });
 }
@@ -93,9 +106,19 @@ export function contarFiltrosAtivos(f: FiltrosFunil): number {
   );
 }
 
-/** Há qualquer filtro (painel, busca OU meus)? — controla o "X de N leads ativos" do cabeçalho. */
+/** Há qualquer filtro (painel, busca, meus OU sem-próxima-ação)? — controla o "X de N" do cabeçalho. */
 export function haFiltro(f: FiltrosFunil): boolean {
-  return f.busca.trim() !== "" || f.meus || contarFiltrosAtivos(f) > 0;
+  return f.busca.trim() !== "" || f.meus || f.semProximaAcao || contarFiltrosAtivos(f) > 0;
+}
+
+/**
+ * Quantos leads ativos estão sem próxima ação — o número do chip. `null` quando a leitura de
+ * tarefas não veio: o chip mostra "—" em vez de "0", porque zero aqui é a melhor notícia possível
+ * e inventá-la é o pior erro que este contador pode cometer.
+ */
+export function contarSemProximaAcao(cards: CardLead[]): number | null {
+  if (cards.some((c) => c.tem_tarefa_pendente == null)) return null;
+  return cards.filter((c) => c.tem_tarefa_pendente === false).length;
 }
 
 export interface OpcaoFiltro {

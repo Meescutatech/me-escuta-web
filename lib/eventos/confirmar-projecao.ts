@@ -218,6 +218,18 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
   etapa_alterada: { tabela: "estado_lead", por: "posicao", coluna: "ultima_posicao" },
   dono_atribuido: { tabela: "lead", por: "posicao", coluna: "ultima_posicao" },
 
+  /*
+   * R20 · lead criado à mão. Modo `posicao` sobre `core.lead`, no molde do `dono_atribuido`:
+   * `proj_lead` carimba `ultima_posicao` com a `posicao_global` do evento nos DOIS inserts
+   * (`core.lead` e `core.estado_lead`), então a posição prova que ESTE evento projetou.
+   *
+   * Conferir por `lead_id` existir seria fraco de um jeito específico desta tela: o lead_id é
+   * gerado pelo cliente, então "a linha existe" também é verdade num retry que caiu no dedupe —
+   * e aí a tela diria "criei" para a segunda chamada, que não criou nada. O caminho do duplicado
+   * já sai antes daqui como sucesso idempotente, com a flag.
+   */
+  lead_criado: { tabela: "lead", por: "posicao", coluna: "ultima_posicao" },
+
   conversa_assumida: { tabela: "conversa", por: "posicao", coluna: "posse_posicao" },
   conversa_devolvida: { tabela: "conversa", por: "posicao", coluna: "posse_posicao" },
 

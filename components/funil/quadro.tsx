@@ -17,7 +17,16 @@ import { moverCardEtapa } from "@/app/(app)/funil/actions";
 import { CartaoLead } from "./card-lead";
 import { DrawerCard } from "./drawer-card";
 import { FiltrosBoard } from "./filtros";
-import { FILTROS_VAZIOS, filtrarCards, haFiltro, type FiltrosFunil } from "@/lib/dados/funil-filtros";
+import { NovoLead } from "./novo-lead";
+import { DialogoMotivoPerda } from "./motivo-perda";
+import type { MotivoPerda } from "@/lib/dados/motivo-perda";
+import {
+  FILTROS_VAZIOS,
+  contarSemProximaAcao,
+  filtrarCards,
+  haFiltro,
+  type FiltrosFunil,
+} from "@/lib/dados/funil-filtros";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { CarimboVivo } from "@/components/dashboard/carimbo-vivo";
@@ -154,6 +163,8 @@ export function Quadro({
   autorId = null,
   mencionaveis = [],
   tiposTarefa = [],
+  motivosPerda = [],
+  motivosDaConfig = false,
 }: {
   dados: DadosFunil;
   /** hora da renderização server — carimbo "ao vivo · atualizado há Xs" */
@@ -164,6 +175,9 @@ export function Quadro({
   autorId?: string | null;
   mencionaveis?: Mencionavel[];
   tiposTarefa?: TipoTarefa[];
+  /** R20 — vocabulário de motivo de perda (config `motivo_perda`, com degrau para a semente) */
+  motivosPerda?: MotivoPerda[];
+  motivosDaConfig?: boolean;
 }) {
   const [cards, setCards] = useState<CardLead[]>(dados.cards);
   const [arrastando, setArrastando] = useState<string | null>(null);
@@ -175,6 +189,15 @@ export function Quadro({
   const [aviso, setAviso] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [filtros, setFiltros] = useState<FiltrosFunil>(FILTROS_VAZIOS);
+  /** R20 — movimento para etapa `perdido` esperando o motivo. null = nenhum diálogo aberto. */
+  const [perdaPendente, setPerdaPendente] = useState<{
+    leadId: string;
+    etapaDe: string;
+    etapaAlvo: string;
+    entrouAntes: string | null;
+    nomeLead: string;
+    etapaNome: string;
+  } | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setAgora(Date.now()), 60000);
@@ -247,6 +270,12 @@ export function Quadro({
     () => cardsFiltrados.filter((c) => chavesAbertas.has(c.etapa)).length,
     [cardsFiltrados, chavesAbertas],
   );
+  // R20 — o contador do chip conta sobre os leads ATIVOS (lead perdido não tem próxima ação por
+  // definição, e contá-lo faria o número virar ruído permanente).
+  const semAcao = useMemo(
+    () => contarSemProximaAcao(cards.filter((c) => chavesAbertas.has(c.etapa))),
+    [cards, chavesAbertas],
+  );
 
   const cardArrastado = cards.find((c) => c.lead_id === arrastando) ?? null;
 
@@ -268,6 +297,39 @@ export function Quadro({
     setArrastando(String(ev.active.id).replace(/^card:/, ""));
   }
 
+  /**
+   * A movimentação de verdade — separada do gesto de arrastar porque a perda entra por aqui
+   * DEPOIS do diálogo de motivo, com o mesmo caminho otimista e o mesmo rollback.
+   */
+  async function aplicarMovimento(
+    leadId: string,
+    etapaDe: string,
+    etapaAlvo: string,
+    entrouAntes: string | null,
+    motivo?: { chave: string; detalhe?: string },
+  ) {
+    setCards((prev) =>
+      prev.map((c) =>
+        c.lead_id === leadId ? { ...c, etapa: etapaAlvo, entrou_etapa_em: new Date().toISOString() } : c,
+      ),
+    );
+
+    movendoRef.current += 1;
+    let res;
+    try {
+      res = await moverCardEtapa(leadId, etapaDe, etapaAlvo, motivo);
+    } finally {
+      movendoRef.current -= 1;
+    }
+    if (!res.ok) {
+      setCards((prev) =>
+        prev.map((c) => (c.lead_id === leadId ? { ...c, etapa: etapaDe, entrou_etapa_em: entrouAntes } : c)),
+      );
+      setAviso(`Não foi possível mover: ${res.motivo ?? "erro"}`);
+      setTimeout(() => setAviso(null), 5000);
+    }
+  }
+
   async function onDragEnd(ev: DragEndEvent) {
     setArrastando(null);
     const { active, over } = ev;
@@ -283,29 +345,23 @@ export function Quadro({
     const atual = cards.find((c) => c.lead_id === leadId);
     if (!atual || atual.etapa === etapaAlvo) return;
 
-    const etapaDe = atual.etapa;
-    setCards((prev) =>
-      prev.map((c) =>
-        c.lead_id === leadId ? { ...c, etapa: etapaAlvo, entrou_etapa_em: new Date().toISOString() } : c,
-      ),
-    );
+    // R20 — perder um lead exige dizer por quê. O card NÃO se move enquanto o diálogo estiver
+    // aberto: o estado "perdido sem motivo" não chega a existir, nem por um instante de UI.
+    // Cancelar deixa o card exatamente onde estava.
+    const alvo = dados.etapas.find((e) => e.chave === etapaAlvo);
+    if (alvo?.tipo === "perdido" && motivosPerda.length > 0) {
+      setPerdaPendente({
+        leadId,
+        etapaDe: atual.etapa,
+        etapaAlvo,
+        entrouAntes: atual.entrou_etapa_em,
+        nomeLead: atual.nome ?? "Este lead",
+        etapaNome: alvo.nome,
+      });
+      return;
+    }
 
-    movendoRef.current += 1;
-    let res;
-    try {
-      res = await moverCardEtapa(leadId, etapaDe, etapaAlvo);
-    } finally {
-      movendoRef.current -= 1;
-    }
-    if (!res.ok) {
-      setCards((prev) =>
-        prev.map((c) =>
-          c.lead_id === leadId ? { ...c, etapa: etapaDe, entrou_etapa_em: atual.entrou_etapa_em } : c,
-        ),
-      );
-      setAviso(`Não foi possível mover: ${res.motivo ?? "erro"}`);
-      setTimeout(() => setAviso(null), 5000);
-    }
+    await aplicarMovimento(leadId, atual.etapa, etapaAlvo, atual.entrou_etapa_em);
   }
 
   const leadAberto = cards.find((c) => c.lead_id === cardAberto) ?? null;
@@ -334,6 +390,26 @@ export function Quadro({
           <span className="rounded-full bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-semibold text-vermelho">{aviso}</span>
         )}
         <div className="ml-auto flex items-center gap-3.5 self-center">
+          {/* R20 · sem próxima ação — o chip que responde "quem está largado". Só aparece quando
+              HÁ lead nessa situação: zero é silêncio, não um "0" para alguém ignorar todo dia
+              (mesma regra do contador de vencidas na sidebar). "—" = leitura de tarefas falhou. */}
+          {(semAcao == null || semAcao > 0) && (
+            <button
+              type="button"
+              onClick={() => setFiltros((f) => ({ ...f, semProximaAcao: !f.semProximaAcao }))}
+              aria-pressed={filtros.semProximaAcao}
+              title="Leads ativos sem nenhuma tarefa pendente — ninguém tem próximo passo marcado"
+              className={cn(
+                "rounded-full border px-3 py-1 text-[12.5px] transition-colors",
+                filtros.semProximaAcao
+                  ? "border-amarelo bg-amarelo-bg font-medium text-amarelo"
+                  : "border-linha bg-branco text-suave hover:border-linha-forte",
+              )}
+            >
+              Sem próxima ação
+              <span className="ml-1.5 font-mono tabular-nums">{semAcao == null ? "—" : semAcao}</span>
+            </button>
+          )}
           {/* meus leads (0060): corte por dono_id === auth.uid — o gesto diário do vendedor no Kommo */}
           {autorId && (
             <button
@@ -368,6 +444,12 @@ export function Quadro({
             filtros={filtros}
             onChange={setFiltros}
             qtdFiltrada={cardsFiltrados.length}
+          />
+          {/* R20 · o lead que não nasce de WhatsApp: ligação, indicação, a fono que anotou */}
+          <NovoLead
+            etapas={dados.etapas}
+            etapaPadrao={dados.etapas.find((e) => e.tipo === "aberto")?.chave ?? "novo"}
+            autorId={autorId}
           />
           <CarimboVivo
             geradoEm={geradoEm}
@@ -428,6 +510,21 @@ export function Quadro({
         tiposTarefa={tiposTarefa}
         onFechar={() => setCardAberto(null)}
       />
+
+      {perdaPendente && (
+        <DialogoMotivoPerda
+          nomeLead={perdaPendente.nomeLead}
+          etapaNome={perdaPendente.etapaNome}
+          motivos={motivosPerda}
+          daConfig={motivosDaConfig}
+          onCancelar={() => setPerdaPendente(null)}
+          onConfirmar={(motivo) => {
+            const p = perdaPendente;
+            setPerdaPendente(null);
+            void aplicarMovimento(p.leadId, p.etapaDe, p.etapaAlvo, p.entrouAntes, motivo);
+          }}
+        />
+      )}
 
       {toast && (
         <div className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-[6px] border border-linha-forte bg-branco px-4 py-2.5 text-sm text-navy shadow-forte">

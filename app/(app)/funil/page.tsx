@@ -5,6 +5,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { Quadro } from "@/components/funil/quadro";
 import { lerLeadsSemResponsavel } from "@/lib/dados/identidades";
 import { FaixaSemResponsavel } from "@/components/funil/faixa-sem-responsavel";
+import { lerMotivosPerda } from "@/lib/dados/motivo-perda";
 
 // Sempre lê o estado atual do funil (sem cache) — projeção do ledger.
 export const dynamic = "force-dynamic";
@@ -18,13 +19,15 @@ export default async function FunilPage({
   // tipos de tarefa (R13 / Bloco C) em paralelo — o drawer é o caminho de criação a partir do
   // funil, e nada disto depende do funil (getUser vai à rede)
   const supabase = criarClienteServidor();
-  const [dados, userRes, mencionaveis, tipos, semResponsavel] = await Promise.all([
+  const [dados, userRes, mencionaveis, tipos, semResponsavel, motivos] = await Promise.all([
     lerFunil(),
     supabase.auth.getUser(),
     lerMencionaveis(),
     lerTiposTarefa(),
     // R18/M3: a faixa é ALARME, não filtro — visível sem ninguém ligar nada.
     lerLeadsSemResponsavel(),
+    // R20: vocabulário de motivo de perda (config `motivo_perda`; degrau para a semente embutida)
+    lerMotivosPerda(),
   ]);
   const user = userRes.data.user;
 
@@ -39,6 +42,8 @@ export default async function FunilPage({
       autorId={user?.id ?? null}
       mencionaveis={mencionaveis}
       tiposTarefa={tipos.tipos}
+      motivosPerda={motivos.motivos}
+      motivosDaConfig={motivos.daConfig}
       />
     </>
   );

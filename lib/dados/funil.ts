@@ -49,6 +49,12 @@ export interface CardLead {
   tags: string[]; // core.lead.tags (jsonb) — a view já retorna; base do filtro por tag
   proposta: PropostaPendente | null; // não vem da view ainda — null até o laço de sugestões chegar no card
   kommo_lead_id?: string | null;
+  /**
+   * R20: o lead tem tarefa PENDENTE? `null` = não foi possível saber (leitura falhou ou bateu no
+   * teto). Três estados, não dois — e o null é o que impede o filtro "sem próxima ação" de acusar
+   * lead saudável por causa de uma consulta que não voltou.
+   */
+  tem_tarefa_pendente: boolean | null;
 }
 
 export interface DadosFunil {
@@ -116,19 +122,48 @@ export async function lerEtapasReais(cliente?: Supabase): Promise<EtapaFunil[] |
     .sort((a, b) => a.ordem - b.ordem);
 }
 
+/** Teto da leitura de tarefas pendentes. Hoje `core.tarefa` tem 0 linhas — folga larga. */
+const TETO_TAREFAS_PENDENTES = 5000;
+
+/**
+ * R20 · quais leads têm tarefa PENDENTE. Uma leitura estreita (`lead_id` das pendentes), no molde
+ * F24a: teto+1 como detector. Devolve `null` quando não dá para saber — e aí todo card fica com
+ * `tem_tarefa_pendente = null`, o que faz o filtro "sem próxima ação" não acusar ninguém.
+ *
+ * Por que não `count` por lead: a pergunta é binária ("tem próxima ação?"), e contar convidaria a
+ * mostrar "3 tarefas" no card — que é justamente o cemitério de 755 itens do Kommo que o comentário
+ * da sidebar manda não repetir.
+ */
+async function lerLeadsComTarefaPendente(supabase: Supabase): Promise<Set<string> | null> {
+  const { data, error } = await supabase
+    .schema("core")
+    .from("tarefa")
+    .select("lead_id")
+    .eq("status", "pendente")
+    .not("lead_id", "is", null)
+    .limit(TETO_TAREFAS_PENDENTES + 1);
+  if (error || !data || data.length > TETO_TAREFAS_PENDENTES) return null;
+  return new Set(data.map((r: any) => String(r.lead_id)));
+}
+
 async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[]; corte: boolean }> {
   const supabase = criarClienteServidor();
   // Só etapas do board (config vigente) — 'arquivado' etc. NUNCA entram nem roubam vaga do
   // teto. Order determinístico (mais recentes primeiro + lead_id de desempate): se o volume
   // passar do teto, o corte é estável entre reloads e a UI avisa (flag `corte`).
-  const { data, error } = await supabase
-    .schema("core")
-    .from("v_lead_card")
-    .select("lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,dono_id,dono_nome,tags,kommo_lead_id")
-    .in("etapa", chavesEtapas)
-    .order("entrou_etapa_em", { ascending: false, nullsFirst: false })
-    .order("lead_id", { ascending: true })
-    .limit(TETO_CARDS);
+  // As duas leituras são independentes e disparam juntas — a de tarefas nunca atrasa o board, e
+  // se ela falhar o board aparece igual (com `tem_tarefa_pendente = null`).
+  const [{ data, error }, comTarefa] = await Promise.all([
+    supabase
+      .schema("core")
+      .from("v_lead_card")
+      .select("lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,dono_id,dono_nome,tags,kommo_lead_id")
+      .in("etapa", chavesEtapas)
+      .order("entrou_etapa_em", { ascending: false, nullsFirst: false })
+      .order("lead_id", { ascending: true })
+      .limit(TETO_CARDS),
+    lerLeadsComTarefaPendente(supabase),
+  ]);
   if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
   const cards = data.map((r: any) => {
     const origemRaw = r.origem ? String(r.origem).toLowerCase() : null;
@@ -151,6 +186,7 @@ async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[
       tags: parseTags(r.tags),
       proposta: null,
       kommo_lead_id: r.kommo_lead_id ?? null,
+      tem_tarefa_pendente: comTarefa == null ? null : comTarefa.has(String(r.lead_id)),
     } as CardLead;
   });
   return { cards, corte: houveCorte(cards.length, TETO_CARDS) };
