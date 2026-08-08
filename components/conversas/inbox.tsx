@@ -15,9 +15,12 @@ import {
   carregarMaisConversas,
   devolverConversa,
   enviarMensagem,
+  enviarTemplateHumano,
   sinalizarPresenca,
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
+import { regimeDaJanela } from "@/lib/conversas/janela";
+import { variaveisDaDefinicao, type TemplateWhatsapp } from "@/lib/templates-whatsapp";
 import { criarGatilhoDigitando } from "@/lib/conversas/presenca";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
@@ -129,6 +132,7 @@ export function Inbox({
   mencionaveis,
   tiposTarefa,
   templates,
+  templatesWhatsapp,
   etapas,
   departamentoAtivo,
 }: {
@@ -158,6 +162,12 @@ export function Inbox({
   tiposTarefa: TipoTarefa[];
   /** Templates ativos pro menu / do composer (SPEC-TEMPLATES §6). */
   templates: TemplateMensagem[];
+  /**
+   * B4 · Templates HSM (SPEC-B). Outra coisa, outro caminho: os de cima são texto nosso e valem
+   * DENTRO da janela de 24h; estes são modelos aprovados pela Meta e são o único caminho FORA
+   * dela. Vazio (a projeção ainda não subiu) ⇒ o popover diz isso e leva para escrever o primeiro.
+   */
+  templatesWhatsapp: TemplateWhatsapp[];
   etapas: EtapaFunil[];
   /**
    * M6 · O departamento ativo, só para o ESTADO VAZIO ter nome e caminho de saída (C10). A lista
@@ -460,6 +470,57 @@ export function Inbox({
       } else {
         setPendentes((p) => p.map((m) => (m.id === id ? { ...m, falha_local: true } : m)));
         avisar(`Falha ao enviar: ${r.motivo ?? "erro"}`);
+      }
+    });
+  }
+
+  /**
+   * B4 · Envio de TEMPLATE HSM (SPEC-B §6) — caminho separado do `despachar`, de propósito.
+   *
+   * A bolha otimista mostra o texto JÁ PREENCHIDO, que é o que a pessoa vai ler — não o modelo
+   * com `{{nome}}`. A projeção é quem conta a verdade depois; a bolha só não pode mentir sobre
+   * o conteúdo enquanto espera.
+   *
+   * Os parâmetros vão na ORDEM das variáveis da definição, porque é assim que a Meta monta os
+   * `components`: posicional. Ordenar por outra coisa (alfabética, ordem de digitação) trocaria
+   * nome por data no texto que chega ao paciente — e o erro só apareceria na tela dele.
+   */
+  function despacharTemplate(t: TemplateWhatsapp, valores: Record<string, string>) {
+    if (!selecionada) return;
+    const variaveis = variaveisDaDefinicao(t.definicao);
+    const corpoPreenchido = variaveis.reduce(
+      (texto, v) => texto.split(`{{${v}}}`).join(valores[v] ?? `{{${v}}}`),
+      t.definicao.corpo,
+    );
+    const id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setPendentes((p) => [
+      ...p,
+      {
+        id,
+        direcao: "saida",
+        tipo_conteudo: "template",
+        corpo: corpoPreenchido,
+        criado_em: new Date().toISOString(),
+        pendente: true,
+        autor: mode === "HUMANO" ? "sara" : "clara",
+      },
+    ]);
+    requestAnimationFrame(() => fimRef.current?.scrollIntoView({ behavior: "smooth" }));
+    startTransition(async () => {
+      const r = await enviarTemplateHumano(
+        selecionada.id,
+        t.id,
+        { body: variaveis.map((v) => valores[v] ?? "") },
+        id,
+      );
+      if (r.ok) {
+        router.refresh();
+      } else {
+        setPendentes((p) => p.map((m) => (m.id === id ? { ...m, falha_local: true } : m)));
+        avisar(`Falha ao enviar template: ${r.motivo ?? "erro"}`);
       }
     });
   }
@@ -772,6 +833,11 @@ export function Inbox({
                 {/* M7 · no cabeçalho o número COMPLETO cabe: há espaço, e a pessoa já decidiu
                     olhar esta conversa. Na lista ele seria ruído — e é a coluna sensível. */}
                 {origemLegivel ? <ChipNumeroCabecalho c={selecionada} /> : null}
+                {/* B4 · o chip da janela de 24h. Ele é o AVISO ANTECIPADO: quem vê "responde
+                    livre por 2h" ainda tem escolha; quem só descobre no composer trancado já
+                    perdeu a janela. No regime desconhecido o chip não existe — dizer "não sei"
+                    com um chip seria ruído, e dizer "fechada" seria mentira. */}
+                <ChipJanela janelaLivreAte={selecionada.janela_livre_ate} />
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
                 <span
@@ -1000,6 +1066,13 @@ export function Inbox({
               onDigitar={aoDigitar}
               aoPublicar={() => router.refresh()}
               avisar={avisar}
+              /* B4 · o regime é calculado AQUI e não dentro do composer: `Date.now()` num
+                 componente renderizado no servidor produziria hidratação divergente, e a
+                 divergência apareceria justamente na barra que diz se dá para digitar. */
+              janela={regimeDaJanela(selecionada.janela_livre_ate, Date.now())}
+              templatesWhatsapp={templatesWhatsapp}
+              canalId={selecionada.phone_number_id ?? null}
+              onEnviarTemplate={despacharTemplate}
             />
           </>
         )}
@@ -1248,6 +1321,38 @@ function ChipNumeroLinha({ c }: { c: ConversaResumo }) {
       </span>
       <Selos selos={chip.selos} />
     </div>
+  );
+}
+
+/**
+ * B4 · O chip da janela de 24 horas (SPEC-B §7).
+ *
+ * Verde enquanto dá para responder livre, âmbar quando só sai template. E **nada** no regime
+ * desconhecido: sem a coluna projetada não há o que afirmar, e afirmar mesmo assim é como se
+ * produz o diagnóstico errado que esta rodada inteira existe para evitar.
+ *
+ * O relógio é lido na renderização do cliente, e por isso o componente é `"use client"` junto do
+ * inbox: um `Date.now()` no servidor congelaria "faltam 3h" na hora do build da página.
+ */
+function ChipJanela({ janelaLivreAte }: { janelaLivreAte?: string | null }) {
+  const j = regimeDaJanela(janelaLivreAte, Date.now());
+  if (j.regime === "desconhecida" || !j.chip) return null;
+  const aberta = j.regime === "aberta";
+  return (
+    <span
+      title={
+        aberta
+          ? "dentro da janela de 24h qualquer mensagem sai; ela só reabre quando o cliente escreve"
+          : "fora da janela de 24h, só template aprovado pela Meta sai"
+      }
+      className={cn(
+        "mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.7rem] font-medium",
+        aberta ? "bg-verde-bg text-verde" : "bg-amarelo-bg text-amarelo",
+      )}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {j.chip}
+    </span>
   );
 }
 

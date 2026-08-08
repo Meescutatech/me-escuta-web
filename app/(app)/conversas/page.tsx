@@ -10,6 +10,7 @@ import { lerPainelLead, type PainelLead } from "@/lib/dados/lead-painel";
 import { lerMencionaveis } from "@/lib/dados/mencionaveis";
 import { lerTiposTarefa } from "@/lib/dados/tarefa-tipos";
 import { lerNomeMembro, lerTemplates } from "@/lib/dados/templates";
+import { lerTemplatesWhatsapp } from "@/lib/dados/templates-whatsapp";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { lerEstadoEscopo } from "@/lib/dados/departamentos";
 import { Inbox } from "@/components/conversas/inbox";
@@ -44,14 +45,19 @@ export default async function ConversasPage({
   // fosse lido depois, a lista já teria chegado inteira ao servidor — e a tentação seguinte seria
   // filtrar aqui, que é meio caminho para filtrar no cliente.
   const { escopo, ativo: departamentoAtivo } = await lerEstadoEscopo();
-  const [pagina, etapasReais, userRes, mencionaveis, tipos, templatesLidos] = await Promise.all([
-    lerConversas({ escopo }),
-    lerEtapasReais(),
-    supabase.auth.getUser(),
-    lerMencionaveis(), // R13/C4-C5: lista canônica do `@` (core.v_membro + core.agente)
-    lerTiposTarefa(), // R13/C6: config `tipo_tarefa`, com semente provisória
-    lerTemplates(), // SPEC-TEMPLATES §6: menu / do composer (degrade: lista vazia)
-  ]);
+  const [pagina, etapasReais, userRes, mencionaveis, tipos, templatesLidos, hsmLidos] =
+    await Promise.all([
+      lerConversas({ escopo }),
+      lerEtapasReais(),
+      supabase.auth.getUser(),
+      lerMencionaveis(), // R13/C4-C5: lista canônica do `@` (core.v_membro + core.agente)
+      lerTiposTarefa(), // R13/C6: config `tipo_tarefa`, com semente provisória
+      lerTemplates(), // SPEC-TEMPLATES §6: menu / do composer (degrade: lista vazia)
+      // B4 · SPEC-B §7: os templates HSM do popover de fora da janela. Leitura SEPARADA da de
+      // cima porque são conceitos separados — e porque a projeção da SPEC-B pode não existir
+      // neste ambiente sem que isso tenha nada a ver com a resposta rápida, que existe.
+      lerTemplatesWhatsapp(),
+    ]);
   const { conversas } = pagina;
   const etapas = etapasReais ?? ETAPAS_PADRAO; // régua do funil no painel do lead (r9)
   const user = userRes.data.user;
@@ -92,6 +98,7 @@ export default async function ConversasPage({
       mencionaveis={mencionaveis}
       tiposTarefa={tipos.tipos}
       templates={templatesLidos.templates.filter((t) => t.ativo)}
+      templatesWhatsapp={hsmLidos.templates}
       etapas={etapas}
       departamentoAtivo={
         departamentoAtivo

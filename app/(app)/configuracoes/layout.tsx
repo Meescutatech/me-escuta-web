@@ -43,6 +43,16 @@ const GRUPOS: { rotulo: string; itens: ItemNav[] }[] = [
       { href: "/configuracoes/canais", rotulo: "Números de WhatsApp" },
       { href: "/configuracoes/funil", rotulo: "Funil de vendas" },
       { href: "/configuracoes/templates", rotulo: "Templates" },
+      // Item SEPARADO de propósito (SPEC-B §8). São dois conceitos com a mesma palavra: resposta
+      // rápida é texto nosso e vale DENTRO da janela de 24h; template de WhatsApp é modelo
+      // aprovado pela Meta e é o único caminho FORA dela. Já houve colisão de nome uma vez, e
+      // rota separada é o que impede a segunda.
+      //
+      // ⚠ DÍVIDA DECLARADA, não resolvida aqui: lado a lado, "Templates" e "Templates de
+      // WhatsApp" ainda se parecem demais. O rótulo que separaria de verdade é renomear o item
+      // de cima para "Respostas rápidas" — mas isso é texto de produto já em produção, e trocá-lo
+      // é decisão do Diogo, não efeito colateral desta trilha.
+      { href: "/configuracoes/templates-whatsapp", rotulo: "Templates de WhatsApp" },
     ],
   },
   {

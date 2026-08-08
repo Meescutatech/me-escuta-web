@@ -365,7 +365,9 @@ test("a guarda antissegredo espelha a regex da porta e desce nos níveis", () =>
 
 test("todo tipo escrito pela Web-B tem conferência OU exceção declarada", () => {
   for (const tipo of TIPOS_ESCRITOS_WEB_B) assert.ok(tipoDeclarado(tipo), tipo);
-  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 10);
+  // 10 até a R20 · +3 na R22 (B4): os três eventos do template HSM. O número fica travado de
+  // propósito — tipo que entra na lista sem passar por aqui é tipo que ninguém conferiu.
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 13);
 });
 
 test("tipo NÃO declarado é FALHA, não sucesso — é a correção sobre o helper do F6", () => {
@@ -388,6 +390,42 @@ test("toda regra desta trilha confere por EFEITO — nunca só pela existência 
 test("ativar confere o ESTADO, não só a existência da linha", () => {
   const r = regraWebB("canal_ativado");
   assert.ok(r.filtros.some((f) => f.campo === "ativo" && f.op === "igual" && f.valor === true));
+});
+
+/*
+ * B4 (R22) · os três eventos do template HSM. O que estes testes travam é a distinção que a
+ * SPEC-B §3 comprou: criar NÃO submete. Se o `_criado` passar a conferir qualquer status, a
+ * diferença entre rascunho e submetido deixa de ser provada no readback — e ela é a razão de o
+ * rascunho existir (nome de template não se edita, e nome apagado fica bloqueado para reuso).
+ */
+test("criar template confere que a linha nasceu EM RASCUNHO — a prova de que criar não submete", () => {
+  const r = regraWebB("template_whatsapp_criado");
+  assert.equal(r.tabela, "template_whatsapp");
+  assert.ok(r.filtros.some((f) => f.campo === "status" && f.op === "igual" && f.valor === "rascunho"));
+  // o id vem do EVENTO, nunca do payload: a tela não inventa identidade (ARB-26)
+  assert.ok(r.filtros.some((f) => f.campo === "id" && f.op === "igualEvento"));
+  assert.deepEqual(resolverFiltros(r.filtros, { nome: "retomar_avaliacao" }, "evt-1"), [
+    { campo: "id", tipo: "igual", valor: "evt-1" },
+    { campo: "status", tipo: "igual", valor: "rascunho" },
+  ]);
+});
+
+test("submeter confere o ESTADO 'enviando' — não que a linha existe, porque ela já existia", () => {
+  const r = regraWebB("template_whatsapp_submetido");
+  assert.ok(r.filtros.some((f) => f.campo === "status" && f.op === "igual" && f.valor === "enviando"));
+  assert.deepEqual(resolverFiltros(r.filtros, { template_id: "t-9" }, "evt-2"), [
+    { campo: "id", tipo: "igual", valor: "t-9" },
+    { campo: "status", tipo: "igual", valor: "enviando" },
+  ]);
+});
+
+test("arquivar confere `arquivado_em` preenchido — arquivar é terminal", () => {
+  const r = regraWebB("template_whatsapp_arquivado");
+  assert.ok(r.filtros.some((f) => f.campo === "arquivado_em" && f.op === "naoNulo"));
+  assert.deepEqual(resolverFiltros(r.filtros, { template_id: "t-9" }, null), [
+    { campo: "id", tipo: "igual", valor: "t-9" },
+    { campo: "arquivado_em", tipo: "naoNulo" },
+  ]);
 });
 
 test("config_publicada confere a VERSÃO RESULTANTE (base + 1), não o nome", () => {

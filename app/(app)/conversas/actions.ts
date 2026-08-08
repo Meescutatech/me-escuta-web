@@ -96,6 +96,43 @@ export async function enviarMensagem(
 }
 
 /**
+ * B4 · ENVIO DE TEMPLATE HSM — `enviar_template_humano` (SPEC-B §6).
+ *
+ * **Por que é evento próprio e não `enviar_mensagem_humana` com um campo a mais:** porque a
+ * validação é radicalmente outra. Exige `status = aprovado`, exige que a aridade dos parâmetros
+ * bata com a definição, e é o único envio permitido FORA da janela de 24h. Enfiar isso num `if`
+ * dentro do validador de mensagem livre transformaria a regra mais delicada do sistema num ramo
+ * escondido.
+ *
+ * As validações que valem são VE1..VE5, e elas moram NA PORTA. O que o web faz antes
+ * (`vereditoEnvioTemplate`) é só recusar com motivo legível em vez de esperar a falha de entrega.
+ *
+ * ⚠ **NÃO PROVADO PONTA A PONTA nesta trilha.** No dia em que este código foi escrito a porta
+ * ainda não conhecia `enviar_template_humano` (é entregável de B1/B3) — e a porta NÃO tem
+ * allowlist de tipo: um tipo que o dispatcher não conhece é gravado e nunca projetado, em
+ * silêncio (lição 0044). Então: enquanto o ramo da porta não subir, este clique grava um evento
+ * que não vira mensagem, e a UI não tem como saber disso. Quem fechar o laço precisa provar o
+ * caminho inteiro com sessão real — sonda de rota não prova tela, e recusa silenciosa não prova
+ * nada.
+ */
+export async function enviarTemplateHumano(
+  conversaId: string,
+  templateId: string,
+  parametros: { header?: string[]; body: string[]; botoes?: string[] },
+  chaveIdem?: string,
+): Promise<ResultadoEvento> {
+  if (!conversaId || !templateId) return { ok: false, motivo: "conversa ou template ausente" };
+  const r = await registrarEventoUI(
+    "enviar_template_humano",
+    { conversa_id: conversaId, template_id: templateId, parametros },
+    undefined,
+    chaveIdem,
+  );
+  if (r.ok) revalidatePath("/conversas");
+  return r;
+}
+
+/**
  * PRESENÇA (Rodada 11 — Bloco B): repassa "lida" (Sara abriu a conversa) ou "digitando" (Sara
  * digitando no composer) pra rota interna POST /presenca do RUNTIME — só ele tem o token da Graph
  * e resolve o wamid da última recebida. BEST-EFFORT por contrato: NUNCA lança, nunca revalida

@@ -169,6 +169,13 @@ export const TIPOS_ESCRITOS_WEB_B: string[] = [
   "suporte_ticket_comentado",
   "suporte_ticket_resolvido",
   "aceite_contato_registrado",
+  // B4 (R22) · template HSM da Meta. Entram aqui porque a tela de autoria vive em
+  // `/configuracoes/templates-whatsapp` e escreve pelo mesmo ponto único desta trilha.
+  // `enviar_template_humano` NÃO entra: ele é escrita de `/conversas`, fora do alcance destes
+  // portões — e listá-lo aqui daria a impressão de que este portão o cobre.
+  "template_whatsapp_criado",
+  "template_whatsapp_submetido",
+  "template_whatsapp_arquivado",
 ].sort();
 
 /**

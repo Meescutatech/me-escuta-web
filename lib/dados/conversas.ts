@@ -103,6 +103,19 @@ export interface ConversaResumo {
   numero_apelido?: string | null;
   numero_e164?: string | null;
   finalidade?: "teste" | "producao" | null;
+  /**
+   * B4 · SPEC-B §7 — quando a janela de 24h desta conversa fecha (`core.conversa.janela_livre_ate`).
+   *
+   * Os três valores são TRÊS COISAS DIFERENTES, e é por isso que o campo é opcional em vez de
+   * `string | null`:
+   *   · ISO   → a hora em que a janela fecha (passado = fechada, futuro = aberta);
+   *   · `null` → a coluna veio vazia: **nunca houve entrada**, e pela regra da Meta isso é fechada;
+   *   · ausente (`undefined`) → a leitura não trouxe a coluna neste ambiente. Regime DESCONHECIDO:
+   *     o composer não avisa, não troca de modo e não bloqueia nada. "Não sei" nunca vira "fechada"
+   *     — é a mesma doutrina do chip do M7, e trancar o campo por defeito de ambiente transformaria
+   *     migração pendente em impedimento de atendimento.
+   */
+  janela_livre_ate?: string | null;
 }
 
 /**
@@ -382,6 +395,18 @@ const PAGINA_VAZIA: PaginaConversas = {
 // diferentes falhando por motivos diferentes.
 const COLUNAS_LISTA_BASE = "id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em,area";
 const COLUNAS_LISTA_M7 = `${COLUNAS_LISTA_BASE},phone_number_id,numero_apelido,numero_e164,finalidade`;
+/**
+ * B4 · a janela de 24h (SPEC-B §7). `core.conversa.janela_livre_ate` está projetado em produção,
+ * mas nada garante que `core.v_conversa` o exponha em TODO ambiente — e o PostgREST recusa a
+ * consulta INTEIRA por uma coluna inexistente.
+ *
+ * Por isso ele ganha um DEGRAU PRÓPRIO, tentado antes do M7 e caindo para ele. Se a janela
+ * entrasse no mesmo braço do chip de número, um ambiente sem `janela_livre_ate` derrubaria junto
+ * o chip do M7 — que funciona — e a falha de uma marca visual viraria a perda de outra, por um
+ * motivo que não tem nada a ver. As duas coisas falham por razões independentes e não podem
+ * compartilhar braço; é a mesma lição que o comentário do M7×M6 logo abaixo registra.
+ */
+const COLUNAS_LISTA_JANELA = `${COLUNAS_LISTA_M7},janela_livre_ate`;
 
 export async function lerConversas(
   opcoes: {
@@ -459,7 +484,12 @@ export async function lerConversas(
         .limit(limite);
     };
     let origemLegivel = true;
-    let { data, error } = await montar(COLUNAS_LISTA_M7);
+    let janelaLegivel = true;
+    let { data, error } = await montar(COLUNAS_LISTA_JANELA);
+    if (error) {
+      janelaLegivel = false;
+      ({ data, error } = await montar(COLUNAS_LISTA_M7));
+    }
     if (error) {
       origemLegivel = false;
       ({ data, error } = await montar(COLUNAS_LISTA_BASE));
@@ -548,6 +578,11 @@ export async function lerConversas(
         numero_apelido: origemLegivel ? c.numero_apelido ?? null : null,
         numero_e164: origemLegivel ? c.numero_e164 ?? null : null,
         finalidade: origemLegivel ? c.finalidade ?? null : null,
+        // B4 · `undefined` e `null` são OPOSTOS aqui, e o `regimeDaJanela` depende disso:
+        // `undefined` = a coluna não veio nesta leitura ⇒ regime DESCONHECIDO, e o composer não
+        // muda nada; `null` = a coluna veio vazia ⇒ conversa que nunca recebeu entrada, que pela
+        // regra da Meta está FECHADA. Colapsar os dois trancaria o campo por defeito de ambiente.
+        janela_livre_ate: janelaLegivel ? c.janela_livre_ate ?? null : undefined,
       };
     });
 

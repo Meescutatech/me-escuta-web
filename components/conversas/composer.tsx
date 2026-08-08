@@ -23,6 +23,14 @@ import {
 } from "@/lib/conversas/composer-modo";
 import { placeholdersPendentes, type TemplateMensagem, type VariaveisTemplate } from "@/lib/templates";
 import {
+  AVISO_FECHADA,
+  CAMPO_TRANCADO,
+  exigeTemplate,
+  type EstadoJanela,
+} from "@/lib/conversas/janela";
+import type { TemplateWhatsapp } from "@/lib/templates-whatsapp";
+import { PopoverTemplate } from "./popover-template";
+import {
   aplicarMencao,
   avisoSemAcesso,
   gatilhoMencao,
@@ -87,6 +95,10 @@ export function Composer({
   aoPublicar,
   avisar,
   origem,
+  janela,
+  templatesWhatsapp,
+  canalId,
+  onEnviarTemplate,
 }: {
   modoClara: boolean;
   pending: boolean;
@@ -119,6 +131,17 @@ export function Composer({
   onDigitar?: () => void;
   aoPublicar: () => void;
   avisar: (msg: string) => void;
+  /**
+   * B4 · SPEC-B §7 — o regime da janela de 24 horas desta conversa, já resolvido por
+   * `regimeDaJanela`. O regime `desconhecida` **não muda nada aqui**: nem aviso, nem trava, nem
+   * troca de modo. Ambiente sem a coluna projetada não pode virar impedimento de atendimento.
+   */
+  janela: EstadoJanela;
+  /** Templates HSM. Vazio ⇒ o popover diz isso e leva para escrever o primeiro (nunca vazio mudo). */
+  templatesWhatsapp: TemplateWhatsapp[];
+  /** `phone_number_id` desta conversa — o popover só oferece templates deste número (VE2). */
+  canalId: string | null;
+  onEnviarTemplate: (t: TemplateWhatsapp, valores: Record<string, string>) => void;
 }) {
   const [rascunho, setRascunho] = useState("");
   const [anexo, setAnexo] = useState<Anexo | null>(null);
@@ -150,6 +173,19 @@ export function Composer({
   const cronometroRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const interno = ehModoInterno(modo);
+  /**
+   * B4 · A TROCA DE REGIME (SPEC-B §7).
+   *
+   * Fora da janela o composer **não some**: ele troca de modo e diz por quê. Esconder o campo
+   * produziria "o campo sumiu" como sintoma — e "sumiu" é indistinguível de bug para quem está
+   * atendendo. Por isso o que muda é o CONTEÚDO da barra, nunca a existência dela.
+   *
+   * E a troca só vale em modo mensagem: nota e tarefa são internas, o cliente não as recebe, e a
+   * janela da Meta não tem nada a dizer sobre elas. Trancar `/nota` porque a janela fechou
+   * bloquearia trabalho interno por uma regra externa que não se aplica.
+   */
+  const foraDaJanela = !interno && exigeTemplate(janela);
+  const [popoverAberto, setPopoverAberto] = useState(false);
   const podeComandar = !!leadId;
   const comandos = useMemo(
     () => (modo === "mensagem" && podeComandar && !anexo ? menuComandos(rascunho, templates) : []),
@@ -670,6 +706,41 @@ export function Composer({
                  que as 12 mensagens de 27/07 chegaram ao telefone do Diogo. Bloquear quebraria o
                  ensaio. O que não é legítimo é descobrir DEPOIS.
                · não cadastrado / desligado -> DESABILITA, com o motivo nomeado. */}
+          {/* ═════ B4 · A BARRA DE REGIME (SPEC-B §7) ═════
+              Ela é o elemento que diz POR QUE o campo mudou. Vem ANTES do aviso do M7 de
+              propósito: a janela fechada é um fato sobre a CONVERSA, e o aviso do número é um
+              fato sobre o CANAL — o primeiro explica por que não dá para digitar, o segundo por
+              onde a mensagem sai. Ler na ordem inversa deixaria o "responde por: X" sem sentido,
+              já que nada livre vai sair por X agora.
+
+              A janela reabre com ENTRADA, nunca com saída — por isso o texto promete que o
+              template "reabre a conversa": é o template que provoca a resposta que reabre. */}
+          {foraDaJanela && (
+            <div className="flex items-start gap-2.5 rounded-t-[11px] border-b border-[rgba(178,122,0,.18)] bg-amarelo-bg px-3.5 py-2.5 text-[12.5px]">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                strokeWidth={1.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="mt-px h-4 w-4 flex-none stroke-amarelo"
+              >
+                <rect x="4" y="11" width="16" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+              <div className="min-w-0">
+                <b className="font-[650] text-amarelo">{AVISO_FECHADA}</b>
+                <p className="mt-0.5 text-suave">{janela.aviso}</p>
+              </div>
+              {janela.chip && (
+                <span className="ml-auto flex-none whitespace-nowrap pt-px text-[11.5px] text-suave">
+                  {janela.chip}
+                </span>
+              )}
+            </div>
+          )}
+
           {!interno && origem && (origem.motivo || origem.aviso || origem.respondePor) ? (
             <div
               className={cn(
@@ -698,6 +769,51 @@ export function Composer({
               ) : null}
             </div>
           ) : null}
+
+          {/* B4 · fora da janela a LINHA CONTINUA EXISTINDO, com outro conteúdo: o campo diz o
+              que está indisponível e o botão diz o que dá para fazer. É a diferença entre "não
+              posso digitar agora, e sei por quê" e "o campo sumiu". */}
+          {foraDaJanela ? (
+            <div className="relative flex items-center gap-2.5 px-3 py-2.5">
+              <span className="flex min-w-0 flex-1 items-center gap-2 text-[0.9rem] text-suave">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  strokeWidth={1.8}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  className="h-[15px] w-[15px] flex-none stroke-mute"
+                >
+                  <rect x="4" y="11" width="16" height="10" rx="2" />
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+                <span className="truncate">{CAMPO_TRANCADO}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setPopoverAberto((a) => !a)}
+                aria-expanded={popoverAberto}
+                aria-haspopup="dialog"
+                className="flex-none rounded-md bg-laranja px-3 py-1.5 text-[13px] font-semibold text-branco transition-colors hover:bg-laranja-esc focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+              >
+                Escolher template
+              </button>
+              {popoverAberto && (
+                <PopoverTemplate
+                  templates={templatesWhatsapp}
+                  canalId={canalId}
+                  nomeLead={nomeLead}
+                  enviando={pending}
+                  onFechar={() => setPopoverAberto(false)}
+                  onEnviar={(t, valores) => {
+                    setPopoverAberto(false);
+                    onEnviarTemplate(t, valores);
+                  }}
+                />
+              )}
+            </div>
+          ) : (
           <div className="flex items-end gap-1.5 py-2 pl-2 pr-2">
             {!interno && (
               <>
@@ -774,6 +890,7 @@ export function Composer({
               </button>
             )}
           </div>
+          )}
 
           {/* campos que a tarefa exige: responsável, prazo, tipo (mockup, estado d) */}
           {modo === "tarefa" && (

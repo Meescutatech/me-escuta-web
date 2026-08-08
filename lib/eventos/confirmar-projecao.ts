@@ -237,6 +237,56 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
   enviar_mensagem_humana: { tabela: "mensagem", por: "evento", coluna: "id" },
 
   /*
+   * ── B4 (R22) · TEMPLATE HSM DA META ─────────────────────────────────────────────────────────
+   *
+   * Modo `filtros`, como o resto da Web-B, e por um motivo mais forte que a simetria: aqui DOIS
+   * dos três eventos não criam linha, só mudam a que já existe. Conferir "a linha existe" em
+   * `_submetido` seria conferir algo que já era verdade ANTES do clique — o jeito exato de um
+   * readback virar decoração. Então cada um confere o EFEITO que lhe é próprio:
+   *
+   *   · `_criado`    → nasceu a linha cujo `id` é o id DESTE evento (SPEC-B §4: `id = evento.id`),
+   *                    e ela nasceu em `rascunho` — o que também prova a DoD 2, "criar não
+   *                    submete". O id vem da porta, nunca da tela: a tela não inventa identidade.
+   *   · `_submetido` → o template APONTADO passou a `enviando` (§5: a projeção marca `enviando`
+   *                    antes de enfileirar). É o estado que distingue submetido de rascunho
+   *                    esquecido, e é justamente por isso que `enviando` existe no vocabulário.
+   *   · `_arquivado` → o template apontado ganhou `arquivado_em`. Arquivar é terminal.
+   *
+   * ⚠ **A TABELA NÃO EXISTE HOJE** (medido 07/08/2026: é entregável da trilha B1). Enquanto ela
+   * não subir, o readback vai RECUSAR estas três escritas, com motivo legível. É o comportamento
+   * certo, não um defeito: uma tela que dissesse "salvo" com a lista vazia é exatamente a lição
+   * R14/R15 que este mecanismo inteiro existe para impedir. Declarar exceção `conferirLedger`
+   * para "destravar" daria verde a um evento que nunca projeta — e essa é a troca que não se faz.
+   */
+  template_whatsapp_criado: {
+    tabela: "template_whatsapp",
+    por: "filtros",
+    coluna: "id",
+    filtros: [
+      { campo: "id", op: "igualEvento" },
+      { campo: "status", op: "igual", valor: "rascunho" },
+    ],
+  },
+  template_whatsapp_submetido: {
+    tabela: "template_whatsapp",
+    por: "filtros",
+    coluna: "id",
+    filtros: [
+      { campo: "id", op: "igualPayload", dePayload: "template_id" },
+      { campo: "status", op: "igual", valor: "enviando" },
+    ],
+  },
+  template_whatsapp_arquivado: {
+    tabela: "template_whatsapp",
+    por: "filtros",
+    coluna: "id",
+    filtros: [
+      { campo: "id", op: "igualPayload", dePayload: "template_id" },
+      { campo: "arquivado_em", op: "naoNulo" },
+    ],
+  },
+
+  /*
    * ── TELAS B (R16-20 · Web-B) ────────────────────────────────────────────────────────────────
    * Enxertadas aqui pelo ARB-28-bis: o arquivo é meu (Agent 1), o fail-closed é a base, e o modo
    * `filtros` + estas dez linhas vêm de web-b @ dde4d3c. Não há choque lógico — com as linhas NA
