@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import type { Departamento } from "../lib/departamentos/escopo.ts";
 import {
   AVISO_APLICACAO_RUNTIME,
   AVISO_RISCO_BAN,
@@ -12,6 +15,7 @@ import {
   envelopeCanal,
   estadoDoCanal,
   numeroE164Valido,
+  opcoesDepartamento,
   ordenarCanais,
   payloadCanalAtivado,
   payloadCanalAtualizado,
@@ -24,6 +28,7 @@ import {
   validarRegistroCanal,
   ehFaixaTesteMeta,
   finalidadeValida,
+  rotuloDepartamento,
   rotuloFinalidade,
   type Canal,
   type FormCanal,
@@ -44,7 +49,7 @@ function form(p: Partial<FormCanal> = {}): FormCanal {
     provedor: "nao_oficial",
     numeroE164: "",
     wabaId: "",
-    area: "",
+    departamento: "",
     // M7 · o fixture DECLARA a finalidade porque o formulário passou a exigi-la. O campo real
     // nasce vazio (`""`) de propósito — quem testa a exigência é o bloco M7 lá embaixo.
     finalidade: "teste",
@@ -61,6 +66,7 @@ function canal(p: Partial<Canal> = {}): Canal {
     numero: null,
     waba_id: null,
     area_efetiva: "comercial",
+    departamento: null,
     pareado_em: null,
     consentimento_em: null,
     consentimento_titular: null,
@@ -225,23 +231,23 @@ test("INVARIANTE · campo em branco NÃO vira chave no payload — inclusive fin
   // para sempre, e `finalidade: \"\"` seria recusado pelo CHECK de domínio no melhor caso e
   // gravado como lixo no pior.
   const { payload } = payloadCanalRegistrado(
-    form({ nome: "Jade", provedor: "nao_oficial", numeroE164: "", wabaId: "", area: "", finalidade: "" }),
+    form({ nome: "Jade", provedor: "nao_oficial", numeroE164: "", wabaId: "", departamento: "", finalidade: "" }),
   );
   assert.deepEqual(Object.keys(payload).sort(), ["canal_id", "nome", "provedor"]);
   assert.equal("finalidade" in payload, false);
 });
 
-test("canal_registrado do WABA leva número, waba e área quando existem", () => {
+test("canal_registrado do WABA leva número, waba e DEPARTAMENTO quando existem", () => {
   const { payload } = payloadCanalRegistrado(
-    form({ provedor: "waba", canalId: "627327023793464", nome: "Produção", numeroE164: "+5511999998888", wabaId: "9", area: "comercial" }),
+    form({ provedor: "waba", canalId: "627327023793464", nome: "Produção", numeroE164: "+5511999998888", wabaId: "9", departamento: "pre_venda" }),
   );
   assert.deepEqual(payload, {
     canal_id: "627327023793464",
     nome: "Produção",
     provedor: "waba",
+    departamento: "pre_venda",
     numero_e164: "+5511999998888",
     waba_id: "9",
-    area: "comercial",
     finalidade: "teste",
   });
 });
@@ -305,15 +311,15 @@ test("ordenação põe os ligados na frente e é estável por nome", () => {
 
 // ═══════════════════════ coluna com valor único some (decisão sobre o r10) ═══════════════════════
 
-test("enquanto TODOS forem comerciais e oficiais, ÁREA e PROVEDOR somem da tabela", () => {
+test("enquanto TODOS forem do mesmo departamento e oficiais, DEPARTAMENTO e PROVEDOR somem", () => {
   const cols = colunasVisiveis([
-    canal({ canal_id: "a", provedor: "waba", area_efetiva: "comercial" }),
-    canal({ canal_id: "b", provedor: "waba", area_efetiva: "comercial" }),
+    canal({ canal_id: "a", provedor: "waba", departamento: "pre_venda" }),
+    canal({ canal_id: "b", provedor: "waba", departamento: "pre_venda" }),
   ]);
   // A régua mudou porque a DEFINIÇÃO mudou (ARB-R18-05: `finalidade` entrou e nunca some). O que
   // este teste protegia — "valor único vira ruído e sai" — continua protegido nas duas colunas em
   // que ele vale, e o invariante que a mudança poderia ter apagado está logo abaixo, nomeado.
-  assert.deepEqual(cols, { provedor: false, area: false, finalidade: true, consentimento: false });
+  assert.deepEqual(cols, { provedor: false, departamento: false, finalidade: true, consentimento: false });
 });
 
 test("ARB-R18-05 · `finalidade` NÃO some quando todas as linhas são iguais — valor único aqui é o ALARME", () => {
@@ -351,26 +357,39 @@ test("as 4 colunas de consentimento só aparecem onde existe titular terceiro", 
 test("a coluna VOLTA no instante em que passa a significar alguma coisa", () => {
   assert.equal(
     colunasVisiveis([
-      canal({ canal_id: "a", provedor: "waba", area_efetiva: "comercial" }),
-      canal({ canal_id: "b", provedor: "nao_oficial", area_efetiva: "comercial" }),
+      canal({ canal_id: "a", provedor: "waba", departamento: "pre_venda" }),
+      canal({ canal_id: "b", provedor: "nao_oficial", departamento: "pre_venda" }),
     ]).provedor,
     true,
   );
   assert.equal(
     colunasVisiveis([
-      canal({ canal_id: "a", provedor: "waba", area_efetiva: "comercial" }),
-      canal({ canal_id: "b", provedor: "waba", area_efetiva: "clinica" }),
-    ]).area,
+      canal({ canal_id: "a", provedor: "waba", departamento: "pre_venda" }),
+      canal({ canal_id: "b", provedor: "waba", departamento: "clinico" }),
+    ]).departamento,
     true,
   );
 });
 
-test("área ausente conta como 'comercial' — nulo não inventa uma segunda área", () => {
+test("R22 · departamento AUSENTE é um valor próprio, e não vira `comercial` por conveniência", () => {
+  // MUDANÇA DELIBERADA em relação ao que este teste dizia até a R22. A versão antiga fazia
+  // `area_efetiva ?? "comercial"` e afirmava que nulo NÃO cria uma segunda área — o que apagava
+  // justamente o contraste que a coluna precisa mostrar: um número declarado ao lado de um número
+  // que ninguém declarou. `null` significa "nunca declarou", e essa é a linha que precisa de
+  // conserto; escondê-la era o defeito, não a proteção.
   assert.equal(
     colunasVisiveis([
-      canal({ canal_id: "a", area_efetiva: null }),
-      canal({ canal_id: "b", area_efetiva: "comercial" }),
-    ]).area,
+      canal({ canal_id: "a", departamento: null }),
+      canal({ canal_id: "b", departamento: "pre_venda" }),
+    ]).departamento,
+    true,
+  );
+  // e continua sumindo quando TODOS são não-declarados — aí sim é valor único, e é redundância
+  assert.equal(
+    colunasVisiveis([
+      canal({ canal_id: "a", departamento: null }),
+      canal({ canal_id: "b", departamento: null }),
+    ]).departamento,
     false,
   );
 });
@@ -380,7 +399,7 @@ test("tabela vazia não mostra coluna nenhuma dessas", () => {
   // zero linhas não é alarme, é moldura vazia.
   assert.deepEqual(colunasVisiveis([]), {
     provedor: false,
-    area: false,
+    departamento: false,
     finalidade: false,
     consentimento: false,
   });
@@ -586,4 +605,157 @@ test("com todos na mesma finalidade, a ordem antiga sobrevive intacta (ativo →
     canal({ canal_id: "c", nome: "Bravo", ativo: false, finalidade: "teste" }),
   ]);
   assert.deepEqual(lista.map((c) => c.nome), ["Alfa", "Bravo", "Zulu"]);
+});
+
+// ══════════════════ R22/A1 · o colapso do vocabulário (D22-1, paga a ARB-R18-02) ══════════════════
+
+/**
+ * A ÁRVORE REAL, medida em `core.v_departamento` no banco de produção em 07/08/2026 — 7 nós, 2
+ * níveis. Não é um fixture inventado: é o que a tela vai receber, e é por isso que ela cabe aqui.
+ *
+ *   comercial ── pre_venda · avaliacao · credito
+ *   pos_venda ── cobranca · clinico
+ */
+const ARVORE: Departamento[] = [
+  { chave: "comercial", rotulo: "Comercial", pai: null, nivel: 1, ativo: true, entrada: false, ordem: 0 },
+  { chave: "pos_venda", rotulo: "Pós-venda", pai: null, nivel: 1, ativo: true, entrada: false, ordem: 1 },
+  { chave: "pre_venda", rotulo: "Pré-venda", pai: "comercial", nivel: 2, ativo: true, entrada: true, ordem: 0 },
+  { chave: "avaliacao", rotulo: "Avaliação", pai: "comercial", nivel: 2, ativo: true, entrada: false, ordem: 1 },
+  { chave: "credito", rotulo: "Crédito", pai: "comercial", nivel: 2, ativo: true, entrada: false, ordem: 2 },
+  { chave: "cobranca", rotulo: "Cobrança", pai: "pos_venda", nivel: 2, ativo: true, entrada: false, ordem: 0 },
+  { chave: "clinico", rotulo: "Clínico", pai: "pos_venda", nivel: 2, ativo: true, entrada: false, ordem: 1 },
+];
+
+test("o select oferece os 7 nós do banco, na ordem da árvore — pai, depois os filhos dele", () => {
+  assert.deepEqual(
+    opcoesDepartamento(ARVORE).map((o) => o.chave),
+    ["comercial", "pre_venda", "avaliacao", "credito", "pos_venda", "cobranca", "clinico"],
+  );
+});
+
+test("só as FOLHAS são escolhíveis — `comercial` e `pos_venda` entram desabilitados", () => {
+  // Não é estética: a porta RECUSA nó de agrupamento (GUARDA:M8:escrita_so_em_folha, herdada pela
+  // VD1 da 0130). Oferecer o que será recusado faria a recusa ser a primeira notícia — e foi de
+  // `comercial` que a rodada 18 teve de descer os dois canais à mão para a 0087 poder entrar.
+  const naoSelecionaveis = opcoesDepartamento(ARVORE).filter((o) => !o.selecionavel).map((o) => o.chave);
+  assert.deepEqual(naoSelecionaveis, ["comercial", "pos_venda"]);
+  assert.equal(opcoesDepartamento(ARVORE).filter((o) => o.selecionavel).length, 5);
+});
+
+test("departamento arquivado sai do select — o domínio é o que está ATIVO", () => {
+  const comArquivado = [...ARVORE, {
+    chave: "morto", rotulo: "Extinto", pai: "comercial", nivel: 2, ativo: false, entrada: false, ordem: 9,
+  }];
+  assert.equal(opcoesDepartamento(comArquivado).some((o) => o.chave === "morto"), false);
+});
+
+test("a tela mostra RÓTULO, nunca a chave — `Pré-venda`, não `pre_venda`", () => {
+  assert.equal(rotuloDepartamento("pre_venda", ARVORE), "Pré-venda");
+  assert.equal(rotuloDepartamento(null, ARVORE), "Não declarado");
+});
+
+test("chave FORA do domínio volta ela mesma, e isso é deliberado", () => {
+  // Um canal apontando para um departamento arquivado tem de ficar VISÍVEL como estranho. Devolver
+  // "—" esconderia justamente a linha que precisa de conserto.
+  assert.equal(rotuloDepartamento("financeiro", ARVORE), "financeiro");
+});
+
+test("`area` NÃO viaja mais no payload — a palavra morreu na saída, não só na tela", () => {
+  const { payload } = payloadCanalRegistrado(
+    form({ provedor: "waba", canalId: "1", nome: "N", numeroE164: "+5511999998888", wabaId: "9", departamento: "credito" }),
+  );
+  assert.equal(payload.departamento, "credito");
+  assert.equal("area" in payload, false, "mandar as duas chaves manteria viva a fonte que esta rodada matou");
+
+  const patch = payloadCanalAtualizado("1", { departamento: "cobranca" });
+  assert.equal(patch.departamento, "cobranca");
+  assert.equal("area" in patch, false);
+});
+
+test("departamento em branco NÃO vira chave no payload — `null` é 'nunca declarou'", () => {
+  const { payload } = payloadCanalRegistrado(
+    form({ provedor: "nao_oficial", nome: "Jade", departamento: "" }),
+  );
+  assert.equal("departamento" in payload, false);
+});
+
+// ─────────────────────────── A GUARDA DE `grep`, e ela é o item ───────────────────────────
+
+test("PORTÃO · nenhuma lista de departamentos hardcoded voltou ao repositório", () => {
+  /*
+   * Isto é `grep` no CI, não revisão humana, e a diferença está escrita na SPEC-A §10: *"`const
+   * AREAS` volta por cópia — já aconteceu uma vez"*. A constante morta era
+   * `["comercial", "clinica", "financeiro", "pos_venda"]`, copiada do mockup r10, e o modo de
+   * falha é COLAR de volta num arquivo vizinho, onde ninguém procura.
+   *
+   * O que o portão pega: qualquer array literal de strings que contenha DOIS ou mais nomes de
+   * departamento. Um nome sozinho é legítimo (`CLINICO` em `lib/departamentos/escopo.ts` é
+   * fronteira CONSTITUCIONAL e está lá de propósito, com o motivo escrito); dois ou mais é alguém
+   * reconstruindo o vocabulário fora do banco.
+   *
+   * `tests/` FICA DE FORA, e a exceção é do tipo que precisa de motivo escrito: um teste tem de
+   * poder NOMEAR o valor esperado. `tests/departamentos.test.ts` afirma `["comercial","pre_venda",
+   * …]` como resultado de `ordenar()` — apagar isso seria trocar uma asserção de verdade por uma
+   * que só compara a função com ela mesma. O risco que o portão existe para pegar é código de
+   * PRODUÇÃO oferecendo um domínio que o banco não conhece; um array dentro de um teste não chega
+   * a `<select>` nenhum. Se algum dia um teste virar a fonte de um componente, o problema é o
+   * componente.
+   */
+  const RAIZ = new URL("..", import.meta.url).pathname;
+  const IGNORAR = new Set(["node_modules", ".next", ".git", "public", "docs", "tests"]);
+  const NOMES = ["comercial", "pos_venda", "pre_venda", "avaliacao", "credito", "cobranca", "clinico", "clinica", "financeiro"];
+
+  function varrer(dir: string, acc: string[] = []): string[] {
+    let itens: string[];
+    try { itens = readdirSync(dir); } catch { return acc; }
+    for (const it of itens) {
+      if (IGNORAR.has(it)) continue;
+      const caminho = join(dir, it);
+      let ehDir = false;
+      try { ehDir = statSync(caminho).isDirectory(); } catch { continue; }
+      if (ehDir) varrer(caminho, acc);
+      else if (/\.(ts|tsx)$/.test(it)) acc.push(caminho);
+    }
+    return acc;
+  }
+
+  /** O detector, isolado — para poder ser exercido nos DOIS sentidos (padrão do `portao-web-b`). */
+  function acharListaDeDepartamentos(texto: string): string[] {
+    const achados: string[] = [];
+    for (const m of texto.matchAll(/\[[^\[\]\n]{0,400}?\]/g)) {
+      const trecho = m[0];
+      const nomes = NOMES.filter((n) => new RegExp(`["'\`]${n}["'\`]`).test(trecho));
+      if (nomes.length >= 2) achados.push(`${nomes.join("+")} em ${trecho.slice(0, 90)}`);
+    }
+    return achados;
+  }
+
+  // ── SENTIDO 1 · o portão REPROVA a constante morta, byte a byte como ela era ──
+  // Sem isto o teste seria verde-decorativo: um detector quebrado passaria despercebido para
+  // sempre, porque o repositório limpo não tem o que ele procura.
+  const CONSTANTE_MORTA =
+    "const AREAS = [" + '"comercial", "clinica", "financeiro", "pos_venda"' + "];";
+  assert.equal(
+    acharListaDeDepartamentos(CONSTANTE_MORTA).length,
+    1,
+    "o detector NÃO reconhece mais a constante que ele existe para pegar — portão quebrado",
+  );
+  // e NÃO reprova um nome sozinho, que é legítimo (o `CLINICO` constitucional de escopo.ts)
+  assert.deepEqual(acharListaDeDepartamentos('const X = ["clinico"];'), []);
+
+  // ── SENTIDO 2 · o portão APROVA o repositório real, lido do disco agora ──
+  const violacoes: string[] = [];
+  for (const arq of varrer(RAIZ)) {
+    for (const achado of acharListaDeDepartamentos(readFileSync(arq, "utf8"))) {
+      violacoes.push(`${relative(RAIZ, arq)}: ${achado}`);
+    }
+  }
+
+  assert.deepEqual(
+    violacoes,
+    [],
+    "lista de departamentos hardcoded encontrada. O domínio vem de `core.v_departamento`, sempre. " +
+      "Se este teste ficou vermelho por um caso legítimo, o conserto é ler do banco — não é " +
+      "afrouxar o portão:\n" + violacoes.join("\n"),
+  );
 });

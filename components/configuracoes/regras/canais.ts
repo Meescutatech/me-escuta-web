@@ -38,6 +38,7 @@
  */
 
 import { montarEnvelope, payloadSeguro, type EnvelopeEvento, type VereditoEscrita } from "./porta.ts";
+import { ehFolha, ordenar, type Departamento } from "../../../lib/departamentos/escopo.ts";
 
 export type Provedor = "waba" | "nao_oficial";
 export type Papel = "owner" | "admin" | "membro";
@@ -92,7 +93,19 @@ export interface Canal {
   ativo: boolean;
   numero: string | null;
   waba_id: string | null;
+  /**
+   * ⚠ APOSENTADA (R22/A1, D22-1) e mantida por UM motivo só: a `0130` deixou a coluna na view de
+   * propósito, porque a web e o banco sobem em ordens diferentes (D18). Ela some no mesmo commit
+   * que tira `area` do payload. NÃO ler daqui: quem manda é `departamento`.
+   */
   area_efetiva: string | null;
+  /**
+   * R22/A1 · A PALAVRA ÚNICA. `null` significa **"a coluna ainda não existe neste ambiente OU o
+   * canal nunca declarou"** — e a tela mostra "não declarado", que é a verdade nos dois casos.
+   * Mesmo degrade honesto de `finalidade` (M7) e pela mesma razão: sem ele, o deploy da web ficaria
+   * acorrentado ao do banco.
+   */
+  departamento: string | null;
   pareado_em: string | null;
   consentimento_em: string | null;
   consentimento_titular: string | null;
@@ -162,7 +175,13 @@ export interface FormCanal {
   provedor: Provedor;
   numeroE164: string;
   wabaId: string;
-  area: string;
+  /**
+   * R22/A1 · CHAVE de `core.v_departamento`, e sempre FOLHA. `""` = não escolhido, e é o estado
+   * inicial — mesma decisão de `finalidade`: o campo nasce sem valor, porque default conveniente
+   * foi o que pôs `comercial` (nó de agrupamento) em dois canais e obrigou a rodada 18 a descê-los
+   * à mão para a `0087` poder entrar.
+   */
+  departamento: string;
   /**
    * M7. `""` = **não escolhido**, e é o estado inicial do formulário por decisão de desenho: o
    * campo nasce SEM valor pré-selecionado. Pré-selecionar é dar um default por outro nome, e
@@ -243,6 +262,53 @@ export function validarRegistroCanal(f: FormCanal): Problemas {
 
 export function semProblemas(p: Problemas): boolean {
   return Object.keys(p).length === 0;
+}
+
+// ─────────────────────── R22/A1 · o domínio de departamento na tela ───────────────────────
+
+/**
+ * Uma opção do `<select>` de departamento.
+ *
+ * `selecionavel` NÃO é estética: **o banco só aceita FOLHA**. A guarda existe desde o M8
+ * (`GUARDA:M8:escrita_so_em_folha`) e a `0130` a herdou para a chave nova (VD1). `comercial` e
+ * `pos_venda` são nós de AGRUPAMENTO — quem opera neles enxerga os filhos, mas número nenhum mora
+ * lá; foi de `comercial` que a rodada 18 teve de descer os dois canais à mão para a `0087` poder
+ * entrar.
+ *
+ * Por que eles aparecem mesmo assim, em vez de sumirem da lista: sem os pais, "Pré-venda",
+ * "Avaliação" e "Crédito" chegam como três irmãos soltos e a árvore de dois níveis some da tela —
+ * e a árvore é o que explica por que existem sete nomes. O desenho mostra a hierarquia inteira e
+ * deixa escolher só o que o banco aceita. A alternativa — oferecer os sete e deixar a porta recusar
+ * — faria a recusa ser a primeira notícia, que é exatamente o que esta tela recusa desde o F9.
+ */
+export interface OpcaoDepartamento {
+  chave: string;
+  rotulo: string;
+  nivel: number;
+  selecionavel: boolean;
+}
+
+export function opcoesDepartamento(deps: Departamento[]): OpcaoDepartamento[] {
+  const ativos = deps.filter((d) => d.ativo);
+  return ordenar(ativos).map((d) => ({
+    chave: d.chave,
+    rotulo: d.rotulo,
+    nivel: d.nivel,
+    selecionavel: ehFolha(d.chave, ativos),
+  }));
+}
+
+/**
+ * O rótulo que a tela mostra — `"Pré-venda"`, nunca `pre_venda`. Chave é identificador de banco; a
+ * gestora não deveria precisar aprendê-la para usar a tela.
+ *
+ * Chave que não está no domínio volta ELA MESMA, e isso é deliberado: um canal apontando para um
+ * departamento arquivado tem de ficar VISÍVEL como estranho, não virar "—". Sumir com o valor
+ * esconderia justamente a linha que precisa de conserto.
+ */
+export function rotuloDepartamento(chave: string | null, deps: Departamento[]): string {
+  if (!chave) return "Não declarado";
+  return deps.find((d) => d.chave === chave)?.rotulo ?? chave;
 }
 
 /** O id que o evento vai carregar: declarado (WABA) ou derivado do nome (não oficial). */
@@ -360,10 +426,13 @@ export function payloadCanalRegistrado(f: FormCanal): PayloadECanalId {
   };
   const numero = (f.numeroE164 ?? "").trim();
   const waba = (f.wabaId ?? "").trim();
-  const area = (f.area ?? "").trim();
+  const departamento = (f.departamento ?? "").trim();
   if (numero) payload.numero_e164 = numero;
   if (waba) payload.waba_id = waba;
-  if (area) payload.area = area;
+  // R22/A1 · a chave é `departamento`, e `area` NÃO viaja junto. A porta aceita as duas durante a
+  // janela do D18 (VD2), mas mandar as duas seria manter viva a fonte que esta rodada matou — e
+  // payload que carrega o mesmo fato duas vezes é como as duas divergem.
+  if (departamento) payload.departamento = departamento;
   // M7 · a finalidade viaja no payload. O `if` aqui NÃO é o mesmo caso do `waba_id`: lá o campo
   // sumir calado era o defeito; aqui `validarRegistroCanal` já barrou o vazio antes de chegar,
   // e a omissão só acontece num ambiente onde a coluna ainda não existe.
@@ -377,13 +446,20 @@ export function payloadCanalRegistrado(f: FormCanal): PayloadECanalId {
  */
 export function payloadCanalAtualizado(
   canalId: string,
-  patch: { nome?: string; numeroE164?: string; wabaId?: string; area?: string; finalidade?: Finalidade },
+  patch: {
+    nome?: string;
+    numeroE164?: string;
+    wabaId?: string;
+    departamento?: string;
+    finalidade?: Finalidade;
+  },
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = { canal_id: canalId };
   if (patch.nome !== undefined) payload.nome = patch.nome.trim();
   if (patch.numeroE164 !== undefined) payload.numero_e164 = patch.numeroE164.trim();
   if (patch.wabaId !== undefined) payload.waba_id = patch.wabaId.trim();
-  if (patch.area !== undefined) payload.area = patch.area.trim();
+  // R22/A1 · `area` morreu como chave de saída. Ver `payloadCanalRegistrado`.
+  if (patch.departamento !== undefined) payload.departamento = patch.departamento.trim();
   // M7 · depois da migration, `finalidade` muda POR EVENTO, nunca por UPDATE. É esta chave.
   if (patch.finalidade !== undefined) payload.finalidade = patch.finalidade;
   return payload;
@@ -492,7 +568,12 @@ export const TEXTO_FINALIDADE_AUSENTE =
  */
 export interface ColunasVisiveis {
   provedor: boolean;
-  area: boolean;
+  /**
+   * R22/A1 · era `area`. A regra do valor único CONTINUA valendo aqui, e o contraste com
+   * `finalidade` (que nunca se esconde) está escrito acima: departamento igual em todas as linhas é
+   * REDUNDÂNCIA — `comercial` em 73 de 86 conversas é ruído, não achado (ARB-R18-03).
+   */
+  departamento: boolean;
   /** ARB-R18-05: SEMPRE visível quando há linha. Não é config — é invariante. */
   finalidade: boolean;
   /** As 4 colunas de LGPD só fazem sentido onde existe titular terceiro (`nao_oficial`). */
@@ -500,12 +581,16 @@ export interface ColunasVisiveis {
 }
 
 export function colunasVisiveis(canais: Canal[]): ColunasVisiveis {
-  if (canais.length === 0) return { provedor: false, area: false, finalidade: false, consentimento: false };
+  if (canais.length === 0)
+    return { provedor: false, departamento: false, finalidade: false, consentimento: false };
   const provedores = new Set(canais.map((c) => c.provedor));
-  const areas = new Set(canais.map((c) => c.area_efetiva ?? "comercial"));
+  // `null` (não declarado) conta como um valor PRÓPRIO, e não vira `comercial` por conveniência: um
+  // canal sem departamento ao lado de um com departamento é justamente o contraste que a coluna
+  // precisa mostrar. Era o `?? "comercial"` de antes que apagava esse contraste.
+  const deps = new Set(canais.map((c) => c.departamento ?? "(não declarado)"));
   return {
     provedor: provedores.size > 1,
-    area: areas.size > 1,
+    departamento: deps.size > 1,
     finalidade: true,
     consentimento: canais.some((c) => c.provedor === "nao_oficial"),
   };

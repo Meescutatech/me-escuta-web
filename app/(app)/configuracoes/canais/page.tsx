@@ -1,6 +1,7 @@
 import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
 import { lerCanais } from "@/components/configuracoes/dados/canais";
 import { lerSessao } from "@/components/configuracoes/dados/lite-sessao";
+import { lerDominioDepartamentos } from "@/lib/dados/departamentos";
 import { TabelaCanais, type CanalNaTela } from "@/components/configuracoes/tabela-canais";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,14 @@ export const dynamic = "force-dynamic";
  * FECHADO — o default é o lado seguro.
  */
 export default async function CanaisPage() {
-  const [papel, lidos] = await Promise.all([lerPapelAtual(), lerCanais()]);
+  // R22/A1 · o domínio de departamento vem do BANCO (`core.v_departamento`), no servidor, junto das
+  // outras leituras. Era uma constante de quatro valores dentro do componente, e três dos quatro
+  // não existiam no banco (D22-1 / ARB-R18-02).
+  const [papel, lidos, dominio] = await Promise.all([
+    lerPapelAtual(),
+    lerCanais(),
+    lerDominioDepartamentos(),
+  ]);
 
   const canais: CanalNaTela[] = await Promise.all(
     lidos.canais.map(async (c) => {
@@ -31,6 +39,9 @@ export default async function CanaisPage() {
       meuPapel={papel}
       indisponivel={lidos.indisponivel}
       f8Pronto={process.env.F8_EM_PRODUCAO === "sim"}
+      departamentos={dominio.departamentos}
+      dominioIndisponivel={dominio.indisponivel}
+      r22Legivel={lidos.r22Legivel}
     />
   );
 }

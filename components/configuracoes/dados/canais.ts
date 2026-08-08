@@ -29,11 +29,19 @@ import { finalidadeValida, provedorValido, type Canal, type Provedor } from "../
 const COLUNAS_BASE =
   "canal_id,nome,provedor,ativo,numero,waba_id,area_efetiva,pareado_em,consentimento_em,consentimento_titular,consentimento_texto_versao,risco_ban_aceito,desativado_em,criado_em";
 
-/** Do mais completo para o mais pobre. O primeiro que responder vence. */
-const DEGRAUS: { colunas: string; corte: boolean; m7: boolean }[] = [
-  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por`, corte: true, m7: true },
-  { colunas: `${COLUNAS_BASE},inbox_desde`, corte: true, m7: false },
-  { colunas: COLUNAS_BASE, corte: false, m7: false },
+/**
+ * Do mais completo para o mais pobre. O primeiro que responder vence.
+ *
+ * R22/A1 · o degrau NOVO é o de cima, com `departamento`, e ele existe pelo mesmo motivo que o do
+ * M7: a `0130` pode não estar aplicada no ambiente onde esta web subir. Sem ele, PostgREST recusa
+ * a consulta INTEIRA por causa de uma coluna e a tela de canais fica vazia — indistinguível de
+ * "não há canais".
+ */
+const DEGRAUS: { colunas: string; corte: boolean; m7: boolean; r22: boolean }[] = [
+  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por,departamento`, corte: true, m7: true, r22: true },
+  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por`, corte: true, m7: true, r22: false },
+  { colunas: `${COLUNAS_BASE},inbox_desde`, corte: true, m7: false, r22: false },
+  { colunas: COLUNAS_BASE, corte: false, m7: false, r22: false },
 ];
 
 export interface CanaisLidos {
@@ -48,9 +56,20 @@ export interface CanaisLidos {
    * gestora conclui que ninguém preencheu, quando o que falta é a coluna.
    */
   m7Legivel: boolean;
+  /**
+   * R22/A1. `false` = a view ainda não tem `departamento` (a `0130` não está aplicada neste
+   * ambiente). A tela DIZ isso — senão mostra "Não declarado" em toda linha e a gestora conclui que
+   * ninguém preencheu, quando o que falta é a coluna. É a mesma distinção que o `m7Legivel` fez.
+   */
+  r22Legivel: boolean;
 }
 
-function mapear(linha: Record<string, unknown>, temCorte: boolean, temM7: boolean): Canal | null {
+function mapear(
+  linha: Record<string, unknown>,
+  temCorte: boolean,
+  temM7: boolean,
+  temR22: boolean,
+): Canal | null {
   const canalId = String(linha.canal_id ?? "").trim();
   if (!canalId) return null;
   const provedorBruto = String(linha.provedor ?? "waba");
@@ -75,6 +94,9 @@ function mapear(linha: Record<string, unknown>, temCorte: boolean, temM7: boolea
     // `null` aqui significa "não declarada" OU "coluna ausente" — nunca "produção". Quem decide
     // qual dos dois é o `m7Legivel`, e a tela mostra textos diferentes para cada um.
     finalidade: temM7 && finalidadeValida(linha.finalidade) ? linha.finalidade : null,
+    // `null` = "coluna ausente" OU "nunca declarado" — nunca um departamento inventado. Quem
+    // distingue os dois é o `r22Legivel`, e a tela tem texto diferente para cada um.
+    departamento: temR22 && linha.departamento ? String(linha.departamento) : null,
   };
 }
 
@@ -103,14 +125,20 @@ export async function lerCanais(opcoes: { cliente?: Supabase } = {}): Promise<Ca
       const { data, error } = await consulta(degrau.colunas);
       if (error || !data) continue;
       const canais = (data as unknown as Record<string, unknown>[])
-        .map((l) => mapear(l, degrau.corte, degrau.m7))
+        .map((l) => mapear(l, degrau.corte, degrau.m7, degrau.r22))
         .filter((c): c is Canal => c !== null);
-      return { canais, indisponivel: false, corteLegivel: degrau.corte, m7Legivel: degrau.m7 };
+      return {
+        canais,
+        indisponivel: false,
+        corteLegivel: degrau.corte,
+        m7Legivel: degrau.m7,
+        r22Legivel: degrau.r22,
+      };
     }
     // Nenhum degrau respondeu: a view não existe, ou a leitura falhou por outro motivo.
-    return { canais: [], indisponivel: true, corteLegivel: false, m7Legivel: false };
+    return { canais: [], indisponivel: true, corteLegivel: false, m7Legivel: false, r22Legivel: false };
   } catch {
-    return { canais: [], indisponivel: true, corteLegivel: false, m7Legivel: false };
+    return { canais: [], indisponivel: true, corteLegivel: false, m7Legivel: false, r22Legivel: false };
   }
 }
 
