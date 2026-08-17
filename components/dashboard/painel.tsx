@@ -1,11 +1,14 @@
 import Link from "next/link";
-import type { DadosDashboard, DiaMensagens, FaixaEtapa } from "@/lib/dados/dashboard";
+import type { DadosDashboard, DiaMensagens, FaixaEtapa, SaudeFluxo } from "@/lib/dados/dashboard";
 import {
+  MINIMO_DECISOES_PARA_REGUA,
+  amostraFraca,
   formatarDuracaoMin,
   idadeCurta,
   percentualChegouAteAqui,
   taxaFechamento,
 } from "@/lib/dados/dashboard-calculos";
+import { diasDesde, lacunasDoPainel, DIAS_LEDGER_PARADO, type Lacuna } from "@/lib/dados/dashboard-lacunas";
 import { segmentosReguaAgregada } from "@/lib/dados/funil-calculos";
 import { ReguaFunil } from "@/components/regua-funil";
 import { CarimboVivo } from "./carimbo-vivo";
@@ -221,6 +224,226 @@ function OperacaoAgentes({ dados, geradoEm }: { dados: DadosDashboard["sugestoes
   );
 }
 
+// ─────────────── precisão por agente (R23, RF-15.3) ───────────────
+
+/**
+ * A base da régua de autonomia (RF-M3), visível pela primeira vez.
+ *
+ * Mostra a conta inteira, não só o percentual: aprovadas / corrigidas / rejeitadas ao lado da %.
+ * É deliberado — "66,7%" sozinho não deixa ninguém julgar se aquilo é medição ou coincidência, e
+ * com 15 decisões é coincidência. A marca "amostra pequena" diz isso na cara, e a % continua
+ * aparecendo, porque escondê-la esconderia junto o fato de que a fila não está sendo validada.
+ */
+function PrecisaoAgentes({
+  dados,
+  geradoEm,
+}: {
+  dados: DadosDashboard["precisao"];
+  geradoEm: string;
+}) {
+  const desdeUltima = idadeCurta(dados.ultimaDecisaoEm, new Date(geradoEm));
+  return (
+    <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
+      <div className="mb-1 flex items-baseline gap-2.5">
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Precisão por agente</h2>
+        <span
+          className="ml-auto font-mono text-[10.5px] text-mute"
+          title="aprovadas sem correção ÷ (aprovadas + corrigidas + rejeitadas). Pendentes e obsoletas ficam fora."
+        >
+          aprovada sem correção ÷ decididas
+        </span>
+      </div>
+
+      {dados.agentes == null ? (
+        <p className="mt-3 text-[13px] text-suave">
+          Leitura indisponível agora — <span className="font-mono">—</span> em vez de um número que não medimos.
+        </p>
+      ) : dados.agentes.length === 0 ? (
+        <p className="mt-3 text-[13px] text-suave">
+          Nenhuma sugestão foi decidida ainda. Precisão sem decisão não é 0% — é pergunta sem resposta.
+        </p>
+      ) : (
+        <>
+          {dados.geral && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-[34px] font-[650] leading-[1.15] tracking-[-0.02em] tabular-nums text-tinta">
+                {dados.geral.pct == null ? "—" : `${dados.geral.pct.toLocaleString("pt-BR")}%`}
+              </span>
+              <span className="text-[12.5px] text-suave">
+                geral · <b className="font-semibold tabular-nums text-tinta">{dados.geral.aprovadas}</b> de{" "}
+                <b className="font-semibold tabular-nums text-tinta">{dados.geral.decididas}</b> decisões
+              </span>
+            </div>
+          )}
+          {desdeUltima && (
+            <div className={cn("mt-1 text-[12.5px]", (dados.geral?.decididas ?? 0) > 0 && "text-suave")}>
+              última decisão há {desdeUltima}
+            </div>
+          )}
+          <div className="mt-3 border-t border-linha/60 pt-2">
+            <div className="mb-1 flex items-center gap-3">
+              <span className="w-[72px] min-w-[72px]" />
+              <span className="flex-1" />
+              <span className="w-[74px] text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute">
+                apr/cor/rej
+              </span>
+              <span className="w-12 text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute">
+                precisão
+              </span>
+            </div>
+            {dados.agentes.map((a) => {
+              const fraca = amostraFraca(a);
+              return (
+                <div key={a.agente} className="flex min-h-7 items-center gap-3">
+                  <span className="w-[72px] min-w-[72px] truncate text-[13px] text-tinta" title={a.agente}>
+                    {a.agente}
+                  </span>
+                  <span className="h-1 flex-1 overflow-hidden rounded-[2px] bg-board">
+                    {a.pct != null && (
+                      <span
+                        className={cn(
+                          "block h-full rounded-[2px]",
+                          // Cinza quando a amostra é pequena: a barra é comparação visual, e comparar
+                          // 4 decisões com 15 pintadas da mesma cor convida exatamente ao erro que a
+                          // marca "amostra pequena" tenta evitar.
+                          fraca ? "bg-mute opacity-50" : a.pct >= 80 ? "bg-verde opacity-80" : "bg-laranja opacity-75",
+                        )}
+                        style={{ width: `${Math.max(2, a.pct)}%` }}
+                      />
+                    )}
+                  </span>
+                  <span className="w-[74px] text-right font-mono text-[11px] tabular-nums text-suave">
+                    {a.aprovadas}/{a.corrigidas}/{a.rejeitadas}
+                  </span>
+                  <span
+                    className={cn(
+                      "w-12 text-right font-mono text-[12px] tabular-nums",
+                      fraca ? "text-mute" : "text-tinta",
+                    )}
+                    title={fraca ? `só ${a.decididas} decisões — pouco para mover a régua de autonomia` : undefined}
+                  >
+                    {a.pct == null ? "—" : `${a.pct.toLocaleString("pt-BR")}%`}
+                    {fraca && <span aria-hidden> *</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {dados.agentes.some(amostraFraca) && (
+            <p className="mt-2 border-t border-linha/60 pt-2 text-[11.5px] text-mute">
+              * menos de {MINIMO_DECISOES_PARA_REGUA} decisões — número real, amostra pequena demais para mover a
+              régua de autonomia.
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ─────────────── saúde do fluxo (R23, RF-15.4) ───────────────
+
+/** "2 min", "3 h", "5 d" a partir de segundos — a idade do item mais velho parado na fila. */
+function segundosCurto(seg: number | null): string {
+  if (seg == null) return "—";
+  if (seg < 90) return `${Math.round(seg)}s`;
+  const min = Math.round(seg / 60);
+  if (min < 90) return `${min}min`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
+}
+
+/**
+ * Fonte única com o F2: `ops.v_saude_fluxo`, atravessada por `core.v_saude_fluxo` (migration 0180).
+ * Sem a view, a seção NÃO desenha zeros — ela diz que não está medindo. Lag 0 e falhas 0 é como um
+ * sistema saudável se parece; é o disfarce mais perigoso que um painel pode vestir.
+ */
+function SaudeDoFluxo({ dados }: { dados: SaudeFluxo | null }) {
+  return (
+    <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
+      <div className="mb-3 flex items-baseline gap-2.5">
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Saúde do fluxo</h2>
+        <span className="ml-auto font-mono text-[10.5px] text-mute">ops.v_saude_fluxo</span>
+      </div>
+      {dados == null || !dados.disponivel ? (
+        <p className="text-[13px] text-suave">
+          <b className="font-semibold text-amarelo">Não medido.</b> A fonte existe, mas ainda não está exposta à
+          API — sem ela, zeros aqui pareceriam saúde.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-x-5">
+            <Metrica rot="Eventos · última hora" val={n(dados.eventosUltimaHora)} />
+            <Metrica rot="Eventos · último min" val={n(dados.eventosUltimoMinuto)} />
+            <Metrica
+              rot="Duplicados rejeitados"
+              val={n(dados.duplicadosUltimaHora)}
+              // Duplicado rejeitado é o sistema FUNCIONANDO (idempotência barrando reentrega),
+              // não um defeito — por isso não pinta de alerta.
+            />
+            <Metrica
+              rot="Falhas de ingestão"
+              val={n(dados.falhasUltimaHora)}
+              tom={(dados.falhasUltimaHora ?? 0) > 0 ? "alerta" : undefined}
+            />
+            <Metrica
+              rot="Fila de eventos"
+              val={n(dados.lagFilaEventos)}
+              tom={(dados.lagFilaEventos ?? 0) > 0 ? "alerta" : undefined}
+            />
+            <Metrica
+              rot="Mais antigo na fila"
+              val={segundosCurto(dados.idadeFilaEventosSeg)}
+              // Idade alta com lag baixo = item preso reentregando; é o sintoma que o lag esconde.
+              tom={(dados.idadeFilaEventosSeg ?? 0) > 300 ? "alerta" : undefined}
+            />
+            <Metrica rot="Fila de saída" val={n(dados.lagFilaSaida)} tom={(dados.lagFilaSaida ?? 0) > 0 ? "alerta" : undefined} />
+            <Metrica
+              rot="Envios falhados 24 h"
+              val={n(dados.enviosFalhados24h)}
+              tom={(dados.enviosFalhados24h ?? 0) > 0 ? "alerta" : undefined}
+            />
+          </div>
+          {dados.ultimaIngestaoWhatsapp && (
+            <p className="mt-2.5 border-t border-linha/60 pt-2 font-mono text-[10.5px] text-mute">
+              última entrada de WhatsApp: {ddmmhhmm(dados.ultimaIngestaoWhatsapp) ?? "—"}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ─────────────── o que não está sendo medido (R23, RF-15.5) ───────────────
+
+/**
+ * A regra do Rodolfo, na tela: no Kommo o campo Venda é R$ 0 em 12 das 13 etapas, e quem lê aquilo
+ * conclui que a operação não vende. Aqui o que não é medido é ESCRITO, com o motivo — nunca
+ * exibido como zero ao lado dos números que foram medidos de verdade.
+ */
+function NaoMedido({ lacunas }: { lacunas: Lacuna[] }) {
+  if (lacunas.length === 0) return null;
+  return (
+    <section className="rounded-[10px] border border-dashed border-linha bg-board/40 px-5 py-[18px]">
+      <div className="mb-3 flex items-baseline gap-2.5">
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">
+          O que este painel não está medindo
+        </h2>
+        <span className="ml-auto font-mono text-[10.5px] text-mute">{lacunas.length}</span>
+      </div>
+      <ul className="grid gap-2.5 sm:grid-cols-2">
+        {lacunas.map((l) => (
+          <li key={l.titulo} className="border-l-2 border-linha pl-3">
+            <div className="text-[13px] font-semibold text-tinta">{l.titulo}</div>
+            <div className="mt-0.5 text-[12.5px] leading-[1.45] text-suave">{l.porque}</div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // ─────────────── painel ───────────────
 
 export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; geradoEm: string }) {
@@ -234,6 +457,18 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
   const fechamento = taxaFechamento(somaOuNull(ganhos), somaOuNull(perdidos));
   const snapshot = ddmmhhmm(dados.ultimoEventoEm);
   const semDados = dados.ultimoEventoEm == null && (dados.leadsAtivos ?? 0) === 0;
+
+  // R23 · a ingestão parou? Então "0 novos hoje" é notícia sobre a IMPORTAÇÃO, não sobre a
+  // operação — e o tile precisa dizer qual das duas, em vez de deixar o zero responder pelas duas.
+  const agora = new Date(geradoEm);
+  const diasSemLeadNovo = diasDesde(dados.recencia.ultimoLeadCriadoEm, agora);
+  const ingestaoParada = diasSemLeadNovo != null && diasSemLeadNovo >= DIAS_LEDGER_PARADO;
+  const lacunas = lacunasDoPainel({
+    ultimoLeadCriadoEm: dados.recencia.ultimoLeadCriadoEm,
+    saudeFluxoDisponivel: dados.saudeFluxo?.disponivel === true,
+    decisoesDeSugestao: dados.precisao.geral?.decididas ?? null,
+    agora,
+  });
 
   return (
     <main className="mx-auto max-w-[1180px] px-6 pb-12 pt-6">
@@ -261,10 +496,20 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
           <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
             <Tile rotulo="Leads ativos no funil">
               <Num>{n(dados.leadsAtivos)}</Num>
-              <div className="mt-1.5 text-[12.5px] text-suave">
-                <b className="font-semibold tabular-nums text-tinta">{n(dados.novosHoje)}</b> novos hoje ·{" "}
-                <b className="font-semibold tabular-nums text-tinta">{n(dados.novos7d)}</b> nos últimos 7 dias
-              </div>
+              {/* R23: o "novos hoje / 7 dias" some quando a ingestão parou. Ele lê a data de
+                  IMPORTAÇÃO do lead, então com o ledger parado ele reporta zero importações — e
+                  esse zero, ao lado de um número medido, é lido como "nenhum lead novo". */}
+              {ingestaoParada ? (
+                <div className="mt-1.5 text-[12.5px] text-amarelo">
+                  nenhum lead entrou no ledger há {diasSemLeadNovo} dias — leads novos{" "}
+                  <b className="font-semibold">não estão sendo medidos</b>
+                </div>
+              ) : (
+                <div className="mt-1.5 text-[12.5px] text-suave">
+                  <b className="font-semibold tabular-nums text-tinta">{n(dados.novosHoje)}</b> novos hoje ·{" "}
+                  <b className="font-semibold tabular-nums text-tinta">{n(dados.novos7d)}</b> nos últimos 7 dias
+                </div>
+              )}
             </Tile>
             <Tile rotulo="Mensagens hoje">
               <Num>
@@ -306,6 +551,13 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
             <div className="flex flex-col gap-3">
               {/* operação de agentes (R19, 2.2) */}
               <OperacaoAgentes dados={dados.sugestoes} geradoEm={geradoEm} />
+
+              {/* R23 · RF-15.3: a precisão que a régua de autonomia lê, logo abaixo da fila que a
+                  alimenta — as duas juntas contam a história inteira do human-on-the-loop. */}
+              <PrecisaoAgentes dados={dados.precisao} geradoEm={geradoEm} />
+
+              {/* R23 · RF-15.4 */}
+              <SaudeDoFluxo dados={dados.saudeFluxo} />
 
               {/* mensagens (R19, 2.1: a série de 7 dias que já era lida vira gráfico) */}
               <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
@@ -365,6 +617,12 @@ export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; ge
                 </div>
               </section>
             </div>
+          </div>
+
+          {/* R23 · RF-15.5 — por último e com moldura diferente: é o rodapé de honestidade do
+              painel, não mais um número. Separá-lo visualmente é o ponto. */}
+          <div className="mt-3">
+            <NaoMedido lacunas={lacunas} />
           </div>
         </>
       )}

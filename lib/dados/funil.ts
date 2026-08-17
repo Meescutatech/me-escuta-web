@@ -1,5 +1,15 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
-import { TETO_CARDS, chavesDoBoard, houveCorte } from "./funil-calculos";
+import {
+  COLUNAS_CARD,
+  MINIMO_BUSCA,
+  TETO_BUSCA,
+  TETO_CARDS,
+  chavesDoBoard,
+  etapasDoBoard,
+  houveCorte,
+  planoBusca,
+  recortarBusca,
+} from "./funil-calculos";
 import { parseTags } from "./ficha-calculos";
 
 /**
@@ -19,7 +29,11 @@ import { parseTags } from "./ficha-calculos";
 export type Origem = "wa" | "ig" | "meta" | "ind";
 export type TipoResp = "dm" | "sara" | "fono";
 export type AgenteProp = "clara" | "lev";
-export type TipoEtapa = "aberto" | "ganho" | "perdido";
+/**
+ * R23: `arquivado` é um tipo real da config vigente — não uma etapa do funil. Deixá-lo fora do
+ * union era o que fazia o TypeScript concordar com um board que a produção já contradizia.
+ */
+export type TipoEtapa = "aberto" | "ganho" | "perdido" | "arquivado";
 
 export interface EtapaFunil {
   chave: string; // 'novo', 'qualificando', … (contrato: chave, não id)
@@ -27,6 +41,12 @@ export interface EtapaFunil {
   cor: string; // hex
   tipo: TipoEtapa;
   ordem: number;
+  /**
+   * R23 · a config marca com `no_board: true` a etapa que EXISTE no funil mas não é coluna de
+   * trabalho (hoje: `arquivado`, com 582 dos 679 leads). O campo estava na config e o código não
+   * o lia — ver o comentário de `chavesDoBoard`.
+   */
+  no_board: boolean;
 }
 
 export interface PropostaPendente {
@@ -58,7 +78,14 @@ export interface CardLead {
 }
 
 export interface DadosFunil {
+  /** Só as etapas de COLUNA (config vigente menos `no_board`) — é o que o board desenha. */
   etapas: EtapaFunil[];
+  /**
+   * R23 · a config inteira, incluindo as `no_board`. A busca no servidor acha lead em etapa que
+   * não é coluna (hoje `arquivado`), e o resultado precisa saber dizer o NOME dessa etapa —
+   * mostrar a chave crua ("arquivado") no lugar do nome seria a UI confessando que não sabe.
+   */
+  todasEtapas: EtapaFunil[];
   cards: CardLead[];
   /** Leitura bateu no TETO_CARDS — a UI avisa que o board mostra os mais recentes, nunca finge completude. */
   corte: boolean;
@@ -67,13 +94,13 @@ export interface DadosFunil {
 // ─────────────── etapas padrão (espelho do funil_vendas v2 real) ───────────────
 
 export const ETAPAS_PADRAO: EtapaFunil[] = [
-  { chave: "novo", nome: "Novo lead", cor: "#94a3b8", tipo: "aberto", ordem: 1 },
-  { chave: "qualificando", nome: "Qualificando", cor: "#38bdf8", tipo: "aberto", ordem: 2 },
-  { chave: "avaliacao", nome: "Avaliação auditiva", cor: "#a78bfa", tipo: "aberto", ordem: 3 },
-  { chave: "proposta", nome: "Proposta enviada", cor: "#fbbf24", tipo: "aberto", ordem: 4 },
-  { chave: "negociacao", nome: "Negociação", cor: "#fb923c", tipo: "aberto", ordem: 5 },
-  { chave: "ganho", nome: "Ganho", cor: "#34d399", tipo: "ganho", ordem: 90 },
-  { chave: "perdido", nome: "Perdido", cor: "#f87171", tipo: "perdido", ordem: 91 },
+  { chave: "novo", nome: "Novo lead", cor: "#94a3b8", tipo: "aberto", ordem: 1, no_board: false },
+  { chave: "qualificando", nome: "Qualificando", cor: "#38bdf8", tipo: "aberto", ordem: 2, no_board: false },
+  { chave: "avaliacao", nome: "Avaliação auditiva", cor: "#a78bfa", tipo: "aberto", ordem: 3, no_board: false },
+  { chave: "proposta", nome: "Proposta enviada", cor: "#fbbf24", tipo: "aberto", ordem: 4, no_board: false },
+  { chave: "negociacao", nome: "Negociação", cor: "#fb923c", tipo: "aberto", ordem: 5, no_board: false },
+  { chave: "ganho", nome: "Ganho", cor: "#34d399", tipo: "ganho", ordem: 90, no_board: false },
+  { chave: "perdido", nome: "Perdido", cor: "#f87171", tipo: "perdido", ordem: 91, no_board: false },
 ];
 
 // ─────────────── leitura real ───────────────
@@ -118,6 +145,9 @@ export async function lerEtapasReais(cliente?: Supabase): Promise<EtapaFunil[] |
       cor: String(e.cor ?? ETAPAS_PADRAO[i]?.cor ?? "#94a3b8"),
       tipo: (e.tipo ?? "aberto") as TipoEtapa,
       ordem: Number(e.ordem ?? i + 1),
+      // `no_board` explícito OU tipo 'arquivado': as duas marcas dizem a mesma coisa, e ler as
+      // duas evita que uma config futura que use só uma delas volte a encher o board.
+      no_board: e.no_board === true || e.tipo === "arquivado",
     }))
     .sort((a, b) => a.ordem - b.ordem);
 }
@@ -165,40 +195,111 @@ async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[
     lerLeadsComTarefaPendente(supabase),
   ]);
   if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
-  const cards = data.map((r: any) => {
-    const origemRaw = r.origem ? String(r.origem).toLowerCase() : null;
-    // vínculo por uuid (0060) tem precedência sobre o texto legado na hora do chip
-    const donoNome = r.dono_nome ? String(r.dono_nome) : null;
-    return {
-      lead_id: String(r.lead_id),
-      nome: r.nome ?? null,
-      idade: null, // 0011
-      telefone: r.telefone ?? null,
-      etapa: String(r.etapa ?? "novo"),
-      entrou_etapa_em: r.entrou_etapa_em ?? null,
-      valor: r.valor != null ? Number(r.valor) : null,
-      origem: origemRaw ? (MAPA_ORIGEM[origemRaw] ?? null) : null,
-      responsavel: donoNome
-        ? { tipo: (/sara/i.test(donoNome) ? "sara" : /fono/i.test(donoNome) ? "fono" : "dm") as TipoResp, nome: donoNome }
-        : donoParaResponsavel(r.dono ?? null),
-      dono_id: r.dono_id ?? null,
-      dono_nome: donoNome,
-      tags: parseTags(r.tags),
-      proposta: null,
-      kommo_lead_id: r.kommo_lead_id ?? null,
-      tem_tarefa_pendente: comTarefa == null ? null : comTarefa.has(String(r.lead_id)),
-    } as CardLead;
-  });
+  const cards = data.map((r: any) =>
+    // `tem_tarefa_pendente` só é conhecido quando a leitura de tarefas voltou; a busca (que não a
+    // faz) passa `null` e o filtro "sem próxima ação" corretamente não acusa ninguém por ela.
+    montarCard(r, comTarefa == null ? null : comTarefa.has(String(r.lead_id))),
+  );
   return { cards, corte: houveCorte(cards.length, TETO_CARDS) };
+}
+
+/**
+ * Linha de `core.v_lead_card` → `CardLead`. Fonte ÚNICA da montagem: o board e a busca leem as
+ * mesmas colunas e precisam produzir o mesmo card — se a derivação do chip de responsável ou do
+ * mapa de origem divergisse entre os dois, o mesmo lead teria duas caras conforme o caminho.
+ */
+function montarCard(r: any, temTarefaPendente: boolean | null = null): CardLead {
+  const origemRaw = r.origem ? String(r.origem).toLowerCase() : null;
+  // vínculo por uuid (0060) tem precedência sobre o texto legado na hora do chip
+  const donoNome = r.dono_nome ? String(r.dono_nome) : null;
+  return {
+    lead_id: String(r.lead_id),
+    nome: r.nome ?? null,
+    idade: null, // 0011
+    telefone: r.telefone ?? null,
+    etapa: String(r.etapa ?? "novo"),
+    entrou_etapa_em: r.entrou_etapa_em ?? null,
+    valor: r.valor != null ? Number(r.valor) : null,
+    origem: origemRaw ? (MAPA_ORIGEM[origemRaw] ?? null) : null,
+    responsavel: donoNome
+      ? { tipo: (/sara/i.test(donoNome) ? "sara" : /fono/i.test(donoNome) ? "fono" : "dm") as TipoResp, nome: donoNome }
+      : donoParaResponsavel(r.dono ?? null),
+    dono_id: r.dono_id ?? null,
+    dono_nome: donoNome,
+    tags: parseTags(r.tags),
+    proposta: null,
+    kommo_lead_id: r.kommo_lead_id ?? null,
+    tem_tarefa_pendente: temTarefaPendente,
+  };
 }
 
 /** Fonte única do board. Etapas reais (senão padrão estrutural); cards só reais — vazio é vazio. */
 export async function lerFunil(): Promise<DadosFunil> {
   try {
-    const etapas = (await lerEtapasReais()) ?? ETAPAS_PADRAO; // cards filtram pelas chaves da config
-    const { cards, corte } = await lerCardsReais(chavesDoBoard(etapas));
-    return { etapas, cards, corte };
+    const todasEtapas = (await lerEtapasReais()) ?? ETAPAS_PADRAO; // cards filtram pelas chaves da config
+    const { cards, corte } = await lerCardsReais(chavesDoBoard(todasEtapas));
+    return { etapas: etapasDoBoard(todasEtapas), todasEtapas, cards, corte };
   } catch {
-    return { etapas: ETAPAS_PADRAO, cards: [], corte: false };
+    return { etapas: ETAPAS_PADRAO, todasEtapas: ETAPAS_PADRAO, cards: [], corte: false };
   }
+}
+
+/*
+ * ── R23 · Trilha E — A BUSCA VAI AO BANCO ───────────────────────────────────────────────────
+ *
+ * O que havia: `filtrarCards` (lib/dados/funil-filtros.ts) roda no navegador, sobre o array que o
+ * board já carregou. Ela continua existindo e continua certa — é o filtro do que está na tela.
+ * O que ela nunca pôde ser é BUSCA, porque busca é a pergunta "existe em algum lugar?", e o que
+ * está na tela não é o universo.
+ *
+ * Três recortes tiram lead do alcance do filtro do cliente, e os três são reais hoje:
+ *   1. etapa `no_board` — 582 dos 679 leads estão em `arquivado`, que deixou de ser coluna;
+ *   2. TETO_CARDS (2.000) — o board lê os mais recentes e corta o resto (o Kommo já tem 690 e
+ *      cresce; o dia em que passar de 2.000, o corte é silencioso para quem digita um nome);
+ *   3. o filtro de etapa/responsável/período que o operador já tenha ligado.
+ *
+ * Esta função responde a pergunta certa no lugar certo: um `ilike` sobre `core.v_lead_card`
+ * INTEIRA, sem filtro de etapa, com teto próprio e ordenação determinística. Custa uma ida ao
+ * servidor por busca — medida em 17/08/2026 entre 232 e 251 ms, contra 292 ms que o board gastava
+ * carregando os 582 arquivados em TODA visita, achando ou não.
+ */
+
+export interface ResultadoBusca {
+  termo: string;
+  cards: CardLead[];
+  /** Havia mais que o teto — a UI diz "refine", nunca deixa o operador achar que viu tudo. */
+  truncado: boolean;
+  /** A leitura falhou. Diferente de "achou zero" — e a UI precisa dizer coisas diferentes. */
+  erro: boolean;
+}
+
+const VAZIO: Omit<ResultadoBusca, "termo"> = { cards: [], truncado: false, erro: false };
+
+/**
+ * Busca por nome OU telefone em TODO o `core.v_lead_card`, ignorando etapa e teto do board.
+ *
+ * Telefone: a coluna guarda só dígitos ("5527998316220" — verificado nas 628 linhas com telefone),
+ * então uma busca digitada com máscara precisa ser reduzida a dígitos antes de comparar. É a mesma
+ * regra de `buscaCasa`, e as duas continuam tendo que concordar — o teste compara as duas.
+ */
+export async function buscarLeads(termo: string, cliente?: Supabase): Promise<ResultadoBusca> {
+  const plano = planoBusca(termo); // puro e testado em funil-calculos.ts
+  if (plano == null) return { termo, ...VAZIO };
+  const supabase = cliente ?? criarClienteServidor();
+
+  // Repare no que NÃO está aqui: nenhum `.in("etapa", …)`. É a ausência que faz a busca alcançar
+  // os 582 leads em `arquivado` — a etapa que deixou de ser coluna do board.
+  const { data, error } = await supabase
+    .schema("core")
+    .from("v_lead_card")
+    .select(plano.colunas)
+    .or(plano.or)
+    .order("entrou_etapa_em", { ascending: false, nullsFirst: false })
+    .order("lead_id", { ascending: true })
+    .limit(plano.limite);
+
+  if (error || !data) return { termo, cards: [], truncado: false, erro: true };
+  const { cards, truncado } = recortarBusca(data as any[]);
+  // arrow explícita: `.map(montarCard)` passaria o ÍNDICE no lugar de `temTarefaPendente`
+  return { termo, cards: cards.map((r) => montarCard(r)), truncado, erro: false };
 }

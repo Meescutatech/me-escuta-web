@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { confirmarProjecao, type RespostaRegistrarEvento } from "@/lib/eventos/confirmar-projecao";
+import { buscarLeads, type ResultadoBusca } from "@/lib/dados/funil";
 
 export interface ResultadoEvento {
   ok: boolean;
@@ -127,4 +128,21 @@ export async function criarLeadManual(dados: NovoLead): Promise<ResultadoEvento 
 
   const res = await registrarEventoUI("lead_criado", payload, leadId, leadId);
   return res.ok ? { ...res, leadId } : res;
+}
+
+/*
+ * ── R23 · Trilha E — a busca do board ───────────────────────────────────────────────────────
+ *
+ * LEITURA PURA. Não passa pela porta, não registra evento, não escreve nada — é um SELECT com a
+ * mesma sessão/RLS do resto do app. Está aqui, e não numa rota, porque é o board (componente de
+ * cliente) que pergunta, e a resposta precisa vir do servidor para poder olhar o banco inteiro em
+ * vez do array que o board já tem na memória.
+ *
+ * Por que o servidor e não mais um `fetch` do cliente contra o PostgREST: a chave anônima no
+ * navegador só enxerga o que a RLS permitir para a sessão, e a montagem do card (chip de
+ * responsável, mapa de origem, tags) tem que ser a MESMA do board — ela mora em `montarCard`,
+ * server-side. Duas montagens dariam duas caras ao mesmo lead.
+ */
+export async function buscarLeadsAcao(termo: string): Promise<ResultadoBusca> {
+  return buscarLeads(termo);
 }

@@ -16,6 +16,7 @@ import type { DadosFunil, CardLead, EtapaFunil } from "@/lib/dados/funil";
 import { moverCardEtapa } from "@/app/(app)/funil/actions";
 import { CartaoLead } from "./card-lead";
 import { DrawerCard } from "./drawer-card";
+import { FaixaBuscaServidor, useBuscaServidor } from "./busca-servidor";
 import { FiltrosBoard } from "./filtros";
 import { NovoLead } from "./novo-lead";
 import { DialogoMotivoPerda } from "./motivo-perda";
@@ -364,8 +365,19 @@ export function Quadro({
     await aplicarMovimento(leadId, atual.etapa, etapaAlvo, atual.entrou_etapa_em);
   }
 
-  const leadAberto = cards.find((c) => c.lead_id === cardAberto) ?? null;
-  const etapaAberta = dados.etapas.find((e) => e.chave === leadAberto?.etapa) ?? null;
+  // R23 · busca no servidor: enxerga o banco inteiro (todas as etapas, sem o teto do board) e
+  // devolve só o que NÃO está carregado aqui. O filtro do cliente segue recortando o board.
+  const idsNoBoard = useMemo(() => new Set(cards.map((c) => c.lead_id)), [cards]);
+  const busca = useBuscaServidor(filtros.busca, idsNoBoard);
+
+  // O drawer precisa alcançar também o lead achado fora do board — senão a busca acha e não abre.
+  const leadAberto: CardLead | null =
+    cards.find((c) => c.lead_id === cardAberto) ??
+    busca.foraDoBoard.find((c) => c.lead_id === cardAberto) ??
+    null;
+  // `todasEtapas` (e não `dados.etapas`) porque o lead achado pode estar numa etapa que não é
+  // coluna — 'arquivado'. Procurar só entre as colunas devolveria null e o drawer perderia o nome.
+  const etapaAberta = dados.todasEtapas.find((e) => e.chave === leadAberto?.etapa) ?? null;
 
   return (
     <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
@@ -461,6 +473,17 @@ export function Quadro({
           />
         </div>
       </div>
+
+      {/* R23 · o que a busca achou FORA do board — logo abaixo do cabeçalho, antes das colunas,
+          porque a resposta a "existe?" tem que chegar antes de o operador desistir e abrir o Kommo. */}
+      <FaixaBuscaServidor
+        estado={busca}
+        todasEtapas={dados.todasEtapas}
+        onAbrir={(leadId) => {
+          setCardAberto(leadId);
+          setSelecionadoId(leadId);
+        }}
+      />
 
       <DndContext
         sensors={sensors}

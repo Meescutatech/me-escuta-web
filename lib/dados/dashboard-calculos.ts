@@ -249,6 +249,105 @@ export function resumirSugestoes(
   };
 }
 
+/*
+ * ── R23 · Trilha E — PRECISÃO POR AGENTE (RF-15.3) ──────────────────────────────────────────
+ *
+ * A régua de autonomia (RF-M3, PRD §6.2) afrouxa por tipo de ação conforme a precisão sobe. Para
+ * isso ela precisa de UM número por agente, e ele tem que ser o número certo:
+ *
+ *     precisão = aprovadas SEM correção ÷ decididas
+ *     decididas = aprovada + corrigida + rejeitada
+ *
+ * Por que o denominador é esse, e não o total de sugestões: `pendente` ainda não foi julgada —
+ * contá-la derrubaria a precisão de todo agente com fila (hoje 405 das 437), e a fila é sintoma de
+ * validador ausente, não de agente ruim. `obsoleta` foi descartada pelo tempo, sem ninguém olhar:
+ * não é acerto nem erro. Só entra na conta o que um humano DECIDIU.
+ *
+ * Por que `aprovada` é "sem correção", e `corrigida` é o caso separado: o ciclo do banco
+ * (constraint `sugestao_ia_status_check`) é pendente → aprovada | corrigida | rejeitada | obsoleta.
+ * `corrigida` existe exatamente para marcar "serviu, mas o humano teve que mexer" — que para a
+ * régua de autonomia é falha, porque um agente autônomo não teria tido quem corrigisse.
+ *
+ * O que NÃO dá para fazer, e por que está escrito aqui: comparar `payload_proposto` com
+ * `payload_aprovado` seria a checagem mais forte, e ela é impossível hoje — `payload_aprovado` é
+ * NULL nas 437 linhas de produção, inclusive nas 12 aprovadas. Enquanto for assim, "sem correção"
+ * é o que o STATUS diz, e a UI precisa dizer que a amostra é pequena em vez de fingir régua.
+ */
+
+/** Os status que representam uma DECISÃO humana — o denominador da precisão. */
+export const STATUS_DECIDIDOS = ["aprovada", "corrigida", "rejeitada"];
+
+/** Acima disto, ler `agente,status` das decididas sai mais caro que head-counts. Medido hoje: 32. */
+export const TETO_DECIDIDAS_AGREGACAO = 5000;
+
+export interface PrecisaoAgente {
+  agente: string;
+  aprovadas: number; // aprovada SEM correção — o numerador
+  corrigidas: number; // aprovada COM correção — conta como falha da autonomia
+  rejeitadas: number;
+  decididas: number; // aprovadas + corrigidas + rejeitadas
+  /** aprovadas ÷ decididas, em % com 1 casa. Sem decisão nenhuma → null (não existe precisão de zero). */
+  pct: number | null;
+}
+
+/** Precisão de UM conjunto de decisões. Base zero → null, nunca 0% nem 100% inventados. */
+export function precisao(aprovadas: number, decididas: number): number | null {
+  if (decididas <= 0) return null;
+  return Math.round((aprovadas / decididas) * 1000) / 10;
+}
+
+/**
+ * Precisão por agente a partir de UMA leitura estreita de (`agente`,`status`) das decididas.
+ * Ordem: pior precisão primeiro (é a que pede ação), com os sem-precisão no fim e desempate
+ * por nome — a régua de autonomia lê de cima para baixo.
+ */
+export function precisaoPorAgente(
+  linhas: Array<{ agente?: string | null; status?: string | null }>,
+): PrecisaoAgente[] {
+  const porAgente = new Map<string, PrecisaoAgente>();
+  for (const l of linhas) {
+    const status = l.status == null ? "" : String(l.status);
+    if (!STATUS_DECIDIDOS.includes(status)) continue; // pendente/obsoleta ficam fora do denominador
+    const nome = l.agente == null || l.agente === "" ? "sem agente" : String(l.agente);
+    const a =
+      porAgente.get(nome) ??
+      { agente: nome, aprovadas: 0, corrigidas: 0, rejeitadas: 0, decididas: 0, pct: null };
+    if (status === "aprovada") a.aprovadas += 1;
+    else if (status === "corrigida") a.corrigidas += 1;
+    else a.rejeitadas += 1;
+    a.decididas += 1;
+    porAgente.set(nome, a);
+  }
+  return [...porAgente.values()]
+    .map((a) => ({ ...a, pct: precisao(a.aprovadas, a.decididas) }))
+    .sort((x, y) => (x.pct ?? 101) - (y.pct ?? 101) || x.agente.localeCompare(y.agente, "pt-BR"));
+}
+
+/** Precisão do conjunto todo — a linha "geral" do painel. Somar as partes, nunca a média das %. */
+export function precisaoGeral(agentes: PrecisaoAgente[]): PrecisaoAgente {
+  const soma = agentes.reduce(
+    (s, a) => ({
+      aprovadas: s.aprovadas + a.aprovadas,
+      corrigidas: s.corrigidas + a.corrigidas,
+      rejeitadas: s.rejeitadas + a.rejeitadas,
+      decididas: s.decididas + a.decididas,
+    }),
+    { aprovadas: 0, corrigidas: 0, rejeitadas: 0, decididas: 0 },
+  );
+  return { agente: "geral", ...soma, pct: precisao(soma.aprovadas, soma.decididas) };
+}
+
+/**
+ * Amostra pequena demais para virar régua? A régua de autonomia (RF-M3) muda o que o sistema faz
+ * sozinho; movê-la com 4 decisões é ruído, não medição. O painel mostra a % assim mesmo — mas
+ * marcada — porque esconder o número esconderia também que ninguém está validando.
+ */
+export const MINIMO_DECISOES_PARA_REGUA = 20;
+
+export function amostraFraca(a: PrecisaoAgente): boolean {
+  return a.decididas < MINIMO_DECISOES_PARA_REGUA;
+}
+
 /** Idade curta de um instante: "45s", "12min", "5h", "18d". Inválido/ausente → null. */
 export function idadeCurta(iso: string | null, agora: Date): string | null {
   if (!iso) return null;

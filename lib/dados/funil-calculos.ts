@@ -11,17 +11,101 @@
 export const TETO_CARDS = 2000;
 
 /**
- * O board exibe EXATAMENTE as etapas da config vigente (funil_vendas) — a leitura de cards
- * filtra por estas chaves no banco, então etapa fora do funil ('arquivado' etc.) nunca
- * entra no board nem rouba vaga do teto.
+ * O board exibe as etapas de TRABALHO da config vigente (funil_vendas) — a leitura de cards filtra
+ * por estas chaves no banco, então etapa marcada `no_board` ('arquivado') nunca entra no board nem
+ * rouba vaga do teto.
+ *
+ * ── R23 · por que esta função tinha um `.map` onde devia ter um `.filter` ────────────────────
+ * A versão anterior era `etapas.map((e) => e.chave)` — TODAS as chaves — e tanto o comentário
+ * acima dela quanto o teste que a cobria afirmavam o contrário: que 'arquivado' nunca entrava.
+ * As duas afirmações eram sobre uma config que o autor tinha em mente; a config vigente em
+ * produção ganhou depois uma 15ª etapa `{chave:'arquivado', tipo:'arquivado', no_board:true}` com
+ * 582 dos 679 leads dentro. Medido em 17/08/2026: o board carregava 679 cards (191,7 KB) e
+ * renderizava uma coluna "Arquivado" com 582 deles; respeitando `no_board` são 97 (26,9 KB).
+ *
+ * A lição está no teste, não aqui: comentário e fixture são declaração sobre o que se imaginou;
+ * só a config real diz o que o board vira. Ver `tests/funil.test.ts`, que agora usa a config de
+ * produção como régua e falharia contra o código antigo.
  */
-export function chavesDoBoard(etapas: Array<{ chave: string }>): string[] {
-  return etapas.map((e) => e.chave);
+export function chavesDoBoard(etapas: Array<{ chave: string; no_board?: boolean }>): string[] {
+  return etapas.filter((e) => e.no_board !== true).map((e) => e.chave);
+}
+
+/** As etapas que o board mostra como coluna — mesma regra de `chavesDoBoard`, objeto inteiro. */
+export function etapasDoBoard<T extends { no_board?: boolean }>(etapas: T[]): T[] {
+  return etapas.filter((e) => e.no_board !== true);
 }
 
 /** Leitura bateu no teto? (>= porque o PostgREST nunca devolve mais que o limit). */
 export function houveCorte(qtdLida: number, teto: number): boolean {
   return qtdLida >= teto;
+}
+
+/*
+ * ── R23 · Trilha E — o PLANO da busca no servidor ───────────────────────────────────────────
+ *
+ * A busca em si é I/O e mora em `funil.ts` (server-only). O que ela vai PERGUNTAR mora aqui, puro,
+ * pelo mesmo motivo que as contas do dashboard moram em `dashboard-calculos.ts`: é a única forma
+ * de um teste afirmar o que a consulta faz — e, mais importante, o que ela **não** faz.
+ *
+ * A propriedade que interessa é uma ausência: o plano não tem filtro de etapa. É exatamente isso
+ * que permite achar os 582 leads em `arquivado`, que deixaram de ser coluna do board. Ausência não
+ * se vê lendo código ("não está lá" é o que qualquer bug de omissão parece); mas se o plano é um
+ * objeto, o teste consegue afirmar que ele não ganhou um campo de etapa.
+ */
+
+/** Teto do resultado da busca: uma lista, não um segundo board. `+1` é o detector de "há mais". */
+export const TETO_BUSCA = 50;
+
+/**
+ * Mínimo de caracteres para ir ao banco. Abaixo disso a busca casaria com meio funil e a ida é
+ * desperdício — o filtro do cliente já cobre o que está na tela.
+ */
+export const MINIMO_BUSCA = 2;
+
+/** Colunas do card. As MESMAS do board: os dois caminhos têm que montar o mesmo card. */
+export const COLUNAS_CARD =
+  "lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,dono_id,dono_nome,tags,kommo_lead_id";
+
+export interface PlanoBusca {
+  colunas: string;
+  /** Expressão do `.or()` do PostgREST — OR entre nome e telefone. */
+  or: string;
+  /** Sempre TETO_BUSCA + 1: o extra é o detector de truncamento. */
+  limite: number;
+}
+
+/**
+ * Escapa o que o PostgREST trata como ESTRUTURA dentro de um `or=(...)`: vírgula separa condições
+ * e parêntese fecha o grupo. Sem isso, "Silva, Maria" vira duas condições — a query não quebra,
+ * ela passa a perguntar outra coisa, que é o modo silencioso de errar.
+ */
+export function termoSeguro(termo: string): string {
+  return termo.replace(/[(),*\\]/g, " ").trim();
+}
+
+/**
+ * O que perguntar ao banco para achar um lead por nome ou telefone. `null` = termo curto demais,
+ * não vale a ida.
+ *
+ * Telefone é guardado só em dígitos ("5527998316220" — conferido nas 628 linhas com telefone), então
+ * uma busca digitada com máscara precisa virar dígitos antes de comparar. Mesma regra de `buscaCasa`
+ * (funil-filtros.ts), e as duas TÊM que concordar: a faixa de achados e o board dividem a tela.
+ */
+export function planoBusca(termo: string): PlanoBusca | null {
+  const limpo = termoSeguro(termo);
+  if (limpo.length < MINIMO_BUSCA) return null;
+  const condicoes = [`nome.ilike.*${limpo}*`, `telefone.ilike.*${limpo}*`];
+  const digitos = limpo.replace(/[^0-9]/g, "");
+  // 3+ dígitos: "(31) 99981" acha "3199981…". Abaixo disso o dígito solto casaria quase todo
+  // telefone e só faria barulho.
+  if (digitos.length >= 3 && digitos !== limpo) condicoes.push(`telefone.ilike.*${digitos}*`);
+  return { colunas: COLUNAS_CARD, or: condicoes.join(","), limite: TETO_BUSCA + 1 };
+}
+
+/** Corta no teto e diz se havia mais — a UI pede refino em vez de fingir que mostrou tudo. */
+export function recortarBusca<T>(linhas: T[]): { cards: T[]; truncado: boolean } {
+  return { cards: linhas.slice(0, TETO_BUSCA), truncado: linhas.length > TETO_BUSCA };
 }
 
 // ─────────────── régua do funil (assinatura visual R9 — nas 3 telas) ───────────────

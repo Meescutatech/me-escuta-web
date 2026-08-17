@@ -13,9 +13,14 @@ import {
   percentualEntrega,
   resumirSugestoes,
   somaValores,
+  precisaoGeral,
+  precisaoPorAgente,
+  STATUS_DECIDIDOS,
+  TETO_DECIDIDAS_AGREGACAO,
   TETO_SUGESTOES_AGREGACAO,
   type JanelaDia,
   type MensagemMinima,
+  type PrecisaoAgente,
 } from "./dashboard-calculos";
 
 /**
@@ -73,6 +78,42 @@ export interface DadosDashboard {
     porAgente: Array<{ agente: string; qtd: number }> | null; // null = quebra indisponível (teto/erro)
     maisAntigaEm: string | null;
   };
+  /** R23 · RF-15.3 — a base da régua de autonomia (RF-M3). null = leitura indisponível. */
+  precisao: {
+    agentes: PrecisaoAgente[] | null;
+    geral: PrecisaoAgente | null;
+    /** Quando foi a última decisão humana. Fila crescendo + data velha = ninguém está validando. */
+    ultimaDecisaoEm: string | null;
+  };
+  /** R23 · RF-15.4 — saúde do fluxo, fonte única `ops.v_saude_fluxo` via `core.v_saude_fluxo` (0180). */
+  saudeFluxo: SaudeFluxo | null;
+  /**
+   * R23 · a recência REAL do que o painel está lendo. Sem isto, "0 novos hoje" é indistinguível de
+   * "nada foi importado desde 22/07" — e é a segunda coisa, não a primeira.
+   */
+  recencia: {
+    ultimoLeadCriadoEm: string | null;
+    ultimaMensagemEm: string | null;
+  };
+}
+
+/**
+ * R23 · RF-15.4 — o retrato do fluxo. Todos os campos podem ser `null` quando a fonte não veio;
+ * `disponivel: false` diz que a view inteira não foi alcançada (é o caso enquanto a 0180 não
+ * estiver aplicada: `ops` está fora da Data API e o PostgREST devolve PGRST106/205).
+ */
+export interface SaudeFluxo {
+  disponivel: boolean;
+  eventosUltimoMinuto: number | null;
+  eventosUltimaHora: number | null;
+  duplicadosUltimaHora: number | null;
+  falhasUltimaHora: number | null;
+  lagFilaEventos: number | null;
+  idadeFilaEventosSeg: number | null;
+  lagFilaSaida: number | null;
+  idadeFilaSaidaSeg: number | null;
+  enviosFalhados24h: number | null;
+  ultimaIngestaoWhatsapp: string | null;
 }
 
 type Supabase = ReturnType<typeof criarClienteServidor>;
@@ -259,6 +300,98 @@ async function lerSugestoes(supabase: Supabase): Promise<DadosDashboard["sugesto
 }
 
 /**
+ * R23 · RF-15.3 — PRECISÃO POR AGENTE.
+ *
+ * UMA leitura estreita de (`agente`,`status`) restrita às DECIDIDAS, no molde F24a: teto+1 como
+ * detector. Medido em 17/08/2026: 32 decididas de 437 sugestões — a leitura estreita cabe com
+ * folga de duas ordens de grandeza no teto de 5.000.
+ *
+ * O filtro `.in("status", STATUS_DECIDIDOS)` é o que torna isto barato E correto ao mesmo tempo:
+ * ele deixa no banco as 405 pendentes, que são 93% da tabela e não entram na conta.
+ *
+ * Erro na leitura → `agentes: null`, e a UI mostra "—". Zero por cento é o pior chute possível
+ * aqui: seria a régua de autonomia lendo "este agente nunca acerta" por causa de uma query que
+ * não voltou.
+ */
+async function lerPrecisao(supabase: Supabase): Promise<DadosDashboard["precisao"]> {
+  const [{ data, error }, ultima] = await Promise.all([
+    supabase
+      .schema("core")
+      .from("sugestao_ia")
+      .select("agente,status")
+      .in("status", STATUS_DECIDIDOS)
+      .limit(TETO_DECIDIDAS_AGREGACAO + 1),
+    supabase
+      .schema("core")
+      .from("sugestao_ia")
+      .select("validado_em")
+      .in("status", STATUS_DECIDIDOS)
+      .not("validado_em", "is", null)
+      .order("validado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const ultimaDecisaoEm = ultima.error || !ultima.data ? null : (ultima.data.validado_em as string);
+  if (error || !data || data.length > TETO_DECIDIDAS_AGREGACAO) {
+    return { agentes: null, geral: null, ultimaDecisaoEm };
+  }
+  const agentes = precisaoPorAgente(data as Array<{ agente?: string | null; status?: string | null }>);
+  return { agentes, geral: precisaoGeral(agentes), ultimaDecisaoEm };
+}
+
+/**
+ * R23 · RF-15.4 — SAÚDE DO FLUXO, de `core.v_saude_fluxo` (migration 0180).
+ *
+ * Uma linha, uma ida. A conta mora em `ops.v_saude_fluxo` (0020) e é a MESMA que o F2 lê — a 0180
+ * só a atravessa para a Data API, porque `ops` não está exposto. Enquanto a 0180 não estiver
+ * aplicada no ambiente, a leitura falha e `disponivel: false` faz a UI escrever "não medido —
+ * fonte não exposta" em vez de desenhar zeros, que aqui seriam a mentira mais perigosa do painel:
+ * lag zero e falha zero é exatamente como um sistema saudável se parece.
+ */
+async function lerSaudeFluxo(supabase: Supabase): Promise<SaudeFluxo | null> {
+  const { data, error } = await supabase
+    .schema("core")
+    .from("v_saude_fluxo")
+    .select("*")
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const num = (v: unknown): number | null => (v == null ? null : Number(v));
+  return {
+    disponivel: true,
+    eventosUltimoMinuto: num((data as any).eventos_ultimo_minuto),
+    eventosUltimaHora: num((data as any).eventos_ultima_hora),
+    duplicadosUltimaHora: num((data as any).duplicados_rejeitados_ultima_hora),
+    falhasUltimaHora: num((data as any).falhas_ultima_hora),
+    lagFilaEventos: num((data as any).lag_fila_eventos),
+    idadeFilaEventosSeg: num((data as any).idade_fila_eventos_seg),
+    lagFilaSaida: num((data as any).lag_fila_saida),
+    idadeFilaSaidaSeg: num((data as any).idade_fila_saida_seg),
+    enviosFalhados24h: num((data as any).envios_falhados_24h),
+    ultimaIngestaoWhatsapp: (data as any).ultima_ingestao_whatsapp ?? null,
+  };
+}
+
+/**
+ * R23 · a data do último lead e da última mensagem QUE EXISTEM no ledger.
+ *
+ * Existe para um propósito único: separar "não houve" de "não entrou". Medido em 17/08/2026, o
+ * lead mais novo do ledger é de 22/07 e a última mensagem de 20/07 — então "0 novos hoje" não é
+ * um dia fraco, é ingestão parada. Sem este par de datas o painel não tem como dizer a diferença,
+ * e mostrar o zero sozinho é exatamente o que a regra do Rodolfo proíbe.
+ */
+async function lerRecencia(supabase: Supabase): Promise<DadosDashboard["recencia"]> {
+  const [lead, msg] = await Promise.all([
+    supabase.schema("core").from("lead").select("criado_em").order("criado_em", { ascending: false }).limit(1).maybeSingle(),
+    supabase.schema("core").from("mensagem").select("criado_em").order("criado_em", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  return {
+    ultimoLeadCriadoEm: lead.error || !lead.data ? null : (lead.data.criado_em as string),
+    ultimaMensagemEm: msg.error || !msg.data ? null : (msg.data.criado_em as string),
+  };
+}
+
+/**
  * PONTO DE TROCA do F24b (contrato no §F24b da Trilha D): no dia em que
  * `api.painel_resumo(p_dias int default 7)` existir — devolvendo UM jsonb com as chaves que
  * `DadosDashboard` já tem —, `lerDashboard` vira UMA chamada e tudo abaixo passa a ser o caminho
@@ -295,6 +428,9 @@ export async function lerDashboard(
     primeiraResposta,
     { etapas, contagensEtapa, valorNegociacao },
     sugestoes,
+    precisao,
+    saudeFluxo,
+    recencia,
   ] = await Promise.all([
     lerUltimoEvento(supabase),
     contar(supabase, "lead", (q) => q.gte("criado_em", inicioHojeIso)),
@@ -304,6 +440,11 @@ export async function lerDashboard(
     lerPrimeiraResposta(supabase, inicio7dIso),
     dependentesDeEtapas,
     lerSugestoes(supabase),
+    // R23: as três leituras novas entram no MESMO Promise.all — o painel não ganha nem um
+    // round-trip serial por causa delas (medido: a visita continua no tempo da leitura mais lenta).
+    lerPrecisao(supabase),
+    lerSaudeFluxo(supabase),
+    lerRecencia(supabase),
   ]);
 
   const leadsPorEtapa: FaixaEtapa[] = etapas.map((etapa, i) => ({ etapa, qtd: contagensEtapa[i] }));
@@ -328,5 +469,8 @@ export async function lerDashboard(
     primeiraResposta,
     valorNegociacao,
     sugestoes,
+    precisao,
+    saudeFluxo,
+    recencia,
   };
 }
