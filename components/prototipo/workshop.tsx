@@ -10,8 +10,7 @@ import { BotaoAudiometria } from "@/components/lead/botao-audiometria";
 import { ordenarCards, ORDEM_PADRAO, type ChaveOrdem } from "@/lib/dados/funil-ordenacao";
 import { MOTIVO_PROTOTIPO, SELO_PROTOTIPO } from "@/lib/prototipo";
 import { cn } from "@/lib/utils";
-import { sugerirTarefa } from "@/lib/conversas/sugestao-jarvis";
-import { carimbo } from "@/lib/conversas/sugestao-jarvis";
+import { carimbo, sugerirTarefa } from "@/lib/conversas/sugestao-jarvis";
 import { cardsExemplo, conversaExemplo } from "./fixtures";
 
 /*
