@@ -22,6 +22,8 @@ import {
 import { useProjecaoViva } from "@/components/projecao-viva";
 import { INTERVALOS } from "@/lib/intervalos-vivos";
 import { AcoesTarefa, BotaoAcoes, type PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
+import { LinhaTarefaAutomatica } from "@/components/tarefas/tarefa-automatica";
+import { useFilaPrototipo } from "@/lib/tarefas/fila-prototipo";
 import { cn } from "@/lib/utils";
 
 /*
@@ -102,6 +104,14 @@ export function VisaoTarefas({
     () => (modoFunil ? [] : ordenarLista(filtradas, filtros.status)),
     [modoFunil, filtradas, filtros.status],
   );
+
+  /**
+   * D10 (18/08) · as tarefas que o Jarvis criou SOZINHO, por tipo `auto`. Vêm da fila do
+   * protótipo (sessionStorage), não do banco — criar tarefa de verdade escreveria em produção.
+   * Ficam ACIMA da lista e ANTES dos estados vazios, de propósito: elas existem mesmo quando o
+   * workspace não tem nenhuma tarefa real, e é justamente aí que precisam aparecer.
+   */
+  const automaticas = useFilaPrototipo();
 
   const nadaNoWorkspace = dados.tarefas.length === 0;
   const nadaComFiltro = !nadaNoWorkspace && filtradas.length === 0;
@@ -295,6 +305,30 @@ export function VisaoTarefas({
           </button>
         )}
       </div>
+
+      {/* ── D10 · criadas pelo Jarvis sem pedir licença ──
+          O que muda na tarefa `auto` é QUEM APROVA, não a transparência: cada linha carrega o
+          POR QUE AGORA, a frase citada, o fundamento de por que este tipo pôde nascer sozinho,
+          e o RECUSAR depois do fato. Autonomia sem desfazer é imposição. */}
+      {automaticas.length > 0 && (
+        <div className="flex-shrink-0 border-y border-linha bg-branco/60 px-5 py-3">
+          <div className="mb-2 flex flex-wrap items-baseline gap-2">
+            <span className="text-[12.5px] font-semibold text-navy">Criadas pelo Jarvis</span>
+            <span className="font-mono text-[11.5px] tabular-nums text-mute">{automaticas.length}</span>
+            <span className="text-[11.5px] text-mute">
+              · nasceram sem pedir aprovação porque o tipo delas é automático — você pode recusar
+            </span>
+            <span className="ml-auto rounded-full bg-laranja-cl px-2 py-px text-[10.5px] font-semibold uppercase tracking-wide text-laranja-esc">
+              protótipo — nada é salvo
+            </span>
+          </div>
+          <div className="flex max-h-[46vh] flex-col gap-2 overflow-y-auto">
+            {automaticas.map((t) => (
+              <LinhaTarefaAutomatica key={t.proposta.id} tarefa={t} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── conteúdo ── */}
       {nadaNoWorkspace ? (

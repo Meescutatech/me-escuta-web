@@ -15,14 +15,25 @@
  * tempo medido, nunca genérico.
  *
  * As duas situações que valem hoje, e são as duas que sangram no Kommo:
- *  1. O CLIENTE falou por último e ninguém respondeu — a conversa está parada do nosso lado.
- *  2. NÓS prometemos voltar ("vou ver", "te confirmo") e não voltamos — a promessa venceu.
+ *  1. AUDIOMETRIA em aberto — o exame foi assunto e ninguém voltou a ele. É o dia da operação.
+ *  2. O CLIENTE falou por último e ninguém respondeu — a conversa está parada do nosso lado.
+ *  3. NÓS prometemos voltar ("vou ver", "te confirmo") e não voltamos — a promessa venceu.
+ *
+ * O QUE MUDOU NA D10 (18/08): a regra não decide mais se aparece um cartão. Ela produz uma
+ * PROPOSTA com um TIPO, e quem decide o que acontece com ela é `decidirAutonomia(tipo)`, lendo
+ * a config. Tipo `auto` nasce tarefa criada, sem cartão; tipo `propor` vira cartão; tipo
+ * `proibido` não é sequer produzido. A razão está na reação do Diogo ao cartão de "ninguém
+ * respondeu há 28 dias": ali não existe julgamento a fazer, e pedir aprovação para algo sem
+ * julgamento é gastar a atenção que o cartão importante vai precisar.
  *
  * Fora disso a resposta é `null`, e `null` é resposta legítima: agente que sugere alguma coisa em
  * toda conversa vira ruído, e ruído é como uma sugestão boa passa despercebida.
  */
 
-import type { SugestaoTarefa } from "@/components/conversas/sugestao-tarefa";
+// relativo + extensão: o alias `@/` não resolve sob `node --test`, e o contrato desta regra
+// mora na suíte. Mesma convenção de `funil-ordenacao.ts` e de `composer.tsx`.
+import { decidirAutonomia } from "../tarefas/autonomia.ts";
+import type { PropostaTarefa } from "../tarefas/proposta.ts";
 
 /** Só o que a regra lê de uma mensagem — assinatura mínima, para o teste não montar a `Mensagem` inteira. */
 export interface FalaLida {
@@ -36,6 +47,8 @@ export interface FalaLida {
 export const HORAS_SEM_RESPOSTA = 2;
 /** Prometemos voltar e não voltamos por mais que isto → a promessa venceu. */
 export const HORAS_PROMESSA_VENCIDA = 20;
+/** Audiometria virou assunto e a conversa esfriou por mais que isto → cobrar o exame. */
+export const HORAS_AUDIOMETRIA_PARADA = 20;
 
 /**
  * Marcas de promessa em PT-BR falado de atendimento. Lista curta e literal de propósito: é melhor
@@ -59,6 +72,12 @@ const PROMESSAS = [
   "deixa eu ver",
   "vou olhar",
 ];
+
+/** O assunto que manda no dia: audiometria. Inclui como a operação e o paciente escrevem. */
+const MARCAS_AUDIOMETRIA = ["audiometria", "audiometra", "exame de audi", "teste de audi"];
+
+/** Sinais de que o exame JÁ aconteceu — o que desliga a cobrança. */
+const MARCAS_EXAME_FEITO = ["já fiz", "ja fiz", "já fez", "ja fez", "fiz o exame", "fizemos o exame", "resultado do exame", "segue o exame", "laudo"];
 
 const HORA = 3_600_000;
 
@@ -88,11 +107,25 @@ export function carimbo(quandoMs: number, agora: number): string {
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}, ${hhmm}`;
 }
 
-/** Contém marca de promessa? Comparação em minúsculas, sem acento-normalização (as marcas não têm). */
-export function ehPromessa(corpo: string | null): boolean {
+function contem(corpo: string | null, marcas: string[]): boolean {
   if (!corpo) return false;
   const t = corpo.toLowerCase();
-  return PROMESSAS.some((p) => t.includes(p));
+  return marcas.some((m) => t.includes(m));
+}
+
+/** Contém marca de promessa? Comparação em minúsculas, sem acento-normalização (as marcas não têm). */
+export function ehPromessa(corpo: string | null): boolean {
+  return contem(corpo, PROMESSAS);
+}
+
+/** A conversa tratou de audiometria em algum momento? */
+export function falouDeAudiometria(falas: Pick<FalaLida, "corpo">[]): boolean {
+  return falas.some((f) => contem(f.corpo, MARCAS_AUDIOMETRIA));
+}
+
+/** Alguém já disse que o exame aconteceu? Se sim, cobrar seria a UI não ter lido a conversa. */
+export function exameJaFeito(falas: Pick<FalaLida, "corpo">[]): boolean {
+  return falas.some((f) => contem(f.corpo, MARCAS_EXAME_FEITO));
 }
 
 function corta(texto: string, max = 180): string {
@@ -103,8 +136,7 @@ function corta(texto: string, max = 180): string {
 /** Prazo proposto, em texto: hoje se ainda dá, senão amanhã de manhã. */
 function prazoSugerido(agora: number): string {
   const h = new Date(agora - 3 * HORA).getUTCHours();
-  if (h < 17) return "hoje, 17:00";
-  return "amanhã, 09:00";
+  return h < 17 ? "hoje, 17:00" : "amanhã, 09:00";
 }
 
 export interface ContextoSugestao {
@@ -114,53 +146,84 @@ export interface ContextoSugestao {
 }
 
 /**
- * A regra. Devolve a proposta ou `null`. Ignora mensagens sem corpo (áudio/imagem sem legenda):
- * sem texto não há o que citar, e sugestão sem citação está proibida pelo contrato deste módulo.
+ * A regra. Devolve a PROPOSTA (com tipo) ou `null`. Ignora mensagens sem corpo (áudio/imagem sem
+ * legenda): sem texto não há o que citar, e proposta sem citação está proibida pelo contrato.
+ *
+ * A ordem das regras é a prioridade da operação: audiometria primeiro, porque é o gate que
+ * destrava todo o resto e é o que a operação persegue o dia inteiro.
  */
-export function sugerirTarefa(
+export function proporTarefa(
   falas: FalaLida[],
   agora: number,
   ctx: ContextoSugestao,
-): SugestaoTarefa | null {
+): PropostaTarefa | null {
   const comTexto = falas.filter((f) => (f.corpo ?? "").trim() !== "" && ms(f.criado_em) != null);
   if (comTexto.length === 0) return null;
 
   const ultima = comTexto[comTexto.length - 1];
   const tUltima = ms(ultima.criado_em)!;
   if (tUltima > agora) return null; // relógio torto: não inventa urgência a partir do futuro
+  const paradaHa = (agora - tUltima) / HORA;
 
-  // ── 1 · o cliente falou por último e ninguém respondeu ──
-  if (ultima.direcao === "entrada") {
-    const horas = (agora - tUltima) / HORA;
-    if (horas < HORAS_SEM_RESPOSTA) return null;
+  const ultimaDoCliente = [...comTexto].reverse().find((f) => f.direcao === "entrada");
+
+  // ── 1 · audiometria em aberto — o gate do dia ──
+  if (
+    falouDeAudiometria(comTexto) &&
+    !exameJaFeito(comTexto) &&
+    paradaHa >= HORAS_AUDIOMETRIA_PARADA
+  ) {
+    const evid = [...comTexto].reverse().find((f) => contem(f.corpo, MARCAS_AUDIOMETRIA)) ?? ultima;
+    const tEvid = ms(evid.criado_em)!;
     return {
-      id: `jarvis:${ultima.id}:sem-resposta`,
-      titulo: `Responder ${ctx.nomeLead}`,
-      motivo:
-        `${ctx.nomeLead} falou por último ${haQuantoTempo(tUltima, agora)} e ninguém respondeu. ` +
-        `Enquanto a conversa está parada do nosso lado, ela não anda para nenhum lugar — e é assim ` +
-        `que um lead que já demonstrou interesse volta para o fim da fila.`,
-      trecho: { texto: corta(ultima.corpo!), quando: carimbo(tUltima, agora), autor: ctx.nomeLead },
-      tipo: "Enviar mensagem",
+      id: `jarvis:${ultima.id}:audiometria`,
+      tipoChave: "confirmar_exame",
+      fazer: `Cobrar a audiometria de ${ctx.nomeLead}`,
+      porqueAgora:
+        `A audiometria entrou na conversa ${haQuantoTempo(tEvid, agora)} e ninguém voltou a ela — ` +
+        `não há confirmação de agendamento nem de exame feito, e a conversa está parada ` +
+        `${haQuantoTempo(tUltima, agora)}. Sem audiometria não existe decisão de venda: ` +
+        `enquanto ela não sai, nada mais neste lead anda.`,
+      trecho: {
+        texto: corta(evid.corpo!),
+        quando: carimbo(tEvid, agora),
+        autor: evid.direcao === "entrada" ? ctx.nomeLead : "Você",
+      },
       prazoSugerido: prazoSugerido(agora),
       responsavelSugerido: ctx.responsavel,
     };
   }
 
-  // ── 2 · nós prometemos voltar e não voltamos ──
+  // ── 2 · o cliente falou por último e ninguém respondeu ──
+  if (ultima.direcao === "entrada") {
+    if (paradaHa < HORAS_SEM_RESPOSTA) return null;
+    return {
+      id: `jarvis:${ultima.id}:sem-resposta`,
+      tipoChave: "acompanhar_follow_up",
+      fazer: `Responder ${ctx.nomeLead}`,
+      porqueAgora:
+        `${ctx.nomeLead} falou por último ${haQuantoTempo(tUltima, agora)} e ninguém respondeu. ` +
+        `Enquanto a conversa está parada do nosso lado, ela não anda para nenhum lado — e é assim ` +
+        `que um lead que já demonstrou interesse volta para o fim da fila.`,
+      trecho: { texto: corta(ultima.corpo!), quando: carimbo(tUltima, agora), autor: ctx.nomeLead },
+      prazoSugerido: prazoSugerido(agora),
+      responsavelSugerido: ctx.responsavel,
+    };
+  }
+
+  // ── 3 · nós prometemos voltar e não voltamos ──
   if (!ehPromessa(ultima.corpo)) return null;
-  const horas = (agora - tUltima) / HORA;
-  if (horas < HORAS_PROMESSA_VENCIDA) return null;
+  if (paradaHa < HORAS_PROMESSA_VENCIDA) return null;
 
   // a última fala do cliente é a evidência mais útil aqui: é o que ela vai precisar reler
-  const ultimaDoCliente = [...comTexto].reverse().find((f) => f.direcao === "entrada");
   const evidencia = ultimaDoCliente ?? ultima;
   const tEvidencia = ms(evidencia.criado_em)!;
 
   return {
     id: `jarvis:${ultima.id}:promessa`,
-    titulo: `Ligar para ${ctx.nomeLead} e fechar o que foi prometido`,
-    motivo:
+    tipoChave: "ligar_lead",
+    fazer: `Ligar para ${ctx.nomeLead} e fechar o que foi prometido`,
+    porqueAgora:
       `Você disse que voltaria — “${corta(ultima.corpo!, 70)}” — e já se passaram ` +
       `${haQuantoTempo(tUltima, agora).replace(/^há /, "")}. Promessa que vence sem retorno é o ` +
       `que faz o cliente parar de responder, e o telefone resolve mais rápido que a mensagem.`,
@@ -169,8 +232,43 @@ export function sugerirTarefa(
       quando: carimbo(tEvidencia, agora),
       autor: evidencia.direcao === "entrada" ? ctx.nomeLead : "Você",
     },
-    tipo: "Ligar",
     prazoSugerido: prazoSugerido(agora),
     responsavelSugerido: ctx.responsavel,
+  };
+}
+
+/**
+ * O DESPACHO — o que a tela deve fazer com a proposta, segundo a config de autonomia (D10).
+ *
+ * Três saídas e nada mais:
+ *   `criada`  → a tarefa nasce criada e vai direto para a fila. Nenhum cartão. O motivo continua
+ *               visível NA FILA, com desfazer — o que a autonomia muda é quem aprova, não a
+ *               transparência.
+ *   `propor`  → cartão de aprovar/recusar, porque existe decisão real a tomar.
+ *   `null`    → não há nada a dizer, ou o tipo é `proibido` (Art. III.3) e nem proposta nasce.
+ */
+export type Despacho =
+  | { modo: "criada"; proposta: PropostaTarefa; fundamento: string }
+  | { modo: "propor"; proposta: PropostaTarefa; fundamento: string; rebaixadoPeloTeto: boolean }
+  | null;
+
+export function avaliarConversa(
+  falas: FalaLida[],
+  agora: number,
+  ctx: ContextoSugestao,
+): Despacho {
+  const proposta = proporTarefa(falas, agora, ctx);
+  if (!proposta) return null;
+
+  const d = decidirAutonomia(proposta.tipoChave);
+  // `proibido` não vira nem cartão: propor um ato que o Art. III.3 veda é oferecer à Sarah uma
+  // aprovação que ela não tem poder de dar. Melhor não existir.
+  if (d.nivel === "proibido") return null;
+  if (d.nivel === "auto") return { modo: "criada", proposta, fundamento: d.fundamento };
+  return {
+    modo: "propor",
+    proposta,
+    fundamento: d.fundamento,
+    rebaixadoPeloTeto: d.rebaixadoPeloTeto,
   };
 }

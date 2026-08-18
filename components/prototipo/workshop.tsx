@@ -10,8 +10,10 @@ import { BotaoAudiometria } from "@/components/lead/botao-audiometria";
 import { ordenarCards, ORDEM_PADRAO, type ChaveOrdem } from "@/lib/dados/funil-ordenacao";
 import { MOTIVO_PROTOTIPO, SELO_PROTOTIPO } from "@/lib/prototipo";
 import { cn } from "@/lib/utils";
-import { carimbo, sugerirTarefa } from "@/lib/conversas/sugestao-jarvis";
-import { cardsExemplo, conversaExemplo } from "./fixtures";
+import { avaliarConversa, carimbo } from "@/lib/conversas/sugestao-jarvis";
+import { LinhaTarefaAutomatica } from "@/components/tarefas/tarefa-automatica";
+import { AUTONOMIA_TAREFA, ROTULO_NIVEL, decidirAutonomia, rotuloTipo, TETOS_TAREFA } from "@/lib/tarefas/autonomia";
+import { cardsExemplo, conversaComDecisao, conversaExemplo } from "./fixtures";
 
 /*
  * A VITRINE das quatro telas do workshop de 12/08, na ordem de prioridade que saiu de lá.
@@ -217,52 +219,134 @@ function BlocoProgramar() {
 /* ───────────────────────── 2 · o Jarvis sugere ───────────────────────── */
 
 function BlocoSugestao({ agora }: { agora: number }) {
-  const falas = conversaExemplo(agora);
-  // MESMA regra da tela real — a vitrine não tem cartão próprio, só o fio de mentira
-  const sugestao = sugerirTarefa(falas, agora, { nomeLead: "Antônio Ribeiro", responsavel: "Sarah" });
-  const [decisao, setDecisao] = useState<string | null>(null);
+  const ctx = { nomeLead: "Antônio Ribeiro", responsavel: "Sarah" };
+  const fioAuto = conversaExemplo(agora);
+  const fioDecisao = conversaComDecisao(agora);
+  // MESMA função que o inbox chama — a vitrine não tem regra própria
+  const auto = avaliarConversa(fioAuto, agora, ctx);
+  const propor = avaliarConversa(fioDecisao, agora, { ...ctx, nomeLead: "Cleusa Martins" });
 
   return (
     <Bloco
       fala="O Jarvis podia ficar monitorando a conversa e sugerir uma tarefa. Ele faz a sugestão e ela só clica pra aprovar ou não."
-      porque="É o princípio da casa inteiro: o agente propõe, uma humana nomeada valida. O motivo é campo obrigatório — sem dizer de onde a sugestão saiu, ela vira ordem, e a Sarah não confia em ordem de robô."
-      onde="Inbox de /conversas, no fim do fio, colado no composer. O cartão usa a linguagem visual da sugestão da Clara que já existia (card branco, borda esquerda laranja); o que ele acrescenta é o bloco POR QUE, com a frase do cliente citada."
+      porque="D10 (18/08): cartão de aprovação só se justifica quando existe DECISÃO REAL. Em 'ninguém respondeu há 28 dias' não há julgamento a fazer — ou responde ou perde o lead — e pedir aprovação ali é burocracia que gasta a atenção do cartão que importa."
+      onde="Inbox de /conversas, no fim do fio. Tipo automático vira tarefa direto na fila (/tarefas); tipo que pede decisão vira cartão. Quem decide é a config de autonomia, não um if."
     >
-      <Palco titulo="A conversa, e a sugestão que ela dispara">
-        <div className="space-y-2.5">
-          {falas.map((f) => (
-            <div key={f.id} className={cn("flex", f.direcao === "saida" ? "justify-end" : "justify-start")}>
-              <div
-                className={cn(
-                  "max-w-[78%] rounded-[11px] px-3.5 py-2",
-                  f.direcao === "saida" ? "bg-navy text-branco" : "border border-linha bg-board text-tinta",
-                )}
-              >
-                <p className="text-[0.86rem] leading-relaxed">{f.corpo}</p>
-                <p className={cn("mt-1 text-[0.66rem]", f.direcao === "saida" ? "text-branco/60" : "text-mute")}>
-                  {carimbo(Date.parse(f.criado_em), agora)}
-                </p>
-              </div>
-            </div>
-          ))}
+      <div className="space-y-4">
+        <Palco titulo="Tipo AUTOMÁTICO — nasce criada, sem cartão, sem clique">
+          <Fio falas={fioAuto} agora={agora} />
           <div className="pt-2">
-            {sugestao ? (
-              <CartaoSugestaoTarefa sugestao={sugestao} onDecidir={(_, d) => setDecisao(d)} />
+            {auto?.modo === "criada" ? (
+              <LinhaTarefaAutomatica
+                tarefa={{ proposta: auto.proposta, fundamento: auto.fundamento, criadaEm: agora }}
+              />
             ) : (
-              <p className="rounded-lg bg-board px-3 py-2 text-[0.8rem] text-mute">
-                A regra não vê nada a sugerir neste fio — e não sugerir é uma resposta legítima.
-              </p>
+              <Nada />
             )}
           </div>
-          {decisao && (
-            <p className="pt-1 text-[0.76rem] text-mute">
-              No sistema real esta decisão vira um evento no ledger com o nome de quem validou.
-              Aqui ela ficou só nesta tela.
-            </p>
-          )}
-        </div>
-      </Palco>
+          <p className="mt-2.5 text-[0.76rem] leading-relaxed text-mute">
+            Perseguir audiometria é o dia da operação — por isso este tipo é automático. O motivo
+            continua visível e o “recusar” continua existindo: o que a autonomia muda é quem
+            aprova, não a transparência.
+          </p>
+        </Palco>
+
+        <Palco titulo="Tipo que PEDE DECISÃO — aí sim o cartão">
+          <Fio falas={fioDecisao} agora={agora} />
+          <div className="pt-2">
+            {propor?.modo === "propor" ? (
+              <CartaoSugestaoTarefa sugestao={propor.proposta} fundamento={propor.fundamento} />
+            ) : (
+              <Nada />
+            )}
+          </div>
+        </Palco>
+
+        <TabelaAutonomia />
+      </div>
     </Bloco>
+  );
+}
+
+function Fio({ falas, agora }: { falas: ReturnType<typeof conversaExemplo>; agora: number }) {
+  return (
+    <div className="space-y-2.5">
+      {falas.map((f) => (
+        <div key={f.id} className={cn("flex", f.direcao === "saida" ? "justify-end" : "justify-start")}>
+          <div
+            className={cn(
+              "max-w-[78%] rounded-[11px] px-3.5 py-2",
+              f.direcao === "saida" ? "bg-navy text-branco" : "border border-linha bg-board text-tinta",
+            )}
+          >
+            <p className="text-[0.86rem] leading-relaxed">{f.corpo}</p>
+            <p className={cn("mt-1 text-[0.66rem]", f.direcao === "saida" ? "text-branco/60" : "text-mute")}>
+              {carimbo(Date.parse(f.criado_em), agora)}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Nada() {
+  return (
+    <p className="rounded-lg bg-board px-3 py-2 text-[0.8rem] text-mute">
+      A regra não vê nada a fazer neste fio — e não sugerir é uma resposta legítima.
+    </p>
+  );
+}
+
+/**
+ * A config inteira na tela. Ela existe porque a D10 diz "isto é CONFIG, não código": se a lista
+ * não for legível fora do arquivo-fonte, ninguém consegue discutir se está certa — e discutir se
+ * está certa é exatamente o que vai acontecer com ela.
+ */
+function TabelaAutonomia() {
+  const linhas = Object.keys(AUTONOMIA_TAREFA).map((chave) => ({
+    chave,
+    rotulo: rotuloTipo(chave),
+    d: decidirAutonomia(chave),
+    teto: TETOS_TAREFA.tetos.find((t) => t.chave === chave)?.teto_nivel ?? "propor",
+  }));
+  const cor: Record<string, string> = {
+    auto: "border-verde-bd bg-verde-bg text-verde",
+    propor: "border-linha bg-board text-navy",
+    proibido: "border-vermelho-bd bg-vermelho-bg text-vermelho",
+  };
+  return (
+    <div className="overflow-hidden rounded-xl border border-linha bg-branco">
+      <div className="border-b border-linha bg-board px-4 py-2">
+        <span className="text-[0.74rem] font-semibold text-mute">
+          A config de autonomia — dado, não código
+        </span>
+      </div>
+      <div className="divide-y divide-linha">
+        {linhas.map((l) => (
+          <div key={l.chave} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5">
+            <span className="min-w-[9.5rem] text-[0.84rem] font-medium text-tinta">{l.rotulo}</span>
+            <span
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-px text-[0.68rem] font-semibold",
+                cor[l.d.nivel],
+              )}
+            >
+              {ROTULO_NIVEL[l.d.nivel]}
+            </span>
+            <span className="font-mono text-[0.68rem] text-mute">teto: {l.teto}</span>
+            <span className="w-full text-[0.72rem] leading-snug text-mute">{l.d.fundamento}</span>
+          </div>
+        ))}
+      </div>
+      <p className="border-t border-linha bg-board px-4 py-2.5 text-[0.72rem] leading-relaxed text-mute">
+        Vocabulário e forma vêm das migrations 0160/0161/0165 da trilha B (nível{" "}
+        <code className="font-mono">auto|propor|proibido</code>, teto em{" "}
+        <code className="font-mono">flag.teto_autonomia</code>). O teto é constitucional e só muda
+        por emenda; o nível é preferência da operação e muda sem deploy. Tipo não declarado cai em{" "}
+        <b>pede aprovação</b> — fail-closed, nunca em automático.
+      </p>
+    </div>
   );
 }
 

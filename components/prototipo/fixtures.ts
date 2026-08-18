@@ -120,3 +120,16 @@ export function conversaExemplo(agora: number): FalaLida[] {
     { id: "f4", direcao: "saida", corpo: "Fechado, vou ver a agenda da fono para sexta e te confirmo.", criado_em: h(23) },
   ];
 }
+
+/**
+ * O fio que dispara o tipo `ligar_lead` (propor): promessa nossa vencida, SEM a palavra
+ * audiometria — senão a regra do exame ganha, que é a prioridade certa da operação mas
+ * esconderia o caso que a vitrine quer mostrar.
+ */
+export function conversaComDecisao(agora: number): FalaLida[] {
+  const h = (n: number) => new Date(agora - n * HORA).toISOString();
+  return [
+    { id: "g1", direcao: "entrada", corpo: "Vocês atendem em Contagem? Meu pai não anda muito bem.", criado_em: h(30) },
+    { id: "g2", direcao: "saida", corpo: "Atendemos sim! Deixa eu ver com a equipe se dá para ir até vocês e te falo hoje.", criado_em: h(28) },
+  ];
+}

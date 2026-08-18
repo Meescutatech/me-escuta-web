@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { rotuloTipo } from "@/lib/tarefas/autonomia";
+import type { PropostaTarefa } from "@/lib/tarefas/proposta";
 import { cn } from "@/lib/utils";
 
 /*
@@ -20,28 +22,16 @@ import { cn } from "@/lib/utils";
  * esquerda 3px laranja) — mesma promessa, mesma forma.
  */
 
-export interface SugestaoTarefa {
-  id: string;
-  /** o que fazer — imperativo curto, é o título do cartão */
-  titulo: string;
-  /** POR QUE. Obrigatório no tipo: sugestão sem motivo não pode nem ser construída. */
-  motivo: string;
-  /** a frase do cliente que disparou a proposta — a evidência, citada */
-  trecho: { texto: string; quando: string; autor: string };
-  tipo: string; // "Ligar", "Enviar mensagem", "Agendar audiometria"…
-  prazoSugerido: string; // já formatado: "amanhã, 09:00"
-  responsavelSugerido: string;
-}
-
 type Decisao = "aprovada" | "recusada";
 
 export function CartaoSugestaoTarefa({
   sugestao,
   onDecidir,
   decisaoInicial = null,
+  fundamento,
   agente = "Jarvis",
 }: {
-  sugestao: SugestaoTarefa;
+  sugestao: PropostaTarefa;
   onDecidir?: (id: string, decisao: Decisao) => void;
   /**
    * Decisão já tomada nesta sessão. Existe porque a regra continua produzindo a mesma sugestão
@@ -49,6 +39,8 @@ export function CartaoSugestaoTarefa({
    * de um agente perder a confiança que o motivo comprou.
    */
   decisaoInicial?: Decisao | null;
+  /** por que ESTE tipo pede aprovação em vez de nascer criado (fundamento do teto, D10) */
+  fundamento?: string;
   agente?: string;
 }) {
   const [decisao, setDecisao] = useState<Decisao | null>(decisaoInicial);
@@ -77,7 +69,7 @@ export function CartaoSugestaoTarefa({
             </svg>
           )}
           <span className={cn("text-[0.84rem] font-medium", decisao === "aprovada" ? "text-verde" : "text-suave")}>
-            {decisao === "aprovada" ? `Tarefa aprovada: ${sugestao.titulo}` : "Sugestão recusada"}
+            {decisao === "aprovada" ? `Tarefa aprovada: ${sugestao.fazer}` : "Sugestão recusada"}
           </span>
           <span className="ml-auto shrink-0 rounded-full bg-branco px-1.5 py-px text-[0.62rem] font-semibold uppercase tracking-wide text-mute">
             protótipo
@@ -105,13 +97,14 @@ export function CartaoSugestaoTarefa({
         </span>
       </div>
 
-      {/* O QUE FAZER */}
-      <p className="text-[0.95rem] font-semibold leading-snug text-navy">{sugestao.titulo}</p>
+      {/* FAZER — mesmo rótulo que o robô do Kommo já escreve para ela */}
+      <div className="text-[0.66rem] font-bold uppercase tracking-[0.06em] text-mute">Fazer</div>
+      <p className="mt-0.5 text-[0.95rem] font-semibold leading-snug text-navy">{sugestao.fazer}</p>
 
       {/* POR QUE — o campo que faz a Sarah confiar. Rotulado, não subentendido. */}
       <div className="mt-2.5 rounded-lg bg-board px-3 py-2.5">
-        <div className="text-[0.66rem] font-bold uppercase tracking-[0.06em] text-mute">Por que</div>
-        <p className="mt-1 text-[0.82rem] leading-relaxed text-tinta">{sugestao.motivo}</p>
+        <div className="text-[0.66rem] font-bold uppercase tracking-[0.06em] text-mute">Por que agora</div>
+        <p className="mt-1 text-[0.82rem] leading-relaxed text-tinta">{sugestao.porqueAgora}</p>
         <blockquote className="mt-2 border-l-2 border-linha-forte pl-2.5">
           <p className="text-[0.79rem] italic leading-snug text-suave">“{sugestao.trecho.texto}”</p>
           <footer className="mt-0.5 text-[0.68rem] text-mute">
@@ -124,7 +117,7 @@ export function CartaoSugestaoTarefa({
       <dl className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[0.74rem]">
         <div className="flex gap-1.5">
           <dt className="text-mute">Tipo</dt>
-          <dd className="font-medium text-tinta">{sugestao.tipo}</dd>
+          <dd className="font-medium text-tinta">{rotuloTipo(sugestao.tipoChave)}</dd>
         </div>
         <div className="flex gap-1.5">
           <dt className="text-mute">Prazo</dt>
@@ -153,6 +146,14 @@ export function CartaoSugestaoTarefa({
           Recusar
         </button>
       </div>
+
+      {/* D10 · por que ESTE tipo pede aprovação. Sem isto o cartão volta a parecer burocracia:
+          quem não sabe que os outros tipos nascem sozinhos acha que tudo pede clique. */}
+      {fundamento && (
+        <p className="mt-2.5 border-t border-linha pt-2 text-[0.7rem] leading-snug text-mute">
+          <b className="font-semibold text-suave">Pede aprovação porque:</b> {fundamento}
+        </p>
+      )}
     </div>
   );
 }
