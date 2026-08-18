@@ -333,9 +333,26 @@ export function VisaoTarefas({
       {/* ── conteúdo ── */}
       {nadaNoWorkspace ? (
         <Vazio>
-          Nenhuma tarefa no workspace ainda. Digite{" "}
-          <code className="rounded border border-linha bg-branco px-1.5 py-px font-mono text-[12.5px] text-tinta">/tarefa</code>{" "}
-          no campo de uma conversa, ou crie pelo painel do lead no funil.
+          {/* A tela dizia as DUAS coisas ao mesmo tempo: a faixa do Jarvis com tarefa em cima, e
+              logo abaixo "nenhuma tarefa ainda". As duas frases eram verdade — `core.tarefa` tem 0
+              linhas e a do Jarvis é do protótipo — mas juntas ficam contraditórias para quem olha,
+              e quem olha não tem como saber que são dois lugares diferentes. Então o vazio passa a
+              dizer QUAL vazio é, em vez de negar o que está logo acima dele. */}
+          {automaticas.length > 0 ? (
+            <>
+              Nenhuma tarefa <b className="font-semibold text-suave">salva no workspace</b> ainda —{" "}
+              {automaticas.length === 1 ? "a tarefa acima foi criada" : `as ${automaticas.length} tarefas acima foram criadas`}{" "}
+              pelo Jarvis neste protótipo e não está no banco. Para criar uma de verdade, digite{" "}
+              <code className="rounded border border-linha bg-branco px-1.5 py-px font-mono text-[12.5px] text-tinta">/tarefa</code>{" "}
+              no campo de uma conversa.
+            </>
+          ) : (
+            <>
+              Nenhuma tarefa no workspace ainda. Digite{" "}
+              <code className="rounded border border-linha bg-branco px-1.5 py-px font-mono text-[12.5px] text-tinta">/tarefa</code>{" "}
+              no campo de uma conversa, ou crie pelo painel do lead no funil.
+            </>
+          )}
         </Vazio>
       ) : nadaComFiltro ? (
         <Vazio>
