@@ -75,6 +75,14 @@ export interface CardLead {
    * lead saudável por causa de uma consulta que não voltou.
    */
   tem_tarefa_pendente: boolean | null;
+  /**
+   * R23 protótipo (workshop 12/08) · "a primeira coisa que ela quer saber é que dia foi que ele
+   * mandou isso". OPCIONAL de propósito: a `v_lead_card` ainda não devolve isso, então em dado
+   * real o campo vem `undefined` e o card simplesmente não desenha a linha. Card que inventasse
+   * uma última mensagem seria pior que card sem ela.
+   * `de`: quem falou por último — é o que separa "ele não respondeu" de "eu não respondi".
+   */
+  ultima_mensagem?: { texto: string; em: string; de: "cliente" | "nos" } | null;
 }
 
 export interface DadosFunil {

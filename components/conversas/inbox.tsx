@@ -38,6 +38,8 @@ import {
 import { diasNaEtapa } from "@/lib/tempo";
 import type { PainelLead } from "@/lib/dados/lead-painel";
 import { FichaKommo } from "@/components/lead/ficha-kommo";
+import { CartaoSugestaoTarefa } from "./sugestao-tarefa";
+import { sugerirTarefa } from "@/lib/conversas/sugestao-jarvis";
 import { ReguaFunil } from "@/components/regua-funil";
 import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import type { EtapaFunil } from "@/lib/dados/funil";
@@ -191,6 +193,25 @@ export function Inbox({
 
   const rolagemRef = useRef<HTMLDivElement>(null);
   const fimRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * R23 protótipo (workshop 12/08) · O JARVIS SUGERE A TAREFA.
+   *
+   * `agora` nasce null e só é preenchido depois da montagem: a página é renderizada no servidor, e
+   * um Date.now() nos dois lados daria horas diferentes e hidratação divergente. Enquanto é null,
+   * a sugestão simplesmente não existe — nenhum piscar de cartão errado.
+   *
+   * `decididas` guarda o que já foi aprovado/recusado NESTA TELA. O `.env.local` aponta para o
+   * Supabase de produção, então a decisão morre aqui: aprovar não cria tarefa, recusar não grava
+   * recusa. No sistema real cada uma vira evento no ledger com o nome de quem validou.
+   */
+  const [agoraJarvis, setAgoraJarvis] = useState<number | null>(null);
+  const [decididas, setDecididas] = useState<Map<string, "aprovada" | "recusada">>(new Map());
+  useEffect(() => {
+    setAgoraJarvis(Date.now());
+    const t = setInterval(() => setAgoraJarvis(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
   const divisorRef = useRef<HTMLDivElement>(null);
   const noFimRef = useRef(true);
   const totalAnteriorRef = useRef(-1); // -1 = próxima renderização é abertura de conversa
@@ -553,6 +574,21 @@ export function Inbox({
       ? fmtTelefone(selecionada.telefone)
       : selecionada.nome!
     : "";
+
+  /**
+   * A proposta do Jarvis para ESTA conversa. Sai da regra pura (`sugerirTarefa`), que lê o fio de
+   * verdade — as mensagens que estão na tela — e devolve `null` na maioria das conversas. Isso é
+   * o desenho, não uma limitação: agente que sugere algo em toda conversa vira ruído, e ruído é
+   * como uma sugestão boa passa despercebida.
+   */
+  const sugestaoJarvis = useMemo(() => {
+    if (agoraJarvis == null || !selecionada) return null;
+    const eu = mencionaveis.find((m) => m.id === autorId && m.tipo === "humano");
+    return sugerirTarefa(visiveis, agoraJarvis, {
+      nomeLead: titulo || "o cliente",
+      responsavel: eu?.nome ?? "você",
+    });
+  }, [agoraJarvis, selecionada, visiveis, titulo, mencionaveis, autorId]);
 
   // §5.2: só variável CONFIÁVEL entra. Nome ruim (o título vira telefone) fica DE FORA —
   // "Oi (31) 98888-7777" não é mensagem; o placeholder literal trava o envio e a Sara completa.
@@ -952,6 +988,18 @@ export function Inbox({
                     </div>
                   );
                 })}
+              {/* R23 · a sugestão de TAREFA do Jarvis fecha o fio: ela é sobre o que fazer a
+                  seguir, então mora colada no composer, onde a decisão acontece. A sugestão de
+                  MENSAGEM da Clara (acima) continua no lugar dela — são propostas diferentes. */}
+              {sugestaoJarvis && (
+                <CartaoSugestaoTarefa
+                  // `key` pelo id: mensagem nova = proposta nova, e o cartão renasce zerado
+                  key={sugestaoJarvis.id}
+                  sugestao={sugestaoJarvis}
+                  decisaoInicial={decididas.get(sugestaoJarvis.id) ?? null}
+                  onDecidir={(id, d) => setDecididas((m) => new Map(m).set(id, d))}
+                />
+              )}
               <div ref={fimRef} />
             </div>
 

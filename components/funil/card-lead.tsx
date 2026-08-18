@@ -5,6 +5,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { CardLead, Origem } from "@/lib/dados/funil";
 import { textoTempoCurto, timerVelho } from "@/lib/tempo";
+import { dataUltimaMensagem, faixaPrazo, TEXTO_FAIXA } from "@/lib/dados/funil-ordenacao";
 import { cn } from "@/lib/utils";
 
 /*
@@ -15,6 +16,14 @@ import { cn } from "@/lib/utils";
  *  - barra de foco 2px laranja à esquerda quando selecionado
  *  - sugestão da Clara inline com ✓ / ✕ (agente propõe, humano valida)
  *  - chip de responsável = MAPA de 2 cores: laranja = IA (Clara), navy = humano
+ *
+ * R23 protótipo (workshop 12/08) — o argumento do supermercado, "3 segundos pra decidir se
+ * pega o produto da prateleira":
+ *  - FAIXA DE PRAZO à esquerda: vermelho estourado / âmbar perto de estourar / verde dentro.
+ *    Ela toma o lugar que a barra laranja de seleção ocupava — dois significados na mesma
+ *    faixa de 2px seria a UI dizendo duas coisas com um traço só. Seleção virou anel laranja.
+ *  - ÚLTIMA MENSAGEM + DATA: "a primeira coisa que ela quer saber é que dia foi que ele
+ *    mandou isso". Some quando o dado não existe, nunca vira placeholder inventado.
  */
 
 const ORIGEM_ROTULO: Record<Origem, string> = { wa: "WhatsApp", ig: "Instagram", meta: "Meta Ads", ind: "Indicação" };
@@ -96,6 +105,9 @@ export function CartaoLead({
   const origemLabel = card.origem ? ORIGEM_ROTULO[card.origem] : null;
   const velho = timerVelho(card.entrou_etapa_em, agora);
   const timer = textoTempoCurto(card.entrou_etapa_em, agora);
+  const faixa = faixaPrazo(card, agora);
+  const ultima = card.ultima_mensagem ?? null;
+  const dataUltima = dataUltimaMensagem(ultima?.em, agora);
 
   // 1 sinal significativo (spec §4): quando o nome é lixo, o sinal é "Lead · <origem>";
   // com nome real, o sinal é a própria origem. Nada além disso no card.
@@ -133,19 +145,29 @@ export function CartaoLead({
       }}
       title={titulo || undefined}
       className={cn(
-        "relative cursor-grab touch-none select-none rounded-[10px] border bg-branco px-3 pb-[9px] pt-[10px] transition-all",
+        "relative cursor-grab touch-none select-none overflow-hidden rounded-[10px] border bg-branco py-[10px] pl-[13px] pr-3 transition-all",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50",
-        selecionado ? "border-linha-forte" : "border-linha hover:border-linha-forte hover:shadow-[0_1px_6px_rgba(37,47,99,.06)]",
+        // seleção saiu da barra esquerda (agora é o prazo) e virou anel — mesma leitura, sem disputa
+        selecionado
+          ? "border-laranja ring-[1.5px] ring-laranja/45"
+          : "border-linha hover:border-linha-forte hover:shadow-[0_1px_6px_rgba(37,47,99,.06)]",
         isDragging && "opacity-40",
       )}
     >
-      {/* barra de foco 2px laranja à esquerda (card selecionado) */}
+      {/* FAIXA DE PRAZO — o sinal de 3 segundos. Cor NUNCA sozinha: o `title` diz a mesma coisa em
+          palavra, e o timer do canto já ganha ícone + peso 700 quando estoura (WCAG 1.4.1). */}
       <span
+        title={TEXTO_FAIXA[faixa]}
+        aria-hidden
         className={cn(
-          "absolute bottom-[9px] left-0 top-[9px] w-[2px] rounded-[2px] transition-colors",
-          selecionado ? "bg-laranja" : "bg-transparent",
+          "absolute bottom-0 left-0 top-0 w-[3px] transition-colors",
+          faixa === "estourado" && "bg-vermelho",
+          faixa === "perto" && "bg-timer-velho",
+          faixa === "dentro" && "bg-verde",
+          faixa === "sem_dado" && "bg-linha",
         )}
       />
+      <span className="sr-only">{TEXTO_FAIXA[faixa]}. </span>
 
       <div className="flex items-start gap-2">
         <div
@@ -165,6 +187,37 @@ export function CartaoLead({
 
       {!ruim && card.telefone && (
         <div className="mt-0.5 text-[0.78rem] tabular-nums text-suave">{fmtTelefone(card.telefone)}</div>
+      )}
+
+      {/* ÚLTIMA MENSAGEM + DATA. A seta diz QUEM falou por último, que é o que separa "ele não
+          respondeu" de "eu não respondi" — sem ela a linha mostra atividade e esconde a dívida.
+          Sem dado, o bloco inteiro some: a `v_lead_card` ainda não devolve isso. */}
+      {ultima && (
+        <div className="mt-[7px] flex items-baseline gap-1.5">
+          <span
+            aria-hidden
+            className={cn(
+              "shrink-0 font-mono text-[10px] leading-none",
+              ultima.de === "cliente" ? "text-navy" : "text-mute",
+            )}
+          >
+            {ultima.de === "cliente" ? "\u2190" : "\u2192"}
+          </span>
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-[0.76rem] leading-snug",
+              ultima.de === "cliente" ? "text-tinta" : "text-suave",
+            )}
+            title={ultima.texto}
+          >
+            {ultima.texto}
+          </span>
+          {dataUltima && (
+            <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] font-semibold tabular-nums text-suave">
+              {dataUltima}
+            </span>
+          )}
+        </div>
       )}
 
       {(sinal || timer) && (

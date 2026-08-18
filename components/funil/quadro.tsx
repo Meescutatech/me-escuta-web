@@ -18,6 +18,8 @@ import { CartaoLead } from "./card-lead";
 import { DrawerCard } from "./drawer-card";
 import { FaixaBuscaServidor, useBuscaServidor } from "./busca-servidor";
 import { FiltrosBoard } from "./filtros";
+import { SeletorOrdem } from "./seletor-ordem";
+import { ordenarCards, ORDEM_PADRAO, type ChaveOrdem } from "@/lib/dados/funil-ordenacao";
 import { NovoLead } from "./novo-lead";
 import { DialogoMotivoPerda } from "./motivo-perda";
 import type { MotivoPerda } from "@/lib/dados/motivo-perda";
@@ -190,6 +192,12 @@ export function Quadro({
   const [aviso, setAviso] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [filtros, setFiltros] = useState<FiltrosFunil>(FILTROS_VAZIOS);
+  /**
+   * R23 protótipo (workshop 12/08) · a ordem começa em "prazo primeiro" e não em "como veio".
+   * Ordem padrão é decisão de produto: o board abre respondendo "quem estourou", que é a
+   * pergunta que a Sarah faz antes de qualquer outra.
+   */
+  const [ordem, setOrdem] = useState<ChaveOrdem>(ORDEM_PADRAO);
   /** R20 — movimento para etapa `perdido` esperando o motivo. null = nenhum diálogo aberto. */
   const [perdaPendente, setPerdaPendente] = useState<{
     leadId: string;
@@ -250,8 +258,10 @@ export function Quadro({
       if (!m.has(c.etapa)) m.set(c.etapa, []);
       m.get(c.etapa)!.push(c);
     }
+    // ordena DENTRO de cada coluna — a ordem é da pilha de trabalho, não do board inteiro
+    for (const [chave, lista] of m) m.set(chave, ordenarCards(lista, ordem, agora));
     return m;
-  }, [cardsFiltrados, dados.etapas]);
+  }, [cardsFiltrados, dados.etapas, ordem, agora]);
 
   // filtro de etapa esconde as colunas fora da seleção (terminais incluídos) — como no Kommo
   const etapasVisiveis =
@@ -450,6 +460,7 @@ export function Quadro({
               className="w-full bg-transparent text-[13px] text-tinta outline-none placeholder:text-mute"
             />
           </label>
+          <SeletorOrdem ordem={ordem} onChange={setOrdem} />
           <FiltrosBoard
             cards={cards}
             etapas={dados.etapas}

@@ -6,6 +6,7 @@ import type { CardLead, EtapaFunil, Origem } from "@/lib/dados/funil";
 import type { PainelLead } from "@/lib/dados/lead-painel";
 import { lerPainelLeadAction } from "@/app/(app)/lead/actions";
 import { atribuirDono, registrarEventoUI } from "@/app/(app)/funil/actions";
+import { BotaoAudiometria } from "@/components/lead/botao-audiometria";
 import { FichaKommo } from "@/components/lead/ficha-kommo";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
@@ -189,6 +190,15 @@ export function DrawerCard({
                   </div>
                   {lead.idade != null && <div className="mt-1 text-sm text-suave">{lead.idade} anos</div>}
                 </div>
+              </div>
+
+              {/* R23 protótipo (workshop 12/08) · "a primeira coisa que deveria ter embaixo do
+                  nome é um botão gigante, audiometria" — e é literalmente embaixo do nome, antes
+                  dos fatos, antes das abas. É o principal gate de decisão: a Sarah não consegue
+                  decidir nada sobre um lead sem saber isto, e hoje ela precisa caçar a resposta.
+                  A marcação fica no estado da tela (banco de produção — nada é gravado). */}
+              <div className="pb-4">
+                <BotaoAudiometria />
               </div>
             </div>
 

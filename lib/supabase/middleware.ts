@@ -25,7 +25,13 @@ export interface DepsMiddleware {
   agoraMs?: number;
 }
 
-const PREFIXOS_PUBLICOS = ["/login", "/auth", "/convite"];
+/**
+ * R23 protótipo (branch r23/prototipo-workshop, NUNCA em main) · `/prototipo` entra aqui porque é
+ * uma tela de fixtures: ela não lê o banco, não escreve e não mostra dado de ninguém. Exigir
+ * sessão só faria o Diogo bater no /login antes de ver as quatro telas do workshop — e o login
+ * é justamente a parte que não está sendo prototipada.
+ */
+const PREFIXOS_PUBLICOS = ["/login", "/auth", "/convite", "/prototipo"];
 
 const ehRotaPublica = (pathname: string) => PREFIXOS_PUBLICOS.some((p) => pathname.startsWith(p));
 

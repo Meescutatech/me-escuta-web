@@ -36,6 +36,7 @@ import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { iniciaisDe } from "@/lib/dados/tarefa-calculos";
 import { cn } from "@/lib/utils";
 import type { VereditoEnvio } from "./regras/numero.ts";
+import { BotaoEnvio, ChipProgramado, type EnvioProgramado } from "./botao-envio";
 
 /*
  * Composer do /conversas.
@@ -135,6 +136,14 @@ export function Composer({
   const [salvando, setSalvando] = useState(false);
   // rascunho nasceu de template? viaja no payload do envio (§6.4); zerar o campo descarta
   const [templateId, setTemplateId] = useState<string | null>(null);
+
+  /**
+   * R23 protótipo (workshop 12/08) · pedido nº 1 da Sarah — "enviar agora ou programar".
+   * Mora em useState DE PROPÓSITO: o `.env.local` deste repo aponta para o Supabase de produção
+   * e programar envio não pode virar linha no banco enquanto isto é protótipo. Quando o agendador
+   * real existir, esta linha vira a chamada de server action e o resto do componente não muda.
+   */
+  const [programado, setProgramado] = useState<EnvioProgramado | null>(null);
 
   // campos que só a tarefa revela
   const [responsavelId, setResponsavelId] = useState<string>("");
@@ -698,6 +707,11 @@ export function Composer({
               ) : null}
             </div>
           ) : null}
+          {/* envio programado — tarja acima do campo, como a do Gmail, sempre com "cancelar" */}
+          {!interno && programado && (
+            <ChipProgramado envio={programado} onCancelar={() => setProgramado(null)} />
+          )}
+
           <div className="flex items-end gap-1.5 py-2 pl-2 pr-2">
             {!interno && (
               <>
@@ -749,29 +763,26 @@ export function Composer({
               className="max-h-28 flex-1 resize-none bg-transparent py-1 pl-1.5 text-[0.9rem] leading-relaxed text-tinta outline-none placeholder:text-mute disabled:opacity-60"
             />
             {!interno && (
-              <button
-                onClick={() => void enviarAoCliente()}
-                disabled={
+              <BotaoEnvio
+                onEnviar={() => void enviarAoCliente()}
+                // protótipo: guarda o horário e o rascunho na tela; não despacha, não grava
+                onProgramar={(quando) => {
+                  setProgramado({ quando, texto: rascunho.trim().slice(0, 60) });
+                  setRascunho("");
+                  setTemplateId(null);
+                }}
+                enviando={subindo}
+                desabilitado={
                   pending || subindo || gravando || (!anexo && !rascunho.trim()) ||
                   // M7 · o sender já devolveria `falha_permanente` (sender.ts:313-322) e a
                   // mensagem não volta sozinha. Falha permanente DEPOIS do clique é pior que
                   // botão desabilitado ANTES dele.
                   (!interno && origem !== null && !origem.pode)
                 }
-                title={
-                  origem && !origem.pode ? origem.motivo ?? "envio indisponível"
-                  : subindo ? "Enviando anexo…" : "Enviar"
+                motivoDesabilitado={
+                  origem && !origem.pode ? origem.motivo ?? "envio indisponível" : undefined
                 }
-                className={cn(
-                  "grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-navy text-branco transition-colors hover:bg-navy-esc focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/40 disabled:opacity-50",
-                  subindo && "animate-pulse",
-                )}
-              >
-                <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-current" fill="none">
-                  <path d="M22 2 11 13" />
-                  <path d="M22 2 15 22l-4-9-9-4 20-7z" />
-                </svg>
-              </button>
+              />
             )}
           </div>
 
