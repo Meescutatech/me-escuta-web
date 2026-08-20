@@ -1,0 +1,30 @@
+# Configuração do gitleaks — mantém todas as regras padrão e exclui APENAS
+# placeholders de documentação.
+#
+# Medido em 20/08/2026, na primeira execução real do CI: 4 achados, todos em
+# exemplos de `curl` da documentação, todos com placeholder literal
+# (`YOUR_ACCESS_TOKEN`, `YOUR_OPENAI_KEY`, `YOUR_TOKEN`).
+#
+# ⚠️ A exclusão é pelo CONTEÚDO do placeholder, nunca pelo caminho do arquivo.
+# Excluir o arquivo inteiro faria um token REAL escrito ali passar em silêncio —
+# e guarda que lê a fonte errada é pior que guarda nenhuma (ANTIPADROES).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders de documentação — nunca caminho, sempre conteúdo"
+regexes = [
+  '''YOUR_[A-Z_]{3,}''',
+  '''<[a-z_-]{3,}>''',
+  '''(?i)(exemplo|example|placeholder|xxxx+|\.\.\.)''',
+
+  # Chaves DEMO do Supabase local: idênticas em toda instalação, documentadas,
+  # públicas. Reconhecidas pelo emissor `supabase-demo`, que aparece em base64
+  # dentro do próprio token — não pelo arquivo onde estão.
+  '''eyJpc3MiOiJzdXBhYmFzZS1kZW1v''',
+
+  # Chave publicável do Supabase (`sb_publishable_…`): pública POR DESIGN — vai no
+  # bundle do navegador, e quem protege o dado é a RLS. A chave secreta
+  # (`sb_secret_…`) e a `service_role` continuam sendo pegas.
+  '''sb_publishable_[A-Za-z0-9_-]+''',
+]

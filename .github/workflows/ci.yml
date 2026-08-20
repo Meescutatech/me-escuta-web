@@ -30,7 +30,7 @@ jobs:
           curl -sSL -o /tmp/gitleaks.tar.gz \
             https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          /tmp/gitleaks dir . --no-banner --redact
+          /tmp/gitleaks dir . --no-banner --redact -c .gitleaks.toml
 
       - uses: actions/setup-node@v4
         with:
