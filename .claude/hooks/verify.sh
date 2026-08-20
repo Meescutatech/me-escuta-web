@@ -69,7 +69,15 @@ fi
 
 # ── 4. Segredo à solta (barato, e é o único que protege terceiro) ────────────
 if [ -n "$MUDOU" ]; then
-  VAZ="$(git diff "${BASE:-HEAD}" 2>/dev/null | grep -nE '^\+.*(sk-ant-[A-Za-z0-9]{20}|eyJhbGciOi[A-Za-z0-9]{20}|postgres://[^ ]*:[^ ]*@)' | head -3)"
+  # ⚠️ Precisão importa mais que abrangência aqui: um portão que grita sem motivo
+  # treina a operação a ignorá-lo (METODO §26). Na primeira execução real este
+  # detector acusou as chaves DEMO do Supabase local — que são PÚBLICAS, iguais em
+  # toda instalação e documentadas. Excluídas pelo emissor `supabase-demo`, que em
+  # base64 aparece dentro do próprio token.
+  VAZ="$(git diff "${BASE:-HEAD}" 2>/dev/null \
+        | grep -E '^\+.*(sk-ant-[A-Za-z0-9]{20}|eyJhbGciOi[A-Za-z0-9]{20}|postgres://[^ ]*:[^ ]*@)' \
+        | grep -v 'eyJpc3MiOiJzdXBhYmFzZS1kZW1v' \
+        | head -3)"
   [ -n "$VAZ" ] && ERROS+=("possível SEGREDO adicionado no diff:
 $VAZ")
 fi
