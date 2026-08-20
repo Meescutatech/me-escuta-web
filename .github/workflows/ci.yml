@@ -20,10 +20,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # gitleaks pelo BINÁRIO, não pela Action. Medido em 20/08 na primeira execução
+      # real: `gitleaks/gitleaks-action@v2` responde
+      # "[Meescutatech] is an organization. License key is required." — o invólucro
+      # de Action cobra de organização; o binário é livre. Este passo estava no
+      # db-ci.yml desde o S1 e, como aquele CI NUNCA rodou, ninguém descobriu.
       - name: Nenhum segredo no repositório
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sSL -o /tmp/gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks dir . --no-banner --redact
 
       - uses: actions/setup-node@v4
         with:
