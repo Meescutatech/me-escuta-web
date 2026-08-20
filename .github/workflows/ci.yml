@@ -1,0 +1,42 @@
+name: ci
+
+# Roda em TODA branch e em TODO PR. O CI anterior deste projeto (db-ci.yml)
+# disparava só em `development`, e por isso teve ZERO execuções na história:
+# nenhuma branch mirava lá. Gatilho que aponta para porta que ninguém usa é
+# igual a não ter CI. Ver docs: sistema/ESTADO-2026-08-19-MAPA-MEDIDO.md §4.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Nenhum segredo no repositório
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes
+        run: npm test
