@@ -44,6 +44,13 @@ export interface FiltrosTarefas {
   vencidas: boolean;
   prazo: PrazoFiltro;
   tipo: string | null;
+  /**
+   * Busca por texto sobre título, descrição e nome do lead (22/08). Vazio = sem busca.
+   * Existia filtro para SEIS recortes e nenhum campo de texto: a Sarah que lembra o nome do
+   * paciente não tinha como chegar na tarefa dele. Com teto de 500 abertas e as 697 atrasadas
+   * do Kommo por vir, rolar a coluna deixa de ser caminho.
+   */
+  busca: string;
 }
 
 export const FILTROS_PADRAO: FiltrosTarefas = {
@@ -55,6 +62,7 @@ export const FILTROS_PADRAO: FiltrosTarefas = {
   vencidas: false,
   prazo: "todos",
   tipo: null,
+  busca: "",
 };
 
 // ─────────────── URL ⇄ filtros (visão compartilhável por link) ───────────────
@@ -74,6 +82,7 @@ export function parseFiltros(params: Record<string, string | string[] | undefine
     vencidas: um(params.vencidas) === "1",
     prazo: prazo === "hoje" || prazo === "amanha" || prazo === "semana" || prazo === "sem_prazo" ? prazo : "todos",
     tipo: um(params.tipo),
+    busca: (um(params.q) ?? "").trim(),
   };
 }
 
@@ -88,6 +97,7 @@ export function serializarFiltros(f: FiltrosTarefas): string {
   if (f.vencidas) p.set("vencidas", "1");
   if (f.prazo !== FILTROS_PADRAO.prazo) p.set("prazo", f.prazo);
   if (f.tipo) p.set("tipo", f.tipo);
+  if (f.busca.trim()) p.set("q", f.busca.trim());
   return p.toString();
 }
 
@@ -98,8 +108,32 @@ export function temFiltroAtivo(f: FiltrosTarefas): boolean {
     f.status !== FILTROS_PADRAO.status ||
     f.vencidas ||
     f.prazo !== FILTROS_PADRAO.prazo ||
-    f.tipo != null
+    f.tipo != null ||
+    f.busca.trim() !== ""
   );
+}
+
+// ─────────────── busca por texto ───────────────
+
+/**
+ * Caixa e ACENTO fora: "audiometria" tem que achar "Audiometria", e "jose" tem que achar "José".
+ * Metade dos nomes de paciente carrega acento; exigir o acento certo transformaria a busca em
+ * adivinhação de digitação.
+ */
+export function normalizarBusca(s: string): string {
+  // \u0300-\u036f = marcas combinantes que o NFD separa da letra
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/**
+ * Todos os termos precisam casar (E, não OU), cada um em QUALQUER dos três campos. "sara audio"
+ * acha a tarefa de audiometria do lead Sara sem exigir que as duas palavras estejam juntas.
+ */
+export function casaBusca(t: TarefaVisao, busca: string): boolean {
+  const termos = normalizarBusca(busca).split(/\s+/).filter(Boolean);
+  if (termos.length === 0) return true;
+  const alvo = normalizarBusca([t.titulo, t.descricao ?? "", t.lead_nome ?? ""].join("  "));
+  return termos.every((termo) => alvo.includes(termo));
 }
 
 // ─────────────── dias em São Paulo (prazo é compromisso local, não UTC) ───────────────
@@ -173,6 +207,7 @@ export function aplicarFiltros(
     if (f.responsavelId && t.responsavel_id !== f.responsavelId) return false;
     if (f.vencidas && !t.vencida) return false;
     if (f.tipo && t.tipo !== f.tipo) return false;
+    if (f.busca.trim() && !casaBusca(t, f.busca)) return false;
     if (f.prazo !== "todos") {
       if (f.prazo === "sem_prazo") return !t.prazo;
       if (!t.prazo) return false;

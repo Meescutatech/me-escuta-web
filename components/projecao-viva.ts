@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { criarClienteBrowser } from "@/lib/supabase/client";
@@ -30,6 +30,43 @@ import { intervaloEfetivo } from "@/lib/intervalos-vivos";
  *      autorização de um canal nunca derruba o outro.
  *   2. O status de `subscribe()` é PROPAGADO ao chamador (e vai para o console quando falha).
  *      Antes ele era engolido: o canal morria e a tela seguia exibindo "ao vivo".
+ *   3. (22/08) O TÓPICO do canal é ÚNICO por instância do hook e por rodada de assinatura.
+ *      O bloco abaixo explica por quê — é o defeito que deixou a /tarefas sem tempo real.
+ *
+ * ── TÓPICO ÚNICO: o erro que congelava a /tarefas ──────────────────────────────────────────────
+ *
+ * Erro real, capturado no navegador em 22/08 com a /tarefas aberta:
+ *
+ *   Error: cannot add `postgres_changes` callbacks for realtime:pg:core.tarefa:* after `subscribe()`
+ *
+ * A leitura fácil ("o .on() está DEPOIS do .subscribe()") está errada: neste arquivo o `.on()`
+ * sempre foi antes. O defeito é COLISÃO DE TÓPICO, e são dois fatos do realtime-js 2.110.3
+ * (lidos na fonte, em node_modules/@supabase/realtime-js/dist/main/):
+ *
+ *   · RealtimeClient.channel(topico) NÃO cria canal novo quando o tópico já existe — devolve o
+ *     canal EXISTENTE (`const exists = this.getChannels().find(c => c.topic === realtimeTopic)`).
+ *   · RealtimeChannel.on(...) LANÇA quando o canal está `isJoined() || isJoining()` e o tipo é
+ *     postgres_changes/presence (RealtimeChannel.js:413-419) — a mensagem acima, literal.
+ *
+ * Na /tarefas duas instâncias montadas ao mesmo tempo pediam a MESMA tabela e portanto o mesmo
+ * nome calculado `pg:core.tarefa:*`: o SINO (components/notificacoes/sino.tsx — mora no header,
+ * logo monta em TODA tela autenticada; assina core.mencao + core.tarefa) e a VisaoTarefas
+ * (assina core.tarefa). A segunda a chegar recebia o canal já `joined` da primeira e o `.on()`
+ * lançava DENTRO da IIFE assíncrona — rejeição não tratada, o laço `for` morria ali e NENHUMA
+ * fonte daquela instância assinava. Por isso a tarefa criada pelo Jarvis nunca aparecia sozinha:
+ * o tempo real de core.tarefa nunca chegou a existir.
+ *
+ * Alcance MEDIDO da colisão hoje (grep de todos os chamadores do hook, 22/08): só core.tarefa.
+ *   sino = mencao + tarefa · /tarefas = tarefa · /funil = estado_lead + lead ·
+ *   /conversas = conversa + mensagem(filtrada) · carimbo-vivo = [] (nenhuma fonte).
+ * `tarefa` é a única tabela pedida por dois chamadores que montam juntos. As outras escaparam
+ * por sorte de nomenclatura, não por proteção — qualquer tela nova que repita uma tabela do
+ * sino cairia no mesmo buraco. Por isso o conserto é no hook, não na chamada da /tarefas.
+ *
+ * O mesmo tópico único fecha um segundo modo de falha, mais raro e mais difícil de ver:
+ * `removeChannel()` é ASSÍNCRONO (espera o ack do leave), então o canal antigo continua em
+ * `socket.channels` por alguns ms depois do cleanup. Um efeito que remontasse nessa janela
+ * recriaria o mesmo tópico e pegaria o canal em `leaving` — mesmo erro, agora intermitente.
  */
 
 export interface FonteViva {
@@ -72,6 +109,12 @@ export function useProjecaoViva(
   const { intervaloMs, ativo = true, folgaMs = 1200, pisoSemTempoRealMs } = opts;
   // dep estável: fontes é recriado a cada render do chamador
   const chaveFontes = JSON.stringify(fontes);
+
+  // Sufixo do tópico (ver "TÓPICO ÚNICO" no topo). `useId` distingue DUAS INSTÂNCIAS do hook
+  // montadas juntas (sino × /tarefas); o contador distingue duas RODADAS da mesma instância,
+  // que é a janela em que o canal anterior ainda não terminou de sair.
+  const idInstancia = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const rodadaRef = useRef(0);
 
   const [status, setStatus] = useState<Record<string, string>>({});
   // evidências de que a dica chega de verdade (R16-06bis)
@@ -118,6 +161,7 @@ export function useProjecaoViva(
 
     const supabase = criarClienteBrowser();
     const canais: RealtimeChannel[] = [];
+    const rodada = ++rodadaRef.current;
     let cancelado = false;
 
     (async () => {
@@ -128,19 +172,33 @@ export function useProjecaoViva(
 
       for (const f of fontesEfetivas) {
         if (f.canal && f.tabela) continue; // já reportado acima; não abrimos o canal defeituoso
+        // `nome` continua sendo o rótulo LEGÍVEL (chave do status, texto do console); o tópico
+        // que vai para o servidor leva instância+rodada para nunca colidir. Ver "TÓPICO ÚNICO".
         const nome =
           f.canal ?? `pg:${f.tabela?.schema}.${f.tabela?.table}:${f.tabela?.filter ?? "*"}`;
+        const topico = `${nome}#${idInstancia}.${rodada}`;
         // canal privado só existe para Broadcast, e só quando alguém pedir `canal` explicitamente.
         // Enquanto não houver política de leitura em `realtime.messages`, ninguém pede — as fontes
         // do inbox são todas de `tabela` (ver montarFontesConversa).
-        let canal = supabase.channel(nome, f.canal ? { config: { private: true } } : undefined);
-        if (f.canal) canal = canal.on("broadcast", { event: "*" }, aoChegarDica);
-        if (f.tabela) {
-          canal = canal.on(
-            "postgres_changes",
-            { event: "*", schema: f.tabela.schema, table: f.tabela.table, filter: f.tabela.filter },
-            aoChegarDica,
-          );
+        let canal = supabase.channel(topico, f.canal ? { config: { private: true } } : undefined);
+        try {
+          if (f.canal) canal = canal.on("broadcast", { event: "*" }, aoChegarDica);
+          if (f.tabela) {
+            canal = canal.on(
+              "postgres_changes",
+              { event: "*", schema: f.tabela.schema, table: f.tabela.table, filter: f.tabela.filter },
+              aoChegarDica,
+            );
+          }
+        } catch (e) {
+          // `.on()` lança quando o canal já entrou (RealtimeChannel.js:413-419). O tópico único
+          // deveria tornar isso impossível; se voltar a acontecer, o que NÃO pode é a exceção
+          // subir e matar o laço calada — era assim que a /tarefas perdia todas as suas fontes.
+          const detalhe = `ERRO_AO_ASSINAR: ${e instanceof Error ? e.message : String(e)}`;
+          console.error(`[projecao-viva] canal "${nome}" — ${detalhe}`);
+          setStatus((anterior) => ({ ...anterior, [nome]: detalhe }));
+          supabase.removeChannel(canal);
+          continue;
         }
         canais.push(
           canal.subscribe((estado, erro) => {
@@ -159,7 +217,7 @@ export function useProjecaoViva(
       for (const c of canais) supabase.removeChannel(c);
       setStatus({});
     };
-  }, [chaveFontes, ativo, aoChegarDica]);
+  }, [chaveFontes, ativo, aoChegarDica, idInstancia]);
 
   const { todosSubscribed, falhas } = useMemo(() => {
     const entradas = Object.entries(status);
