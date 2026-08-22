@@ -40,7 +40,10 @@
 import { montarEnvelope, payloadSeguro, type EnvelopeEvento, type VereditoEscrita } from "./porta.ts";
 
 export type Provedor = "waba" | "nao_oficial";
-export type Papel = "owner" | "admin" | "membro";
+// O vocabulario de papel e UM so, e mora em `lib/membros.ts` — ver o cabecalho de la para
+// saber por que a copia local foi removida.
+import type { Papel } from "@/lib/membros";
+export type { Papel };
 
 /**
  * O que este número está autorizado a fazer. Domínio fechado por

@@ -132,7 +132,10 @@ export function resolverEscopo(
 export function visiveisPara(
   deps: Departamento[],
   vinculos: string[],
-  papel: "owner" | "admin" | "membro" | null,
+  // `marketing` (0250) entra pelo mesmo ramo de `membro`, e isso e o certo: ele nao e papel de
+  // gestao, entao nao ganha a visao total; sem vinculo cai no fail-open, que ja exclui a
+  // fronteira constitucional do `clinico`. Papel novo nunca deve estrear com MAIS visao.
+  papel: "owner" | "admin" | "membro" | "marketing" | null,
 ): Departamento[] {
   const ativos = deps.filter((d) => d.ativo);
   if (papel === "owner" || papel === "admin") return ativos;

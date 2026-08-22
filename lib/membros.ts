@@ -5,7 +5,38 @@
  * aqui é só ergonomia (não mostrar botão que a porta vai recusar).
  */
 
-export type Papel = "owner" | "admin" | "membro";
+/**
+ * A FONTE UNICA do vocabulario de papel na web — e ela e unica por causa de um defeito medido.
+ *
+ * ESPELHA O CHECK DE `core.usuario.papel`. A migration `0250` (T9, D43) acrescentou `marketing`
+ * ao dominio do banco, e a web tinha TRES copias desta lista (aqui, em `regras/canais.ts` e na
+ * allowlist de `lerPapelAtual`). Nenhuma das tres foi atualizada, e o efeito nao dava erro em
+ * lugar nenhum: o Fernando faz login, o banco responde `marketing`, a web le `null` — e ele fica
+ * sem papel nenhum na interface inteira, INCLUSIVE na tela que a T9 existe para liberar. A RLS o
+ * deixaria ler a atribuicao; a UI o trataria como estranho.
+ *
+ * Tres copias e o motivo de ninguem ter atualizado: quem le uma nao sabe das outras. Agora e uma,
+ * e as outras importam daqui.
+ *
+ * Ampliar a lista e SEGURO e foi conferido antes: os 27 gates de papel do app sao allowlist
+ * POSITIVA (`=== "admin" || === "owner"`), entao nenhum concede nada a `marketing` por omissao.
+ * O unico com forma negativa e `podeAbrirChamado` (`papel !== null`), e abrir chamado e
+ * justamente o que todo autenticado pode.
+ */
+export const PAPEIS = ["owner", "admin", "membro", "marketing"] as const;
+export type Papel = (typeof PAPEIS)[number];
+
+/**
+ * Quem ve a tela de marketing (RF-12 / D23). A mesma tripla da policy `captacao_sel_marketing`
+ * da `0251` — e e de proposito que a lista esteja escrita nos dois lugares: a RLS e a defesa
+ * real (a rota sozinha nao protege o dado), e esta evita entregar uma tela vazia a quem o banco
+ * ja ia recusar, o que pareceria defeito da tela.
+ *
+ * Papel indisponivel (`null`) NAO ve: falha fechado.
+ */
+export function podeVerMarketing(papel: Papel | null): boolean {
+  return papel === "marketing" || papel === "admin" || papel === "owner";
+}
 
 export interface MembroLinha {
   id: string;
@@ -28,7 +59,12 @@ export interface ConviteLinha {
 }
 
 export function rotuloPapel(papel: Papel): string {
-  return papel === "owner" ? "Proprietário" : papel === "admin" ? "Admin" : "Membro";
+  if (papel === "owner") return "Proprietário";
+  if (papel === "admin") return "Admin";
+  // Sem este caso, quem tem papel `marketing` apareceria como "Membro" na lista — a tela
+  // afirmaria um papel que a pessoa não tem, e quem fosse conferir acesso leria errado.
+  if (papel === "marketing") return "Marketing";
+  return "Membro";
 }
 
 /** Gestão de membros/convites (convidar, reenviar, revogar convite): admin e owner. */
