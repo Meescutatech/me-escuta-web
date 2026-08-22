@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { higienizar } from "@/lib/mensagem-erro";
 
 export interface ResultadoValidacao {
   ok: boolean;
@@ -65,12 +66,4 @@ function traduzirFalha(bruto: string): string {
     return "Esta proposta não existe mais. Atualize a página.";
   }
   return `Não foi possível registrar a decisão: ${higienizar(bruto)}`;
-}
-
-/** Remove identificador qualificado (`esquema.objeto`) e a sigla do protocolo de chamada. */
-function higienizar(texto: string): string {
-  return (texto ?? "")
-    .replace(/\b[a-z_]+\.[a-z_]+\b/gi, "sistema")
-    .replace(/\bRPC\b/gi, "chamada")
-    .trim();
 }

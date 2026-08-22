@@ -229,6 +229,15 @@ function Cartao({ proposta }: { proposta: Proposta }) {
         </dl>
       )}
 
+      {/* Trecho não veio e PODE ter sido corte da leitura, não conversa vazia. Dizer isso custa
+          uma linha; não dizer faz quem valida concluir que o paciente não falou nada. */}
+      {proposta.trecho.length === 0 && proposta.trechoIncerto && (
+        <p className="mt-3.5 border-t border-linha pt-2.5 text-[12.5px] leading-[1.5] text-mute">
+          Não foi possível carregar o trecho desta conversa agora — abra o paciente para ler o que
+          veio antes.
+        </p>
+      )}
+
       {/* o que veio antes — quieto, mas presente: aprovar sem o contexto é adivinhar */}
       {proposta.trecho.length > 0 && (
         <div className="mt-3.5 border-t border-linha pt-2.5">

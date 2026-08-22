@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { registrarEventoUI, type ResultadoEvento } from "@/app/(app)/funil/actions";
 import { lerPainelLead, type PainelLead } from "@/lib/dados/lead-painel";
+import { higienizar } from "@/lib/mensagem-erro";
 import type { ValorCampo } from "@/lib/dados/ficha-calculos";
 import {
   payloadMencaoCriada,
@@ -213,6 +214,19 @@ export async function marcarMencaoLida(mencaoId: string): Promise<ResultadoEvent
   return registrarEventoUI("mencao_lida", { mencao_id: mencaoId });
 }
 
+/**
+ * Grava um campo da ficha (é por aqui que o botão gigante de audiometria escreve).
+ *
+ * O `higienizar` no motivo é conserto de 22/08 e tem endereço: `registrarEventoUI` devolve
+ * `error.message` CRU do Postgres, e o `<BotaoAudiometria />` imprime esse texto embaixo do
+ * botão ("Não gravou: %s"). Ou seja, a Sarah lia `function api.registrar_evento(jsonb) does not
+ * exist` na tela do lead — no mesmo commit em que a fila ganhou um sanitizador justamente para
+ * não fazer isso com ela. A regra é do sistema, não de uma tela: `lib/mensagem-erro.ts`.
+ *
+ * Sanitiza AQUI e não dentro de `registrarEventoUI` de propósito: aquela função é a porta de
+ * escrita de toda a UI, e há chamador que quer o texto cru para decidir (casar código de erro).
+ * Quem devolve motivo para a tela é que tem de limpar.
+ */
 export async function salvarCampoFicha(
   leadId: string,
   slug: string,
@@ -220,8 +234,11 @@ export async function salvarCampoFicha(
 ): Promise<ResultadoEvento> {
   if (!slug.trim()) return { ok: false, motivo: "campo sem slug" };
   const r = await registrarEventoUI("lead_atualizado", { campos: { [slug]: valor } }, leadId);
-  if (r.ok) revalidarPaineis();
-  return r;
+  if (r.ok) {
+    revalidarPaineis();
+    return r;
+  }
+  return { ...r, motivo: r.motivo ? higienizar(r.motivo) : r.motivo };
 }
 
 /**
