@@ -258,8 +258,24 @@ export async function lerSlaEtapas(cliente?: Supabase): Promise<SlaEtapas> {
   }
 }
 
-async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[]; corte: boolean }> {
-  const supabase = criarClienteServidor();
+/**
+ * ⚠️ EXPORTADA e com `cliente?` desde 22/08 — e o motivo não é simetria com as vizinhas.
+ *
+ * O DEGRAU desta função (COLUNAS_CARD → COLUNAS_CARD_BASE, logo abaixo) é a única coisa que
+ * separa "board sem a linha de última mensagem" de "board VAZIO" no dia em que a migration da
+ * `v_lead_card` não tiver descido: pedir coluna inexistente ao PostgREST derruba a consulta
+ * INTEIRA, não só a coluna. Até aqui esse degrau era intestável — a função criava o cliente por
+ * dentro, e nenhum teste podia forçar o erro da primeira chamada. Degrau silencioso que ninguém
+ * exercita é degrau que ninguém sabe se ainda existe.
+ *
+ * `lerEtapasReais`, `lerSlaEtapas` e `buscarLeads` já aceitavam cliente injetado pela mesma razão
+ * (portões do F24a/F25). Esta era a que faltava. Ver tests/funil-degrau-colunas.test.ts.
+ */
+export async function lerCardsReais(
+  chavesEtapas: string[],
+  cliente?: Supabase,
+): Promise<{ cards: CardLead[]; corte: boolean }> {
+  const supabase = cliente ?? criarClienteServidor();
   // Só etapas do board (config vigente) — 'arquivado' etc. NUNCA entram nem roubam vaga do
   // teto. Order determinístico (mais recentes primeiro + lead_id de desempate): se o volume
   // passar do teto, o corte é estável entre reloads e a UI avisa (flag `corte`).
@@ -335,13 +351,13 @@ function montarCard(
 
 
 /** Fonte única do board. Etapas reais (senão padrão estrutural); cards só reais — vazio é vazio. */
-export async function lerFunil(): Promise<DadosFunil> {
+export async function lerFunil(cliente?: Supabase): Promise<DadosFunil> {
   try {
     // etapas e SLA são independentes e disparam juntos — o SLA nunca atrasa o board, e se ele
     // falhar o board aparece igual, no padrão declarado e com o aviso na legenda.
-    const [etapasLidas, sla] = await Promise.all([lerEtapasReais(), lerSlaEtapas()]);
+    const [etapasLidas, sla] = await Promise.all([lerEtapasReais(cliente), lerSlaEtapas(cliente)]);
     const todasEtapas = etapasLidas ?? ETAPAS_PADRAO; // cards filtram pelas chaves da config
-    const { cards, corte } = await lerCardsReais(chavesDoBoard(todasEtapas));
+    const { cards, corte } = await lerCardsReais(chavesDoBoard(todasEtapas), cliente);
     return { etapas: etapasDoBoard(todasEtapas), todasEtapas, cards, corte, sla };
   } catch {
     return {

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { concluirTarefaLead } from "@/app/(app)/lead/actions";
 import { concluirTarefaNotificacao } from "@/app/(app)/notificacoes/actions";
+import { desfechoDaConclusao } from "./regras/conclusao";
 
 /*
  * CONCLUIR DENTRO DA /tarefas (22/08) — o que faltava para a fila da Sarah esvaziar.
@@ -27,10 +28,38 @@ import { concluirTarefaNotificacao } from "@/app/(app)/notificacoes/actions";
  * Escolher pelo `lead_id` é o que mantém o evento ancorado quando dá, sem perder a tarefa
  * órfã quando não dá. Nenhuma das duas ações foi tocada.
  *
- * RESULTADO CONTINUA OBRIGATÓRIO (§4.1.2 — no Kommo só 29,1% das concluídas tinham resultado,
- * porque o obrigatório era do formulário). O botão não habilita em branco, e a porta recusa de
- * novo. `concluirTarefaNotificacao` tem um default "concluída" para o botão do sino; aqui ele
- * nunca chega a valer, porque a UI barra antes.
+ * RESULTADO OBRIGATÓRIO — e os DOIS CAMINHOS NÃO SÃO GUARDADOS PELAS MESMAS TRAVAS.
+ * (correção de 22/08: este bloco afirmava "o botão não habilita em branco, e a porta recusa de
+ * novo", sem distinguir os caminhos. A frase era verdadeira no caminho COM lead e falsa no da
+ * tarefa órfã — que é justamente o caso novo que esta tela criou. Comentário que mente sobre a
+ * própria guarda é pior que comentário nenhum, porque a próxima pessoa confia nele.)
+ *
+ * Motivo de tudo isso: §4.1.2 do benchmark — no Kommo só 29,1% das tarefas concluídas dizem o
+ * que aconteceu, porque a obrigação vivia no formulário e mais nada.
+ *
+ * · CAMINHO COM LEAD (`concluirTarefaLead`) — três travas, e as três independentes:
+ *     1. a UI: `desfechoDaConclusao` recusa em branco antes de chamar a ação;
+ *     2. a AÇÃO: `if (!desfecho) return {ok:false}` em app/(app)/lead/actions.ts:152;
+ *     3. a PORTA: migration 0037 levanta `check_violation` — "tarefa_concluida exige resultado
+ *        não-vazio no payload (o desfecho é o dado, não o fechamento)".
+ *
+ * · CAMINHO DA TAREFA ÓRFÃ (`concluirTarefaNotificacao`) — UMA trava, a da UI.
+ *     A porta EXIGE o resultado do mesmo jeito, mas nunca chega a ver o vazio: a ação faz
+ *     `resultado.trim() || "concluída"` (app/(app)/notificacoes/actions.ts:133) e preenche por
+ *     conta própria. Uma chamada com o campo vazio não é recusada — ela GRAVA no ledger um
+ *     `resultado: "concluída"`, que é o mesmo nada dos 70,9% do Kommo, agora com carimbo de
+ *     evento imutável.
+ *
+ * O QUE ESTA FRENTE FEZ: tirou a regra de dentro do componente para
+ * `components/tarefas/regras/conclusao.ts`, onde ela é executada por teste
+ * (tests/tarefa-conclusao-desfecho.test.ts) em vez de depender de um atributo `disabled`. Os dois
+ * caminhos passam por ela — a órfã não alcança o default da ação por este botão.
+ *
+ * ⚠️ DÍVIDA DECLARADA (fora do alcance desta frente): o default mora em
+ * `app/(app)/notificacoes/actions.ts:133` e não é meu arquivo nesta rodada. Ele não tem chamador
+ * que precise dele — `components/notificacoes/item.tsx:117`, o botão do sino, passa a string
+ * "concluída" LITERAL. Ou seja: trocar `resultado.trim() || "concluída"` por a mesma recusa do
+ * caminho do lead não quebra nenhum chamador de hoje, e devolve a terceira trava à tarefa órfã.
  */
 
 /** A caixa de marcar — mesmo desenho do painel do lead, e o mesmo rótulo acessível. */
@@ -81,15 +110,22 @@ export function PainelConcluir({
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const pode = resultado.trim() !== "" && !ocupado;
+  const pode = desfechoDaConclusao(resultado).ok && !ocupado;
 
   async function concluir() {
-    if (!pode) return;
+    if (ocupado) return;
+    // a MESMA regra do `disabled`, chamada de novo aqui: o Enter do campo entra por este caminho
+    // sem passar pelo botão, e `disabled` não é guarda — é aparência.
+    const d = desfechoDaConclusao(resultado);
+    if (!d.ok) {
+      setErro(d.motivo);
+      return;
+    }
     setOcupado(true);
     setErro(null);
     const r = leadId
-      ? await concluirTarefaLead(leadId, tarefaId, resultado)
-      : await concluirTarefaNotificacao(tarefaId, resultado);
+      ? await concluirTarefaLead(leadId, tarefaId, d.desfecho)
+      : await concluirTarefaNotificacao(tarefaId, d.desfecho);
     setOcupado(false);
     if (!r.ok) {
       setErro(r.motivo ?? "não foi possível concluir");
