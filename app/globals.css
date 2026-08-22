@@ -21,6 +21,16 @@
  */
 :root {
   --altura-topo: 52px;
+
+  /*
+   * O SISTEMA E CLARO, E ISSO PRECISA ESTAR DECLARADO — nao so implicito no `background` do body.
+   *
+   * Sem `color-scheme`, o navegador de quem esta com o SO em dark repinta o que ELE controla:
+   * barra de rolagem, campo de formulario, autofill, e a pagina de erro padrao do framework. Era
+   * exatamente a queixa da W4(c): erro de rota saia PRETO e em ingles no meio de um app claro.
+   * Uma linha aqui fecha a classe inteira do problema, inclusive nas telas que ainda nao existem.
+   */
+  color-scheme: light;
 }
 
 * {

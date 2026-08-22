@@ -25,9 +25,17 @@ const config: Config = {
         board: "#F7F7F4", // --fundo (página e board)
         tinta: "#1F2328", // --tinta
         linha: { DEFAULT: "#E8E7E2", forte: "#DCDAD4" }, // --linha: hairline universal
-        hover: "#F3F2EF", // --hover
+        // W4 (22/08) — o hover ANTIGO (#F3F2EF) era um no-op: 1,04:1 contra o board #F7F7F4
+        // (luminancia 0,8879 vs 0,9283 — delta 0,0404). Ninguem via linha nenhuma reagir ao mouse.
+        // #EAE9E3 leva o delta pra 0,1151 (2,85x) => 1,13:1 no board e 1,22:1 no branco. Continua
+        // no idioma "Notion-minimalista" (mudanca de superficie, nao de borda), mas agora existe.
+        hover: "#EAE9E3", // --hover
         "scroll-h": "#CFCDC7", // hover da scrollbar
-        "timer-velho": "#B27A00", // --ambar (r9): lead parado — peso 700 + ícone
+        // W4 (22/08): #B27A00 media 3,45:1 no board e 3,34:1 sobre a propria pastilha amarelo.bg
+        // — reprovava AA carregando o sinal "lead parado", que e informacao de gestao, nao enfeite.
+        // Ja era BLOQUEADOR aberto no REVIEW-KANBAN-V2 (item B). #8A5E00: 5,31 board / 5,70 branco
+        // / 5,16 sobre amarelo.bg. Mesmo hue ambar, so escurecido.
+        "timer-velho": "#8A5E00", // --ambar (r9): lead parado — peso 700 + ícone
         "pt-ads": "#B4B7BD", // micro-ponto do sinal "Meta Ads" (decorativo)
         "foco-comp": "#D9C4B6", // borda do composer em foco (conversa-v2)
         bolha: { in: "#FFFFFF", out: "#EAECF5" }, // r9-conversa: entrada branca hairline · saída azulada
@@ -44,12 +52,28 @@ const config: Config = {
         fundo: "#F7F7F4",
         branco: "#FFFFFF",
         texto: "#1F2328",
-        suave: "#67707B", // --suave: secundário/labels da ficha
-        mute: "#9AA1AA", // --pt: placeholder ("Selecione"), desabilitado, carimbos
+        // ── W4 (22/08) · A ESCADA DE CINZA FOI REFEITA PORQUE O DEGRAU DE BAIXO REPROVAVA.
+        //
+        // `mute` #9AA1AA media 2,61:1 no branco / 2,43:1 no board / 2,33:1 no hover. Reprovava ate
+        // o piso de 3:1 de objeto grafico, em 262 usos por 48 arquivos — e nao pinta enfeite: pinta
+        // timer, contagem de coluna, valor agregado e placeholder. Ja era BLOQUEADOR desde 19/07
+        // (REVIEW-KANBAN-V2 item B1) e a rodada seguinte deixou PIOR (o antecessor dava 2,68:1).
+        //
+        // `suave` teve que descer JUNTO, e isto nao e gosto: com `mute` obrigado a >= 4,5:1, a
+        // janela entre "passar AA" (4,50) e o `suave` antigo (4,68 no board) era de 0,18 de razao —
+        // invisivel. Manter `suave` colapsaria terciario e secundario na mesma cor. Alem disso o
+        // `suave` antigo tambem reprovava sobre superficie de hover (4,49:1).
+        //
+        // Medido (script WCAG 2.x, relative luminance):
+        //   suave #67707B -> #4E5763 : branco 5,02->7,32 · board 4,68->6,82 · hover 4,49->6,02
+        //   mute  #9AA1AA -> #5F6873 : branco 2,61->5,65 · board 2,43->5,27 · hover 2,33->4,65
+        // As tres superficies reais do app (branco, board #F7F7F4, hover #EAE9E3) passam AA.
+        suave: "#4E5763", // --suave: secundário/labels da ficha
+        mute: "#5F6873", // --pt: placeholder ("Selecione"), desabilitado, carimbos
         borda: { DEFAULT: "#E8E7E2", forte: "#DCDAD4" },
         verde: { DEFAULT: "#177A48", bg: "#EAF6EF", bd: "#BFE4CF" },
         vermelho: { DEFAULT: "#B3372B", bg: "#FBEBE4", bd: "#F1CDBF" },
-        amarelo: { DEFAULT: "#B27A00", bg: "#FBF3DF", bd: "#EAD9A6" }, // --ambar
+        amarelo: { DEFAULT: "#8A5E00", bg: "#FBF3DF", bd: "#EAD9A6" }, // --ambar (W4: era #B27A00 / 3,45:1)
         roxo: { DEFAULT: "#7A4CA0", bg: "#F3EDF9", bd: "#E0D0EE" },
         rosa: { DEFAULT: "#B23A6E", bg: "#FBEDF3" },
       },

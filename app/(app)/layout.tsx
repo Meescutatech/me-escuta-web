@@ -10,6 +10,7 @@ import { chavesComPendencia } from "@/lib/departamentos/escopo";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { PresencaBatimento } from "@/components/presenca-batimento";
+import { MarcaBuild } from "@/components/ui/marca-build";
 
 /**
  * Shell autenticado (r9): SIDEBAR de ícones retrátil — colapsada (60px) por padrão, expande no
@@ -90,6 +91,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       */}
       <main className="pt-[var(--altura-topo)]">{children}</main>
       <PresencaBatimento />
+      {/*
+        CARIMBO DE BUILD (W4, 22/08) — o front passa a dizer qual commit esta no ar.
+        Fica no shell porque precisa estar em TODA tela: quem descobre o problema e quem esta
+        usando, e a primeira pergunta que se faz e "que versao voce esta vendo?". `pointer-events-
+        none` no componente garante que ele nunca intercepte clique de nada que esteja embaixo.
+      */}
+      <MarcaBuild />
     </div>
   );
 }
