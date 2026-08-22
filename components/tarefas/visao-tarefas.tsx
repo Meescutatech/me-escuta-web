@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
@@ -22,6 +22,7 @@ import {
 import { useProjecaoViva } from "@/components/projecao-viva";
 import { INTERVALOS } from "@/lib/intervalos-vivos";
 import { AcoesTarefa, BotaoAcoes, type PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
+import { BotaoConcluir, PainelConcluir } from "@/components/tarefas/concluir-tarefa";
 import { LinhaTarefaAutomatica } from "@/components/tarefas/tarefa-automatica";
 import { useFilaPrototipo } from "@/lib/tarefas/fila-prototipo";
 import { cn } from "@/lib/utils";
@@ -32,9 +33,21 @@ import { cn } from "@/lib/utils";
  * Vencidas é a ÚNICA coluna vermelha — no Kommo 97,9% da fila aberta estava vencida e o
  * vermelho não dizia nada; aqui ele fica contido numa coluna que dá pra esvaziar.
  *
- * Nenhuma escrita nesta tela: clicar numa tarefa leva ao drawer do lead no funil
- * (/funil?lead=…), onde concluir-com-resultado já existe. Histórico (concluídas/arquivadas)
- * é lista, não funil — bucket de prazo só faz sentido pra compromisso futuro.
+ * Histórico (concluídas/arquivadas) é lista, não funil — bucket de prazo só descreve
+ * compromisso futuro.
+ *
+ * ⚠️ REVOGADO em 22/08 — este bloco dizia "NENHUMA ESCRITA NESTA TELA: clicar numa tarefa leva
+ * ao drawer do lead no funil, onde concluir-com-resultado já existe". Era verdade e era o
+ * defeito: concluir custava 4 cliques e 2 rotas, e tarefa sem `lead_id` não era nem clicável,
+ * ou seja, não tinha caminho nenhum. CONCLUIR agora mora aqui
+ * (components/tarefas/concluir-tarefa.tsx); as ações de ciclo de vida (⋯) já moravam.
+ *
+ * Outras duas coisas que a tela devia e não pagava:
+ *  · a DESCRIÇÃO vinha do banco em toda leitura (`descricao` está no SELECT de
+ *    lib/dados/tarefas-visao.ts) e NUNCA era desenhada — `grep -rn descricao components/tarefas/`
+ *    não devolvia uma linha. É o "POR QUE AGORA / FAZER" que a Sarah lê hoje no Kommo, e é a
+ *    razão de a fila existir: sem ele o card é um título solto.
+ *  · BUSCA POR TEXTO. Eram seis filtros e nenhum campo de digitar, com teto de 500 abertas.
  */
 
 export function VisaoTarefas({
@@ -63,11 +76,32 @@ export function VisaoTarefas({
   useProjecaoViva([{ tabela: { schema: "core", table: "tarefa" } }], { intervaloMs: INTERVALOS.tarefas });
 
   function mudar(parcial: Partial<FiltrosTarefas>) {
-    const novo = { ...filtros, ...parcial };
-    setFiltros(novo);
-    const qs = serializarFiltros(novo);
-    router.replace(qs ? `/tarefas?${qs}` : "/tarefas", { scroll: false });
+    setFiltros({ ...filtros, ...parcial });
   }
+
+  /**
+   * A URL SEGUE o estado, com folga — não o contrário.
+   *
+   * Até 22/08 `mudar()` chamava `router.replace` na hora, o que era barato porque todo filtro
+   * era um clique. Com a busca por texto isso vira uma ida ao servidor POR TECLA: a página é
+   * `dynamic = "force-dynamic"` (app/(app)/tarefas/page.tsx), então cada replace refaz a
+   * leitura de v_tarefa + os nomes de lead. Digitar "audiometria" custaria 11 leituras
+   * completas para uma filtragem que já acontece no cliente, de graça, no mesmo instante.
+   *
+   * Então: o estado local muda na hora (a lista responde à tecla) e a URL — que serve para
+   * COMPARTILHAR a visão por link — chega 300 ms depois da última tecla. O ref guarda a última
+   * query escrita para o efeito não replicar na montagem a query que o servidor já entregou.
+   */
+  const qsEscritaRef = useRef(serializarFiltros(filtrosIniciais));
+  useEffect(() => {
+    const qs = serializarFiltros(filtros);
+    if (qs === qsEscritaRef.current) return;
+    const t = setTimeout(() => {
+      qsEscritaRef.current = qs;
+      router.replace(qs ? `/tarefas?${qs}` : "/tarefas", { scroll: false });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [filtros, filtrosIniciais, router]);
 
   const pessoas = useMemo(
     () => mencionaveis.filter((m) => m.tipo === "humano"),
@@ -80,6 +114,17 @@ export function VisaoTarefas({
   );
   // um painel de ações aberto por vez (R14 — reatribuir/repactuar/arquivar)
   const [acoesId, setAcoesId] = useState<string | null>(null);
+  // e um de conclusão por vez (22/08). Os dois são exclusivos entre si: abrir um fecha o
+  // outro, senão o card cresce com dois formulários pedindo coisas diferentes ao mesmo tempo.
+  const [concluindoId, setConcluindoId] = useState<string | null>(null);
+  function abrirAcoes(id: string) {
+    setAcoesId(acoesId === id ? null : id);
+    setConcluindoId(null);
+  }
+  function abrirConcluir(id: string) {
+    setConcluindoId(concluindoId === id ? null : id);
+    setAcoesId(null);
+  }
   const nomes = useMemo(
     () => ({
       membros: new Map(pessoas.map((m) => [m.id, m.nome])),
@@ -131,12 +176,24 @@ export function VisaoTarefas({
             </>
           )}
         </span>
+        {filtros.busca.trim() && (
+          <span className="font-mono text-[12px] text-navy">
+            · {filtradas.length.toLocaleString("pt-BR")}{" "}
+            {filtradas.length === 1 ? "encontrada" : "encontradas"}
+          </span>
+        )}
         {dados.corte && (
           <span
             className="rounded-full bg-laranja-cl px-2.5 py-0.5 text-[11.5px] font-medium text-laranja-esc"
-            title="A leitura bateu no teto — mostrando as mais urgentes (abertas) e mais recentes (histórico)."
+            title={
+              filtros.busca.trim()
+                ? "A leitura bateu no teto (500 abertas / 200 do histórico) e a busca só enxerga o que foi lido — pode haver tarefa fora desta lista que casaria com o texto."
+                : "A leitura bateu no teto — mostrando as mais urgentes (abertas) e mais recentes (histórico)."
+            }
           >
-            leitura no teto — lista parcial
+            {/* a busca é CLIENTE-SIDE: com o teto estourado ela é parcial, e dizer isso é o que
+                separa "não achei" de "não existe". Mesmo problema apontado na spec para o funil. */}
+            leitura no teto — {filtros.busca.trim() ? "busca parcial" : "lista parcial"}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2 self-center">
@@ -175,6 +232,40 @@ export function VisaoTarefas({
 
       {/* ── barra de filtros (estado na URL — a visão é compartilhável por link) ── */}
       <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5 px-5 pb-3">
+        {/* BUSCA — primeiro item da barra de propósito: é o caminho mais curto até UMA tarefa,
+            e os seis filtros ao lado só sabem recortar CONJUNTOS. Filtra no cliente, sobre o
+            que já foi lido (teto de 500 abertas / 200 fechadas de lib/dados/tarefas-visao.ts);
+            quando esse teto estoura, o aviso ao lado do contador diz que a busca é parcial —
+            a tela nunca finge completude que não tem. */}
+        <label className="relative flex items-center">
+          <span className="sr-only">Buscar tarefa por título, descrição ou lead</span>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            aria-hidden
+            className="pointer-events-none absolute left-2 h-[13px] w-[13px] text-mute"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            type="search"
+            value={filtros.busca}
+            onChange={(e) => mudar({ busca: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") mudar({ busca: "" });
+            }}
+            placeholder="Buscar tarefa, descrição ou lead…"
+            className={cn(
+              "w-[240px] rounded-full border bg-branco py-1 pl-[26px] pr-2.5 text-[12px] text-tinta outline-none transition-colors placeholder:text-mute",
+              filtros.busca.trim() ? "border-navy" : "border-linha hover:bg-hover",
+            )}
+          />
+        </label>
+
         <button
           type="button"
           onClick={() => mudar({ minhas: !filtros.minhas, responsavelId: null })}
@@ -297,6 +388,7 @@ export function VisaoTarefas({
                 vencidas: FILTROS_PADRAO.vencidas,
                 prazo: FILTROS_PADRAO.prazo,
                 tipo: FILTROS_PADRAO.tipo,
+                busca: FILTROS_PADRAO.busca,
               })
             }
             className="rounded-full px-2 py-1 text-[12px] font-medium text-suave transition-colors hover:bg-hover hover:text-tinta"
@@ -356,11 +448,19 @@ export function VisaoTarefas({
         </Vazio>
       ) : nadaComFiltro ? (
         <Vazio>
-          Nenhuma tarefa passa pelos filtros ativos.{" "}
+          {filtros.busca.trim() ? (
+            <>
+              Nenhuma tarefa com <b className="font-semibold text-tinta">“{filtros.busca.trim()}”</b>{" "}
+              no título, na descrição ou no nome do lead
+              {dados.corte && " — e a leitura bateu no teto, então pode haver tarefa fora desta lista"}.{" "}
+            </>
+          ) : (
+            <>Nenhuma tarefa passa pelos filtros ativos. </>
+          )}
           <button
             type="button"
             onClick={() =>
-              mudar({ minhas: false, responsavelId: null, status: "abertas", vencidas: false, prazo: "todos", tipo: null })
+              mudar({ minhas: false, responsavelId: null, status: "abertas", vencidas: false, prazo: "todos", tipo: null, busca: "" })
             }
             className="font-semibold text-navy underline-offset-2 hover:underline"
           >
@@ -400,8 +500,11 @@ export function VisaoTarefas({
                     nomes={nomes}
                     pessoas={pessoasAtivas}
                     acoesAberta={acoesId === t.id}
-                    onToggleAcoes={() => setAcoesId(acoesId === t.id ? null : t.id)}
+                    onToggleAcoes={() => abrirAcoes(t.id)}
                     onFecharAcoes={() => setAcoesId(null)}
+                    concluindo={concluindoId === t.id}
+                    onToggleConcluir={() => abrirConcluir(t.id)}
+                    onFecharConcluir={() => setConcluindoId(null)}
                     aoMudar={() => router.refresh()}
                   />
                 ))}
@@ -425,8 +528,11 @@ export function VisaoTarefas({
                 nomes={nomes}
                 pessoas={pessoasAtivas}
                 acoesAberta={acoesId === t.id}
-                onToggleAcoes={() => setAcoesId(acoesId === t.id ? null : t.id)}
+                onToggleAcoes={() => abrirAcoes(t.id)}
                 onFecharAcoes={() => setAcoesId(null)}
+                concluindo={concluindoId === t.id}
+                onToggleConcluir={() => abrirConcluir(t.id)}
+                onFecharConcluir={() => setConcluindoId(null)}
                 aoMudar={() => router.refresh()}
               />
             ))}
@@ -482,6 +588,9 @@ interface PropsAcoes {
   acoesAberta: boolean;
   onToggleAcoes: () => void;
   onFecharAcoes: () => void;
+  concluindo: boolean;
+  onToggleConcluir: () => void;
+  onFecharConcluir: () => void;
   aoMudar: () => void;
 }
 
@@ -533,6 +642,9 @@ function CartaoTarefa({
   acoesAberta,
   onToggleAcoes,
   onFecharAcoes,
+  concluindo,
+  onToggleConcluir,
+  onFecharConcluir,
   aoMudar,
 }: {
   t: TarefaVisao;
@@ -549,8 +661,15 @@ function CartaoTarefa({
       )}
     >
       <div className="flex items-start gap-1.5">
+        {t.status === "pendente" && (
+          <BotaoConcluir titulo={t.titulo} aberto={concluindo} onToggle={onToggleConcluir} />
+        )}
         <div className="min-w-0 flex-1">
           <div className="text-[13.5px] leading-snug text-tinta">{t.titulo}</div>
+          {/* o POR QUE AGORA / FAZER — vinha do banco em toda leitura e não era desenhado */}
+          {t.descricao && (
+            <div className="mt-0.5 whitespace-pre-line text-[12px] leading-snug text-suave">{t.descricao}</div>
+          )}
           {t.lead_nome && <div className="mt-0.5 truncate text-[12px] text-suave">{t.lead_nome}</div>}
         </div>
         {t.status === "pendente" && <BotaoAcoes aberto={acoesAberta} onToggle={onToggleAcoes} />}
@@ -558,6 +677,14 @@ function CartaoTarefa({
       <div className="mt-1.5">
         <MetaTarefa t={t} agora={agora} nomes={nomes} />
       </div>
+      {concluindo && t.status === "pendente" && (
+        <PainelConcluir
+          leadId={t.lead_id}
+          tarefaId={t.id}
+          aoSucesso={aoMudar}
+          onFechar={onFecharConcluir}
+        />
+      )}
       {acoesAberta && t.status === "pendente" && (
         <AcoesTarefa
           leadId={t.lead_id}
@@ -581,6 +708,9 @@ function LinhaTarefa({
   acoesAberta,
   onToggleAcoes,
   onFecharAcoes,
+  concluindo,
+  onToggleConcluir,
+  onFecharConcluir,
   aoMudar,
 }: {
   t: TarefaVisao;
@@ -597,6 +727,11 @@ function LinhaTarefa({
       )}
     >
       <div className="flex items-baseline gap-2">
+        {t.status === "pendente" && (
+          <span className="self-center">
+            <BotaoConcluir titulo={t.titulo} aberto={concluindo} onToggle={onToggleConcluir} />
+          </span>
+        )}
         <span className={cn("min-w-0 flex-1 truncate text-[13.5px] leading-snug", fechada ? "text-suave line-through decoration-mute" : "text-tinta")}>
           {t.titulo}
         </span>
@@ -607,6 +742,12 @@ function LinhaTarefa({
           </span>
         )}
       </div>
+      {/* o POR QUE AGORA / FAZER — vinha do banco em toda leitura e não era desenhado */}
+      {t.descricao && (
+        <div className={cn("mt-0.5 whitespace-pre-line text-[12px] leading-snug", fechada ? "text-mute" : "text-suave")}>
+          {t.descricao}
+        </div>
+      )}
       {t.status === "concluida" && t.resultado && (
         <div className="mt-0.5 text-[12px] leading-snug text-suave">→ {t.resultado}</div>
       )}
@@ -618,6 +759,14 @@ function LinhaTarefa({
       <div className="mt-1.5">
         <MetaTarefa t={t} agora={agora} nomes={nomes} apagada={fechada} />
       </div>
+      {concluindo && t.status === "pendente" && (
+        <PainelConcluir
+          leadId={t.lead_id}
+          tarefaId={t.id}
+          aoSucesso={aoMudar}
+          onFechar={onFecharConcluir}
+        />
+      )}
       {acoesAberta && t.status === "pendente" && (
         <AcoesTarefa
           leadId={t.lead_id}
