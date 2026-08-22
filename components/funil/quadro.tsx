@@ -185,10 +185,32 @@ function Terminal({ etapa, quantidade }: { etapa: EtapaFunil; quantidade: number
  *     frase num documento; aqui ele acende;
  *  3. quando os prazos são o PADRÃO DECLARADO porque `sla_etapas` ainda não existe no banco.
  *
- * ⚠️ Nada aqui (nem os avisos equivalentes no card) usa o token `mute`. Medido: `mute` #9AA1AA
- * sobre o board #F7F7F4 dá 2,43:1, abaixo do piso de 4,5:1 do SC 1.4.3 — e o item 3 é EXATAMENTE
- * o aviso que o contrato desta frente manda ser visível. Aviso ilegível é default silencioso com
- * outro nome. Tudo aqui usa `suave` #67707B (5,02:1, medido na §3.5 do benchmark).
+ * ── CONTRASTE: o que esta nota dizia até 22/08 e por que ela mudou ────────────────────────────
+ *
+ * Ela afirmava duas coisas, e as duas deixaram de ser verdade no MESMO dia, por motivos opostos:
+ *
+ *  1. "Nada aqui usa o token `mute`" — falso já quando foi escrito: o rótulo "Cor = prioridade",
+ *     15 linhas abaixo, usa `text-mute`.
+ *  2. "`mute` #9AA1AA dá 2,43:1 sobre o board" — verdade na hora em que foi medida, e obsoleta
+ *     algumas horas depois: a frente de design refez a escada de cinza inteira (tailwind.config.ts,
+ *     "W4 · A ESCADA DE CINZA FOI REFEITA PORQUE O DEGRAU DE BAIXO REPROVAVA") e `mute` deixou de
+ *     ser #9AA1AA.
+ *
+ * Remedido em 22/08 sobre os tokens VIGENTES (WCAG 2.x, luminância relativa, script conferido
+ * contra os números da própria tailwind.config.ts):
+ *
+ *              branco #FFFFFF   board #F7F7F4   hover #EAE9E3
+ *   mute  #5F6873     5,65:1         5,27:1         4,65:1
+ *   suave #4E5763     7,32:1         6,82:1         6,02:1
+ *
+ * As três superfícies reais do app passam o piso de 4,5:1 do SC 1.4.3 nos DOIS tokens. Ou seja: o
+ * `text-mute` do rótulo abaixo, e os dois do card (a seta da última mensagem e o timer em estado
+ * calmo), NÃO são mais dívida de contraste — trocá-los por `suave` hoje seria achatar terciário e
+ * secundário no mesmo degrau para consertar um problema que outra frente já consertou na raiz.
+ *
+ * O que continua valendo, e é o motivo de o parágrafo existir: o item 3 desta legenda (o aviso de
+ * que os prazos são o PADRÃO DECLARADO) é justamente o que o contrato manda ser visível, e ele usa
+ * `suave`, o degrau mais alto. Aviso ilegível é default silencioso com outro nome.
  */
 function LegendaPrioridade({
   contagem,

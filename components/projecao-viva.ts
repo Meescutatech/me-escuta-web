@@ -67,6 +67,27 @@ import { intervaloEfetivo } from "@/lib/intervalos-vivos";
  * `removeChannel()` é ASSÍNCRONO (espera o ack do leave), então o canal antigo continua em
  * `socket.channels` por alguns ms depois do cleanup. Um efeito que remontasse nessa janela
  * recriaria o mesmo tópico e pegaria o canal em `leaving` — mesmo erro, agora intermitente.
+ *
+ * ── O TERCEIRO EIXO: instância + rodada NÃO bastam (conserto de 22/08, revisão adversarial) ────
+ *
+ * O sufixo `#instancia.rodada` fecha a colisão ENTRE duas instâncias do hook e entre duas rodadas
+ * da mesma instância. Ele NÃO fecha a colisão DENTRO da mesma rodada: duas fontes iguais no mesmo
+ * array (`[{tabela: tarefa}, {tabela: tarefa}]`, ou a mesma tabela pedida com o mesmo filtro por
+ * dois pedaços do chamador) produzem o MESMO `nome` calculado e, com instância e rodada iguais, o
+ * MESMO tópico.
+ *
+ * E aí o estrago é PIOR do que o original, por causa do `catch` que esta mesma frente escreveu:
+ *   1ª fonte  → `channel(topico)` cria o canal, `.on()` passa, `.subscribe()` entra;
+ *   2ª fonte  → `channel(topico)` devolve o canal EXISTENTE (já joining), `.on()` LANÇA,
+ *               o catch registra a falha e chama `removeChannel(canal)` — que remove o canal
+ *               da PRIMEIRA fonte, porque é o mesmo objeto.
+ * Resultado: o laço não morre mais (o catch resolveu isso), mas as DUAS fontes ficam sem tempo
+ * real, e o selo mostra a falha de uma só. Trocar "laço morto" por "canal bom derrubado" não é
+ * conserto.
+ *
+ * Por isso o tópico leva também o ÍNDICE da fonte no array. `topicosDaRodada` (abaixo, pura e
+ * exportada) é quem calcula os três eixos, e é ela que o teste exercita — não uma cópia da regra
+ * escrita duas vezes.
  */
 
 export interface FonteViva {
@@ -74,6 +95,38 @@ export interface FonteViva {
   canal?: string;
   /** postgres_changes — opcional, e NUNCA junto de `canal` */
   tabela?: FonteTabela;
+}
+
+/** Rótulo LEGÍVEL da fonte — chave do status e texto do console. Não vai para o servidor. */
+export function rotuloDaFonte(f: FonteViva): string {
+  return f.canal ?? `pg:${f.tabela?.schema}.${f.tabela?.table}:${f.tabela?.filter ?? "*"}`;
+}
+
+/**
+ * Os tópicos de UMA rodada de assinatura. Três eixos, e cada um fecha uma colisão real:
+ *   · `idInstancia` — duas instâncias do hook montadas juntas (o sino × a /tarefas, medido 22/08);
+ *   · `rodada`      — a janela em que o canal da rodada anterior ainda não terminou de sair;
+ *   · `indice`      — duas fontes IGUAIS dentro do mesmo array (ver "O TERCEIRO EIXO" acima).
+ *
+ * Pura e exportada de propósito: era a única parte deste arquivo que um teste podia alcançar sem
+ * um DOM, e é onde mora a garantia que interessa — tópicos todos distintos.
+ *
+ * O `nome` (rótulo) de propósito NÃO leva os três eixos: é o texto que vai para o console e para o
+ * selo, e "pg:core.tarefa:*" é o que o operador entende. Consequência assumida e limitada: com
+ * duas fontes IGUAIS o mapa de status guarda uma entrada só, então se uma assinar e a outra
+ * falhar, o selo mostra a última que escreveu. Isso é bem menos grave que o defeito consertado
+ * (canal bom derrubado, as duas fontes mudas) e some sozinho quando o chamador não repete fonte —
+ * que é o caso de todos os chamadores de hoje, medidos no bloco "TÓPICO ÚNICO".
+ */
+export function topicosDaRodada(
+  fontes: FonteViva[],
+  idInstancia: string,
+  rodada: number,
+): { fonte: FonteViva; nome: string; topico: string }[] {
+  return fontes.map((fonte, indice) => {
+    const nome = rotuloDaFonte(fonte);
+    return { fonte, nome, topico: `${nome}#${idInstancia}.${rodada}.${indice}` };
+  });
 }
 
 export interface EstadoVivo {
@@ -170,13 +223,10 @@ export function useProjecaoViva(
       // o Realtime avalia RLS com este JWT — sem setAuth, postgres_changes não entrega nada
       if (data.session?.access_token) supabase.realtime.setAuth(data.session.access_token);
 
-      for (const f of fontesEfetivas) {
+      // `nome` continua sendo o rótulo LEGÍVEL (chave do status, texto do console); o tópico que
+      // vai para o servidor leva instância+rodada+ÍNDICE para nunca colidir. Ver "TÓPICO ÚNICO".
+      for (const { fonte: f, nome, topico } of topicosDaRodada(fontesEfetivas, idInstancia, rodada)) {
         if (f.canal && f.tabela) continue; // já reportado acima; não abrimos o canal defeituoso
-        // `nome` continua sendo o rótulo LEGÍVEL (chave do status, texto do console); o tópico
-        // que vai para o servidor leva instância+rodada para nunca colidir. Ver "TÓPICO ÚNICO".
-        const nome =
-          f.canal ?? `pg:${f.tabela?.schema}.${f.tabela?.table}:${f.tabela?.filter ?? "*"}`;
-        const topico = `${nome}#${idInstancia}.${rodada}`;
         // canal privado só existe para Broadcast, e só quando alguém pedir `canal` explicitamente.
         // Enquanto não houver política de leitura em `realtime.messages`, ninguém pede — as fontes
         // do inbox são todas de `tabela` (ver montarFontesConversa).
