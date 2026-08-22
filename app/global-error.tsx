@@ -17,6 +17,35 @@
  * O SHA vem de NEXT_PUBLIC_SHA (next.config.mjs) inline, sem import, pela mesma razao acima.
  */
 
+/*
+ * POR QUE OS HEXES SAO COPIADOS AQUI EM VEZ DE VIREM DO TAILWIND.
+ *
+ * O paragrafo acima manda nao usar classe do Tailwind nesta tela, e isso continua valendo: se o
+ * CSS global e o que quebrou, `className="bg-laranja"` pinta nada. Mas ate agora o `#EC662E`
+ * estava solto DUAS vezes no meio do JSX (stroke do logo e fundo do botao), e cor de marca
+ * espalhada em literal e exatamente o que a troca de token da W4 nao alcanca — foi assim que o
+ * `#9AA1AA` sobreviveu num chevron.
+ *
+ * `CORES` e a copia DECLARADA: um lugar so, com o nome do token ao lado, para que a proxima troca
+ * de paleta encontre esta tela pelo nome em vez de por sorte. Ela e copia de proposito — nao
+ * importa de lugar nenhum, porque o valor desta tela e nao depender de nada em runtime.
+ *
+ * Espelho de tailwind.config.ts em 22/08. Contrastes medidos (WCAG 2.x) sobre `superficie`:
+ *   tinta #1F2328 15,80:1 · suave #4E5763 7,32:1 · mute #5F6873 5,65:1 · navy #252F63 12,61:1
+ * e branco sobre marca #EC662E = 3,23:1 (texto de botao a 14px/600 — passa o piso de 3:1 de texto
+ * grande/negrito do SC 1.4.3; e o unico ponto da tela que nao chega a 4,5:1, e e o botao).
+ */
+const CORES = {
+  marca: "#EC662E", // laranja.DEFAULT — logo e acao primaria
+  navy: "#252F63", // navy.DEFAULT — lockup "me escuta"
+  fundo: "#F7F7F4", // board/fundo
+  superficie: "#FFFFFF", // branco
+  linha: "#E8E7E2", // linha.DEFAULT — hairline
+  tinta: "#1F2328", // tinta
+  suave: "#4E5763", // suave — texto secundario (7,32:1 no branco)
+  mute: "#5F6873", // mute — carimbo de build (5,65:1 no branco)
+} as const;
+
 const CARIMBO = `${process.env.NEXT_PUBLIC_SHA ?? "local"} · ${process.env.NEXT_PUBLIC_AMBIENTE ?? "local"}`;
 
 export default function ErroGlobal({
@@ -35,8 +64,8 @@ export default function ErroGlobal({
           display: "grid",
           placeItems: "center",
           padding: "40px 16px",
-          background: "#F7F7F4",
-          color: "#1F2328",
+          background: CORES.fundo,
+          color: CORES.tinta,
           colorScheme: "light",
           fontFamily:
             "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
@@ -45,9 +74,9 @@ export default function ErroGlobal({
         <div style={{ width: "100%", maxWidth: 440 }}>
           <div
             style={{
-              border: "1px solid #E8E7E2",
+              border: `1px solid ${CORES.linha}`,
               borderRadius: 10,
-              background: "#FFFFFF",
+              background: CORES.superficie,
               padding: 32,
             }}
           >
@@ -55,7 +84,7 @@ export default function ErroGlobal({
               <svg
                 viewBox="0 0 96 100"
                 fill="none"
-                stroke="#EC662E"
+                stroke={CORES.marca}
                 strokeWidth="9"
                 strokeLinecap="round"
                 aria-hidden="true"
@@ -73,7 +102,7 @@ export default function ErroGlobal({
                   fontWeight: 800,
                   lineHeight: 0.9,
                   letterSpacing: "-0.02em",
-                  color: "#252F63",
+                  color: CORES.navy,
                 }}
               >
                 <span>me</span>
@@ -87,13 +116,12 @@ export default function ErroGlobal({
                 fontSize: 20,
                 fontWeight: 650,
                 letterSpacing: "-0.01em",
-                color: "#1F2328",
+                color: CORES.tinta,
               }}
             >
               O sistema não conseguiu abrir
             </h1>
-            {/* #4E5763 sobre #FFFFFF = 7,32:1 (token `suave` depois da correcao de contraste W4). */}
-            <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.6, color: "#4E5763" }}>
+            <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.6, color: CORES.suave }}>
               A falha foi registrada. Recarregue a página; se continuar, mande o código abaixo para
               quem cuida do sistema.
             </p>
@@ -107,8 +135,8 @@ export default function ErroGlobal({
                 alignItems: "center",
                 border: 0,
                 borderRadius: 10,
-                background: "#EC662E",
-                color: "#FFFFFF",
+                background: CORES.marca,
+                color: CORES.superficie,
                 padding: "10px 16px",
                 fontSize: 14,
                 fontWeight: 600,
@@ -122,11 +150,11 @@ export default function ErroGlobal({
             <div
               style={{
                 marginTop: 24,
-                borderTop: "1px solid #E8E7E2",
+                borderTop: `1px solid ${CORES.linha}`,
                 paddingTop: 16,
                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
                 fontSize: 11,
-                color: "#5F6873",
+                color: CORES.mute,
               }}
             >
               <div>código: {error.digest ?? "sem código"}</div>

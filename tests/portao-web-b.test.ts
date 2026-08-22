@@ -360,7 +360,9 @@ test("a herança NÃO isenta arquivo novo: a mesma violação num arquivo fora d
   assert.equal(v[0].caminho, "app/(app)/configuracoes/novo/actions.ts");
 });
 
-// ═══ C1 do parecer do Vitrine ME · --pt não carrega informação (2,61:1) ═══
+// ═══ C1 do parecer do Vitrine ME · --pt é o degrau de placeholder, não de rótulo ═══
+// O número mudou junto com o token: #9AA1AA (2,61:1) morreu na W4, `mute` hoje é #5F6873 (5,65:1).
+// O teste passa a cobrar o número VIVO — se voltar a citar 2,61 é porque alguém copiou texto morto.
 
 test("CONTRASTE reprova rótulo estrutural em text-mute", () => {
   const v = PORTAO_CONTRASTE.avaliar(
@@ -370,7 +372,7 @@ test("CONTRASTE reprova rótulo estrutural em text-mute", () => {
     ),
   );
   assert.equal(v.length, 1);
-  assert.match(v[0].motivo, /2,61:1/);
+  assert.match(v[0].motivo, /5,65:1/);
 });
 
 test("CONTRASTE aprova o mesmo rótulo em text-suave, e não incomoda placeholder", () => {

@@ -21,11 +21,13 @@ export function Marca({ className }: { className?: string }) {
       <svg
         viewBox="0 0 96 100"
         fill="none"
-        stroke="#EC662E"
         strokeWidth="9"
         strokeLinecap="round"
         aria-hidden
-        className="h-[34px] w-8 shrink-0"
+        // W5: era `stroke="#EC662E"` cravado. Aqui o Tailwind ALCANCA (diferente do
+        // app/global-error.tsx, que roda quando o CSS pode nao ter subido), entao a marca vem do
+        // token — cor de marca em literal e o que faz troca de paleta passar batido.
+        className="h-[34px] w-8 shrink-0 stroke-laranja"
       >
         <path d="M12 62 C4 48 6 28 20 16 C34 5 56 5 67 17 C76 26 78 40 71 50 C66 58 58 61 54 68 C50 75 50 82 44 87 C37 93 27 90 24 83" />
         <path d="M34 48 C31 38 37 28 47 28 C56 28 61 36 58 43 C56 49 49 50 45 46" />

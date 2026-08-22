@@ -21,8 +21,18 @@ import { cn } from "@/lib/utils";
  * somente leitura com aviso. Abas extras (Tarefas/Anotações) entram na mesma régua de abas.
  */
 
+/*
+ * ⚠️ ESTE CHEVRON É O ÚLTIMO LUGAR ONDE O #9AA1AA SOBREVIVEU À TROCA DE TOKEN DA W4.
+ *
+ * A cor está PERCENT-ENCODED dentro de um data-URI (`%239AA1AA`), então nem `grep '#9AA1AA'` nem
+ * varredura de CSS/Tailwind alcançam — o token foi dado como extinto no repo enquanto ele seguia
+ * desenhando a setinha de todo select da ficha. Quem for procurar cor morta de novo: `grep -rn "%23"`.
+ *
+ * Medido: #9AA1AA dava 2,61:1 no branco — abaixo até do piso de 3:1 do SC 1.4.11 para objeto
+ * gráfico, e o chevron é o que diz "isto aqui é editável". #5F6873 (o `mute` vivo) dá 5,65:1.
+ */
 const CHEVRON =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239AA1AA' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E\")";
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235F6873' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E\")";
 
 export interface AbaExtra {
   chave: string;

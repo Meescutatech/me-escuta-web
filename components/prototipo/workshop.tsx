@@ -367,7 +367,9 @@ function BlocoCard({ agora }: { agora: number }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3 text-[0.74rem]">
             <Legenda cor="bg-vermelho" texto="Estourado (+4d)" />
-            <Legenda cor="bg-timer-velho" texto="Perto (3–4d)" />
+            {/* W5: era `bg-timer-velho` (#8A5E00) — 1,05:1 contra o `bg-vermelho` da linha de
+                cima. Pastilha de legenda usa `amarelo.barra`, o degrau claro. */}
+            <Legenda cor="bg-amarelo-barra" texto="Perto (3–4d)" />
             <Legenda cor="bg-verde" texto="Dentro" />
           </div>
           <SeletorOrdem ordem={ordem} onChange={setOrdem} />
