@@ -72,6 +72,15 @@ export const SLA_PADRAO_DECLARADO: SlaEtapas = {
     consulta_realizada: 12,
     aprovacao_e_envio: 12,
     teste_aparelho: 8,
+    // TERMINAIS — 876000h = 100 anos. Nao e folga, e AUSENCIA DE RELOGIO escrita em horas:
+    // mesmo um lead parado um ano inteiro da razao 0,01 e fica em SEM PRESSA. Um ano (8760h)
+    // NAO serviria — daria razao 1,0 e o lead ja ganho apareceria como AGORA.
+    // Acrescentadas em 22/08 na conciliacao do contrato com a migration 0281: producao tem 15
+    // etapas (funil VENDAS real do Kommo, pipeline 6334995), e sem estas tres um card em
+    // `venda_ganha` cairia no padraoHoras e nasceria vermelho.
+    venda_ganha: 876000,
+    venda_perdida: 876000,
+    arquivado: 876000,
   },
   faixas: { agora: 1.0, hoje: 0.7, na_semana: 0.3 },
   padraoHoras: 24,
