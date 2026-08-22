@@ -35,6 +35,8 @@ const config: Config = {
         // — reprovava AA carregando o sinal "lead parado", que e informacao de gestao, nao enfeite.
         // Ja era BLOQUEADOR aberto no REVIEW-KANBAN-V2 (item B). #8A5E00: 5,31 board / 5,70 branco
         // / 5,16 sobre amarelo.bg. Mesmo hue ambar, so escurecido.
+        // W5: so TEXTO. Como `bg-` este hex media 1,05:1 contra o `vermelho` da faixa AGORA —
+        // barra/pastilha usam `amarelo.barra` (#BE8200). Ver o bloco de `amarelo` abaixo.
         "timer-velho": "#8A5E00", // --ambar (r9): lead parado — peso 700 + ícone
         "pt-ads": "#B4B7BD", // micro-ponto do sinal "Meta Ads" (decorativo)
         "foco-comp": "#D9C4B6", // borda do composer em foco (conversa-v2)
@@ -73,7 +75,38 @@ const config: Config = {
         borda: { DEFAULT: "#E8E7E2", forte: "#DCDAD4" },
         verde: { DEFAULT: "#177A48", bg: "#EAF6EF", bd: "#BFE4CF" },
         vermelho: { DEFAULT: "#B3372B", bg: "#FBEBE4", bd: "#F1CDBF" },
-        amarelo: { DEFAULT: "#8A5E00", bg: "#FBF3DF", bd: "#EAD9A6" }, // --ambar (W4: era #B27A00 / 3,45:1)
+        // ── W5 (22/08) · AS DUAS FAIXAS MAIS URGENTES DO CARD TINHAM COLAPSADO UMA NA OUTRA.
+        //
+        // A correcao AA da W4 puxou o ambar de #B27A00 para #8A5E00 — certo para TEXTO, e e por
+        // isso que `DEFAULT` fica onde esta. Mas o MESMO hex pintava a BARRA de prioridade do card
+        // (TRILHO_FAIXA.hoje) e a pastilha da legenda, ao lado do `vermelho` #B3372B da faixa
+        // AGORA. Medido (WCAG 2.x, luminancia relativa):
+        //
+        //   #B3372B x #8A5E00 = 1,05:1   <<< a MESMA claridade. Nao e "parecido", e igual.
+        //   sob deuteranopia (Vienot): #6F6F21 x #6D6D00 = 1,03:1 — o mesmo pixel.
+        //
+        // As duas faixas que a Sarah mais precisa separar em 3 segundos — "estourou" e "vence
+        // hoje" — sairam do board indistinguiveis por cor. So o rotulo escrito segurava, e o
+        // rotulo e o canal PRINCIPAL, nao o unico (o board se le varrendo).
+        //
+        // `barra` separa por LUMINANCIA, nao so por hue, e e o valor MAIS CLARO que ainda passa o
+        // piso de 3:1 do SC 1.4.11 nas DUAS superficies reais onde a barra aparece:
+        //
+        //   #BE8200 : branco 3,29:1 · board #F7F7F4 3,07:1 · contra o vermelho #B3372B 1,82:1
+        //             (era 1,05) · deuteranopia 1,70:1 (era 1,03) · protanopia 2,20:1 (era 1,29)
+        //
+        // O que muda de verdade sob CVD nao e so a razao, e o HUE: antes o par virava #6F6F21 x
+        // #6D6D00 sob deuteranopia — mesma cor, ponto. Agora vira #6F6F21 x #979700, dois tons de
+        // oliva com claridades diferentes. Nenhum par das quatro faixas colapsa mais nos DOIS
+        // eixos (claridade E hue) ao mesmo tempo.
+        //
+        // Por que 1,82 e nao 3,00 contra o vermelho: com quatro faixas sobre fundo CLARO a escada
+        // de 3:1 entre pares e impossivel — exigiria 27x de razao em (L+0,05), de 0,05 a 1,35, e o
+        // proprio piso AA prende todas abaixo de L=0,30. Por isso o rotulo escrito continua sendo
+        // o canal principal (WCAG 1.4.1), e a cor e o reforco.
+        //
+        // ⚠️ `barra` NAO serve para texto: 3,29:1 reprova o piso de 4,5:1. Texto ambar = `DEFAULT`.
+        amarelo: { DEFAULT: "#8A5E00", barra: "#BE8200", bg: "#FBF3DF", bd: "#EAD9A6" }, // --ambar (W4: era #B27A00 / 3,45:1)
         roxo: { DEFAULT: "#7A4CA0", bg: "#F3EDF9", bd: "#E0D0EE" },
         rosa: { DEFAULT: "#B23A6E", bg: "#FBEDF3" },
       },

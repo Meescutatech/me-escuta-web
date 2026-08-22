@@ -324,7 +324,10 @@ export function TabelaMembros({
                   Expirado
                 </span>
               ) : (
-                <span className="justify-self-start whitespace-nowrap rounded-full bg-[#FAF3E3] px-2.5 py-1 text-[11.5px] font-semibold text-[#B27A00]">
+                // W5: era `text-[#B27A00]` sobre `bg-[#FAF3E3]` — hex CRAVADO na classe, que é
+                // por onde a troca de token da W4 não passa. Media 3,35:1, reprovando o piso AA de
+                // 4,5:1 num texto de 11,5px. Nos tokens vivos: `amarelo` sobre `amarelo-bg` = 5,16:1.
+                <span className="justify-self-start whitespace-nowrap rounded-full bg-amarelo-bg px-2.5 py-1 text-[11.5px] font-semibold text-amarelo">
                   Pendente
                 </span>
               )}

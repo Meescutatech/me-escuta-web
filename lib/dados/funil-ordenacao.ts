@@ -264,18 +264,47 @@ export const TEXTO_FAIXA: Record<FaixaPrioridade, string> = {
 };
 
 /**
- * Tokens da escala, medidos contra `#FFF` na §3.5 do benchmark:
- *  vermelho #B3372B 6,00:1 · âmbar #B27A00 3,70:1 · navy #252F63 12,61:1 · suave #67707B 5,02:1.
- * O `--p4 #9AA0A8` do mockup foi REPROVADO por medida (2,64:1, abaixo do piso de 3:1 do SC 1.4.11)
- * e trocado por `suave`.
+ * ⚠️ ESTES NÚMEROS FORAM REMEDIDOS EM 22/08 (W5). O bloco antigo citava `âmbar #B27A00 3,70:1`,
+ * `suave #67707B 5,02:1` e `--p4 #9AA0A8` — três hexes que a correção de token da W4 apagou do
+ * repo. Comentário que cita cor morta faz o próximo leitor confiar num contraste que ninguém tem.
  *
- * ⚠️ `timer-velho` NÃO entra aqui, e é o ponto: ele é o MESMO hex do `amarelo` (#B27A00) e estava
- * pintando o timer do canto com a cor da faixa HOJE em cima de cards que a faixa já classificava
- * como AGORA — dois alarmes com a mesma tinta dizendo coisas diferentes.
+ * Medido agora (WCAG 2.x, luminância relativa), contra as DUAS superfícies onde o trilho e a
+ * pastilha da legenda de fato aparecem — o card é `bg-branco`, a legenda vive sobre `bg-board`:
+ *
+ *              hex        branco   board
+ *   agora      #B3372B    6,00     5,59
+ *   hoje       #BE8200    3,29     3,07   ← `amarelo.barra`, novo na W5
+ *   na_semana  #252F63   12,61    11,75
+ *   sem_pressa #4E5763    7,32     6,82
+ *
+ * ⚠️ POR QUE `hoje` NÃO É `bg-amarelo`: `amarelo.DEFAULT` é #8A5E00, o valor escurecido para TEXTO
+ * na W4. Como barra ele media 1,05:1 contra o `vermelho` de AGORA — 1,03:1 sob deuteranopia, isto
+ * é, o mesmo pixel (#6F6F21 × #6D6D00). AGORA e HOJE são justamente as duas faixas que a leitura
+ * de 3 segundos precisa separar. `amarelo.barra` leva o par para 1,82:1 (1,70 deuteranopia · 2,20
+ * protanopia) sem furar o piso de 3:1 do SC 1.4.11 em nenhuma das duas superfícies.
+ *
+ * O par ainda não chega a 3:1 e isso é limite de matemática, não de escolha: quatro faixas sobre
+ * fundo claro exigiriam 27x de razão em (L+0,05) e o próprio piso AA prende todas abaixo de
+ * L=0,30. É por isso que `ROTULO_FAIXA` existe e é o canal principal (WCAG 1.4.1) — a cor reforça.
+ *
+ * Os seis pares, medidos (normal · protanopia · deuteranopia). O que importa não é a razão sozinha:
+ * é não colapsar nos DOIS eixos (claridade E hue) ao mesmo tempo, que era o defeito de agora×hoje.
+ *   agora × hoje         1,82 · 2,20 · 1,70   vermelho × âmbar
+ *   agora × na_semana    2,10 · 1,54 · 2,41   quente × azul
+ *   agora × sem_pressa   1,22 · 1,12 · 1,41   claridade junta, hue oposto (oliva × azul-cinza)
+ *   hoje  × na_semana    3,83 · 3,39 · 4,09
+ *   hoje  × sem_pressa   2,23 · 1,97 · 2,39
+ *   na_semana × sem_pressa 1,72 · 1,72 · 1,71  ⚠️ o par mais fraco que sobrou — mesmo hue azul,
+ *     um degrau só de claridade. Não foi mexido aqui: são as duas faixas de MENOR urgência, nunca
+ *     ficam lado a lado numa coluna ordenada, e separá-las exigiria refazer a escada inteira.
+ *
+ * ⚠️ `timer-velho` NÃO entra aqui, e é o ponto: ele é o MESMO hex do `amarelo` de texto (#8A5E00,
+ * antes #B27A00) e estava pintando o timer do canto com a cor da faixa HOJE em cima de cards que a
+ * faixa já classificava como AGORA — dois alarmes com a mesma tinta dizendo coisas diferentes.
  */
 export const TRILHO_FAIXA: Record<FaixaPrioridade, string> = {
   agora: "bg-vermelho",
-  hoje: "bg-amarelo",
+  hoje: "bg-amarelo-barra",
   na_semana: "bg-navy",
   sem_pressa: "bg-suave",
   sem_dado: "bg-linha",

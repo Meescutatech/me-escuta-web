@@ -410,20 +410,35 @@ export const PORTAO_TIPOS_DECLARADOS: Portao = {
 // ───────────────── 9 · contraste: --pt não carrega informação (C1 do parecer) ─────────────────
 
 /**
- * `--pt` (#9AA1AA) dá 2,61:1 sobre branco — o mínimo AA para texto é 4,5:1, e `--suave` (#67707B)
- * dá 5,02:1. O r9-tokens declara `--pt` como "placeholder, desabilitado". Usá-lo em RÓTULO
- * ESTRUTURAL (cabeçalho de coluna, nome de seção, grupo da sub-nav) apaga a diferença entre "isto
- * está vazio" e "isto é o nome da coluna", e joga o menor texto da interface para 2,6:1.
+ * ⚠️ A PREMISSA DESTE PORTÃO MUDOU EM 22/08 — e o texto antigo ficou mentindo.
  *
- * A regra mira a assinatura de rótulo estrutural — `uppercase` com `tracking-` — porque é ela que
- * distingue um label de um placeholder sem precisar julgar a palavra.
+ * Ele nasceu porque `--pt` era #9AA1AA e dava 2,61:1 no branco, abaixo do piso AA de 4,5:1 para
+ * texto. Esse hex NÃO EXISTE MAIS: a escada de cinza foi refeita no tailwind.config.ts (W4) e hoje
+ * os dois degraus PASSAM AA. Medido com o mesmo script WCAG 2.x, sobre #FFFFFF:
+ *
+ *     `--pt`    mute  #5F6873 → 5,65:1   (board #F7F7F4 5,27:1 · hover #EAE9E3 4,65:1)
+ *     `--suave` suave #4E5763 → 7,32:1   (board 6,82:1 · hover 6,02:1)
+ *
+ * Portão que cita número morto ensina a ignorar portão: quem confere na tela de configurações vê
+ * "2,61:1", não acha esse hex em lugar nenhum do repo, e conclui que a regra inteira é folclore.
+ *
+ * O QUE ELE GUARDA AGORA não é o piso AA, é a HIERARQUIA. `mute` continua declarado no r9-tokens
+ * como "placeholder, desabilitado, carimbo" — é o degrau MAIS FRACO da escada, e o único que fica
+ * a 0,15 de razão do piso AA quando cai sobre superfície de hover (4,65:1 contra 4,50). Rótulo
+ * estrutural (cabeçalho de coluna, nome de seção, grupo da sub-nav) em `mute` fica ABAIXO do texto
+ * secundário que ele rotula: inverte a hierarquia e apaga a diferença entre "isto está vazio" e
+ * "isto é o nome da coluna".
+ *
+ * A regra de detecção não mudou (não havia por que mudar): mira a assinatura de rótulo estrutural
+ * — `uppercase` com `tracking-` — porque é ela que distingue um label de um placeholder sem
+ * precisar julgar a palavra.
  */
 const ROTULO_ESTRUTURAL = /uppercase[^"`]*tracking-\[|tracking-\[[^"`]*uppercase/;
 
 export const PORTAO_CONTRASTE: Portao = {
   nome: "contraste",
   prova:
-    "nenhum rótulo estrutural (uppercase + tracking) usa text-mute — --pt fica em placeholder e desabilitado, onde 2,6:1 não carrega informação",
+    "nenhum rótulo estrutural (uppercase + tracking) usa text-mute — --pt (mute #5F6873, 5,65:1 no branco) é o degrau de placeholder/desabilitado; rótulo estrutural pede --suave (#4E5763, 7,32:1)",
   avaliar(arquivos) {
     const v: Violacao[] = [];
     for (const a of arquivos) {
@@ -434,7 +449,8 @@ export const PORTAO_CONTRASTE: Portao = {
             portao: "contraste",
             caminho: a.caminho,
             linha: n,
-            motivo: "rótulo estrutural em text-mute (--pt, 2,61:1) — use text-suave (--suave, 5,02:1)",
+            motivo:
+              "rótulo estrutural em text-mute (--pt #5F6873, 5,65:1 no branco e 4,65:1 no hover — o degrau mais fraco, reservado a placeholder/desabilitado) — use text-suave (--suave #4E5763, 7,32:1)",
           });
         }
       }
