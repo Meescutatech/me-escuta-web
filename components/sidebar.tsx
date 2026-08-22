@@ -13,7 +13,16 @@ import { cn } from "@/lib/utils";
  *  - ativo = navy sobre #EAECF5; contador do Funil = total mono neutro; Conversas = não-lidas
  *    em chip laranja (colapsada vira ponto laranja 7px no ícone);
  *  - prefers-reduced-motion: transições desligadas (classe .lateral-r9 no globals.css).
- * /fila /jarvis /timeline seguem fora do menu — acessíveis só por URL, como já era.
+ * W3 · 22/08: /FILA ENTROU NO MENU. Ela é a única tela onde "o agente propõe, o humano valida"
+ *   vira trabalho — e estava alcançável só por URL digitada. Fila que ninguém encontra não é
+ *   fila: é 405 propostas paradas desde 19/07. /jarvis e /timeline seguem fora, de propósito.
+ *
+ * W3 · 22/08: FOCO DE TECLADO. A sidebar não tinha nenhum (zero ocorrência de focus-within ou
+ *   focus-visible neste arquivo): quem navegava por Tab percorria seis links dentro de 60px de
+ *   ícones mudos, sem rótulo e sem indicação de onde estava. Agora `focus-within` ABRE a barra
+ *   pelos mesmos 216px do hover — o mesmo gesto visual, chegando pelo teclado — e cada link tem
+ *   anel de foco. Sem contador novo: o número da fila exigiria uma leitura a mais em TODA tela
+ *   (a sidebar vive no layout), e o item sem contador já resolve o problema de não achar.
  */
 
 /** Orelha do logo — SVG canônico do r9-tokens §5 (copiar como está). */
@@ -58,6 +67,12 @@ const ICONES: Record<string, React.ReactNode> = {
     <>
       <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
       <path d="m8.5 12.5 2.5 2.5 5-5.5" />
+    </>
+  ),
+  fila: (
+    <>
+      <path d="M3.5 13.5h4l1.6 2.6h5.8l1.6-2.6h4" />
+      <path d="M6 5h12l3 8.5v3.9a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 17.4v-3.9z" />
     </>
   ),
   configuracoes: (
@@ -144,6 +159,14 @@ export function Sidebar({
       vermelho: true,
       ponto: contVencidas != null && contVencidas > 0,
     },
+    {
+      // Sem contador de propósito: o número viria de uma leitura a mais no layout, paga por TODA
+      // tela. O que faltava não era o número — era existir um caminho até a tela.
+      href: "/fila",
+      rotulo: "Fila de validação",
+      icone: ICONES.fila,
+      ativa: pathname.startsWith("/fila"),
+    },
     ...(verMarketing
       ? [
           {
@@ -185,10 +208,10 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="lateral-r9 group fixed bottom-0 left-0 top-0 z-50 flex w-[60px] flex-col gap-0.5 overflow-hidden whitespace-nowrap border-r border-linha bg-branco px-2.5 pb-3.5 pt-3 transition-[width] duration-[180ms] ease-out hover:w-[216px] hover:shadow-[8px_0_28px_rgba(31,35,40,.08)]">
+    <aside className="lateral-r9 group fixed bottom-0 left-0 top-0 z-50 flex w-[60px] flex-col gap-0.5 overflow-hidden whitespace-nowrap border-r border-linha bg-branco px-2.5 pb-3.5 pt-3 transition-[width] duration-[180ms] ease-out hover:w-[216px] focus-within:w-[216px] hover:shadow-[8px_0_28px_rgba(31,35,40,.08)] focus-within:shadow-[8px_0_28px_rgba(31,35,40,.08)]">
       {/* logo: orelha sempre; wordmark desdobra por max-width em sincronia com a sidebar */}
-      <Link href="/" aria-label="Me Escuta" className="mb-3 flex h-12 items-center px-0.5">
-        <span className="flex max-w-0 flex-col items-end overflow-hidden pr-2 text-[14.5px] font-extrabold leading-[.9] tracking-[-0.02em] text-navy opacity-0 transition-[max-width,opacity] duration-[180ms,120ms] ease-out group-hover:max-w-[130px] group-hover:opacity-100 group-hover:delay-[0ms,50ms]">
+      <Link href="/" aria-label="Me Escuta" className="mb-3 flex h-12 items-center rounded-lg px-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45">
+        <span className="flex max-w-0 flex-col items-end overflow-hidden pr-2 text-[14.5px] font-extrabold leading-[.9] tracking-[-0.02em] text-navy opacity-0 transition-[max-width,opacity] duration-[180ms,120ms] ease-out group-hover:max-w-[130px] group-hover:opacity-100 group-hover:delay-[0ms,50ms] group-focus-within:max-w-[130px] group-focus-within:opacity-100">
           <span>me</span>
           <span>escuta</span>
         </span>
@@ -202,6 +225,7 @@ export function Sidebar({
             href={it.href}
             className={cn(
               "relative flex h-10 items-center gap-3 rounded-lg px-2 text-[13.5px] no-underline",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45",
               it.ativa
                 ? "bg-[#EAECF5] font-semibold text-navy"
                 : "font-medium text-suave hover:bg-hover hover:text-tinta",
@@ -219,13 +243,13 @@ export function Sidebar({
             >
               {it.icone}
             </svg>
-            <span className="opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms]">
+            <span className="opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
               {it.rotulo}
             </span>
             {it.cont && (
               <span
                 className={cn(
-                  "ml-auto rounded-full px-[7px] py-px font-mono text-[11px] opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms]",
+                  "ml-auto rounded-full px-[7px] py-px font-mono text-[11px] opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100",
                   it.vermelho
                     ? "bg-vermelho font-semibold text-branco"
                     : it.laranja
@@ -242,7 +266,7 @@ export function Sidebar({
               <span
                 aria-hidden
                 className={cn(
-                  "absolute left-6 top-2 h-[7px] w-[7px] rounded-full border-[1.5px] border-branco transition-opacity duration-[120ms] group-hover:opacity-0",
+                  "absolute left-6 top-2 h-[7px] w-[7px] rounded-full border-[1.5px] border-branco transition-opacity duration-[120ms] group-hover:opacity-0 group-focus-within:opacity-0",
                   it.vermelho ? "bg-vermelho" : "bg-laranja",
                 )}
               />
@@ -259,14 +283,14 @@ export function Sidebar({
         >
           {iniciais(email)}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-suave opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms]">
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-suave opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
           {email.split("@")[0]}
         </span>
-        <form action="/auth/signout" method="post" className="opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms]">
+        <form action="/auth/signout" method="post" className="opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
           <button
             type="submit"
             title="Sair"
-            className="rounded-[6px] border border-linha bg-branco px-2 py-1 text-[11.5px] font-medium text-suave hover:bg-hover hover:text-tinta"
+            className="rounded-[6px] border border-linha bg-branco px-2 py-1 text-[11.5px] font-medium text-suave hover:bg-hover hover:text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45"
           >
             Sair
           </button>
