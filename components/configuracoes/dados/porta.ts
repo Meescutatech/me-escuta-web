@@ -22,6 +22,7 @@
  */
 
 import { revalidatePath } from "next/cache";
+import { PAPEIS, type Papel } from "@/lib/membros";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { confirmarProjecao, type RespostaRegistrarEvento } from "@/lib/eventos/confirmar-projecao";
 import {
@@ -97,14 +98,21 @@ function revalidar(rotas: string[] | undefined): void {
   for (const r of rotas ?? []) revalidatePath(r);
 }
 
+// O vocabulario de papel mora em `lib/membros.ts` (logica pura, sem I/O) — reexportado aqui
+// porque este e o modulo que as telas ja importam para ler papel.
+export { PAPEIS, podeVerMarketing, type Papel } from "@/lib/membros";
+
 /** Papel do usuário logado, resolvido no servidor. `null` = sem papel (ou leitura indisponível). */
-export async function lerPapelAtual(): Promise<"owner" | "admin" | "membro" | null> {
+export async function lerPapelAtual(): Promise<Papel | null> {
   try {
     const supabase = criarClienteServidor();
     const { data, error } = await supabase.schema("api").rpc("papel_atual");
     if (error) return null;
     const p = String(data ?? "").trim();
-    return p === "owner" || p === "admin" || p === "membro" ? p : null;
+    // ALLOWLIST: papel que o banco devolve e a web nao conhece vira `null`, e `null` e tratado
+    // como "sem poder nenhum" em todo o app. Falhar fechado e o certo — mas a lista tem de
+    // espelhar o CHECK, senao ela recusa papel legitimo em silencio (ver `lib/membros.ts`).
+    return (PAPEIS as readonly string[]).includes(p) ? (p as Papel) : null;
   } catch {
     return null;
   }

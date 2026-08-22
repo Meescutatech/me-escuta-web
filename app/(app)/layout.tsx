@@ -5,7 +5,7 @@ import { lerNotificacoes } from "@/lib/dados/notificacoes";
 import { lerEstadoEscopo } from "@/lib/dados/departamentos";
 import { contarNaoLidasPorArea } from "@/lib/dados/conversas";
 import { lerNomeMembro } from "@/lib/dados/templates";
-import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
+import { lerPapelAtual, podeVerMarketing } from "@/components/configuracoes/dados/porta";
 import { chavesComPendencia } from "@/lib/departamentos/escopo";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
@@ -65,6 +65,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         contFunil={contadores.funil}
         contNaoLidas={contadores.naoLidas}
         contVencidas={contadores.tarefasVencidas}
+        verMarketing={podeVerMarketing(papel)}
       />
       <Header
         departamentos={escopoEstado.visiveis}

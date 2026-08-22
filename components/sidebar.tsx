@@ -66,6 +66,13 @@ const ICONES: Record<string, React.ReactNode> = {
       <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" />
     </>
   ),
+  marketing: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="3.6" />
+      <path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" />
+    </>
+  ),
   suporte: (
     <>
       <circle cx="12" cy="12" r="8.5" />
@@ -86,12 +93,22 @@ export function Sidebar({
   contFunil,
   contNaoLidas,
   contVencidas,
+  verMarketing = false,
 }: {
   email: string;
   contFunil: number | null;
   contNaoLidas: number | null;
   /** tarefas VENCIDAS agora (R14) — a fila vermelha; null/0 = sem contador. */
   contVencidas: number | null;
+  /**
+   * T7 (RF-12) — o item de Marketing só aparece para marketing/admin/owner.
+   *
+   * Isto é ORGANIZAÇÃO, não controle de acesso, e a diferença importa: quem não vê o item e
+   * digita `/marketing` na barra de endereço é recusado pela ROTA, e o dado é defendido pela
+   * RLS da `0251`. Esconder o item existe só para não oferecer a um vendedor uma porta que ele
+   * vai bater a cara — a spec é explícita em não aceitar menu escondido como defesa.
+   */
+  verMarketing?: boolean;
 }) {
   const pathname = usePathname();
   const itens = [
@@ -127,6 +144,16 @@ export function Sidebar({
       vermelho: true,
       ponto: contVencidas != null && contVencidas > 0,
     },
+    ...(verMarketing
+      ? [
+          {
+            href: "/marketing",
+            rotulo: "Marketing",
+            icone: ICONES.marketing,
+            ativa: pathname.startsWith("/marketing"),
+          },
+        ]
+      : []),
     {
       href: "/configuracoes",
       rotulo: "Configurações",
