@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CardLead, EtapaFunil, Origem } from "@/lib/dados/funil";
 import type { PainelLead } from "@/lib/dados/lead-painel";
-import { lerPainelLeadAction } from "@/app/(app)/lead/actions";
+import { lerPainelLeadAction, salvarCampoFicha } from "@/app/(app)/lead/actions";
 import { atribuirDono, registrarEventoUI } from "@/app/(app)/funil/actions";
-import { BotaoAudiometria } from "@/components/lead/botao-audiometria";
+import { BotaoAudiometria, type EstadoAudiometria } from "@/components/lead/botao-audiometria";
 import { FichaKommo } from "@/components/lead/ficha-kommo";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
+import { valorParaTexto } from "@/lib/dados/ficha-calculos";
 import { cn } from "@/lib/utils";
 
 /*
@@ -30,6 +31,42 @@ function iniciais(nome: string): string {
 }
 function moeda(v: number | null): string {
   return v == null ? "—" : "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+}
+
+/*
+ * W3 · AUDIOMETRIA — de-para entre a PROJEÇÃO e o botão.
+ *
+ * A config `ficha_lead` v2 declara o campo `audiometria` como `selecao` com opções ["Não","Sim"],
+ * e é assim que ele está projetado em `core.lead_campo` (medido 22/08: 15 "Sim", 4 "Não").
+ * O de-para vive aqui, num lugar só, porque a UI fala em fez/não-fez e o dado fala em Sim/Não —
+ * traduzir nos dois sentidos no mesmo arquivo é o que impede as duas metades de divergirem.
+ * Qualquer coisa fora do vocabulário vira "indefinido": chutar seria pintar o gate de verde ou
+ * vermelho por causa de um valor que ninguém escreveu.
+ */
+const SLUG_AUDIOMETRIA = "audiometria";
+const SLUG_HORA_AUDIOMETRIA = "hora_audiometria";
+
+function audiometriaDoValor(valor: unknown): EstadoAudiometria {
+  if (valor == null) return "indefinido";
+  const v = String(valor).trim().toLowerCase();
+  if (v === "sim" || v === "true") return "fez";
+  if (v === "nao" || v === "n\u00e3o" || v === "false") return "nao_fez";
+  return "indefinido";
+}
+
+function valorDaAudiometria(estado: EstadoAudiometria): string | null {
+  if (estado === "fez") return "Sim";
+  if (estado === "nao_fez") return "N\u00e3o";
+  return null;
+}
+
+/** Legenda do botão: o horário do exame, quando a ficha tem um. Nunca "marcado por fulano" —
+ *  a projeção da ficha não guarda quem marcou, e inventar autoria é pior que não mostrar nada. */
+function textoHoraAudiometria(valores: Record<string, unknown> | null): string | undefined {
+  const bruto = valores?.[SLUG_HORA_AUDIOMETRIA];
+  if (bruto == null || bruto === "") return undefined;
+  const t = valorParaTexto("data_hora", bruto);
+  return t === "\u2014" ? undefined : `exame na ficha: ${t}`;
 }
 
 type Aba = "ficha" | "tarefas" | "notas";
@@ -112,6 +149,30 @@ export function DrawerCard({
     }
   }
 
+  /*
+   * W3 (P7 do workshop) — O CLIQUE PASSOU A GRAVAR.
+   *
+   * Até 22/08 `<BotaoAudiometria />` era chamado SEM props: todo lead abria em "indefinido" e a
+   * marcação morria no useState do componente. O caminho de escrita já existia inteiro —
+   * `salvarCampoFicha` emite `lead_atualizado` pela porta e a projeção é síncrona —, só ninguém
+   * tinha ligado os dois. É a mesma porta que a aba Ficha usa, então marcar aqui e marcar lá
+   * produzem o MESMO evento; não há um segundo caminho de escrita para divergir.
+   *
+   * Devolve o resultado ao botão em vez de engolir: o botão desfaz a pintura otimista quando a
+   * porta recusa. Sarah tem que ver a recusa, não uma marca verde sobre um banco que não mudou.
+   */
+  async function gravarAudiometria(estado: EstadoAudiometria) {
+    if (!leadId) return { ok: false, motivo: "lead sem id" };
+    const valor = valorDaAudiometria(estado);
+    if (valor == null) return { ok: false, motivo: "estado sem valor na ficha" };
+    const res = await salvarCampoFicha(leadId, SLUG_AUDIOMETRIA, valor);
+    if (res.ok) {
+      avisar(estado === "fez" ? "Audiometria marcada como feita." : "Audiometria marcada como pendente.");
+      recarregar(); // a aba Ficha e o card do funil leem a mesma projeção
+    }
+    return { ok: res.ok, motivo: res.motivo };
+  }
+
   // F6 — `levindo_acionado` é EXCEÇÃO DECLARADA: tipo deliberadamente sem projetor (vive só no
   // ledger, para o runtime consumir). O que a UI pode confirmar é que o evento entrou, e é isso que
   // registrarEventoUI confere. Deixou de ser `void`: dizer "registrada" sem olhar a resposta era
@@ -192,13 +253,33 @@ export function DrawerCard({
                 </div>
               </div>
 
-              {/* R23 protótipo (workshop 12/08) · "a primeira coisa que deveria ter embaixo do
-                  nome é um botão gigante, audiometria" — e é literalmente embaixo do nome, antes
-                  dos fatos, antes das abas. É o principal gate de decisão: a Sarah não consegue
-                  decidir nada sobre um lead sem saber isto, e hoje ela precisa caçar a resposta.
-                  A marcação fica no estado da tela (banco de produção — nada é gravado). */}
+              {/* Workshop 12/08 · "a primeira coisa que deveria ter embaixo do nome é um botão
+                  gigante, audiometria" — e é literalmente embaixo do nome, antes dos fatos, antes
+                  das abas. É o principal gate de decisão: a Sarah não consegue decidir nada sobre
+                  um lead sem saber isto.
+
+                  TRÊS renderizações, não uma, porque há três verdades diferentes: ficha ainda
+                  carregando · ficha ilegível · ficha lida. Mostrar o botão em "indefinido" nos
+                  dois primeiros casos faria a tela AFIRMAR que ninguém sabe da audiometria quando
+                  o que aconteceu foi a leitura não ter chegado — e o clique seguinte gravaria por
+                  cima de um valor que existia. */}
               <div className="pb-4">
-                <BotaoAudiometria />
+                {!painel ? (
+                  <div className="h-[92px] animate-pulse rounded-xl border-[1.5px] border-dashed border-linha-forte bg-branco" />
+                ) : painel.ficha.valores == null ? (
+                  <div className="rounded-xl border-[1.5px] border-dashed border-linha-forte bg-branco p-3">
+                    <div className="text-[0.7rem] font-bold uppercase tracking-[0.07em] text-mute">Audiometria</div>
+                    <p className="mt-1 text-[0.78rem] text-suave">
+                      Não foi possível ler a ficha deste lead — reabra o card. Não marque no escuro.
+                    </p>
+                  </div>
+                ) : (
+                  <BotaoAudiometria
+                    inicial={audiometriaDoValor(painel.ficha.valores[SLUG_AUDIOMETRIA])}
+                    quandoTexto={textoHoraAudiometria(painel.ficha.valores)}
+                    onMarcar={gravarAudiometria}
+                  />
+                )}
               </div>
             </div>
 
