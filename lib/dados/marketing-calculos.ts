@@ -333,9 +333,22 @@ export interface Baldes {
  * Toque com `plataforma` nula NUNCA casa - e o que o `l.plataforma = c.plataforma` do SQL faz
  * com nulo, e o TS tem de reproduzir isso, nao "melhorar".
  */
+/**
+ * O separador e `\u0000` ESCRITO COMO ESCAPE, e as duas coisas importam.
+ *
+ * NUL como separador e a escolha certa: nenhum id de campanha do Meta ou do Google o contem,
+ * entao "meta" + "1 2" nunca colide com "meta 1" + "2" — colisao de chave produziria custo por
+ * lead plausivel e errado, que e pior que nao-casado porque nao cai em balde nenhum.
+ *
+ * Mas ele tem de ser ESCAPE, nunca o byte cru no arquivo: um NUL literal no fonte faz o `grep`
+ * tratar o arquivo como binario e parar de imprimir linha nenhuma dele. Medido nesta task — a
+ * primeira tentativa de sabotar esta funcao para provar que o teste de igualdade consegue ficar
+ * VERMELHO nao aplicou, e nao aplicou em silencio, porque as ferramentas de texto nao achavam a
+ * linha. Typecheck, lint e 721 testes passaram por cima disso sem uma palavra.
+ */
 function chaveCasamento(plataforma: string | null, campanhaId: string | null): string | null {
   if (!plataforma || !campanhaId) return null;
-  return `${plataforma} ${campanhaId}`;
+  return `${plataforma}\u0000${campanhaId}`;
 }
 
 export function calcularBaldes(toques: ToqueCru[], custos: CustoCru[], leadsSemData: number): Baldes {
@@ -438,7 +451,8 @@ export function custoPorCampanha(toques: ToqueCru[], custos: CustoCru[]): LinhaC
     _leads: Set<string>;
   }
   const linhas = new Map<string, Acc>();
-  const chave = (p: string | null, c: string | null) => `${p ?? "?"} ${c ?? "?"}`;
+  // Mesmo separador de `chaveCasamento`, e pelo mesmo motivo — ver o comentario de la.
+  const chave = (p: string | null, c: string | null) => `${p ?? "?"}\u0000${c ?? "?"}`;
 
   const garantir = (p: string | null, c: string | null, rotulo: string): Acc => {
     const k = chave(p, c);
