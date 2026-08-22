@@ -31,17 +31,36 @@ export function textoTempoCurto(desdeIso: string | null, agora: number): string 
   return `${dias}d`;
 }
 
-/** Lead "parado há muitos dias": warm funcional (#B67A5B) no timer. Espelha o croqui (≥4d). */
-export function timerVelho(desdeIso: string | null, agora: number): boolean {
-  const d = diasNaEtapa(desdeIso, agora);
-  return d != null && d >= 4;
+/**
+ * Horas decorridas desde um ISO. Fracionária de propósito: a prioridade é uma RAZÃO sobre o prazo
+ * da etapa, e etapa de 2h (SLA de 1º contato) não sobrevive a um relógio que só conta dia inteiro.
+ * `null` = não dá para saber. Nunca 0 disfarçado de "acabou de entrar".
+ */
+export function horasDesde(desdeIso: string | null | undefined, agora: number): number | null {
+  if (!desdeIso) return null;
+  const t = new Date(desdeIso).getTime();
+  if (Number.isNaN(t)) return null;
+  const ms = agora - t;
+  return ms < 0 ? 0 : ms / 3_600_000;
 }
 
-/** Nível de alerta pela meta das 48h (spec Croqui): ok ≤2d, atenção ≤4d, estourado >4d. */
-export function nivelSla(desdeIso: string | null, agora: number): "ok" | "atencao" | "estourado" {
-  const d = diasNaEtapa(desdeIso, agora);
-  if (d == null) return "ok";
-  if (d > 4) return "estourado";
-  if (d > 2) return "atencao";
-  return "ok";
+/** Duração curta em mono ("2h", "3d") — usada no excedente do prazo estourado ("+3d"). */
+export function textoHorasCurto(horas: number): string {
+  const h = Math.max(0, Math.floor(horas));
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }
+
+/*
+ * ── R23/W2 · onde foram parar `timerVelho` e `nivelSla` ─────────────────────────────────────
+ *
+ * Existiam aqui duas funções que cravavam o MESMO limiar em dois números diferentes, seis linhas
+ * uma da outra: `timerVelho` (`d >= 4`) e `nivelSla` (`d > 4` / `d > 2`). Nenhuma das duas recebia
+ * a etapa do card — o prazo era GLOBAL e hardcoded. Medido em 22/08/2026: com esse limiar, 97 dos
+ * 97 cards do board estavam "estourado" (o mais novo estava há 18d23h na etapa), o que é o mesmo
+ * que não ter cor nenhuma.
+ *
+ * O limiar agora é DADO (`core.config` chave `sla_etapas`, D56) e a conta é uma razão sobre o prazo
+ * da etapa (D55). Quem decide faixa é `prioridadeCard` em `lib/dados/funil-ordenacao.ts`, um lugar
+ * só. Este módulo voltou a ser o que o nome diz: primitivas de tempo, sem regra de negócio.
+ */

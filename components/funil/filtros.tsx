@@ -240,7 +240,19 @@ export function FiltrosBoard({
             <button
               type="button"
               disabled={ativos === 0}
-              onClick={() => onChange({ ...FILTROS_VAZIOS, busca: filtros.busca, meus: filtros.meus })}
+              // "Limpar filtros" é o botão do PAINEL, e `ativos` só conta as dimensões do painel.
+              // Os chips que vivem FORA dele (meus · sem próxima ação · só os estourados) são
+              // preservados: apagar um chip que a pessoa ligou noutro lugar da tela, por um botão
+              // que se diz do painel, é a tela desfazendo o que ninguém pediu.
+              onClick={() =>
+                onChange({
+                  ...FILTROS_VAZIOS,
+                  busca: filtros.busca,
+                  meus: filtros.meus,
+                  semProximaAcao: filtros.semProximaAcao,
+                  soAgora: filtros.soAgora,
+                })
+              }
               className={cn(
                 "text-[12.5px] transition-colors",
                 ativos === 0 ? "cursor-default text-mute" : "text-laranja-esc hover:underline",

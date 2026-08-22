@@ -14,6 +14,7 @@ import {
   opcoesTags,
 } from "../lib/dados/funil-filtros.ts";
 import type { CardLead } from "../lib/dados/funil.ts";
+import type { FaixaPrioridade } from "../lib/dados/funil-ordenacao.ts";
 
 /*
  * Contrato dos filtros do funil (SPEC-FILTROS-FUNIL.md, GO 25/07): AND entre dimensões,
@@ -221,4 +222,44 @@ test("R20 · contarSemProximaAcao devolve null se QUALQUER card for desconhecido
 test("R20 · sem-próxima-ação conta como filtro ativo no cabeçalho", () => {
   assert.ok(haFiltro({ ...FILTROS_VAZIOS, semProximaAcao: true }));
   assert.ok(!haFiltro(FILTROS_VAZIOS));
+});
+
+// ─────────────── R23/W2 · "só os estourados" ───────────────
+
+/*
+ * O chip existe porque a cor sozinha informa e não ajuda a escolher: o board tem 97 cards e a
+ * Sarah tem meia manhã. E ele é PURO de propósito — o filtro não sabe calcular faixa, recebe de
+ * fora quem sabe (o board, que leu `sla_etapas`). Sem esse contrato, o limiar que D55 tirou do
+ * código voltaria a existir aqui dentro, numa segunda cópia.
+ */
+
+test("R23/W2 · 'só os estourados' recorta pela faixa AGORA, e a faixa vem de FORA", () => {
+  const quente = base({ lead_id: "quente" });
+  const morno = base({ lead_id: "morno" });
+  const faixaDe = (c: CardLead): FaixaPrioridade => (c.lead_id === "quente" ? "agora" : "sem_pressa");
+
+  const r = filtrarCards([quente, morno], { ...FILTROS_VAZIOS, soAgora: true }, null, faixaDe);
+  assert.deepEqual(r.map((c) => c.lead_id), ["quente"]);
+  // desligado, ninguém some
+  assert.equal(filtrarCards([quente, morno], FILTROS_VAZIOS, null, faixaDe).length, 2);
+});
+
+test("R23/W2 · sem `faixaDe`, o filtro NÃO recorta — não afirma urgência que não mediu", () => {
+  // é o caso do chamador que não leu a config: o chip nem aparece na tela, e se `soAgora` chegar
+  // ligado assim mesmo, engolir cards por uma faixa não calculada esconderia justamente o lead
+  // que o filtro existe para achar.
+  const r = filtrarCards([base({ lead_id: "a" }), base({ lead_id: "b" })], { ...FILTROS_VAZIOS, soAgora: true });
+  assert.equal(r.length, 2);
+});
+
+test("R23/W2 · 'só os estourados' combina em AND e conta como filtro ativo no cabeçalho", () => {
+  const faixaDe = (): FaixaPrioridade => "agora";
+  const comTag = base({ lead_id: "com", tags: ["SUS"] });
+  const semTag = base({ lead_id: "sem", tags: [] });
+  const r = filtrarCards([comTag, semTag], { ...FILTROS_VAZIOS, soAgora: true, tags: ["SUS"] }, null, faixaDe);
+  assert.deepEqual(r.map((c) => c.lead_id), ["com"]);
+
+  assert.ok(haFiltro({ ...FILTROS_VAZIOS, soAgora: true }));
+  // chip próprio, fora do painel: não infla o badge de "N filtros" (mesma regra de `meus`)
+  assert.equal(contarFiltrosAtivos({ ...FILTROS_VAZIOS, soAgora: true }), 0);
 });

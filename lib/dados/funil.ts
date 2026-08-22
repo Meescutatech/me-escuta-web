@@ -1,6 +1,8 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import {
   COLUNAS_CARD,
+  COLUNAS_CARD_BASE,
+  montarUltimaMensagem,
   MINIMO_BUSCA,
   TETO_BUSCA,
   TETO_CARDS,
@@ -11,6 +13,7 @@ import {
   recortarBusca,
 } from "./funil-calculos";
 import { parseTags } from "./ficha-calculos";
+import { SLA_PADRAO_DECLARADO, interpretarSlaEtapas, type SlaEtapas } from "./funil-ordenacao";
 
 /**
  * Camada de leitura do FUNIL. Casada com o schema real (Agent 2, migrations 0009+0010) —
@@ -76,13 +79,28 @@ export interface CardLead {
    */
   tem_tarefa_pendente: boolean | null;
   /**
-   * R23 protótipo (workshop 12/08) · "a primeira coisa que ela quer saber é que dia foi que ele
-   * mandou isso". OPCIONAL de propósito: a `v_lead_card` ainda não devolve isso, então em dado
-   * real o campo vem `undefined` e o card simplesmente não desenha a linha. Card que inventasse
-   * uma última mensagem seria pior que card sem ela.
+   * "A primeira coisa que ela quer saber é que dia foi que ele mandou isso" (workshop 12/08).
+   *
+   * ── R23/W2 · o que estava errado até 22/08 ────────────────────────────────────────────────
+   * Este campo existia, o componente sabia desenhá-lo, e `montarCard` NUNCA o preenchia — a
+   * `v_lead_card` tinha 17 colunas e nenhuma de mensagem. A consequência não era só a linha
+   * faltando: a ordem "Sem resposta há mais tempo" comparava `undefined` com `undefined`, caía
+   * no desempate e entregava ORDEM ALFABÉTICA DE UUID. Um menu que promete uma coisa e faz outra.
+   * Agora vem das três colunas do contrato (`ultima_mensagem_corpo/_em/_direcao`), e 71 dos 97
+   * cards do board têm mensagem no banco (medido em 22/08).
+   *
+   * Segue OPCIONAL: se a migration da view não tiver descido, a leitura cai no degrau sem as três
+   * colunas e o campo volta `undefined` — o card não desenha a linha em vez de inventar uma.
    * `de`: quem falou por último — é o que separa "ele não respondeu" de "eu não respondi".
    */
   ultima_mensagem?: { texto: string; em: string; de: "cliente" | "nos" } | null;
+  /**
+   * Compromisso marcado com o lead no futuro — o que PAUSA o relógio da prioridade (D55 item 4).
+   * Hoje é derivado da tarefa pendente com `prazo` no futuro, que é o único compromisso datado que
+   * o schema guarda. Medido em 22/08: `core.tarefa` tem 0 linhas, então nada pausa hoje — a
+   * mecânica está pronta e inerte, e é assim que ela deve ficar até haver compromisso de verdade.
+   */
+  compromisso_em?: string | null;
 }
 
 export interface DadosFunil {
@@ -97,6 +115,12 @@ export interface DadosFunil {
   cards: CardLead[];
   /** Leitura bateu no TETO_CARDS — a UI avisa que o board mostra os mais recentes, nunca finge completude. */
   corte: boolean;
+  /**
+   * Prazo por etapa + limiares da cor (D56). Vem de `core.config` chave `sla_etapas`; quando ela
+   * não existe, vem o `SLA_PADRAO_DECLARADO` com `daConfig: false` — e a legenda do board DIZ que
+   * está no padrão. Padrão silencioso faria o rótulo do card mentir.
+   */
+  sla: SlaEtapas;
 }
 
 // ─────────────── etapas padrão (espelho do funil_vendas v2 real) ───────────────
@@ -172,16 +196,66 @@ const TETO_TAREFAS_PENDENTES = 5000;
  * mostrar "3 tarefas" no card — que é justamente o cemitério de 755 itens do Kommo que o comentário
  * da sidebar manda não repetir.
  */
-async function lerLeadsComTarefaPendente(supabase: Supabase): Promise<Set<string> | null> {
+interface TarefasDoBoard {
+  /** leads com ao menos uma tarefa pendente */
+  pendente: Set<string>;
+  /** lead → prazo futuro mais PRÓXIMO (o compromisso que pausa o relógio, D55 item 4) */
+  compromisso: Map<string, string>;
+}
+
+async function lerLeadsComTarefaPendente(
+  supabase: Supabase,
+  agora: number,
+): Promise<TarefasDoBoard | null> {
   const { data, error } = await supabase
     .schema("core")
     .from("tarefa")
-    .select("lead_id")
+    .select("lead_id,prazo")
     .eq("status", "pendente")
     .not("lead_id", "is", null)
     .limit(TETO_TAREFAS_PENDENTES + 1);
   if (error || !data || data.length > TETO_TAREFAS_PENDENTES) return null;
-  return new Set(data.map((r: any) => String(r.lead_id)));
+
+  const pendente = new Set<string>();
+  const compromisso = new Map<string, string>();
+  for (const r of data as any[]) {
+    const id = String(r.lead_id);
+    pendente.add(id);
+    // "compromisso marcado" = tarefa aberta com data no FUTURO. É a leitura que o benchmark §3.2
+    // já dá como equivalente ("audiometria/consulta agendada com data, ou tarefa aberta com prazo
+    // futuro"); prazo VENCIDO não pausa nada — vencido é justamente o oposto de agendado.
+    const t = r.prazo ? new Date(String(r.prazo)).getTime() : NaN;
+    if (!Number.isNaN(t) && t > agora) {
+      const atual = compromisso.get(id);
+      // o mais PRÓXIMO manda: é a data em que o relógio volta a correr
+      if (!atual || t < new Date(atual).getTime()) compromisso.set(id, String(r.prazo));
+    }
+  }
+  return { pendente, compromisso };
+}
+
+/**
+ * `core.config` nome='sla_etapas' (D56) — o prazo por etapa e os limiares da cor.
+ *
+ * Molde do `motivo_perda`/`atribuicao_responsavel`: config é DADO versionado, relido a cada
+ * passada, e mudar prazo não exige deploy nem restart (Constituição Art. IV). O degrau é
+ * DECLARADO: sem a config, volta o `SLA_PADRAO_DECLARADO` com `daConfig: false`, e o board mostra
+ * o aviso. Cair num padrão calado faria o rótulo do card afirmar uma urgência que ninguém definiu.
+ */
+export async function lerSlaEtapas(cliente?: Supabase): Promise<SlaEtapas> {
+  try {
+    const supabase = cliente ?? criarClienteServidor();
+    const { data, error } = await supabase
+      .schema("core")
+      .from("v_config_vigente")
+      .select("payload")
+      .eq("nome", "sla_etapas")
+      .maybeSingle();
+    if (error || !data) return SLA_PADRAO_DECLARADO;
+    return interpretarSlaEtapas((data as any).payload) ?? SLA_PADRAO_DECLARADO;
+  } catch {
+    return SLA_PADRAO_DECLARADO;
+  }
 }
 
 async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[]; corte: boolean }> {
@@ -191,22 +265,34 @@ async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[
   // passar do teto, o corte é estável entre reloads e a UI avisa (flag `corte`).
   // As duas leituras são independentes e disparam juntas — a de tarefas nunca atrasa o board, e
   // se ela falhar o board aparece igual (com `tem_tarefa_pendente = null`).
-  const [{ data, error }, comTarefa] = await Promise.all([
+  const consulta = (colunas: string) =>
     supabase
       .schema("core")
       .from("v_lead_card")
-      .select("lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,dono_id,dono_nome,tags,kommo_lead_id")
+      .select(colunas)
       .in("etapa", chavesEtapas)
       .order("entrou_etapa_em", { ascending: false, nullsFirst: false })
       .order("lead_id", { ascending: true })
-      .limit(TETO_CARDS),
-    lerLeadsComTarefaPendente(supabase),
+      .limit(TETO_CARDS);
+
+  const agora = Date.now();
+  // COLUNAS_CARD primeiro; sem as três de última mensagem (migration da view ainda não aplicada)
+  // volta pro shape sem elas. O degrau é o que separa "board sem a linha de mensagem" de "board
+  // VAZIO": pedir coluna inexistente ao PostgREST derruba a consulta inteira.
+  let [{ data, error }, comTarefa] = await Promise.all([
+    consulta(COLUNAS_CARD),
+    lerLeadsComTarefaPendente(supabase, agora),
   ]);
+  if (error) ({ data, error } = await consulta(COLUNAS_CARD_BASE));
   if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
-  const cards = data.map((r: any) =>
+  const cards = (data as any[]).map((r: any) =>
     // `tem_tarefa_pendente` só é conhecido quando a leitura de tarefas voltou; a busca (que não a
     // faz) passa `null` e o filtro "sem próxima ação" corretamente não acusa ninguém por ela.
-    montarCard(r, comTarefa == null ? null : comTarefa.has(String(r.lead_id))),
+    montarCard(
+      r,
+      comTarefa == null ? null : comTarefa.pendente.has(String(r.lead_id)),
+      comTarefa?.compromisso.get(String(r.lead_id)) ?? null,
+    ),
   );
   return { cards, corte: houveCorte(cards.length, TETO_CARDS) };
 }
@@ -216,7 +302,11 @@ async function lerCardsReais(chavesEtapas: string[]): Promise<{ cards: CardLead[
  * mesmas colunas e precisam produzir o mesmo card — se a derivação do chip de responsável ou do
  * mapa de origem divergisse entre os dois, o mesmo lead teria duas caras conforme o caminho.
  */
-function montarCard(r: any, temTarefaPendente: boolean | null = null): CardLead {
+function montarCard(
+  r: any,
+  temTarefaPendente: boolean | null = null,
+  compromissoEm: string | null = null,
+): CardLead {
   const origemRaw = r.origem ? String(r.origem).toLowerCase() : null;
   // vínculo por uuid (0060) tem precedência sobre o texto legado na hora do chip
   const donoNome = r.dono_nome ? String(r.dono_nome) : null;
@@ -238,17 +328,29 @@ function montarCard(r: any, temTarefaPendente: boolean | null = null): CardLead 
     proposta: null,
     kommo_lead_id: r.kommo_lead_id ?? null,
     tem_tarefa_pendente: temTarefaPendente,
+    ultima_mensagem: montarUltimaMensagem(r),
+    compromisso_em: compromissoEm,
   };
 }
+
 
 /** Fonte única do board. Etapas reais (senão padrão estrutural); cards só reais — vazio é vazio. */
 export async function lerFunil(): Promise<DadosFunil> {
   try {
-    const todasEtapas = (await lerEtapasReais()) ?? ETAPAS_PADRAO; // cards filtram pelas chaves da config
+    // etapas e SLA são independentes e disparam juntos — o SLA nunca atrasa o board, e se ele
+    // falhar o board aparece igual, no padrão declarado e com o aviso na legenda.
+    const [etapasLidas, sla] = await Promise.all([lerEtapasReais(), lerSlaEtapas()]);
+    const todasEtapas = etapasLidas ?? ETAPAS_PADRAO; // cards filtram pelas chaves da config
     const { cards, corte } = await lerCardsReais(chavesDoBoard(todasEtapas));
-    return { etapas: etapasDoBoard(todasEtapas), todasEtapas, cards, corte };
+    return { etapas: etapasDoBoard(todasEtapas), todasEtapas, cards, corte, sla };
   } catch {
-    return { etapas: ETAPAS_PADRAO, todasEtapas: ETAPAS_PADRAO, cards: [], corte: false };
+    return {
+      etapas: ETAPAS_PADRAO,
+      todasEtapas: ETAPAS_PADRAO,
+      cards: [],
+      corte: false,
+      sla: SLA_PADRAO_DECLARADO,
+    };
   }
 }
 
@@ -297,14 +399,20 @@ export async function buscarLeads(termo: string, cliente?: Supabase): Promise<Re
 
   // Repare no que NÃO está aqui: nenhum `.in("etapa", …)`. É a ausência que faz a busca alcançar
   // os 582 leads em `arquivado` — a etapa que deixou de ser coluna do board.
-  const { data, error } = await supabase
-    .schema("core")
-    .from("v_lead_card")
-    .select(plano.colunas)
-    .or(plano.or)
-    .order("entrou_etapa_em", { ascending: false, nullsFirst: false })
-    .order("lead_id", { ascending: true })
-    .limit(plano.limite);
+  const consulta = (colunas: string) =>
+    supabase
+      .schema("core")
+      .from("v_lead_card")
+      .select(colunas)
+      .or(plano.or)
+      .order("entrou_etapa_em", { ascending: false, nullsFirst: false })
+      .order("lead_id", { ascending: true })
+      .limit(plano.limite);
+
+  // mesmo degrau do board: sem as três colunas de última mensagem, a busca acha do mesmo jeito e
+  // o resultado sai sem a linha — em vez de a busca inteira responder "erro".
+  let { data, error } = await consulta(plano.colunas);
+  if (error) ({ data, error } = await consulta(planoBusca(termo, false)!.colunas));
 
   if (error || !data) return { termo, cards: [], truncado: false, erro: true };
   const { cards, truncado } = recortarBusca(data as any[]);
