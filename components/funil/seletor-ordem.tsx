@@ -94,10 +94,11 @@ export function SeletorOrdem({
               </span>
             </button>
           ))}
-          <p className="border-t border-linha bg-board px-3.5 py-2 text-[11px] leading-snug text-mute">
-            A faixa colorida na esquerda do card é o prazo: vermelho estourado, âmbar perto de
-            estourar, verde dentro.
-          </p>
+          {/* A legenda da cor MOROU aqui até 22/08 — dentro deste dropdown, ou seja, visível só
+              para quem já tinha aberto outro menu. Ela subiu para o board (`LegendaPrioridade` em
+              quadro.tsx), onde fica sempre à vista com a contagem por faixa. Legenda escondida
+              dentro de um menu é legenda que ninguém leu. */
+          }
         </div>
       )}
     </div>

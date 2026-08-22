@@ -4,8 +4,18 @@ import { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { CardLead, Origem } from "@/lib/dados/funil";
-import { textoTempoCurto, timerVelho } from "@/lib/tempo";
-import { dataUltimaMensagem, faixaPrazo, TEXTO_FAIXA } from "@/lib/dados/funil-ordenacao";
+import { textoTempoCurto } from "@/lib/tempo";
+import {
+  dataUltimaMensagem,
+  prioridadeCard,
+  textoExcedente,
+  ROTULO_FAIXA,
+  TEXTO_COR_FAIXA,
+  TEXTO_FAIXA,
+  TRILHO_FAIXA,
+  SLA_PADRAO_DECLARADO,
+  type SlaEtapas,
+} from "@/lib/dados/funil-ordenacao";
 import { cn } from "@/lib/utils";
 
 /*
@@ -19,11 +29,26 @@ import { cn } from "@/lib/utils";
  *
  * R23 protótipo (workshop 12/08) — o argumento do supermercado, "3 segundos pra decidir se
  * pega o produto da prateleira":
- *  - FAIXA DE PRAZO à esquerda: vermelho estourado / âmbar perto de estourar / verde dentro.
- *    Ela toma o lugar que a barra laranja de seleção ocupava — dois significados na mesma
- *    faixa de 2px seria a UI dizendo duas coisas com um traço só. Seleção virou anel laranja.
+ *  - TRILHO DE PRIORIDADE à esquerda + RÓTULO ESCRITO. Ele toma o lugar que a barra laranja de
+ *    seleção ocupava — dois significados na mesma faixa seria a UI dizendo duas coisas com um
+ *    traço só. Seleção virou anel laranja.
  *  - ÚLTIMA MENSAGEM + DATA: "a primeira coisa que ela quer saber é que dia foi que ele
  *    mandou isso". Some quando o dado não existe, nunca vira placeholder inventado.
+ *
+ * ── R23/W2 (22/08) · o que mudou, e por quê ──────────────────────────────────────────────────
+ * A faixa era PRAZO com limiar GLOBAL hardcoded (>4 dias na etapa). Medido em 22/08: 97 dos 97
+ * cards do board caíam em "estourado" — o mais novo estava há 18d23h na etapa. Cor que vale para
+ * todo mundo não é cor.
+ *
+ * Agora é PRIORIDADE (D55): razão `horas_paradas ÷ prazo_da_etapa`, quatro faixas
+ * (AGORA/HOJE/NA SEMANA/SEM PRESSA), prazo vindo de `core.config` chave `sla_etapas` (D56).
+ * E o RÓTULO É ESCRITO junto da cor — WCAG 2.2 SC 1.4.1: num board de prioridade a pessoa precisa
+ * saber QUAL nível é, e o par crítico aqui é vermelho × âmbar, que a protanopia aproxima.
+ *
+ * ⚠️ O timer do canto deixou de ter alarme PRÓPRIO. Ele acendia em `timer-velho`, que é o MESMO
+ * hex do `amarelo` da faixa HOJE (#B27A00), com um limiar seu (`d >= 4`) seis linhas distante do
+ * da faixa (`d > 4`). Resultado: card classificado AGORA (vermelho) exibia um timer da cor de
+ * HOJE. Agora o destaque do timer deriva da MESMA faixa — uma fonte, um alarme.
  */
 
 const ORIGEM_ROTULO: Record<Origem, string> = { wa: "WhatsApp", ig: "Instagram", meta: "Meta Ads", ind: "Indicação" };
@@ -84,12 +109,17 @@ function ChipResp({ nome, tipo }: { nome: string; tipo: "dm" | "sara" | "fono" }
 export function CartaoLead({
   card,
   agora,
+  // opcional só por causa da página de protótipo, que roda sobre fixtures e não lê config; o
+  // board SEMPRE passa o que leu do banco.
+  sla = SLA_PADRAO_DECLARADO,
   selecionado,
   onAbrir,
   onResolverSugestao,
 }: {
   card: CardLead;
   agora: number;
+  /** prazo por etapa + limiares (config `sla_etapas`, ou o padrão DECLARADO) — D55/D56 */
+  sla?: SlaEtapas;
   selecionado: boolean;
   onAbrir: (leadId: string) => void;
   onResolverSugestao?: (leadId: string, decisao: "aprovada" | "descartada") => void;
@@ -103,11 +133,28 @@ export function CartaoLead({
   const ruim = nomeRuim(card.nome);
   const valor = moeda(card.valor);
   const origemLabel = card.origem ? ORIGEM_ROTULO[card.origem] : null;
-  const velho = timerVelho(card.entrou_etapa_em, agora);
   const timer = textoTempoCurto(card.entrou_etapa_em, agora);
-  const faixa = faixaPrazo(card, agora);
+  const prio = prioridadeCard(card, sla, agora);
+  const faixa = prio.faixa;
+  const grita = faixa === "agora"; // o único alarme do card — timer e trilho bebem da mesma fonte
+  const excedente = textoExcedente(prio);
   const ultima = card.ultima_mensagem ?? null;
   const dataUltima = dataUltimaMensagem(ultima?.em, agora);
+
+  // Por que esta prioridade, em palavras — o card nunca deve exigir que se adivinhe a conta.
+  // Inclui o aviso de prazo NÃO declarado: etapa fora de `sla_etapas` cai no padrão, e isso
+  // precisa ser dizível, senão o rótulo afirma uma urgência que ninguém definiu.
+  const explicacao = [
+    TEXTO_FAIXA[faixa],
+    prio.horasParadas != null
+      ? `parado há ${Math.floor(prio.horasParadas)}h · prazo da etapa ${prio.horasPrazo}h`
+      : null,
+    prio.prazoDeclarado ? null : `prazo PADRÃO (${prio.horasPrazo}h) — "${card.etapa}" não está em sla_etapas`,
+    prio.pausado ? "relógio pausado: há compromisso marcado no futuro" : null,
+    sla.daConfig ? null : "os prazos são o padrão declarado — a config sla_etapas ainda não existe",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   // 1 sinal significativo (spec §4): quando o nome é lixo, o sinal é "Lead · <origem>";
   // com nome real, o sinal é a própria origem. Nada além disso no card.
@@ -154,20 +201,42 @@ export function CartaoLead({
         isDragging && "opacity-40",
       )}
     >
-      {/* FAIXA DE PRAZO — o sinal de 3 segundos. Cor NUNCA sozinha: o `title` diz a mesma coisa em
-          palavra, e o timer do canto já ganha ícone + peso 700 quando estoura (WCAG 1.4.1). */}
-      <span
-        title={TEXTO_FAIXA[faixa]}
-        aria-hidden
-        className={cn(
-          "absolute bottom-0 left-0 top-0 w-[3px] transition-colors",
-          faixa === "estourado" && "bg-vermelho",
-          faixa === "perto" && "bg-timer-velho",
-          faixa === "dentro" && "bg-verde",
-          faixa === "sem_dado" && "bg-linha",
-        )}
-      />
-      <span className="sr-only">{TEXTO_FAIXA[faixa]}. </span>
+      {/* TRILHO DE PRIORIDADE — o sinal de 3 segundos. A cor sozinha NÃO basta (WCAG 1.4.1): o
+          rótulo escrito logo abaixo é o canal principal, a posição na coluna é o segundo, e o
+          peso+ícone do timer é o terceiro. O `title` não conta como canal num board que se lê
+          varrendo — ele explica a conta, não anuncia o nível. */}
+      <span aria-hidden className={cn("absolute bottom-0 left-0 top-0 w-[3px] transition-colors", TRILHO_FAIXA[faixa])} />
+      <span className="sr-only">{explicacao}. </span>
+
+      {/* RÓTULO + EXCEDENTE. "AGORA · +3d" e não só "atrasado": sem o excedente, atrasado há 2h e
+          atrasado há 142d viram a mesma coisa — que é literalmente o estado do Kommo hoje. */}
+      {ROTULO_FAIXA[faixa] && (
+        <div className="mb-[3px] flex items-baseline gap-1.5" title={explicacao}>
+          <span
+            className={cn(
+              "shrink-0 text-[10.5px] font-semibold uppercase leading-none tracking-[0.07em]",
+              TEXTO_COR_FAIXA[faixa],
+            )}
+          >
+            {ROTULO_FAIXA[faixa]}
+          </span>
+          {excedente && (
+            <span className={cn("shrink-0 font-mono text-[10px] font-bold leading-none", TEXTO_COR_FAIXA[faixa])}>
+              {excedente}
+            </span>
+          )}
+          {prio.pausado && (
+            // pausado não é uma quinta faixa: é a razão de o card estar quieto, dita em palavra
+            <span className="shrink-0 text-[10px] leading-none text-suave">agendado</span>
+          )}
+          {!prio.prazoDeclarado && (
+            // prazo que veio do padrão precisa ser VISÍVEL — default calado faz o rótulo mentir
+            <span className="shrink-0 font-mono text-[10px] leading-none text-suave" title={explicacao}>
+              prazo padrão
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="flex items-start gap-2">
         <div
@@ -178,11 +247,10 @@ export function CartaoLead({
         >
           {ruim ? fmtTelefone(card.telefone) || "Lead sem telefone" : card.nome}
         </div>
-        {valor ? (
-          <span className="shrink-0 pt-px text-[0.82rem] font-semibold tabular-nums text-tinta">{valor}</span>
-        ) : card.responsavel ? (
-          <ChipResp nome={card.responsavel.nome} tipo={card.responsavel.tipo} />
-        ) : null}
+        {/* o VALOR é a âncora da direita do topo; o CHIP é sempre do rodapé. Antes o chip subia
+            para cá quando não havia valor, e o olho tinha de procurar o responsável em dois
+            lugares conforme o card. Uma âncora só (benchmark §3.6, item 5). */}
+        {valor && <span className="shrink-0 pt-px text-[0.82rem] font-semibold tabular-nums text-tinta">{valor}</span>}
       </div>
 
       {!ruim && card.telefone && (
@@ -191,7 +259,8 @@ export function CartaoLead({
 
       {/* ÚLTIMA MENSAGEM + DATA. A seta diz QUEM falou por último, que é o que separa "ele não
           respondeu" de "eu não respondi" — sem ela a linha mostra atividade e esconde a dívida.
-          Sem dado, o bloco inteiro some: a `v_lead_card` ainda não devolve isso. */}
+          Desde 22/08 o dado VEM (3 colunas do contrato na `v_lead_card`; 71 dos 97 cards do board
+          têm mensagem). Sem dado o bloco inteiro some — nunca vira placeholder inventado. */}
       {ultima && (
         <div className="mt-[7px] flex items-baseline gap-1.5">
           <span
@@ -220,7 +289,7 @@ export function CartaoLead({
         </div>
       )}
 
-      {(sinal || timer) && (
+      {(sinal || timer || card.responsavel) && (
         <div className="mt-2 flex items-center gap-2">
           {sinal && (
             <span
@@ -235,12 +304,14 @@ export function CartaoLead({
           {timer && (
             <span
               className={cn(
+                // peso 700 + ícone = terceiro canal não-cor (WCAG 1.4.1). O gatilho é `grita`,
+                // derivado da MESMA faixa do trilho — não um segundo limiar com tinta própria.
                 "ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[10.5px]",
-                velho ? "font-bold text-timer-velho" : "text-mute", // peso 700 + ícone: canal não-cor (WCAG 1.4.1)
+                grita ? "font-bold text-vermelho" : "text-mute",
               )}
-              title={velho ? "Lead parado há muitos dias" : undefined}
+              title={explicacao}
             >
-              {velho && (
+              {grita && (
                 <svg viewBox="0 0 24 24" strokeWidth={2.4} className="h-3 w-3 stroke-current" fill="none">
                   <circle cx="12" cy="12" r="9" />
                   <path d="M12 8v4l2.5 1.5" strokeLinecap="round" />
@@ -249,7 +320,11 @@ export function CartaoLead({
               {timer}
             </span>
           )}
-          {valor && card.responsavel && <ChipResp nome={card.responsavel.nome} tipo={card.responsavel.tipo} />}
+          {card.responsavel && (
+            <span className={cn(!timer && "ml-auto")}>
+              <ChipResp nome={card.responsavel.nome} tipo={card.responsavel.tipo} />
+            </span>
+          )}
         </div>
       )}
 

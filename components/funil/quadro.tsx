@@ -19,7 +19,19 @@ import { DrawerCard } from "./drawer-card";
 import { FaixaBuscaServidor, useBuscaServidor } from "./busca-servidor";
 import { FiltrosBoard } from "./filtros";
 import { SeletorOrdem } from "./seletor-ordem";
-import { ordenarCards, ORDEM_PADRAO, type ChaveOrdem } from "@/lib/dados/funil-ordenacao";
+import {
+  ordenarCards,
+  prioridadeCard,
+  excedeuTetoAgora,
+  ORDEM_PADRAO,
+  ROTULO_FAIXA,
+  TETO_AGORA,
+  TRILHO_FAIXA,
+  FAIXAS_ESCALA,
+  type ChaveOrdem,
+  type FaixaPrioridade,
+  type SlaEtapas,
+} from "@/lib/dados/funil-ordenacao";
 import { NovoLead } from "./novo-lead";
 import { DialogoMotivoPerda } from "./motivo-perda";
 import type { MotivoPerda } from "@/lib/dados/motivo-perda";
@@ -62,6 +74,7 @@ function Coluna({
   etapa,
   cards,
   agora,
+  sla,
   selecionadoId,
   arrastando,
   pulsando,
@@ -71,6 +84,7 @@ function Coluna({
   etapa: EtapaFunil;
   cards: CardLead[];
   agora: number;
+  sla: SlaEtapas;
   selecionadoId: string | null;
   arrastando: boolean;
   pulsando: ReadonlySet<string>;
@@ -107,6 +121,7 @@ function Coluna({
             <CartaoLead
               card={c}
               agora={agora}
+              sla={sla}
               selecionado={c.lead_id === selecionadoId}
               onAbrir={onAbrir}
               onResolverSugestao={onResolverSugestao}
@@ -152,6 +167,101 @@ function Terminal({ etapa, quantidade }: { etapa: EtapaFunil; quantidade: number
         {quantidade.toLocaleString("pt-BR")}
       </div>
       <div className="mt-1 font-mono text-[10.5px] text-mute">snapshot · sync futuro</div>
+    </div>
+  );
+}
+
+// ─────────────── legenda da cor (R23/W2) ───────────────
+
+/**
+ * A LEGENDA DO BOARD. Antes ela existia — escondida como parágrafo no rodapé do dropdown de
+ * ordenação, ou seja, visível só para quem já tinha aberto outro menu. Legenda que só aparece
+ * dentro de um menu é legenda que ninguém leu, e a cor sem legenda é adivinhação.
+ *
+ * Ela carrega três coisas que o board precisa confessar:
+ *  1. o que cada cor quer dizer, com a CONTAGEM ao lado (a cor vira número acionável);
+ *  2. o TETO DE 15% em AGORA (D56 item 2) — acima disso o critério está frouxo e a cor virou
+ *     ruído, que é o estado do Kommo com 97,9% da fila vencida. O teto sem alarme era só uma
+ *     frase num documento; aqui ele acende;
+ *  3. quando os prazos são o PADRÃO DECLARADO porque `sla_etapas` ainda não existe no banco.
+ *
+ * ⚠️ Nada aqui (nem os avisos equivalentes no card) usa o token `mute`. Medido: `mute` #9AA1AA
+ * sobre o board #F7F7F4 dá 2,43:1, abaixo do piso de 4,5:1 do SC 1.4.3 — e o item 3 é EXATAMENTE
+ * o aviso que o contrato desta frente manda ser visível. Aviso ilegível é default silencioso com
+ * outro nome. Tudo aqui usa `suave` #67707B (5,02:1, medido na §3.5 do benchmark).
+ */
+function LegendaPrioridade({
+  contagem,
+  total,
+  sla,
+  soAgora,
+  onSoAgora,
+}: {
+  contagem: Record<FaixaPrioridade, number>;
+  total: number;
+  sla: SlaEtapas;
+  soAgora: boolean;
+  onSoAgora: () => void;
+}) {
+  const frouxo = excedeuTetoAgora(contagem.agora, total);
+  const pct = total > 0 ? Math.round((contagem.agora / total) * 100) : 0;
+  return (
+    <div className="flex flex-shrink-0 flex-wrap items-center gap-x-3.5 gap-y-1.5 px-5 pb-2.5">
+      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-mute">Cor = prioridade</span>
+      {FAIXAS_ESCALA.map((f) => (
+        <span key={f} className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px] text-suave">
+          <span className={cn("h-[9px] w-[9px] shrink-0 rounded-[2px]", TRILHO_FAIXA[f])} aria-hidden />
+          {ROTULO_FAIXA[f]}
+          <span className="font-mono tabular-nums text-suave">{contagem[f]}</span>
+        </span>
+      ))}
+      {contagem.sem_dado > 0 && (
+        <span
+          className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px] text-suave"
+          title="Sem data de entrada na etapa e sem mensagem datada — a prioridade não foi medida, e o card não finge que foi"
+        >
+          <span className="h-[9px] w-[9px] shrink-0 rounded-[2px] bg-linha" aria-hidden />
+          sem medida
+          <span className="font-mono tabular-nums">{contagem.sem_dado}</span>
+        </span>
+      )}
+
+      {/* "só os estourados" — a versão acionável da cor. Só aparece quando há o que filtrar:
+          zero é silêncio, mesma regra do chip "sem próxima ação". */}
+      {(contagem.agora > 0 || soAgora) && (
+        <button
+          type="button"
+          onClick={onSoAgora}
+          aria-pressed={soAgora}
+          title="Mostrar só os cards na faixa AGORA (passaram do prazo da própria etapa)"
+          className={cn(
+            "rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors",
+            soAgora
+              ? "border-vermelho bg-vermelho-bg font-medium text-vermelho"
+              : "border-linha bg-branco text-suave hover:border-linha-forte",
+          )}
+        >
+          Só os estourados
+        </button>
+      )}
+
+      {frouxo && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full bg-amarelo-bg px-2.5 py-0.5 text-[11px] font-medium text-amarelo"
+          title={`Teto de ${Math.round(TETO_AGORA * 100)}% da fila em AGORA (D56). Acima disso o critério está frouxo e a cor vira ruído — é o estado do Kommo, com 97,9% da fila vencida. O caminho é ajustar sla_etapas, não ignorar o vermelho.`}
+        >
+          {pct}% em AGORA — acima do teto de {Math.round(TETO_AGORA * 100)}%
+        </span>
+      )}
+
+      {!sla.daConfig && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full border border-linha bg-branco px-2.5 py-0.5 text-[11px] text-suave"
+          title="A config core.config nome='sla_etapas' ainda não existe. Os prazos por etapa são o padrão declarado em lib/dados/funil-ordenacao.ts (SLA_PADRAO_DECLARADO) — não um valor que alguém definiu para esta operação."
+        >
+          prazos no padrão declarado (sem config)
+        </span>
+      )}
     </div>
   );
 }
@@ -247,9 +357,28 @@ export function Quadro({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
+  /**
+   * A faixa de cada card, calculada UMA vez por passada e reusada pelo filtro, pela legenda e
+   * pela ordenação. `prioridadeCard` roda por card a cada tick de minuto; sem o memo ela rodaria
+   * de novo dentro de cada `sort` e de cada contagem.
+   */
+  const faixaPorLead = useMemo(() => {
+    const m = new Map<string, FaixaPrioridade>();
+    for (const c of cards) m.set(c.lead_id, prioridadeCard(c, dados.sla, agora).faixa);
+    return m;
+  }, [cards, dados.sla, agora]);
+  const faixaDe = useMemo(
+    () => (c: CardLead) => faixaPorLead.get(c.lead_id) ?? "sem_dado",
+    [faixaPorLead],
+  );
+
   // filtros da paridade Kommo (busca + responsável/etapa/tags/período + meus) — lógica pura testada
-  const cardsFiltrados = useMemo(() => filtrarCards(cards, filtros, autorId), [cards, filtros, autorId]);
+  const cardsFiltrados = useMemo(
+    () => filtrarCards(cards, filtros, autorId, faixaDe),
+    [cards, filtros, autorId, faixaDe],
+  );
   const filtroAtivo = haFiltro(filtros);
+
 
   const porEtapa = useMemo(() => {
     const m = new Map<string, CardLead[]>();
@@ -259,9 +388,9 @@ export function Quadro({
       m.get(c.etapa)!.push(c);
     }
     // ordena DENTRO de cada coluna — a ordem é da pilha de trabalho, não do board inteiro
-    for (const [chave, lista] of m) m.set(chave, ordenarCards(lista, ordem, agora));
+    for (const [chave, lista] of m) m.set(chave, ordenarCards(lista, ordem, agora, dados.sla));
     return m;
-  }, [cardsFiltrados, dados.etapas, ordem, agora]);
+  }, [cardsFiltrados, dados.etapas, ordem, agora, dados.sla]);
 
   // filtro de etapa esconde as colunas fora da seleção (terminais incluídos) — como no Kommo
   const etapasVisiveis =
@@ -273,6 +402,21 @@ export function Quadro({
     () => new Set(dados.etapas.filter((e) => e.tipo === "aberto").map((e) => e.chave)),
     [dados.etapas],
   );
+  // contagem da legenda: sobre os leads ATIVOS, não sobre o board inteiro. Card em venda_ganha /
+  // venda_perdida não tem prioridade nenhuma, e contá-lo diluiria o percentual do teto de 15%.
+  const contagemFaixa = useMemo(() => {
+    const z: Record<FaixaPrioridade, number> = { agora: 0, hoje: 0, na_semana: 0, sem_pressa: 0, sem_dado: 0 };
+    for (const c of cards) {
+      if (!chavesAbertas.has(c.etapa)) continue;
+      z[faixaPorLead.get(c.lead_id) ?? "sem_dado"] += 1;
+    }
+    return z;
+  }, [cards, chavesAbertas, faixaPorLead]);
+  const totalComFaixa = useMemo(
+    () => Object.values(contagemFaixa).reduce((a, b) => a + b, 0) - contagemFaixa.sem_dado,
+    [contagemFaixa],
+  );
+
   const leadsAtivos = useMemo(
     () => cards.filter((c) => chavesAbertas.has(c.etapa)).length,
     [cards, chavesAbertas],
@@ -485,6 +629,14 @@ export function Quadro({
         </div>
       </div>
 
+      <LegendaPrioridade
+        contagem={contagemFaixa}
+        total={totalComFaixa}
+        sla={dados.sla}
+        soAgora={filtros.soAgora}
+        onSoAgora={() => setFiltros((f) => ({ ...f, soAgora: !f.soAgora }))}
+      />
+
       {/* R23 · o que a busca achou FORA do board — logo abaixo do cabeçalho, antes das colunas,
           porque a resposta a "existe?" tem que chegar antes de o operador desistir e abrir o Kommo. */}
       <FaixaBuscaServidor
@@ -509,6 +661,7 @@ export function Quadro({
               etapa={etapa}
               cards={porEtapa.get(etapa.chave) ?? []}
               agora={agora}
+              sla={dados.sla}
               selecionadoId={selecionadoId}
               arrastando={arrastando != null}
               pulsando={pulsando}
@@ -529,7 +682,7 @@ export function Quadro({
         <DragOverlay>
           {cardArrastado ? (
             <div className="w-coluna rotate-[1.5deg] opacity-50 shadow-[0_14px_40px_rgba(31,35,40,.18)]">
-              <CartaoLead card={cardArrastado} agora={agora} selecionado={false} onAbrir={() => {}} />
+              <CartaoLead card={cardArrastado} agora={agora} sla={dados.sla} selecionado={false} onAbrir={() => {}} />
             </div>
           ) : null}
         </DragOverlay>

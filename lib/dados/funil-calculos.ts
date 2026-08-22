@@ -64,8 +64,49 @@ export const TETO_BUSCA = 50;
 export const MINIMO_BUSCA = 2;
 
 /** Colunas do card. As MESMAS do board: os dois caminhos têm que montar o mesmo card. */
-export const COLUNAS_CARD =
+export const COLUNAS_CARD_BASE =
   "lead_id,nome,telefone,etapa,entrou_etapa_em,valor,origem,dono,dono_id,dono_nome,tags,kommo_lead_id";
+
+/**
+ * R23/W2 · as TRÊS colunas de última mensagem do contrato travado em 22/08 (a migration é da
+ * frente D1). Separadas do bloco base por um motivo operacional, não estético: se a migration
+ * ainda não desceu, pedir coluna inexistente ao PostgREST derruba a consulta INTEIRA — e o board
+ * não ficaria "sem a linha de mensagem", ficaria VAZIO. O chamador tenta com elas e, no erro,
+ * repete só com a base (mesmo degrau de `COLUNAS_TAREFA_R13` → `R8` em lead-painel.ts).
+ */
+export const COLUNAS_ULTIMA_MENSAGEM = "ultima_mensagem_corpo,ultima_mensagem_em,ultima_mensagem_direcao";
+
+export const COLUNAS_CARD = `${COLUNAS_CARD_BASE},${COLUNAS_ULTIMA_MENSAGEM}`;
+
+/**
+ * As três colunas de última mensagem do contrato → o objeto que o card desenha e que a ordem
+ * "sem resposta" compara.
+ *
+ * ⚠️ Mora aqui, no módulo PURO, e não junto da consulta, por uma razão medida: enquanto esta
+ * derivação viveu dentro de `montarCard` (server-only, sem teste possível), ela simplesmente NÃO
+ * EXISTIA — a `v_lead_card` tinha 17 colunas e nenhuma de mensagem, o campo saía sempre
+ * `undefined`, e a ordem "Sem resposta há mais tempo" comparava `undefined` com `undefined`, caía
+ * no desempate e entregava ORDEM ALFABÉTICA DE UUID. Um menu que promete uma coisa e faz outra,
+ * por meses, sem um teste que pudesse acusar.
+ *
+ * Exige corpo E data: mensagem sem data não serve nem para a linha ("que dia foi que ele mandou
+ * isso") nem para o relógio, e data sem corpo desenharia uma linha em branco. `undefined` (e não
+ * um objeto meio vazio) é o que faz o card não desenhar o bloco em vez de inventar conteúdo.
+ *
+ * A DIREÇÃO separa "ele não respondeu" de "eu não respondi" — sem ela a linha mostra atividade e
+ * esconde a dívida. Direção desconhecida cai em "nos", o lado discreto: supor que fomos nós que
+ * falamos por último NÃO cria alarme falso; supor o contrário criaria.
+ */
+export function montarUltimaMensagem(
+  r: Record<string, unknown>,
+): { texto: string; em: string; de: "cliente" | "nos" } | undefined {
+  const bruto = r.ultima_mensagem_corpo;
+  const texto = bruto == null ? "" : String(bruto).trim();
+  const em = r.ultima_mensagem_em ? String(r.ultima_mensagem_em) : null;
+  if (!texto || !em) return undefined;
+  const dir = r.ultima_mensagem_direcao ? String(r.ultima_mensagem_direcao).toLowerCase() : null;
+  return { texto, em, de: dir === "entrada" ? "cliente" : "nos" };
+}
 
 export interface PlanoBusca {
   colunas: string;
@@ -92,7 +133,7 @@ export function termoSeguro(termo: string): string {
  * uma busca digitada com máscara precisa virar dígitos antes de comparar. Mesma regra de `buscaCasa`
  * (funil-filtros.ts), e as duas TÊM que concordar: a faixa de achados e o board dividem a tela.
  */
-export function planoBusca(termo: string): PlanoBusca | null {
+export function planoBusca(termo: string, comUltimaMensagem = true): PlanoBusca | null {
   const limpo = termoSeguro(termo);
   if (limpo.length < MINIMO_BUSCA) return null;
   const condicoes = [`nome.ilike.*${limpo}*`, `telefone.ilike.*${limpo}*`];
@@ -100,7 +141,11 @@ export function planoBusca(termo: string): PlanoBusca | null {
   // 3+ dígitos: "(31) 99981" acha "3199981…". Abaixo disso o dígito solto casaria quase todo
   // telefone e só faria barulho.
   if (digitos.length >= 3 && digitos !== limpo) condicoes.push(`telefone.ilike.*${digitos}*`);
-  return { colunas: COLUNAS_CARD, or: condicoes.join(","), limite: TETO_BUSCA + 1 };
+  return {
+    colunas: comUltimaMensagem ? COLUNAS_CARD : COLUNAS_CARD_BASE,
+    or: condicoes.join(","),
+    limite: TETO_BUSCA + 1,
+  };
 }
 
 /** Corta no teto e diz se havia mais — a UI pede refino em vez de fingir que mostrou tudo. */

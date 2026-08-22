@@ -109,3 +109,68 @@ test("régua agregada (dashboard): etapa com lead acende; vazia/nula fica fraca"
     ["ok", "fraca", "fraca", "ok"],
   );
 });
+
+/*
+ * ── R23/W2 · a última mensagem no card, e a ordenação que MENTIA ────────────────────────────
+ *
+ * O bug medido em 22/08: `core.v_lead_card` tinha 17 colunas e nenhuma de mensagem, `montarCard`
+ * nunca preenchia `ultima_mensagem`, e a ordem "Sem resposta há mais tempo" comparava `undefined`
+ * com `undefined` — caía no desempate por `lead_id` e entregava ORDEM ALFABÉTICA DE UUID. O menu
+ * prometia uma coisa e fazia outra.
+ *
+ * A derivação saiu de dentro da consulta (server-only, intestável) e virou função pura justamente
+ * para caber nesta bateria. 71 dos 97 cards do board têm mensagem no banco.
+ */
+import {
+  COLUNAS_CARD,
+  COLUNAS_CARD_BASE,
+  COLUNAS_ULTIMA_MENSAGEM,
+  montarUltimaMensagem,
+  planoBusca,
+} from "../lib/dados/funil-calculos.ts";
+
+test("montarUltimaMensagem lê as TRÊS colunas do contrato e traduz a direção", () => {
+  assert.deepEqual(
+    montarUltimaMensagem({
+      ultima_mensagem_corpo: "bom dia, ainda dá tempo?",
+      ultima_mensagem_em: "2026-08-21T14:02:00.000Z",
+      ultima_mensagem_direcao: "entrada",
+    }),
+    { texto: "bom dia, ainda dá tempo?", em: "2026-08-21T14:02:00.000Z", de: "cliente" },
+  );
+  assert.equal(
+    montarUltimaMensagem({
+      ultima_mensagem_corpo: "te mando o orçamento hoje",
+      ultima_mensagem_em: "2026-08-21T14:02:00.000Z",
+      ultima_mensagem_direcao: "saida",
+    })?.de,
+    "nos",
+  );
+});
+
+test("direção desconhecida cai em 'nos' — o lado que NÃO cria alarme falso", () => {
+  // supor que fomos nós que falamos por último não acusa ninguém; supor o contrário acusaria o
+  // lead de estar sem resposta quando talvez não esteja.
+  assert.equal(
+    montarUltimaMensagem({ ultima_mensagem_corpo: "oi", ultima_mensagem_em: "2026-08-21T14:02:00.000Z" })?.de,
+    "nos",
+  );
+});
+
+test("mensagem sem data, ou sem corpo, é ausência — nunca linha em branco no card", () => {
+  assert.equal(montarUltimaMensagem({ ultima_mensagem_corpo: "oi", ultima_mensagem_em: null }), undefined);
+  assert.equal(montarUltimaMensagem({ ultima_mensagem_corpo: "   ", ultima_mensagem_em: "2026-08-21T14:02:00.000Z" }), undefined);
+  assert.equal(montarUltimaMensagem({}), undefined, "linha sem as colunas (migration não aplicada) → sem bloco");
+});
+
+test("as 3 colunas novas entram na leitura, e o degrau sem elas continua existindo", () => {
+  // pedir coluna inexistente ao PostgREST derruba a consulta INTEIRA: sem o degrau, "migration da
+  // view ainda não aplicada" não seria "board sem a linha de mensagem", seria board VAZIO.
+  for (const col of ["ultima_mensagem_corpo", "ultima_mensagem_em", "ultima_mensagem_direcao"]) {
+    assert.ok(COLUNAS_ULTIMA_MENSAGEM.includes(col), `${col} é do contrato travado em 22/08`);
+    assert.ok(COLUNAS_CARD.includes(col));
+    assert.ok(!COLUNAS_CARD_BASE.includes(col), "o degrau precisa ser um shape SEM as colunas novas");
+  }
+  assert.equal(planoBusca("maria")!.colunas, COLUNAS_CARD);
+  assert.equal(planoBusca("maria", false)!.colunas, COLUNAS_CARD_BASE);
+});

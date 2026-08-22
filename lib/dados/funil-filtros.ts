@@ -1,4 +1,5 @@
 import type { CardLead } from "./funil";
+import type { FaixaPrioridade } from "./funil-ordenacao";
 
 /**
  * Filtros do board do FUNIL (paridade Kommo — GO 25/07): busca nome/telefone, responsável,
@@ -39,6 +40,15 @@ export interface FiltrosFunil {
    * vermelho para alguém. Lead sem tarefa nenhuma não aparece em lugar nenhum — some em silêncio.
    */
   semProximaAcao: boolean;
+  /**
+   * R23/W2 · "só os estourados": recorta para a faixa AGORA (razão ≥ 1 sobre o prazo da etapa).
+   *
+   * Por que ele existe: o board tem 97 cards e a Sarah tem meia manhã. Filtrar por cor é a versão
+   * acionável da cor — sem isso, o vermelho informa e não ajuda a escolher.
+   * Por que ele NÃO é "prazo estourado há mais de N dias": o limiar é a razão, e a razão já é
+   * relativa ao prazo da etapa. Um segundo limiar aqui recriaria o problema que D55 resolveu.
+   */
+  soAgora: boolean;
 }
 
 export const FILTROS_VAZIOS: FiltrosFunil = {
@@ -50,6 +60,7 @@ export const FILTROS_VAZIOS: FiltrosFunil = {
   ate: null,
   meus: false,
   semProximaAcao: false,
+  soAgora: false,
 };
 
 /**
@@ -77,7 +88,18 @@ export function dentroDoPeriodo(iso: string | null, de: string | null, ate: stri
   return true;
 }
 
-export function filtrarCards(cards: CardLead[], f: FiltrosFunil, meuId: string | null = null): CardLead[] {
+/**
+ * `faixaDe` chega de fora porque o filtro é PURO e não pode ler config nem relógio. Quem sabe
+ * calcular a faixa (o board, que leu `sla_etapas`) passa a função; quem não sabe não oferece o
+ * chip "só os estourados". Deixar o filtro adivinhar a faixa aqui seria repetir dentro do filtro
+ * o limiar que D55 tirou do código.
+ */
+export function filtrarCards(
+  cards: CardLead[],
+  f: FiltrosFunil,
+  meuId: string | null = null,
+  faixaDe?: (c: CardLead) => FaixaPrioridade,
+): CardLead[] {
   return cards.filter((c) => {
     // meus leads: vínculo por uuid, nunca por nome. Sem usuário logado, "meus" não casa nada
     // (honesto: não inventar carteira). Lead sem dono_id só aparece no filtro geral.
@@ -92,6 +114,9 @@ export function filtrarCards(cards: CardLead[], f: FiltrosFunil, meuId: string |
     // tarefas falhou, e aí o card PASSA — filtro que engole card por falha de leitura esconde
     // justamente o lead que o filtro existe para achar.
     if (f.semProximaAcao && c.tem_tarefa_pendente !== false) return false;
+    // sem `faixaDe` o chip nem aparece na tela — e recortar sem saber calcular a faixa seria o
+    // filtro afirmando uma urgência que ninguém mediu.
+    if (f.soAgora && faixaDe && faixaDe(c) !== "agora") return false;
     return true;
   });
 }
@@ -108,7 +133,7 @@ export function contarFiltrosAtivos(f: FiltrosFunil): number {
 
 /** Há qualquer filtro (painel, busca, meus OU sem-próxima-ação)? — controla o "X de N" do cabeçalho. */
 export function haFiltro(f: FiltrosFunil): boolean {
-  return f.busca.trim() !== "" || f.meus || f.semProximaAcao || contarFiltrosAtivos(f) > 0;
+  return f.busca.trim() !== "" || f.meus || f.semProximaAcao || f.soAgora || contarFiltrosAtivos(f) > 0;
 }
 
 /**
