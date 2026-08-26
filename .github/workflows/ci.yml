@@ -47,3 +47,126 @@ jobs:
 
       - name: Testes
         run: npm test
+
+      # ─────────────────────────────────────────────────────────────────────────────
+      # O QUE ESTE PORTÃO PEGA QUE OS TRÊS DE CIMA NÃO PEGAM
+      #
+      # Até 26/08/2026 este CI tinha typecheck, lint e testes — e SÓ. O "next build OK" que
+      # circulou no review foi rodado à mão em bancada, não por portão nenhum. Duas vezes nesta
+      # semana isso quase custou caro, e os dois episódios são de coisas que `tsc --noEmit` é
+      # estruturalmente incapaz de ver:
+      #
+      #   1. Um worktree criado DENTRO da árvore do repo fez o `next build` quebrar, com um
+      #      arquivo Deno entrando no type-check do bundler. O `tsc --noEmit` tinha passado
+      #      minutos antes — as pastas nem existiam quando ele rodou. Quem enxerga o disco como
+      #      ele está na hora de empacotar é o build, não o typecheck.
+      #   2. O build de produção da Vercel emitiu um aviso que NENHUM outro portão vê:
+      #      `A Node.js API is used (process.version) which is not supported in the Edge Runtime`,
+      #      trace @supabase/supabase-js → @supabase/ssr → lib/supabase/middleware.ts. É o
+      #      middleware de auth arrastando o client do Supabase para o Edge Runtime. Funciona
+      #      hoje; é fragilidade no caminho de login. Conserto é ticket próprio, não deste passo.
+      #
+      # Typecheck vê tipos. Lint vê estilo. Teste vê o que alguém escreveu teste para ver.
+      # Só o build vê o empacotamento: resolução de módulo real, fronteira Edge/Node, prerender
+      # das 27 rotas, e o que o disco tem de verdade no instante em que se builda.
+      - name: Build de produção (next build)
+        id: build
+        env:
+          # O build NÃO precisa de credencial real, e não deve receber nenhuma: o artefato daqui
+          # é descartável e nunca é deployado — quem builda produção é a Vercel, com as variáveis
+          # dela. Medido em 26/08: `next build` conclui as 27 rotas com valores de fachada.
+          # O `exemplo.supabase.co` não existe e não é contactado durante o build.
+          # (Conferido em 26/08 via `gh api`: o repo não tem NENHUM secret de Actions cadastrado.
+          # Para este passo isso não é pendência — é o desenho. Se um dia alguém cadastrar as
+          # chaves, elas continuam não sendo necessárias aqui.)
+          NEXT_PUBLIC_SUPABASE_URL: https://exemplo.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: chave-anon-de-fachada-somente-para-o-build
+          # GITHUB_SHA já vem do próprio Actions: o carimbo de build sai de graça
+          # (next.config.mjs → VERCEL_GIT_COMMIT_SHA ?? GITHUB_SHA ?? "local").
+        run: |
+          # ⚠️ `pipefail` não é enfeite. MEDIDO em 26/08 com a página quebrada de propósito:
+          #      com pipefail    → o passo sai 1  (portão vermelho, correto)
+          #      sem pipefail    → o passo sai 0  (portão VERDE sobre build quebrado)
+          # `tee` devolve 0 sempre. Sem esta linha, o passo existiria e não protegeria nada —
+          # que é a doença exata que ele veio curar um andar acima.
+          set -o pipefail
+          npm run build 2>&1 | tee /tmp/build.log
+
+      # DECISÃO: aviso NÃO derruba o portão; erro derruba. Dois motivos, o segundo medido aqui.
+      #
+      # (a) Se aviso fosse fatal, este portão nasceria VERMELHO — e vermelho de nascença não
+      #     protege: ensina a ignorar. É a doença que o `db-ci.yml` acabou de curar com a linha
+      #     de base pgTAP, onde o portão esteve vermelho em 100% dos runs e por isso não sabia
+      #     distinguir regressão de dívida. Além disso o aviso nasce dentro de
+      #     `node_modules/@supabase/*`, não do nosso código: fazer o merge de todo mundo depender
+      #     de uma dependência de terceiro é dar a chave do portão a quem não tem compromisso com ele.
+      #
+      # (b) ⚠️ O aviso do webpack é NÃO DETERMINÍSTICO. Medido em 26/08, mesma árvore, mesmo
+      #     comando, `.next` limpo nas duas vezes: build #1 imprimiu o aviso do Edge Runtime,
+      #     build #2 não imprimiu NADA. Next 14 roda os compiladores (client/server/edge-server)
+      #     em paralelo e o aviso do edge só sai quando aquela compilação fecha a tempo do resumo.
+      #     Portão fatal em cima disso não seria rigoroso — seria intermitente, que é pior:
+      #     ensina que vermelho é para tentar de novo.
+      #
+      # E é por (b) que o passo abaixo NÃO se contenta em grepar o log. Ele mede a CAUSA, que é
+      # estável: o bundle Edge do middleware ou contém `process.version`, ou não contém. Medido
+      # em 26/08 — no build que NÃO imprimiu aviso nenhum, o bundle tinha a ocorrência do mesmo
+      # jeito. O log é sintoma intermitente; o artefato é o fato.
+      #
+      # Quando o ticket do Edge Runtime for fechado, endurecer é trocar o aviso deste passo por
+      # `exit 1` — deliberadamente, com commit próprio, e aí ele vira portão de regressão.
+      - name: Fronteira Edge do middleware fica visível (não é fatal)
+        if: always()
+        env:
+          RESULTADO_BUILD: ${{ steps.build.outcome }}
+        run: |
+          RESUMO="${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+          # Build vermelho já pinta o job de vermelho; aqui não há artefato para medir.
+          # Sem esta guarda o passo gritaria sobre bundle ausente e roubaria a atenção
+          # do erro de verdade, que está no passo de cima.
+          if [ "$RESULTADO_BUILD" != "success" ]; then
+            echo "o build não passou (\"$RESULTADO_BUILD\") — nada a medir; o vermelho é do passo acima."
+            exit 0
+          fi
+
+          # 1) Sintoma: o aviso do webpack, QUANDO ele sai. Oportunista, nunca a única fonte.
+          if [ -f /tmp/build.log ] && grep -q 'Compiled with warnings' /tmp/build.log; then
+            sed -n '/Compiled with warnings/,/Compiled successfully/p' /tmp/build.log > /tmp/avisos.log
+            echo "::group::Avisos do build (não fatais)"
+            cat /tmp/avisos.log
+            echo "::endgroup::"
+            {
+              echo '### ⚠️ O build compilou COM avisos'
+              echo
+              echo '```'
+              cat /tmp/avisos.log
+              echo '```'
+            } >> "$RESUMO"
+          else
+            echo "o build não imprimiu bloco de avisos nesta execução (o que NÃO quer dizer que não haja — ver abaixo)"
+          fi
+
+          # 2) Fato: a API de Node dentro do bundle Edge do middleware. Determinístico.
+          BUNDLE=.next/server/middleware.js
+          if [ ! -f "$BUNDLE" ]; then
+            echo "::warning::$BUNDLE não existe com o build VERDE — o middleware deixou de ser compilado para o Edge. "
+            echo "::warning::Pode ser refatoração legítima; se for, este passo precisa ser reescrito, porque perdeu o que media."
+            exit 0
+          fi
+          N=$(grep -o 'process\.version' "$BUNDLE" | wc -l | tr -d ' ')
+          echo "APIs de Node no bundle Edge do middleware ($BUNDLE, $(wc -c < "$BUNDLE" | tr -d ' ') bytes): process.version = $N"
+          if [ "$N" -gt 0 ]; then
+            echo "::warning file=lib/supabase/middleware.ts::Fronteira Edge: o middleware de auth arrasta process.version para o Edge Runtime (via @supabase/ssr -> @supabase/supabase-js), $N ocorrência(s) no bundle. Funciona hoje; é fragilidade no caminho de login. Ticket próprio — este portão só o mantém à vista."
+            {
+              echo
+              echo "### ⚠️ Fronteira Edge do middleware"
+              echo
+              echo "\`lib/supabase/middleware.ts\` puxa \`@supabase/supabase-js\` para o Edge Runtime:"
+              echo "**$N** ocorrência(s) de \`process.version\` em \`$BUNDLE\`."
+              echo "Não derruba o portão (ver o porquê no \`.github/workflows/ci.yml\`). Ticket próprio."
+            } >> "$RESUMO"
+          else
+            echo "ok — nenhuma API de Node detectada no bundle Edge. Se isto virou o normal, é hora de tornar o passo fatal."
+          fi
+          exit 0

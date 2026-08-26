@@ -81,3 +81,19 @@ segue **não exposta**, como manda o RF-2 (verificado: `PGRST106 Invalid schema:
 
 CI (build/lint/tsc/gitleaks) + Vercel, matriz de perfis RLS (N5 é S7) e criar o(s) usuário(s) de acesso
 reais. Nada disso é local — depende do aval do Diogo.
+
+## Portões de CI — o que cada um pega (`.github/workflows/ci.yml`)
+
+`gitleaks` → `typecheck` → `lint` → `testes` → **`next build`** (acrescentado em 26/08/2026).
+
+O build é o único que enxerga o **empacotamento**: resolução de módulo real, fronteira Edge/Node e o
+prerender das 27 rotas. Os dois episódios que o justificam são desta semana — um worktree criado
+dentro da árvore quebrou o `next build` com um arquivo Deno, **depois** de o `tsc --noEmit` ter
+passado (as pastas nem existiam quando ele rodou); e o aviso de Edge Runtime do
+`lib/supabase/middleware.ts` só apareceu no build de produção da Vercel, invisível para todos os
+outros portões. Até então, o "`next build` OK" era rodado à mão em bancada.
+
+**Aviso não derruba o portão; erro derruba** — o porquê está comentado no próprio YAML, junto com a
+medição que mostrou o aviso do webpack ser **não determinístico** (mesma árvore, `.next` limpo, dois
+builds: um imprimiu o aviso do Edge, o outro não imprimiu nada). Por isso o portão mede a *causa* no
+bundle Edge, não o aviso no log.
