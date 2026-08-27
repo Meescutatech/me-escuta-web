@@ -8,6 +8,10 @@ import {
 } from "@/lib/dados/marketing-calculos";
 
 /**
+ * F3 (27/08): veio de `app/prototipo/marketing/dados-ensaio.ts`. A rota `/prototipo` saiu do app
+ * (respondia 200 sem sessao). A fixture fica aqui, sem rota, para a F7 construir a tela de
+ * marketing com dado de ensaio ate o BLOCO A liberar a captura real.
+ *
  * OS DADOS DO ENSAIO — inventados, e este arquivo existe para que eles nunca saiam daqui.
  *
  * Produção tem ZERO linhas em `core.captacao` e ZERO em `core.custo_midia` (medido 22/08), e vai

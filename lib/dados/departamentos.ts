@@ -33,10 +33,10 @@ import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
  * Onde o departamento ativo mora. Constante de código, não env: é lida em um lugar só, e env aqui
  * seria configuração sem consumidor de configuração.
  *
- * Por que COOKIE, e não `sessionStorage` (LiderHub) nem a URL (Vercel) — a escolha é EXPLÍCITA,
+ * Por que COOKIE, e não storage do navegador (LiderHub) nem a URL (Vercel) — a escolha é EXPLÍCITA,
  * como o benchmark §3-bis.1 exige, e as duas alternativas caíram por MEDIDA, não por gosto:
  *
- *  · `sessionStorage` não existe no servidor, e as leituras do shell são server-side
+ *  · storage do navegador não existe no servidor, e as leituras do shell são server-side
  *    (`app/(app)/layout.tsx`). Copiar a LiderHub obrigaria a mover a leitura para o cliente — que é
  *    literalmente transformar escopo em filtro de cliente, o defeito que o C9 existe para pegar.
  *

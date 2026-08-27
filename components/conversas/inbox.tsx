@@ -40,8 +40,6 @@ import type { PainelLead } from "@/lib/dados/lead-painel";
 import { FichaKommo } from "@/components/lead/ficha-kommo";
 import { CartaoSugestaoTarefa } from "./sugestao-tarefa";
 import { avaliarConversa } from "@/lib/conversas/sugestao-jarvis";
-import { LinhaTarefaAutomatica } from "@/components/tarefas/tarefa-automatica";
-import { criarSeNova, useFilaPrototipo } from "@/lib/tarefas/fila-prototipo";
 import { ReguaFunil } from "@/components/regua-funil";
 import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import type { EtapaFunil } from "@/lib/dados/funil";
@@ -209,7 +207,6 @@ export function Inbox({
    */
   const [agoraJarvis, setAgoraJarvis] = useState<number | null>(null);
   const [decididas, setDecididas] = useState<Map<string, "aprovada" | "recusada">>(new Map());
-  const filaPrototipo = useFilaPrototipo();
   useEffect(() => {
     setAgoraJarvis(Date.now());
     const t = setInterval(() => setAgoraJarvis(Date.now()), 60_000);
@@ -594,24 +591,10 @@ export function Inbox({
   }, [agoraJarvis, selecionada, visiveis, titulo, mencionaveis, autorId]);
 
   /**
-   * D10 · tipo `auto` NÃO abre cartão: a tarefa nasce criada e vai para a fila. Aqui isso é
-   * `sessionStorage` (o banco é o de produção), e a criação é idempotente pelo id da proposta —
-   * a regra recalcula a cada minuto e devolveria a mesma tarefa para sempre.
+   * F3 (27/08): o tipo `auto` NÃO abre cartão e NÃO é mais simulado aqui. A fila do protótipo
+   * (storage do navegador) saiu; quem cria a tarefa automática é o runtime, pela porta, e ela chega a
+   * esta conversa e a /tarefas pela projeção `core.tarefa`.
    */
-  useEffect(() => {
-    if (despachoJarvis?.modo !== "criada" || agoraJarvis == null) return;
-    criarSeNova({
-      proposta: despachoJarvis.proposta,
-      fundamento: despachoJarvis.fundamento,
-      criadaEm: agoraJarvis,
-    });
-  }, [despachoJarvis, agoraJarvis]);
-
-  /** A tarefa automática desta conversa, se ela já existe na fila. */
-  const automaticaAqui =
-    despachoJarvis?.modo === "criada"
-      ? filaPrototipo.find((t) => t.proposta.id === despachoJarvis.proposta.id) ?? null
-      : null;
 
   // §5.2: só variável CONFIÁVEL entra. Nome ruim (o título vira telefone) fica DE FORA —
   // "Oi (31) 98888-7777" não é mensagem; o placeholder literal trava o envio e a Sara completa.
@@ -1023,11 +1006,6 @@ export function Inbox({
                   decisaoInicial={decididas.get(despachoJarvis.proposta.id) ?? null}
                   onDecidir={(id, d) => setDecididas((m) => new Map(m).set(id, d))}
                 />
-              )}
-              {/* D10 · tipo `auto`: sem cartão, sem clique. A tarefa JÁ existe — o fio só
-                  informa, com o motivo à vista e o desfazer do lado. */}
-              {automaticaAqui && (
-                <LinhaTarefaAutomatica key={automaticaAqui.proposta.id} tarefa={automaticaAqui} compacta />
               )}
               <div ref={fimRef} />
             </div>
