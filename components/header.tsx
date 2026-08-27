@@ -1,10 +1,12 @@
 "use client";
 
+import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { Sino } from "@/components/notificacoes/sino";
 import { SeletorDepartamento } from "@/components/header/seletor-departamento";
 import { RelatarDestaTela } from "@/components/header/relatar-desta-tela";
 import { Identidade } from "@/components/header/identidade";
+import { JarvisGatilho } from "@/components/header/jarvis-gatilho";
 import { lerTituloDaRota } from "@/lib/header/titulos";
 import type { Departamento } from "@/lib/departamentos/escopo";
 import type { Notificacao } from "@/lib/notificacoes";
@@ -24,13 +26,14 @@ import type { Papel } from "@/components/configuracoes/regras/canais.ts";
  * Se o item é DESTINO — um lugar que existe sempre, igual em qualquer tela — é sidebar. Se é ESTADO
  * DO MOMENTO — muda com a tela, com o que aconteceu ou com quem está logado — é header.
  * D-DESIGN-2 cravou o mesmo: o header é RECIPIENTE, não navegação. **Zero destino de navegação no
- * topo** — é o que o C1 mede, e é por isso que não há um único `href` neste arquivo.
+ * topo** — as duas exceções (F4, 27/08) são ATOS com contexto, não destinos: o Jarvis sobre a tela
+ * atual e, no menu do avatar, Configurações/Sair (identidade é header pela regra acima).
  *
  * ORDEM DA ESQUERDA PARA A DIREITA, e ela resolve um conflito que o D6-b criou (o Diogo pediu o
  * nome do workspace no canto esquerdo, onde a revisão 1 tinha posto o título da página):
  *
  *   │ (sidebar 60px) │ [Comercial ▾] │ Funil de vendas       [◇] [!] [🔔] [SA] │
- *                      └ escopo         └ contexto interno    Jarvis│suporte│sino│eu
+ *                      └ escopo         └ contexto interno    Jarvis│relatar│sino│eu
  *
  * **Escopo antes de posição.** O departamento é o contexto EXTERNO — determina o CONJUNTO que a
  * tela mostra. O título é o contexto INTERNO — qual recorte desse conjunto estou vendo. Lido da
@@ -122,18 +125,15 @@ export function Header({
 
       <div className="ml-auto flex flex-none items-center gap-2">
         {/*
-          SLOT DO JARVIS — 32×32 à esquerda do sino, e ele renderiza **NADA**.
-          Não é botão desabilitado, não é ícone acinzentado, não é tooltip "em breve": nada focável,
-          nada na ordem de Tab. Um affordance morto ensina a pessoa a ignorar aquele canto — e
-          depois ela ignora o Jarvis de verdade.
-          Está DECLARADO aqui, e não só omitido, porque a largura do agrupamento da direita é orçada
-          agora: quando o Jarvis chegar, ninguém re-litiga onde ele vai nem rearruma o header.
-          Contrato de quem vier ocupar: um GATILHO ÚNICO que abre a superfície do Jarvis em overlay,
-          recebendo `{ rota_atual, entidade_em_foco? }`. Ele NÃO é link para `/jarvis` — `/jarvis`
-          continua sendo página (destino) e, pela regra do §4.1, se um dia precisar de entrada de
-          menu, a entrada é na SIDEBAR. O que vive aqui é o ATO do Jarvis sobre a tela atual.
+          JARVIS SOBRE ESTA TELA (F4, 27/08) — o slot de 32×32 que ficou vazio desde o M6 agora tem
+          dono. É o único href do header, e é exceção DECLARADA à regra "zero destino no topo": o
+          que vive aqui é o ATO do Jarvis sobre a tela atual (leva `?contexto=<rota>`), não o
+          destino — o destino é o item `Jarvis` da sidebar. `useSearchParams` exige Suspense; o
+          fallback ocupa a mesma caixa para o header não pular.
         */}
-        <span aria-hidden className="h-8 w-8" data-slot="jarvis" />
+        <Suspense fallback={<span aria-hidden className="h-8 w-8" />}>
+          <JarvisGatilho />
+        </Suspense>
 
         <RelatarDestaTela meuPapel={meuPapel} />
 

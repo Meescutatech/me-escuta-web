@@ -3,26 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { IconeJarvis } from "@/components/header/icone-jarvis";
+import { itensSidebar, type ItemSidebar } from "@/lib/header/navegacao";
 
 /*
  * Sidebar de ícones (r9-tokens §6, aprovada 22/07) — substitui o menu de topo:
- *  - colapsada por padrão (60px, só ícones: logo-orelha, Visão geral/Funil/Conversas, avatar);
+ *  - colapsada por padrão (60px, só ícones: logo-orelha e os destinos);
  *  - expande no hover em OVERLAY (216px, width 180ms ease-out + sombra) — o main tem margem
  *    FIXA de 60px, o conteúdo nunca pula;
  *  - rótulos/contadores em fade 120ms delay 50ms; wordmark desdobra por max-width em sincronia;
  *  - ativo = navy sobre #EAECF5; contador do Funil = total mono neutro; Conversas = não-lidas
  *    em chip laranja (colapsada vira ponto laranja 7px no ícone);
+ *  - `focus-within` ABRE a barra pelos mesmos 216px do hover (W3, 22/08) e cada link tem anel;
  *  - prefers-reduced-motion: transições desligadas (classe .lateral-r9 no globals.css).
- * W3 · 22/08: /FILA ENTROU NO MENU. Ela é a única tela onde "o agente propõe, o humano valida"
- *   vira trabalho — e estava alcançável só por URL digitada. Fila que ninguém encontra não é
- *   fila: é 405 propostas paradas desde 19/07. /jarvis e /timeline seguem fora, de propósito.
  *
- * W3 · 22/08: FOCO DE TECLADO. A sidebar não tinha nenhum (zero ocorrência de focus-within ou
- *   focus-visible neste arquivo): quem navegava por Tab percorria seis links dentro de 60px de
- *   ícones mudos, sem rótulo e sem indicação de onde estava. Agora `focus-within` ABRE a barra
- *   pelos mesmos 216px do hover — o mesmo gesto visual, chegando pelo teclado — e cada link tem
- *   anel de foco. Sem contador novo: o número da fila exigiria uma leitura a mais em TODA tela
- *   (a sidebar vive no layout), e o item sem contador já resolve o problema de não achar.
+ * F4 (27/08): A LISTA VEM DE `lib/header/navegacao.ts` — é lá que está escrito o que entra e o
+ * que saiu (Jarvis acima de Dashboard; Fila, Configurações e Relatar problema fora do menu).
+ * A sidebar responde "para onde eu vou"; identidade e Sair são header (menu do avatar), e por
+ * isso o rodapé "admin · Sair" deixou de existir aqui.
  */
 
 /** Orelha do logo — SVG canônico do r9-tokens §5 (copiar como está). */
@@ -44,8 +42,8 @@ function Orelha({ className }: { className?: string }) {
   );
 }
 
-const ICONES: Record<string, React.ReactNode> = {
-  visao: (
+const ICONES: Record<Exclude<ItemSidebar["icone"], "jarvis">, React.ReactNode> = {
+  dashboard: (
     <>
       <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5" />
       <rect x="13" y="3.5" width="7.5" height="7.5" rx="1.5" />
@@ -69,18 +67,6 @@ const ICONES: Record<string, React.ReactNode> = {
       <path d="m8.5 12.5 2.5 2.5 5-5.5" />
     </>
   ),
-  fila: (
-    <>
-      <path d="M3.5 13.5h4l1.6 2.6h5.8l1.6-2.6h4" />
-      <path d="M6 5h12l3 8.5v3.9a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 17.4v-3.9z" />
-    </>
-  ),
-  configuracoes: (
-    <>
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" />
-    </>
-  ),
   marketing: (
     <>
       <circle cx="12" cy="12" r="8.5" />
@@ -88,124 +74,44 @@ const ICONES: Record<string, React.ReactNode> = {
       <path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" />
     </>
   ),
-  suporte: (
-    <>
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M12 8.2v4.6M12 15.6v.2" />
-    </>
-  ),
 };
 
-function iniciais(email: string): string {
-  const nome = email.split("@")[0].replace(/[._-]/g, " ").trim();
-  const partes = nome.split(/\s+/);
-  const letras = partes.length >= 2 ? partes[0][0] + partes[1][0] : nome.slice(0, 2);
-  return letras.toUpperCase();
+function Icone({ nome, className }: { nome: ItemSidebar["icone"]; className: string }) {
+  if (nome === "jarvis") return <IconeJarvis className={className} />;
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={className}
+    >
+      {ICONES[nome]}
+    </svg>
+  );
 }
 
 export function Sidebar({
-  email,
   contFunil,
   contNaoLidas,
   contVencidas,
   verMarketing = false,
 }: {
-  email: string;
   contFunil: number | null;
   contNaoLidas: number | null;
   /** tarefas VENCIDAS agora (R14) — a fila vermelha; null/0 = sem contador. */
   contVencidas: number | null;
   /**
    * T7 (RF-12) — o item de Marketing só aparece para marketing/admin/owner.
-   *
-   * Isto é ORGANIZAÇÃO, não controle de acesso, e a diferença importa: quem não vê o item e
-   * digita `/marketing` na barra de endereço é recusado pela ROTA, e o dado é defendido pela
-   * RLS da `0251`. Esconder o item existe só para não oferecer a um vendedor uma porta que ele
-   * vai bater a cara — a spec é explícita em não aceitar menu escondido como defesa.
+   * Isto é ORGANIZAÇÃO, não controle de acesso: a rota recusa e a RLS da `0251` defende o dado.
    */
   verMarketing?: boolean;
 }) {
   const pathname = usePathname();
-  const itens = [
-    { href: "/", rotulo: "Visão geral", icone: ICONES.visao, ativa: pathname === "/" },
-    {
-      href: "/funil",
-      rotulo: "Funil",
-      icone: ICONES.funil,
-      ativa: pathname.startsWith("/funil"),
-      cont: contFunil != null ? contFunil.toLocaleString("pt-BR") : null,
-      laranja: false,
-      vermelho: false,
-    },
-    {
-      href: "/conversas",
-      rotulo: "Conversas",
-      icone: ICONES.conversas,
-      ativa: pathname.startsWith("/conversas"),
-      cont: contNaoLidas != null && contNaoLidas > 0 ? contNaoLidas.toLocaleString("pt-BR") : null,
-      laranja: true,
-      vermelho: false,
-      ponto: contNaoLidas != null && contNaoLidas > 0,
-    },
-    {
-      // contador SÓ de vencidas: no Kommo a fila vermelha tinha 755 itens e ninguém olhava;
-      // aqui o número só aparece quando existe débito — e zero é silêncio, não "0".
-      href: "/tarefas",
-      rotulo: "Tarefas",
-      icone: ICONES.tarefas,
-      ativa: pathname.startsWith("/tarefas"),
-      cont: contVencidas != null && contVencidas > 0 ? contVencidas.toLocaleString("pt-BR") : null,
-      laranja: false,
-      vermelho: true,
-      ponto: contVencidas != null && contVencidas > 0,
-    },
-    {
-      // Sem contador de propósito: o número viria de uma leitura a mais no layout, paga por TODA
-      // tela. O que faltava não era o número — era existir um caminho até a tela.
-      href: "/fila",
-      rotulo: "Fila de validação",
-      icone: ICONES.fila,
-      ativa: pathname.startsWith("/fila"),
-    },
-    ...(verMarketing
-      ? [
-          {
-            href: "/marketing",
-            rotulo: "Marketing",
-            icone: ICONES.marketing,
-            ativa: pathname.startsWith("/marketing"),
-          },
-        ]
-      : []),
-    {
-      href: "/configuracoes",
-      rotulo: "Configurações",
-      icone: ICONES.configuracoes,
-      ativa: pathname.startsWith("/configuracoes"),
-    },
-    {
-      // M5 (R18) · DUAS mudanças, e a segunda é a que importa.
-      //
-      // 1. O href sai de `/configuracoes/suporte` para `/suporte`. O rótulo NÃO muda: "Relatar
-      //    problema" nomeia a AÇÃO, e é melhor que "Suporte", que nomeia um departamento que não
-      //    existe aqui.
-      //
-      // 2. `?de=` LEVA A ROTA REAL. Este era o contrato que eu tinha declarado como dependência do
-      //    header do M6 — e a dependência DISSOLVEU quando eu medi (E-066): `pathname` já está em
-      //    escopo 41 linhas acima, porque a sidebar já é client component. Sem isto, a tela de
-      //    suporte adivinha a origem do relato pelo `referer`, e `onde` é o campo mais útil de um
-      //    relato de bug.
-      //
-      // ⚠ COLISÃO DECLARADA: o M6 também toca este arquivo (o seletor de departamento). A
-      //    PONTO-DE-PARADA-R18 arbitrou `canais.ts` (ARB-R18-02) e a linha do inbox (ARB-R18-03),
-      //    mas NÃO a sidebar. Por isso esta mudança está num COMMIT ISOLADO de duas linhas: quem
-      //    for declarado dono pega ou descarta sem desfazer mais nada.
-      href: `/suporte?de=${encodeURIComponent(pathname)}`,
-      rotulo: "Relatar problema",
-      icone: ICONES.suporte,
-      ativa: pathname.startsWith("/suporte"),
-    },
-  ];
+  const itens = itensSidebar({ pathname, contFunil, contNaoLidas, contVencidas, verMarketing });
 
   return (
     <aside className="lateral-r9 group fixed bottom-0 left-0 top-0 z-50 flex w-[60px] flex-col gap-0.5 overflow-hidden whitespace-nowrap border-r border-linha bg-branco px-2.5 pb-3.5 pt-3 transition-[width] duration-[180ms] ease-out hover:w-[216px] focus-within:w-[216px] hover:shadow-[8px_0_28px_rgba(31,35,40,.08)] focus-within:shadow-[8px_0_28px_rgba(31,35,40,.08)]">
@@ -223,6 +129,7 @@ export function Sidebar({
           <Link
             key={it.href}
             href={it.href}
+            aria-current={it.ativa ? "page" : undefined}
             className={cn(
               "relative flex h-10 items-center gap-3 rounded-lg px-2 text-[13.5px] no-underline",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45",
@@ -231,18 +138,7 @@ export function Sidebar({
                 : "font-medium text-suave hover:bg-hover hover:text-tinta",
             )}
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.8}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="ml-0.5 h-5 w-5 flex-none"
-            >
-              {it.icone}
-            </svg>
+            <Icone nome={it.icone} className="ml-0.5 h-5 w-5 flex-none" />
             <span className="opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
               {it.rotulo}
             </span>
@@ -250,9 +146,9 @@ export function Sidebar({
               <span
                 className={cn(
                   "ml-auto rounded-full px-[7px] py-px font-mono text-[11px] opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100",
-                  it.vermelho
+                  it.tom === "vermelho"
                     ? "bg-vermelho font-semibold text-branco"
-                    : it.laranja
+                    : it.tom === "laranja"
                       ? "bg-laranja font-semibold text-branco"
                       : "border border-linha bg-board text-suave",
                 )}
@@ -262,40 +158,18 @@ export function Sidebar({
             )}
             {/* colapsada: pendência vira ponto no canto do ícone (laranja = não-lida,
                 vermelho = tarefa vencida); some na expansão */}
-            {"ponto" in it && it.ponto && (
+            {it.ponto && (
               <span
                 aria-hidden
                 className={cn(
                   "absolute left-6 top-2 h-[7px] w-[7px] rounded-full border-[1.5px] border-branco transition-opacity duration-[120ms] group-hover:opacity-0 group-focus-within:opacity-0",
-                  it.vermelho ? "bg-vermelho" : "bg-laranja",
+                  it.tom === "vermelho" ? "bg-vermelho" : "bg-laranja",
                 )}
               />
             )}
           </Link>
         ))}
       </nav>
-
-      {/* usuário + sair (embaixo) */}
-      <div className="mt-auto flex items-center gap-2.5 px-[3px]">
-        <span
-          title={email}
-          className="grid h-7 w-7 flex-none place-items-center rounded-full bg-navy text-[11.5px] font-semibold text-branco"
-        >
-          {iniciais(email)}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-suave opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
-          {email.split("@")[0]}
-        </span>
-        <form action="/auth/signout" method="post" className="opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
-          <button
-            type="submit"
-            title="Sair"
-            className="rounded-[6px] border border-linha bg-branco px-2 py-1 text-[11.5px] font-medium text-suave hover:bg-hover hover:text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45"
-          >
-            Sair
-          </button>
-        </form>
-      </div>
     </aside>
   );
 }
