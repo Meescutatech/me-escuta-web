@@ -31,6 +31,10 @@ function tarefa(sobrescreve: Partial<TarefaLead>): TarefaLead {
     resultado: null,
     criado_em: "2026-07-20T10:00:00.000Z",
     concluida_em: null,
+    por_que: null,
+    fazer: null,
+    trecho: null,
+    origem: null,
     ...sobrescreve,
   };
 }

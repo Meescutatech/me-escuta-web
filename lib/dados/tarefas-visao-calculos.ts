@@ -28,6 +28,11 @@ export interface TarefaVisao {
   concluida_em: string | null;
   /** derivada em core.v_tarefa (status='pendente' and prazo < now()). */
   vencida: boolean;
+  /** F2 / D62 (0298): POR QUE, FAZER, TRECHO e origem da tarefa criada pelo Jarvis; null nas demais. */
+  por_que: string | null;
+  fazer: string | null;
+  trecho: string | null;
+  origem: string | null;
 }
 
 export type StatusFiltro = "abertas" | "concluidas" | "arquivadas";

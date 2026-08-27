@@ -38,10 +38,6 @@ import {
 import { diasNaEtapa } from "@/lib/tempo";
 import type { PainelLead } from "@/lib/dados/lead-painel";
 import { FichaKommo } from "@/components/lead/ficha-kommo";
-import { CartaoSugestaoTarefa } from "./sugestao-tarefa";
-import { avaliarConversa } from "@/lib/conversas/sugestao-jarvis";
-import { LinhaTarefaAutomatica } from "@/components/tarefas/tarefa-automatica";
-import { criarSeNova, useFilaPrototipo } from "@/lib/tarefas/fila-prototipo";
 import { ReguaFunil } from "@/components/regua-funil";
 import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import type { EtapaFunil } from "@/lib/dados/funil";
@@ -197,24 +193,16 @@ export function Inbox({
   const fimRef = useRef<HTMLDivElement>(null);
 
   /**
-   * R23 protótipo (workshop 12/08) · O JARVIS SUGERE A TAREFA.
+   * F2 / D62 (27/08) · O JARVIS CRIA A TAREFA — no runtime, não aqui.
    *
-   * `agora` nasce null e só é preenchido depois da montagem: a página é renderizada no servidor, e
-   * um Date.now() nos dois lados daria horas diferentes e hidratação divergente. Enquanto é null,
-   * a sugestão simplesmente não existe — nenhum piscar de cartão errado.
-   *
-   * `decididas` guarda o que já foi aprovado/recusado NESTA TELA. O `.env.local` aponta para o
-   * Supabase de produção, então a decisão morre aqui: aprovar não cria tarefa, recusar não grava
-   * recusa. No sistema real cada uma vira evento no ledger com o nome de quem validou.
+   * O protótipo do workshop (regra pura em `lib/conversas/sugestao-jarvis.ts` + cartão de
+   * aprovar + fila em sessionStorage) SAIU do caminho principal: quem monitora a conversa é o
+   * worker `jarvis/tarefas` do runtime, que grava `tarefa_criada` (ator agente:jarvis, origem
+   * jarvis_conversa) pela porta. A tarefa chega a esta tela como qualquer outra — pela projeção
+   * `painel.tarefas` — e `montarRegistros` a marca como do Jarvis pela `origem`. O registro na
+   * timeline diz "Jarvis criou tarefa: FAZER — POR QUE", sem botão de aprovar (criar_tarefa=auto).
+   * Os módulos do protótipo continuam no repo porque `components/prototipo/workshop.tsx` os usa.
    */
-  const [agoraJarvis, setAgoraJarvis] = useState<number | null>(null);
-  const [decididas, setDecididas] = useState<Map<string, "aprovada" | "recusada">>(new Map());
-  const filaPrototipo = useFilaPrototipo();
-  useEffect(() => {
-    setAgoraJarvis(Date.now());
-    const t = setInterval(() => setAgoraJarvis(Date.now()), 60_000);
-    return () => clearInterval(t);
-  }, []);
   const divisorRef = useRef<HTMLDivElement>(null);
   const noFimRef = useRef(true);
   const totalAnteriorRef = useRef(-1); // -1 = próxima renderização é abertura de conversa
@@ -577,41 +565,6 @@ export function Inbox({
       ? fmtTelefone(selecionada.telefone)
       : selecionada.nome!
     : "";
-
-  /**
-   * A proposta do Jarvis para ESTA conversa. Sai da regra pura (`sugerirTarefa`), que lê o fio de
-   * verdade — as mensagens que estão na tela — e devolve `null` na maioria das conversas. Isso é
-   * o desenho, não uma limitação: agente que sugere algo em toda conversa vira ruído, e ruído é
-   * como uma sugestão boa passa despercebida.
-   */
-  const despachoJarvis = useMemo(() => {
-    if (agoraJarvis == null || !selecionada) return null;
-    const eu = mencionaveis.find((m) => m.id === autorId && m.tipo === "humano");
-    return avaliarConversa(visiveis, agoraJarvis, {
-      nomeLead: titulo || "o cliente",
-      responsavel: eu?.nome ?? "você",
-    });
-  }, [agoraJarvis, selecionada, visiveis, titulo, mencionaveis, autorId]);
-
-  /**
-   * D10 · tipo `auto` NÃO abre cartão: a tarefa nasce criada e vai para a fila. Aqui isso é
-   * `sessionStorage` (o banco é o de produção), e a criação é idempotente pelo id da proposta —
-   * a regra recalcula a cada minuto e devolveria a mesma tarefa para sempre.
-   */
-  useEffect(() => {
-    if (despachoJarvis?.modo !== "criada" || agoraJarvis == null) return;
-    criarSeNova({
-      proposta: despachoJarvis.proposta,
-      fundamento: despachoJarvis.fundamento,
-      criadaEm: agoraJarvis,
-    });
-  }, [despachoJarvis, agoraJarvis]);
-
-  /** A tarefa automática desta conversa, se ela já existe na fila. */
-  const automaticaAqui =
-    despachoJarvis?.modo === "criada"
-      ? filaPrototipo.find((t) => t.proposta.id === despachoJarvis.proposta.id) ?? null
-      : null;
 
   // §5.2: só variável CONFIÁVEL entra. Nome ruim (o título vira telefone) fica DE FORA —
   // "Oi (31) 98888-7777" não é mensagem; o placeholder literal trava o envio e a Sara completa.
@@ -1011,24 +964,9 @@ export function Inbox({
                     </div>
                   );
                 })}
-              {/* R23 · a sugestão de TAREFA do Jarvis fecha o fio: ela é sobre o que fazer a
-                  seguir, então mora colada no composer, onde a decisão acontece. A sugestão de
-                  MENSAGEM da Clara (acima) continua no lugar dela — são propostas diferentes. */}
-              {despachoJarvis?.modo === "propor" && (
-                <CartaoSugestaoTarefa
-                  // `key` pelo id: mensagem nova = proposta nova, e o cartão renasce zerado
-                  key={despachoJarvis.proposta.id}
-                  sugestao={despachoJarvis.proposta}
-                  fundamento={despachoJarvis.fundamento}
-                  decisaoInicial={decididas.get(despachoJarvis.proposta.id) ?? null}
-                  onDecidir={(id, d) => setDecididas((m) => new Map(m).set(id, d))}
-                />
-              )}
-              {/* D10 · tipo `auto`: sem cartão, sem clique. A tarefa JÁ existe — o fio só
-                  informa, com o motivo à vista e o desfazer do lado. */}
-              {automaticaAqui && (
-                <LinhaTarefaAutomatica key={automaticaAqui.proposta.id} tarefa={automaticaAqui} compacta />
-              )}
+              {/* F2 / D62 · a tarefa que o Jarvis cria entra no FIO, como registro
+                  (`RegistroInterno` com `jarvis`), no horário em que nasceu — não colada
+                  ao composer: ela não pede decisão. */}
               <div ref={fimRef} />
             </div>
 

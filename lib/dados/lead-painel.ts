@@ -26,6 +26,15 @@ export interface TarefaLead {
   resultado: string | null;
   criado_em: string;
   concluida_em: string | null;
+  /**
+   * F2 / D62 (0298): a tarefa que o Jarvis criou a partir da conversa carrega o POR QUE, o
+   * FAZER e o TRECHO citado; `origem = 'jarvis_conversa'` é o que a timeline usa para
+   * distinguir. null nas tarefas humanas e enquanto a 0298 não estiver aplicada.
+   */
+  por_que: string | null;
+  fazer: string | null;
+  trecho: string | null;
+  origem: string | null;
 }
 
 export interface AnotacaoLead {
@@ -82,6 +91,8 @@ async function lerFicha(supabase: Supabase, leadId: string): Promise<FichaDoLead
   return { grupos, valores };
 }
 
+const COLUNAS_TAREFA_R27 =
+  "id,titulo,responsavel,responsavel_id,descricao,tipo,prazo,status,resultado,criado_em,concluida_em,por_que,fazer,trecho,origem";
 const COLUNAS_TAREFA_R13 =
   "id,titulo,responsavel,responsavel_id,descricao,tipo,prazo,status,resultado,criado_em,concluida_em";
 const COLUNAS_TAREFA_R8 = "id,titulo,responsavel,prazo,status,resultado,criado_em,concluida_em";
@@ -96,8 +107,9 @@ async function lerTarefas(supabase: Supabase, leadId: string): Promise<TarefaLea
       .order("criado_em", { ascending: false })
       .limit(100);
 
-  // colunas do Bloco A primeiro; sem elas (migration 0037 ainda não aplicada) volta pro shape R8
-  let { data, error } = await consulta(COLUNAS_TAREFA_R13);
+  // colunas da 0298 primeiro (F2); sem elas, as do Bloco A; sem elas, o shape R8
+  let { data, error } = await consulta(COLUNAS_TAREFA_R27);
+  if (error) ({ data, error } = await consulta(COLUNAS_TAREFA_R13));
   if (error) ({ data, error } = await consulta(COLUNAS_TAREFA_R8));
   if (error || !data) return [];
 
@@ -113,6 +125,10 @@ async function lerTarefas(supabase: Supabase, leadId: string): Promise<TarefaLea
     resultado: t.resultado ?? null,
     criado_em: String(t.criado_em),
     concluida_em: t.concluida_em ?? null,
+    por_que: t.por_que ?? null,
+    fazer: t.fazer ?? null,
+    trecho: t.trecho ?? null,
+    origem: t.origem ?? null,
   }));
 }
 
