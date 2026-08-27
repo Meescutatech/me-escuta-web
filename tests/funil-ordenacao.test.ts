@@ -6,6 +6,7 @@ import {
   TETO_AGORA,
   dataUltimaMensagem,
   excedeuTetoAgora,
+  resumoFaixas,
   horasParadas,
   interpretarSlaEtapas,
   ordenarCards,
@@ -211,10 +212,78 @@ test("o padrão declarado usa as slugs REAIS da config funil_vendas de produçã
   // com o `e`. Slug errada aqui não quebra nada — cai no padrão, e o card fica com o prazo errado
   // sem ninguém perceber. É o modo silencioso de errar, e é por isso que ele tem teste.
   for (const chave of ["interessado", "qualificado", "audiometria_agendada", "aprovacao_e_envio", "teste_aparelho"]) {
-    assert.ok(SLA_PADRAO_DECLARADO.etapas[chave] > 0, `${chave} precisa de prazo no padrão declarado`);
+    assert.ok((SLA_PADRAO_DECLARADO.etapas[chave] ?? 0) > 0, `${chave} precisa de prazo no padrão declarado`);
   }
   // e a regra do sócio está EMBUTIDA na tabela: o fim do funil tem menos tempo que o começo
-  assert.ok(SLA_PADRAO_DECLARADO.etapas.teste_aparelho < SLA_PADRAO_DECLARADO.etapas.interessado);
+  assert.ok((SLA_PADRAO_DECLARADO.etapas.teste_aparelho ?? 0) < (SLA_PADRAO_DECLARADO.etapas.interessado ?? 0));
+  // workshop §6 (F5): a ENTRADA não tem prazo — null é decisão, e está no padrão também
+  assert.equal(SLA_PADRAO_DECLARADO.etapas.incoming_leads, null, "incoming_leads é sem prazo no padrão");
+});
+
+// ─────────────── sem prazo (F5, workshop §6) ───────────────
+
+test("⭐ etapa com prazo NULL é sem_prazo — parada há um ano, nunca vira AGORA", () => {
+  const sla: SlaEtapas = { ...SLA, etapas: { ...SLA.etapas, entrada: null } };
+  const p = prioridadeCard(card("e", 24 * 365, { etapa: "entrada" }), sla, AGORA);
+  assert.equal(p.faixa, "sem_prazo");
+  assert.equal(p.horasPrazo, null);
+  assert.equal(p.razao, null);
+  assert.equal(p.prazoDeclarado, true, "null é DECLARADO na config — não é o padrão calado");
+  assert.equal(p.excedenteHoras, null);
+  assert.equal(textoExcedente(p), "");
+  assert.deepEqual(prazoDaEtapa("entrada", sla), { horas: null, declarado: true });
+  // sem_prazo ≠ sem_dado: aqui o tempo parado é conhecido, só não se mede contra nada
+  assert.equal(p.horasParadas, 24 * 365);
+});
+
+test("interpretarSlaEtapas: horas null vira sem prazo; ausente/0 continua caindo no padrão", () => {
+  const sla = interpretarSlaEtapas({
+    etapas: [{ etapa: "incoming_leads", horas: null }, { etapa: "lead", horas: 2 }, { etapa: "zero", horas: 0 }],
+    faixas: { agora: 1, hoje: 0.7, na_semana: 0.3 },
+  })!;
+  assert.equal(sla.etapas.incoming_leads, null, "null explícito é sem prazo");
+  assert.equal(sla.etapas.lead, 2);
+  assert.ok(!("zero" in sla.etapas), "prazo 0 é inválido: cai no padrão, não vira sem prazo");
+  assert.equal(prioridadeCard(card("x", 500, { etapa: "incoming_leads" }), sla, AGORA).faixa, "sem_prazo");
+  assert.equal(prioridadeCard(card("y", 500, { etapa: "zero" }), sla, AGORA).faixa, "agora");
+  // forma-mapa também
+  const m = interpretarSlaEtapas({ etapas: { a: null, b: { horas: null }, c: 4 } })!;
+  assert.deepEqual(m.etapas, { a: null, b: null, c: 4 });
+});
+
+test("na ordem 'prioridade', sem_prazo vai para o fim junto com sem_dado", () => {
+  const sla: SlaEtapas = { ...SLA, etapas: { ...SLA.etapas, entrada: null } };
+  const r = ordenarCards(
+    [card("semprazo", 10_000, { etapa: "entrada" }), card("quente", 3, { etapa: "rapida" }), card("fresco", 1, { etapa: "lenta" })],
+    "prioridade", AGORA, sla,
+  );
+  assert.deepEqual(r.map((c) => c.lead_id), ["quente", "fresco", "semprazo"]);
+});
+
+// ─────────────── resumoFaixas — contrato com o dashboard (F6) ───────────────
+
+test("resumoFaixas: conta as quatro faixas, total exclui sem_prazo/sem_dado, pct_agora é fração", () => {
+  const sla: SlaEtapas = { ...SLA, etapas: { ...SLA.etapas, entrada: null } };
+  const r = resumoFaixas(
+    [
+      card("a1", 3, { etapa: "rapida" }),   // 1,5 → agora
+      card("a2", 2.2, { etapa: "rapida" }), // 1,1 → agora
+      card("h", 1.6, { etapa: "rapida" }),  // 0,8 → hoje
+      card("s", 20, { etapa: "lenta" }),    // 0,42 → na semana
+      card("p", 1, { etapa: "lenta" }),     // 0,02 → sem pressa
+      card("e", 999, { etapa: "entrada" }), // sem prazo
+      card("d", null),                      // sem dado
+    ],
+    sla, AGORA,
+  );
+  assert.deepEqual(r, {
+    agora: 2, hoje: 1, semana: 1, sem_pressa: 1, sem_prazo: 1, sem_dado: 1,
+    total: 5, pct_agora: 0.4, excedeu_teto: true,
+  });
+  assert.deepEqual(resumoFaixas([], sla, AGORA), {
+    agora: 0, hoje: 0, semana: 0, sem_pressa: 0, sem_prazo: 0, sem_dado: 0, total: 0, pct_agora: 0, excedeu_teto: false,
+  }, "board vazio: total 0, pct 0, sem alarme");
+  assert.equal(resumoFaixas([card("p", 1, { etapa: "lenta" })], sla, AGORA).excedeu_teto, false);
 });
 
 // ─────────────── ordenação ───────────────

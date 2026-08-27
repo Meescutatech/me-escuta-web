@@ -21,12 +21,19 @@ import { horasDesde, textoHorasCurto } from "../tempo.ts";
  * `sem_dado` NÃO é uma quinta faixa: é a ausência de medida. Cinza de hairline e sem rótulo — a UI
  * não afirma urgência que não mediu.
  */
-export type FaixaPrioridade = "agora" | "hoje" | "na_semana" | "sem_pressa" | "sem_dado";
+export type FaixaPrioridade = "agora" | "hoje" | "na_semana" | "sem_pressa" | "sem_prazo" | "sem_dado";
+/*
+ * `sem_prazo` (F5, 27/08 — workshop §6): a etapa NAO TEM relogio por decisao, nao por falta de
+ * dado. E o caso da etapa de ENTRADA (`incoming_leads`): dar-lhe prazo fazia todo lead de
+ * madrugada abrir o dia em AGORA. Vem da config como `horas: null` (sla_etapas v2, migration
+ * 0295). Card neutro, sem rotulo, nunca AGORA por padrao. Nao confundir com `sem_dado`, que e
+ * "nao medi"; aqui e "nao se mede".
+ */
 
 /** Prazo por etapa + limiares. Vem de `core.config` chave `sla_etapas` (D56). */
 export interface SlaEtapas {
-  /** slug da etapa → horas de prazo */
-  etapas: Record<string, number>;
+  /** slug da etapa → horas de prazo. `null` = a etapa NAO tem prazo (sem_prazo), de proposito. */
+  etapas: Record<string, number | null>;
   /** limiares da RAZÃO (não dias) — D55 */
   faixas: { agora: number; hoje: number; na_semana: number };
   /** etapa fora de `etapas` cai aqui — nunca "sem prazo" silencioso */
@@ -60,7 +67,8 @@ export interface SlaEtapas {
  */
 export const SLA_PADRAO_DECLARADO: SlaEtapas = {
   etapas: {
-    incoming_leads: 2,
+    // ENTRADA sem prazo (workshop §6, F5 27/08): null e decisao, nao ausencia — ver `sem_prazo`.
+    incoming_leads: null,
     lead: 2,
     interessado: 24,
     qualificado: 24,
@@ -104,21 +112,26 @@ export function interpretarSlaEtapas(payload: unknown): SlaEtapas | null {
   const p = payload as any;
   if (!p || typeof p !== "object") return null;
 
-  const etapas: Record<string, number> = {};
-  const horasDe = (v: any): number | null => {
+  const etapas: Record<string, number | null> = {};
+  // `null` EXPLICITO no payload = sem prazo (contrato da v2). Ausente/invalido = ignora a entrada
+  // e a etapa cai no padrao — os dois sao diferentes, e o parse precisa preservar a diferenca.
+  const SEM_PRAZO = Symbol("sem_prazo");
+  const horasDe = (v: any): number | null | typeof SEM_PRAZO => {
+    if (v === null) return SEM_PRAZO;
+    if (v && typeof v === "object" && "horas" in v && v.horas === null) return SEM_PRAZO;
     const n = typeof v === "number" ? v : Number(v?.horas);
     return Number.isFinite(n) && n > 0 ? n : null;
   };
   if (Array.isArray(p.etapas)) {
     for (const e of p.etapas) {
       const chave = e?.etapa ?? e?.chave;
-      const h = horasDe(e?.horas ?? e);
-      if (chave && h != null) etapas[String(chave)] = h;
+      const h = horasDe(e && typeof e === "object" && "horas" in e ? e : e?.horas);
+      if (chave && h != null) etapas[String(chave)] = h === SEM_PRAZO ? null : h;
     }
   } else if (p.etapas && typeof p.etapas === "object") {
     for (const [chave, v] of Object.entries(p.etapas)) {
       const h = horasDe(v);
-      if (h != null) etapas[chave] = h;
+      if (h != null) etapas[chave] = h === SEM_PRAZO ? null : h;
     }
   }
   if (Object.keys(etapas).length === 0) return null;
@@ -149,7 +162,8 @@ export interface Prioridade {
   /** horas_paradas ÷ horas_do_prazo_da_etapa. `null` quando não há relógio nenhum. */
   razao: number | null;
   horasParadas: number | null;
-  horasPrazo: number;
+  /** `null` = etapa sem prazo (faixa `sem_prazo`). */
+  horasPrazo: number | null;
   /** false = a etapa não estava em `sla_etapas` e o prazo saiu do padrão. A UI conta isso. */
   prazoDeclarado: boolean;
   /** D55: há compromisso marcado no futuro → o relógio está pausado, o card não grita. */
@@ -181,8 +195,14 @@ export function horasParadas(
   return Math.max(daEtapa, daMensagem);
 }
 
-/** Prazo da etapa em horas + se ele estava declarado na config (o padrão é visível, nunca mudo). */
-export function prazoDaEtapa(etapa: string, sla: SlaEtapas): { horas: number; declarado: boolean } {
+/**
+ * Prazo da etapa em horas + se ele estava declarado na config (o padrão é visível, nunca mudo).
+ * `horas: null` com `declarado: true` = a config DIZ que a etapa não tem prazo (entrada, §6).
+ */
+export function prazoDaEtapa(etapa: string, sla: SlaEtapas): { horas: number | null; declarado: boolean } {
+  if (Object.prototype.hasOwnProperty.call(sla.etapas, etapa) && sla.etapas[etapa] === null) {
+    return { horas: null, declarado: true };
+  }
   const h = sla.etapas[etapa];
   return Number.isFinite(h) && (h as number) > 0
     ? { horas: h as number, declarado: true }
@@ -218,6 +238,11 @@ export function prioridadeCard(
     card.compromisso_em != null &&
     new Date(card.compromisso_em).getTime() > agora;
 
+  // SEM PRAZO vem antes de tudo: a etapa não tem relógio, então não há razão a calcular — nem
+  // com o lead parado há um ano. É o que impede a entrada de nascer vermelha (workshop §6).
+  if (horasPrazo == null) {
+    return { faixa: "sem_prazo", razao: null, horasParadas: paradas, horasPrazo: null, prazoDeclarado, pausado, excedenteHoras: null };
+  }
   if (paradas == null) {
     return { faixa: "sem_dado", razao: null, horasParadas: null, horasPrazo, prazoDeclarado, pausado, excedenteHoras: null };
   }
@@ -251,6 +276,7 @@ export const ROTULO_FAIXA: Record<FaixaPrioridade, string> = {
   hoje: "HOJE",
   na_semana: "NA SEMANA",
   sem_pressa: "SEM PRESSA",
+  sem_prazo: "",
   sem_dado: "",
 };
 
@@ -260,6 +286,7 @@ export const TEXTO_FAIXA: Record<FaixaPrioridade, string> = {
   hoje: "Prioridade HOJE — chegando no prazo da etapa",
   na_semana: "Prioridade NA SEMANA",
   sem_pressa: "Sem pressa — dentro do prazo da etapa",
+  sem_prazo: "Etapa sem prazo — a prioridade não se mede aqui",
   sem_dado: "Sem data de entrada na etapa e sem mensagem datada — prioridade não medida",
 };
 
@@ -307,7 +334,35 @@ export const TRILHO_FAIXA: Record<FaixaPrioridade, string> = {
   hoje: "bg-amarelo-barra",
   na_semana: "bg-navy",
   sem_pressa: "bg-suave",
+  sem_prazo: "bg-linha",
   sem_dado: "bg-linha",
+};
+
+/**
+ * F5 (27/08) · O FUNDO DO CARD É A FAIXA. A cor deixou de morar só num trilho de 3px: o card
+ * inteiro é a ficha, e a cor do papel é a urgência — lida de longe, varrendo a coluna, que é a
+ * leitura de 3 segundos do workshop. O trilho continua como reforço (borda esquerda).
+ *
+ * As classes vivem em app/globals.css (`.card-faixa-*`) sobre TOKENS DE TEMA (`--faixa-*-fundo`,
+ * `--faixa-*-linha`), com valores para claro E escuro (`:root[data-theme="dark"]`). Tailwind
+ * literal não serviria: precisa trocar com o tema, e o tema é um atributo do documento.
+ *
+ * Contraste (WCAG 2.x, luminância relativa, script rodado em 27/08) sobre os fundos CLAROS: o
+ * texto principal do card é `tinta` #1F2328 — 13,62:1 sobre #FBEBE4 (agora), 14,28:1 sobre
+ * #FBF3DF (hoje), 14,00:1 sobre #EEF1FB (na_semana). O rótulo da faixa usa a cor de TEXTO da
+ * própria faixa sobre o fundo dela: vermelho #B3372B/#FBEBE4 5,18:1 · amarelo #8A5E00/#FBF3DF
+ * 5,16:1 · navy #252F63/#EEF1FB 11,17:1 · suave #4E5763/#FFFFFF 7,32:1. O terciário `mute`
+ * #5F6873 (timer calmo, seta) é o par mais apertado: 4,87:1 sobre agora, 5,01:1 sobre na_semana
+ * — ainda acima do piso AA de 4,5:1. `sem_prazo` e `sem_dado` ficam no branco do card: não
+ * afirmam urgência, então não pintam.
+ */
+export const FUNDO_FAIXA: Record<FaixaPrioridade, string> = {
+  agora: "card-faixa-agora",
+  hoje: "card-faixa-hoje",
+  na_semana: "card-faixa-na-semana",
+  sem_pressa: "card-faixa-sem-pressa",
+  sem_prazo: "card-faixa-neutro",
+  sem_dado: "card-faixa-neutro",
 };
 
 export const TEXTO_COR_FAIXA: Record<FaixaPrioridade, string> = {
@@ -315,6 +370,7 @@ export const TEXTO_COR_FAIXA: Record<FaixaPrioridade, string> = {
   hoje: "text-amarelo",
   na_semana: "text-navy",
   sem_pressa: "text-suave",
+  sem_prazo: "text-mute",
   sem_dado: "text-mute",
 };
 
@@ -330,6 +386,56 @@ export const TETO_AGORA = 0.15;
 
 export function excedeuTetoAgora(qtdAgora: number, qtdTotal: number): boolean {
   return qtdTotal > 0 && qtdAgora / qtdTotal > TETO_AGORA;
+}
+
+/**
+ * CONTRATO com o dashboard (F6) — F5, 27/08. O teto de 15% saiu da tela do funil: lá ele era
+ * um alerta que a Sarah não pode resolver (é a gestão que ajusta `sla_etapas`), e virou DADO para
+ * o dashboard. Esta é a conta, pura, para o dashboard importar e o funil não repetir.
+ *
+ *   resumoFaixas(cards, sla?, agora?) → { agora, hoje, semana, sem_pressa, total, pct_agora }
+ *
+ * `total` = cards com faixa MEDIDA (as quatro). `sem_prazo` e `sem_dado` ficam fora do total e
+ * do percentual — contá-los diluiria o teto, e eles não afirmam urgência nenhuma; vêm à parte em
+ * `sem_prazo`/`sem_dado` para quem quiser mostrá-los. `pct_agora` é fração 0..1 (0 quando o total
+ * é 0). `excedeu_teto` é `pct_agora > TETO_AGORA`, a mesma regra de `excedeuTetoAgora`.
+ *
+ * Quem chama decide o RECORTE (o funil passa só os leads de etapa aberta — card ganho/perdido não
+ * tem prioridade e diluiria o percentual). A função não filtra por etapa porque não sabe qual é
+ * aberta; isso é do chamador, que tem `dados.etapas`.
+ */
+export interface ResumoFaixas {
+  agora: number;
+  hoje: number;
+  semana: number;
+  sem_pressa: number;
+  /** fora do `total`: etapa sem prazo (entrada) e card sem medida */
+  sem_prazo: number;
+  sem_dado: number;
+  /** cards com faixa medida — agora + hoje + semana + sem_pressa */
+  total: number;
+  /** fração 0..1 de `agora` sobre `total`; 0 quando `total` é 0 */
+  pct_agora: number;
+  excedeu_teto: boolean;
+}
+
+export function resumoFaixas(
+  cards: Pick<CardLead, "etapa" | "entrou_etapa_em" | "ultima_mensagem" | "compromisso_em">[],
+  sla: SlaEtapas = SLA_PADRAO_DECLARADO,
+  agora: number = Date.now(),
+): ResumoFaixas {
+  const r: ResumoFaixas = {
+    agora: 0, hoje: 0, semana: 0, sem_pressa: 0, sem_prazo: 0, sem_dado: 0, total: 0, pct_agora: 0, excedeu_teto: false,
+  };
+  for (const c of cards) {
+    const f = prioridadeCard(c, sla, agora).faixa;
+    if (f === "na_semana") r.semana += 1;
+    else r[f] += 1;
+  }
+  r.total = r.agora + r.hoje + r.semana + r.sem_pressa;
+  r.pct_agora = r.total > 0 ? r.agora / r.total : 0;
+  r.excedeu_teto = excedeuTetoAgora(r.agora, r.total);
+  return r;
 }
 
 /**
@@ -404,7 +510,8 @@ export function ordenarCards(
     for (const c of copia) {
       const p = prioridadeCard(c, sla, agora);
       // pausado desce junto com a faixa: quem tem compromisso marcado não disputa o topo
-      pressao.set(c.lead_id, p.faixa === "sem_dado" || p.pausado ? null : p.razao);
+      // sem_prazo desce junto: etapa sem relógio não disputa o topo, mesmo parada há um ano
+      pressao.set(c.lead_id, p.faixa === "sem_dado" || p.faixa === "sem_prazo" || p.pausado ? null : p.razao);
     }
   }
   copia.sort((a, b) => {

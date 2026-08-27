@@ -4,7 +4,6 @@ import { lerTiposTarefa } from "@/lib/dados/tarefa-tipos";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { Quadro } from "@/components/funil/quadro";
 import { lerLeadsSemResponsavel } from "@/lib/dados/identidades";
-import { FaixaSemResponsavel } from "@/components/funil/faixa-sem-responsavel";
 import { lerMotivosPerda } from "@/lib/dados/motivo-perda";
 
 // Sempre lê o estado atual do funil (sem cache) — projeção do ledger.
@@ -24,7 +23,7 @@ export default async function FunilPage({
     supabase.auth.getUser(),
     lerMencionaveis(),
     lerTiposTarefa(),
-    // R18/M3: a faixa é ALARME, não filtro — visível sem ninguém ligar nada.
+    // R18/M3: é ALARME, não filtro — visível sem ninguém ligar nada. F5: virou chip no cabeçalho do board.
     lerLeadsSemResponsavel(),
     // R20: vocabulário de motivo de perda (config `motivo_perda`; degrau para a semente embutida)
     lerMotivosPerda(),
@@ -32,9 +31,7 @@ export default async function FunilPage({
   const user = userRes.data.user;
 
   return (
-    <>
-      <FaixaSemResponsavel dados={semResponsavel} />
-      <Quadro
+    <Quadro
       dados={dados}
       geradoEm={new Date().toISOString()}
       abrirLead={searchParams.lead ?? null}
@@ -44,7 +41,7 @@ export default async function FunilPage({
       tiposTarefa={tipos.tipos}
       motivosPerda={motivos.motivos}
       motivosDaConfig={motivos.daConfig}
-      />
-    </>
+      semResponsavel={semResponsavel}
+    />
   );
 }

@@ -1,52 +1,69 @@
 import type { LeadsSemResponsavel } from "@/lib/dados/identidades";
+import { cn } from "@/lib/utils";
 
 /**
- * Faixa "Sem responsável" do /funil (R18 · M3).
+ * "Sem responsável" do /funil (R18 · M3) — desde F5 (27/08), UM CHIP ao lado do contador, não
+ * duas faixas de parágrafo acima do board.
  *
- * POR QUE FAIXA E NÃO FILTRO — e é a diferença que decide se o item foi entregue: já existe
- * `SEM_RESPONSAVEL = "__sem__"` em `funil-filtros.ts` e um `opcoesResponsavel()`. Aquilo é o
- * FILTRO do painel, e filtro depende de alguém lembrar de ligá-lo. Esta faixa é VISÍVEL SEM
- * NINGUÉM LIGAR NADA. Reusar a constante é certo; confundir os dois conceitos entrega um filtro
- * onde se pediu um alarme.
+ * POR QUE CHIP E NÃO FILTRO — a diferença que decide se o item foi entregue: já existe
+ * `SEM_RESPONSAVEL = "__sem__"` em `funil-filtros.ts`. Aquilo é FILTRO, e filtro depende de
+ * alguém lembrar de ligá-lo. Este chip é VISÍVEL SEM NINGUÉM LIGAR NADA — só ficou do tamanho
+ * do que diz. Os dois parágrafos de antes empurravam o board para baixo todo dia, e texto que
+ * se lê todo dia deixa de ser lido.
  *
  * TRÊS ESTADOS, e nenhum deles é "não mostrar":
- *   · não lido  — a contagem falhou. Dizer isso é obrigatório: faixa ausente lê-se como zero.
- *   · zero      — hoje é A RESPOSTA CORRETA para "Meus leads" (dono_id nulo em 680 de 680), e
- *                 precisa ser EXPLICADO, não em branco. Vazio sem explicação vira ticket de bug.
- *   · > 0       — com o caminho de saída de CADA categoria, que são diferentes.
+ *   · não lido  — a contagem falhou. Dizer isso é obrigatório: chip ausente lê-se como zero.
+ *   · zero      — não ocupa lugar: silêncio é a resposta certa (mesma regra do "sem próxima ação").
+ *   · > 0       — um número, com o caminho de saída de CADA categoria no tooltip e no link:
+ *                 órfão → Membros (lotar alguém); aguardando de-para → Identidades externas
+ *                 (o dono do Kommo existe, só não foi traduzido — atribuir à mão apagaria isso).
  */
-export function FaixaSemResponsavel({ dados }: { dados: LeadsSemResponsavel }) {
+export function ChipSemResponsavel({ dados }: { dados: LeadsSemResponsavel }) {
   if (!dados.lido) {
     return (
-      <div role="alert">
-        <strong>Não foi possível contar os leads sem responsável.</strong> Isto não quer dizer que
-        não haja nenhum.
-      </div>
+      <span
+        role="alert"
+        className="inline-flex items-center gap-1.5 rounded-full border border-vermelho-bd bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-medium text-vermelho"
+        title="A contagem de leads sem responsável falhou. Isto não quer dizer que não haja nenhum."
+      >
+        sem responsável: não contado
+      </span>
     );
   }
 
-  if (dados.orfaos === 0 && dados.aguardandoDePara === 0) {
-    return <div>Todo lead do funil tem responsável.</div>;
-  }
+  const { orfaos, aguardandoDePara } = dados;
+  if (orfaos === 0 && aguardandoDePara === 0) return null;
+
+  const partes: string[] = [];
+  if (orfaos > 0) partes.push(`${orfaos} sem responsável — lote alguém em Membros ou atribua pelo card`);
+  if (aguardandoDePara > 0)
+    partes.push(`${aguardandoDePara} aguardando de-para — têm dono no Kommo, ainda sem conta aqui; resolva em Identidades externas`);
+  const tooltip = partes.join(". ") + ".";
+
+  // o link vai para onde a MAIOR fila se resolve; o tooltip explica as duas
+  const href = orfaos >= aguardandoDePara ? "/configuracoes/membros" : "/configuracoes/identidades";
+  const total = orfaos + aguardandoDePara;
 
   return (
-    <div>
-      {dados.orfaos > 0 ? (
-        <p>
-          <strong>{dados.orfaos} lead(s) sem responsável.</strong> Nasceram sem dono porque não
-          havia ninguém lotado no departamento de entrada quando entraram. Saída: convidar e lotar
-          em <a href="/configuracoes/membros">Membros</a>, ou atribuir à mão pelo card.
-        </p>
-      ) : null}
-
-      {dados.aguardandoDePara > 0 ? (
-        <p>
-          <strong>{dados.aguardandoDePara} lead(s) aguardando o de-para.</strong> Estes{" "}
-          <em>têm</em> dono conhecido — o responsável que eles tinham no Kommo —, só não traduzido
-          para uma conta daqui. Não são órfãos, e atribuí-los à mão apagaria a procedência. Saída:{" "}
-          <a href="/configuracoes/identidades">Identidades externas</a>.
-        </p>
-      ) : null}
-    </div>
+    <a
+      href={href}
+      title={tooltip}
+      className={cn(
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors",
+        "border-amarelo-bd bg-amarelo-bg text-amarelo hover:border-amarelo",
+      )}
+    >
+      <span className="font-mono tabular-nums">{total}</span>
+      <span>sem responsável</span>
+      {aguardandoDePara > 0 && orfaos > 0 && (
+        <span className="font-mono text-[10.5px] tabular-nums opacity-80">
+          {orfaos}+{aguardandoDePara}
+        </span>
+      )}
+      <span className="sr-only">. {tooltip}</span>
+    </a>
   );
 }
+
+/** @deprecated F5: virou `ChipSemResponsavel`; mantido só para o import antigo não quebrar. */
+export const FaixaSemResponsavel = ChipSemResponsavel;
