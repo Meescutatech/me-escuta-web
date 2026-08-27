@@ -9,6 +9,14 @@ import {
   validarEscolha,
 } from "@/lib/conversas/programar-envio";
 import { cn } from "@/lib/utils";
+import {
+  explicarFalha,
+  fraseLinha,
+  podeCancelar,
+  previa,
+  visiveisNaConversa,
+  type EnvioProgramadoLinha,
+} from "@/lib/conversas/envios-programados";
 
 /*
  * BOTÃO DIVIDIDO DE ENVIO — pedido nº 1 da Sarah (workshop 12/08).
@@ -18,8 +26,9 @@ import { cn } from "@/lib/utils";
  * amanhã, um da próxima segunda e "escolher data e hora". Duas diferenças do Gmail, ambas de
  * propósito:
  *   - o menu abre PARA CIMA, porque o composer mora no rodapé da conversa;
- *   - programar aqui não grava nada (protótipo sobre banco de produção) — vira um chip acima do
- *     campo, com "cancelar", e o chip diz que é protótipo.
+ *   - programar GRAVA (R27/F1, evento `envio_programado`): o pai chama a server action e só esvazia
+ *     o campo quando a porta aceitou. O que está programado aparece em `ListaProgramadas`, acima
+ *     do campo, sempre com "Cancelar".
  */
 
 export interface EnvioProgramado {
@@ -35,7 +44,7 @@ export function BotaoEnvio({
   enviando,
 }: {
   onEnviar: () => void;
-  /** protótipo: o pai guarda em useState e desenha o chip. Nada de server action. */
+  /** o pai grava (server action) e decide se esvazia o campo. */
   onProgramar: (quandoMs: number) => void;
   desabilitado: boolean;
   motivoDesabilitado?: string;
@@ -133,7 +142,7 @@ export function BotaoEnvio({
           <div className="border-b border-linha px-3.5 py-2.5">
             <div className="text-[0.78rem] font-semibold text-tinta">Programar envio</div>
             <div className="mt-0.5 text-[0.7rem] leading-snug text-mute">
-              Protótipo — o horário fica nesta tela e nada é enviado.
+              Sai pelo mesmo número, em seu nome. Dá para cancelar até a hora.
             </div>
           </div>
 
@@ -244,5 +253,105 @@ export function ChipProgramado({
         Cancelar
       </button>
     </div>
+  );
+}
+
+/**
+ * A SEÇÃO "PROGRAMADAS" — mora acima do campo, onde o Gmail põe a tarja amarela, e lista o que
+ * ainda vai sair nesta conversa e o que NÃO saiu. Uma linha por envio: o HORÁRIO é o dado forte
+ * (é o que a pessoa escolheu e o que ela vai conferir), o texto é prévia, e "Cancelar" está sempre
+ * ali — programar sem poder desprogramar é um envio que a pessoa não controla mais.
+ *
+ * Falha tem duas linhas e uma ação: o motivo (na voz da tela) e o caminho de saída. O caso que
+ * importa é a janela de 24h fechar antes da hora — o texto volta ao campo com um clique, para
+ * sair como template.
+ */
+export function ListaProgramadas({
+  linhas,
+  onCancelar,
+  onRetomarTexto,
+}: {
+  linhas: EnvioProgramadoLinha[];
+  onCancelar: (id: string) => void;
+  onRetomarTexto: (corpo: string) => void;
+}) {
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAgora(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const visiveis = visiveisNaConversa(linhas);
+  if (visiveis.length === 0) return null;
+  const agendadas = visiveis.filter((l) => l.status === "agendado").length;
+
+  return (
+    <div className="border-b border-linha bg-laranja-cl/60" role="region" aria-label="Envios programados">
+      <div className="flex items-baseline gap-2 px-3.5 pt-2 pb-1">
+        <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-laranja-esc">
+          Programadas
+        </span>
+        <span className="text-[0.66rem] tabular-nums text-mute">
+          {agendadas === 1 ? "1 a sair" : `${agendadas} a sair`}
+        </span>
+      </div>
+      <ul className="pb-1.5">
+        {visiveis.map((l) =>
+          l.status === "falhou" ? (
+            <LinhaFalhou key={l.id} linha={l} onRetomarTexto={onRetomarTexto} />
+          ) : (
+            <li key={l.id} className="flex items-center gap-2 px-3.5 py-1.5">
+              <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5 shrink-0 stroke-laranja-esc" fill="none" aria-hidden>
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+              <span className="min-w-0 flex-1 truncate text-[0.78rem] text-tinta">
+                <b className="font-semibold tabular-nums text-laranja-esc">{fraseLinha(l, agora)}</b>
+                <span className="text-mute"> · “{previa(l.corpo)}”</span>
+              </span>
+              {podeCancelar(l) && (
+                <button
+                  onClick={() => onCancelar(l.id)}
+                  className="shrink-0 rounded-md px-2 py-1 text-[0.74rem] font-medium text-laranja-esc transition-colors hover:bg-branco/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+                >
+                  Cancelar
+                </button>
+              )}
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function LinhaFalhou({
+  linha,
+  onRetomarTexto,
+}: {
+  linha: EnvioProgramadoLinha;
+  onRetomarTexto: (corpo: string) => void;
+}) {
+  const { titulo, acao } = explicarFalha(linha.erro);
+  return (
+    <li className="mx-2 my-1 rounded-[9px] border border-vermelho-bd bg-vermelho-bg px-2.5 py-2">
+      <div className="flex items-start gap-2">
+        <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="mt-0.5 h-3.5 w-3.5 shrink-0 stroke-vermelho" fill="none" aria-hidden>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v4M12 16h.01" />
+        </svg>
+        <div className="min-w-0 flex-1">
+          <div className="text-[0.78rem] font-semibold text-vermelho">{titulo}</div>
+          <div className="truncate text-[0.74rem] text-suave">“{previa(linha.corpo)}”</div>
+          {acao && <div className="mt-0.5 text-[0.72rem] leading-snug text-mute">{acao}</div>}
+        </div>
+        <button
+          onClick={() => onRetomarTexto(linha.corpo)}
+          className="shrink-0 rounded-md px-2 py-1 text-[0.74rem] font-medium text-vermelho transition-colors hover:bg-branco/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vermelho/40"
+        >
+          Retomar texto
+        </button>
+      </div>
+    </li>
   );
 }

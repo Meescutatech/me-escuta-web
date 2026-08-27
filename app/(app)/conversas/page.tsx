@@ -1,5 +1,6 @@
 import {
   lerConversas,
+  lerEnviosProgramados,
   lerMensagens,
   lerSugestoesConversa,
   type Mensagem,
@@ -13,6 +14,7 @@ import { lerNomeMembro, lerTemplates } from "@/lib/dados/templates";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { lerEstadoEscopo } from "@/lib/dados/departamentos";
 import { Inbox } from "@/components/conversas/inbox";
+import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 
 export const dynamic = "force-dynamic";
 
@@ -68,12 +70,17 @@ export default async function ConversasPage({
 
   // mensagens + sugestões + painel do lead (ficha/tarefas/anotações/menções, R8/R13) em
   // paralelo: todos dependem só da conversa selecionada, não uns dos outros
-  const [mensagens, sugestoes, painel]: [Mensagem[], SugestaoMensagem[], PainelLead | null] =
-    await Promise.all([
-      selecionadaId ? lerMensagens(selecionadaId) : Promise.resolve([]),
-      selecionadaId ? lerSugestoesConversa(selecionadaId) : Promise.resolve([]),
-      selecionada?.lead_id ? lerPainelLead(selecionada.lead_id) : Promise.resolve(null),
-    ]);
+  const [mensagens, sugestoes, painel, programadas]: [
+    Mensagem[],
+    SugestaoMensagem[],
+    PainelLead | null,
+    EnvioProgramadoLinha[],
+  ] = await Promise.all([
+    selecionadaId ? lerMensagens(selecionadaId) : Promise.resolve([]),
+    selecionadaId ? lerSugestoesConversa(selecionadaId) : Promise.resolve([]),
+    selecionada?.lead_id ? lerPainelLead(selecionada.lead_id) : Promise.resolve(null),
+    selecionadaId ? lerEnviosProgramados(selecionadaId) : Promise.resolve([]), // R27/F1
+  ]);
 
   return (
     <Inbox
@@ -98,6 +105,7 @@ export default async function ConversasPage({
           ? { chave: departamentoAtivo.chave, rotulo: departamentoAtivo.rotulo }
           : null
       }
+      programadas={programadas}
     />
   );
 }

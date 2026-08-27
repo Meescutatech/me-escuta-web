@@ -15,10 +15,14 @@ import {
   carregarMaisConversas,
   devolverConversa,
   enviarMensagem,
+  programarEnvio,
+  cancelarEnvioProgramado,
   sinalizarPresenca,
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
 import { criarGatilhoDigitando } from "@/lib/conversas/presenca";
+import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
+import { frasePrograma } from "@/lib/conversas/programar-envio";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
@@ -135,6 +139,7 @@ export function Inbox({
   templates,
   etapas,
   departamentoAtivo,
+  programadas,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -169,6 +174,8 @@ export function Inbox({
    * o dia em que ele decidir o que aparece, o escopo virou filtro de cliente.
    */
   departamentoAtivo?: { chave: string; rotulo: string } | null;
+  /** R27/F1 · envios programados da conversa selecionada (agendado + falhou), lidos no servidor. */
+  programadas: EnvioProgramadoLinha[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -484,6 +491,35 @@ export function Inbox({
       } else {
         setPendentes((p) => p.map((m) => (m.id === id ? { ...m, falha_local: true } : m)));
         avisar(`Falha ao enviar: ${r.motivo ?? "erro"}`);
+      }
+    });
+  }
+
+  /**
+   * R27/F1 — PROGRAMAR: grava `envio_programado` e só devolve true quando a porta aceitou (o
+   * composer esvazia o campo por esse retorno). O texto NÃO vira bolha otimista: ele não foi
+   * enviado — aparece na seção "Programadas", que o refresh traz da view.
+   */
+  async function programar(quandoMs: number, texto: string): Promise<boolean> {
+    if (!selecionada) return false;
+    const r = await programarEnvio(selecionada.id, selecionada.lead_id ?? null, texto, quandoMs);
+    if (r.ok) {
+      avisar(`Programado para ${frasePrograma(quandoMs, Date.now())}.`);
+      router.refresh();
+      return true;
+    }
+    avisar(`Não programou: ${r.motivo ?? "erro"}`);
+    return false;
+  }
+
+  function cancelarProgramado(id: string) {
+    startTransition(async () => {
+      const r = await cancelarEnvioProgramado(id);
+      if (r.ok) {
+        avisar("Envio programado cancelado.");
+        router.refresh();
+      } else {
+        avisar(`Não cancelou: ${r.motivo ?? "erro"}`);
       }
     });
   }
@@ -1077,6 +1113,9 @@ export function Inbox({
               onDigitar={aoDigitar}
               aoPublicar={() => router.refresh()}
               avisar={avisar}
+              programadas={programadas}
+              onProgramar={programar}
+              onCancelarProgramado={cancelarProgramado}
             />
           </>
         )}

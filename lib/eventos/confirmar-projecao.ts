@@ -214,6 +214,20 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
     coluna: "ultima_posicao",
   },
 
+  /*
+   * R27/F1 · envio programado (0290). `proj_envio_programado` insere `core.envio_programado` com
+   * `id = e.id` na mesma transação — conferir pelo evento prova que a linha nasceu. O cancelamento
+   * é guardado por ESTADO (`status='agendado'`): a chave é `cancelado_em not null`, como `mencao_lida`.
+   */
+  envio_programado: { tabela: "envio_programado", por: "evento", coluna: "id" },
+  envio_programado_cancelado: {
+    tabela: "envio_programado",
+    por: "estado",
+    chave: "id",
+    campoPayload: "envio_programado_id",
+    naoNulo: "cancelado_em",
+  },
+
   lead_atualizado: { tabela: "lead_campo", por: "posicao", coluna: "ultima_posicao" },
   etapa_alterada: { tabela: "estado_lead", por: "posicao", coluna: "ultima_posicao" },
   dono_atribuido: { tabela: "lead", por: "posicao", coluna: "ultima_posicao" },

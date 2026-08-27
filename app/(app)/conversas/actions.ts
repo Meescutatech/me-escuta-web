@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { registrarEventoUI, type ResultadoEvento } from "@/app/(app)/funil/actions";
 import { caminhoValido } from "@/lib/conversas/midia";
+import { montarPayloadProgramar } from "@/lib/conversas/envios-programados";
 import { acaoPresencaValida, montarCorpoPresenca, type AcaoPresenca } from "@/lib/conversas/presenca";
 import { lerConversas, type PaginaConversas } from "@/lib/dados/conversas";
 import { lerEstadoEscopo } from "@/lib/dados/departamentos";
@@ -170,4 +171,40 @@ export async function validarSugestaoMensagem(
   revalidatePath("/conversas");
   revalidatePath("/timeline");
   return { ok: true };
+}
+
+/**
+ * R27/F1 — PROGRAMAR ENVIO (pedido nº 1 da Sarah). Emite `envio_programado` (0290); a projeção
+ * nasce `agendado` e o runtime (worker envio-programado) grava o `enviar_mensagem_humana` na hora,
+ * com o ator de quem programou — o mesmo caminho do botão "Enviar". `enviar_em` chega em ISO; a
+ * porta recusa hora que já passou e conversa que não existe. A janela de 24h NÃO trava aqui: ela
+ * pode reabrir até lá; se não reabrir, a linha volta como `falhou` e a tela mostra o motivo.
+ */
+export async function programarEnvio(
+  conversaId: string,
+  leadId: string | null,
+  corpo: string,
+  quandoMs: number,
+): Promise<ResultadoEvento> {
+  const montado = montarPayloadProgramar({
+    conversaId,
+    leadId,
+    corpo,
+    quandoMs,
+    agoraMs: Date.now(),
+  });
+  if (!montado.ok) return { ok: false, motivo: montado.motivo };
+  const r = await registrarEventoUI("envio_programado", montado.payload, leadId ?? undefined);
+  if (r.ok) revalidatePath("/conversas");
+  return r;
+}
+
+/** Cancela um envio ainda `agendado` — a porta recusa qualquer outro estado (0290). */
+export async function cancelarEnvioProgramado(envioProgramadoId: string): Promise<ResultadoEvento> {
+  if (!envioProgramadoId) return { ok: false, motivo: "envio inválido" };
+  const r = await registrarEventoUI("envio_programado_cancelado", {
+    envio_programado_id: envioProgramadoId,
+  });
+  if (r.ok) revalidatePath("/conversas");
+  return r;
 }
