@@ -23,8 +23,6 @@ import { useProjecaoViva } from "@/components/projecao-viva";
 import { INTERVALOS } from "@/lib/intervalos-vivos";
 import { AcoesTarefa, BotaoAcoes, type PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
 import { BotaoConcluir, PainelConcluir } from "@/components/tarefas/concluir-tarefa";
-import { LinhaTarefaAutomatica } from "@/components/tarefas/tarefa-automatica";
-import { useFilaPrototipo } from "@/lib/tarefas/fila-prototipo";
 import { cn } from "@/lib/utils";
 
 /*
@@ -149,14 +147,6 @@ export function VisaoTarefas({
     () => (modoFunil ? [] : ordenarLista(filtradas, filtros.status)),
     [modoFunil, filtradas, filtros.status],
   );
-
-  /**
-   * D10 (18/08) · as tarefas que o Jarvis criou SOZINHO, por tipo `auto`. Vêm da fila do
-   * protótipo (sessionStorage), não do banco — criar tarefa de verdade escreveria em produção.
-   * Ficam ACIMA da lista e ANTES dos estados vazios, de propósito: elas existem mesmo quando o
-   * workspace não tem nenhuma tarefa real, e é justamente aí que precisam aparecer.
-   */
-  const automaticas = useFilaPrototipo();
 
   const nadaNoWorkspace = dados.tarefas.length === 0;
   const nadaComFiltro = !nadaNoWorkspace && filtradas.length === 0;
@@ -398,53 +388,17 @@ export function VisaoTarefas({
         )}
       </div>
 
-      {/* ── D10 · criadas pelo Jarvis sem pedir licença ──
-          O que muda na tarefa `auto` é QUEM APROVA, não a transparência: cada linha carrega o
-          POR QUE AGORA, a frase citada, o fundamento de por que este tipo pôde nascer sozinho,
-          e o RECUSAR depois do fato. Autonomia sem desfazer é imposição. */}
-      {automaticas.length > 0 && (
-        <div className="flex-shrink-0 border-y border-linha bg-branco/60 px-5 py-3">
-          <div className="mb-2 flex flex-wrap items-baseline gap-2">
-            <span className="text-[12.5px] font-semibold text-navy">Criadas pelo Jarvis</span>
-            <span className="font-mono text-[11.5px] tabular-nums text-mute">{automaticas.length}</span>
-            <span className="text-[11.5px] text-mute">
-              · nasceram sem pedir aprovação porque o tipo delas é automático — você pode recusar
-            </span>
-            <span className="ml-auto rounded-full bg-laranja-cl px-2 py-px text-[10.5px] font-semibold uppercase tracking-wide text-laranja-esc">
-              protótipo — nada é salvo
-            </span>
-          </div>
-          <div className="flex max-h-[46vh] flex-col gap-2 overflow-y-auto">
-            {automaticas.map((t) => (
-              <LinhaTarefaAutomatica key={t.proposta.id} tarefa={t} />
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── conteúdo ── */}
       {nadaNoWorkspace ? (
         <Vazio>
-          {/* A tela dizia as DUAS coisas ao mesmo tempo: a faixa do Jarvis com tarefa em cima, e
-              logo abaixo "nenhuma tarefa ainda". As duas frases eram verdade — `core.tarefa` tem 0
-              linhas e a do Jarvis é do protótipo — mas juntas ficam contraditórias para quem olha,
-              e quem olha não tem como saber que são dois lugares diferentes. Então o vazio passa a
-              dizer QUAL vazio é, em vez de negar o que está logo acima dele. */}
-          {automaticas.length > 0 ? (
-            <>
-              Nenhuma tarefa <b className="font-semibold text-suave">salva no workspace</b> ainda —{" "}
-              {automaticas.length === 1 ? "a tarefa acima foi criada" : `as ${automaticas.length} tarefas acima foram criadas`}{" "}
-              pelo Jarvis neste protótipo e não está no banco. Para criar uma de verdade, digite{" "}
-              <code className="rounded border border-linha bg-branco px-1.5 py-px font-mono text-[12.5px] text-tinta">/tarefa</code>{" "}
-              no campo de uma conversa.
-            </>
-          ) : (
-            <>
-              Nenhuma tarefa no workspace ainda. Digite{" "}
-              <code className="rounded border border-linha bg-branco px-1.5 py-px font-mono text-[12.5px] text-tinta">/tarefa</code>{" "}
-              no campo de uma conversa, ou crie pelo painel do lead no funil.
-            </>
-          )}
+          Nenhuma tarefa aberta.{" "}
+          <button
+            type="button"
+            onClick={() => router.push("/conversas")}
+            className="font-semibold text-navy underline-offset-2 hover:underline"
+          >
+            Criar na conversa
+          </button>
         </Vazio>
       ) : nadaComFiltro ? (
         <Vazio>

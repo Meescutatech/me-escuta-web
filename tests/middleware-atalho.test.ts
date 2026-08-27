@@ -168,6 +168,19 @@ describe("F3 · critérios EARS restantes", () => {
     }
   });
 
+  test("F3-R27 · /prototipo NÃO é mais rota pública: anônimo é mandado ao /login", async () => {
+    // A rota do protótipo do workshop saiu do app em 27/08. Este teste existe para o prefixo não
+    // voltar à lista de PREFIXOS_PUBLICOS por um merge distraído: rota anônima que responde 200
+    // é justamente o que a frente F3 removeu.
+    for (const rota of ["/prototipo", "/prototipo/marketing"]) {
+      const { espiao, criarCliente } = duploDeCliente(null);
+      const resposta = await atualizarSessao(requisicao(rota), { criarCliente, agoraMs: AGORA });
+      assert.equal(espiao.getUser, 1);
+      assert.equal(ehRedirecionamento(resposta), true, `${rota} sem sessão tem de redirecionar`);
+      assert.equal(destino(resposta), `https://app.local/login?proxima=${encodeURIComponent(rota)}`);
+    }
+  });
+
   test("cookie fatiado em chunks fora de ordem é remontado antes de decidir", async () => {
     const valor = valorCookieSessao(agoraSeg + 3600);
     const meio = Math.ceil(valor.length / 2);
