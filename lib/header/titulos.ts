@@ -23,7 +23,7 @@
  * conhecer o dado de ninguém.
  */
 const MAPA: Record<string, string> = {
-  "/": "Visão geral",
+  "/": "Dashboard",
   "/funil": "Funil de vendas",
   "/conversas": "Conversas",
   "/tarefas": "Tarefas",
