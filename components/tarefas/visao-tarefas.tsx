@@ -148,6 +148,10 @@ export function VisaoTarefas({
     [modoFunil, filtradas, filtros.status],
   );
 
+  // F2 / D62 (27/08): as tarefas do Jarvis vêm do BANCO (core.v_tarefa, origem jarvis_conversa)
+  // e entram na fila como qualquer outra — com POR QUE e trecho no cartão. A faixa do protótipo
+  // (sessionStorage) saiu daqui.
+
   const nadaNoWorkspace = dados.tarefas.length === 0;
   const nadaComFiltro = !nadaNoWorkspace && filtradas.length === 0;
 
@@ -510,6 +514,32 @@ function Vazio({ children }: { children: React.ReactNode }) {
  * vez de <Link>: as ações de ciclo de vida (R14) moram DENTRO do card, e botão dentro de
  * âncora não é HTML válido. O painel de ações faz stopPropagation — clicar nele não navega.
  */
+/**
+ * F2 / D62 · o POR QUE e o TRECHO da tarefa que o Jarvis criou (0298). Só existe quando existe:
+ * tarefa humana não ganha bloco vazio. O que a autonomia muda é quem aprova, não a transparência.
+ */
+function PorQueJarvis({ t, apagada }: { t: TarefaVisao; apagada?: boolean }) {
+  if (!t.por_que && !t.trecho) return null;
+  const jarvis = t.origem === "jarvis_conversa";
+  return (
+    <div className={cn("mt-1 text-[12px] leading-snug", apagada ? "text-mute" : "text-suave")}>
+      {t.por_que && (
+        <p>
+          {jarvis && (
+            <span className="mr-1.5 rounded-full bg-navy px-1.5 py-px font-mono text-[9.5px] font-semibold uppercase tracking-wide text-branco">
+              Jarvis
+            </span>
+          )}
+          {t.por_que}
+        </p>
+      )}
+      {t.trecho && (
+        <blockquote className="mt-0.5 border-l-2 border-linha-forte pl-2 italic">“{t.trecho}”</blockquote>
+      )}
+    </div>
+  );
+}
+
 function ComLead({
   t,
   className,
@@ -520,10 +550,12 @@ function ComLead({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  if (!t.lead_id) return <div className={className}>{children}</div>;
+  // `id` estável: a timeline da conversa linka `/tarefas#tarefa-<id>` (F2).
+  if (!t.lead_id) return <div id={`tarefa-${t.id}`} className={className}>{children}</div>;
   const destino = `/funil?lead=${t.lead_id}`;
   return (
     <div
+      id={`tarefa-${t.id}`}
       role="link"
       tabIndex={0}
       onClick={() => router.push(destino)}
@@ -624,6 +656,7 @@ function CartaoTarefa({
           {t.descricao && (
             <div className="mt-0.5 whitespace-pre-line text-[12px] leading-snug text-suave">{t.descricao}</div>
           )}
+          <PorQueJarvis t={t} />
           {t.lead_nome && <div className="mt-0.5 truncate text-[12px] text-suave">{t.lead_nome}</div>}
         </div>
         {t.status === "pendente" && <BotaoAcoes aberto={acoesAberta} onToggle={onToggleAcoes} />}
@@ -702,6 +735,7 @@ function LinhaTarefa({
           {t.descricao}
         </div>
       )}
+      <PorQueJarvis t={t} apagada={fechada} />
       {t.status === "concluida" && t.resultado && (
         <div className="mt-0.5 text-[12px] leading-snug text-suave">→ {t.resultado}</div>
       )}
