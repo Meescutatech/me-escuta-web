@@ -36,7 +36,8 @@ import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { iniciaisDe } from "@/lib/dados/tarefa-calculos";
 import { cn } from "@/lib/utils";
 import type { VereditoEnvio } from "./regras/numero.ts";
-import { BotaoEnvio, ChipProgramado, type EnvioProgramado } from "./botao-envio";
+import { BotaoEnvio, ListaProgramadas } from "./botao-envio";
+import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 
 /*
  * Composer do /conversas.
@@ -88,6 +89,9 @@ export function Composer({
   aoPublicar,
   avisar,
   origem,
+  programadas,
+  onProgramar,
+  onCancelarProgramado,
 }: {
   modoClara: boolean;
   pending: boolean;
@@ -120,6 +124,14 @@ export function Composer({
   onDigitar?: () => void;
   aoPublicar: () => void;
   avisar: (msg: string) => void;
+  /**
+   * R27/F1 · o que já está programado nesta conversa (agendado + falhou), da view
+   * `api.v_envios_programados`. O Inbox lê no servidor; aqui só se desenha e se cancela.
+   */
+  programadas: EnvioProgramadoLinha[];
+  /** Grava `envio_programado`. Devolve true quando gravou — só então o campo esvazia. */
+  onProgramar: (quandoMs: number, texto: string) => Promise<boolean>;
+  onCancelarProgramado: (id: string) => void;
 }) {
   const [rascunho, setRascunho] = useState("");
   const [anexo, setAnexo] = useState<Anexo | null>(null);
@@ -136,14 +148,6 @@ export function Composer({
   const [salvando, setSalvando] = useState(false);
   // rascunho nasceu de template? viaja no payload do envio (§6.4); zerar o campo descarta
   const [templateId, setTemplateId] = useState<string | null>(null);
-
-  /**
-   * R23 protótipo (workshop 12/08) · pedido nº 1 da Sarah — "enviar agora ou programar".
-   * Mora em useState DE PROPÓSITO: o `.env.local` deste repo aponta para o Supabase de produção
-   * e programar envio não pode virar linha no banco enquanto isto é protótipo. Quando o agendador
-   * real existir, esta linha vira a chamada de server action e o resto do componente não muda.
-   */
-  const [programado, setProgramado] = useState<EnvioProgramado | null>(null);
 
   // campos que só a tarefa revela
   const [responsavelId, setResponsavelId] = useState<string>("");
@@ -707,9 +711,17 @@ export function Composer({
               ) : null}
             </div>
           ) : null}
-          {/* envio programado — tarja acima do campo, como a do Gmail, sempre com "cancelar" */}
-          {!interno && programado && (
-            <ChipProgramado envio={programado} onCancelar={() => setProgramado(null)} />
+          {/* envios programados — acima do campo, onde o Gmail põe a tarja; sempre com "cancelar" */}
+          {!interno && programadas.length > 0 && (
+            <ListaProgramadas
+              linhas={programadas}
+              onCancelar={onCancelarProgramado}
+              onRetomarTexto={(corpo) => {
+                setRascunho(corpo);
+                setTemplateId(null);
+                campoRef.current?.focus();
+              }}
+            />
           )}
 
           <div className="flex items-end gap-1.5 py-2 pl-2 pr-2">
@@ -765,11 +777,14 @@ export function Composer({
             {!interno && (
               <BotaoEnvio
                 onEnviar={() => void enviarAoCliente()}
-                // protótipo: guarda o horário e o rascunho na tela; não despacha, não grava
-                onProgramar={(quando) => {
-                  setProgramado({ quando, texto: rascunho.trim().slice(0, 60) });
-                  setRascunho("");
-                  setTemplateId(null);
+                // grava de verdade (R27/F1): o campo só esvazia depois que a porta aceitou
+                onProgramar={async (quando) => {
+                  const texto = rascunho;
+                  const ok = await onProgramar(quando, texto);
+                  if (ok) {
+                    setRascunho("");
+                    setTemplateId(null);
+                  }
                 }}
                 enviando={subindo}
                 desabilitado={
