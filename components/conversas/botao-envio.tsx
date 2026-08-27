@@ -141,9 +141,6 @@ export function BotaoEnvio({
         >
           <div className="border-b border-linha px-3.5 py-2.5">
             <div className="text-[0.78rem] font-semibold text-tinta">Programar envio</div>
-            <div className="mt-0.5 text-[0.7rem] leading-snug text-mute">
-              Sai pelo mesmo número, em seu nome. Dá para cancelar até a hora.
-            </div>
           </div>
 
           {!escolhendo ? (
