@@ -110,3 +110,66 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/*
+ * F5 (27/08) · O FUNDO DO CARD DO FUNIL É A FAIXA DE PRIORIDADE — tokens de tema.
+ *
+ * A cor saiu do trilho de 3px e passou a pintar o card inteiro: a ficha tem a cor do papel igual à
+ * urgência. Quatro faixas (D55), e `neutro` para quem não afirma urgência (sem prazo / sem medida).
+ * Os valores CLAROS são os `*.bg`/`*.bd` já existentes no tailwind.config.ts (vermelho, amarelo,
+ * azul) — nenhuma cor nova entra no sistema. Os ESCUROS ficam declarados aqui para o dia em que o
+ * documento receber `data-theme="dark"`: hoje o app é declarado claro (`color-scheme: light`,
+ * acima), então o bloco escuro é inerte por desenho — NÃO ligo `prefers-color-scheme`, que pintaria
+ * card escuro sobre board claro.
+ *
+ * Contraste medido (WCAG 2.x, script 27/08) sobre os fundos claros: texto `tinta` #1F2328 ≥ 13,6:1
+ * em todos; rótulo da faixa na própria cor: vermelho/agora 5,18:1 · amarelo/hoje 5,16:1 ·
+ * navy/na_semana 11,17:1 · suave/sem_pressa 7,32:1; `mute` 4,87:1 no pior caso (agora). Escuros,
+ * com texto claro #E6E8EC: sobre #3A2320 (agora) 11,88:1 · #3A2E14 (hoje) 10,83:1 · #1F2540 (na
+ * semana) 12,25:1 · #23262B (neutro) 12,37:1. ⚠️ No escuro os tokens de TEXTO do app (tinta,
+ * vermelho, navy…) ainda são os claros — a troca de tema completa é de outra frente.
+ */
+:root {
+  --faixa-agora-fundo: #fbebe4;
+  --faixa-agora-linha: #f1cdbf;
+  --faixa-hoje-fundo: #fbf3df;
+  --faixa-hoje-linha: #ead9a6;
+  --faixa-na-semana-fundo: #eef1fb;
+  --faixa-na-semana-linha: #d5ddf3;
+  --faixa-sem-pressa-fundo: #ffffff;
+  --faixa-sem-pressa-linha: #e8e7e2;
+  --faixa-neutro-fundo: #ffffff;
+  --faixa-neutro-linha: #e8e7e2;
+}
+:root[data-theme="dark"] {
+  --faixa-agora-fundo: #3a2320;
+  --faixa-agora-linha: #6b3a31;
+  --faixa-hoje-fundo: #3a2e14;
+  --faixa-hoje-linha: #6d5520;
+  --faixa-na-semana-fundo: #1f2540;
+  --faixa-na-semana-linha: #3a4470;
+  --faixa-sem-pressa-fundo: #23262b;
+  --faixa-sem-pressa-linha: #34383f;
+  --faixa-neutro-fundo: #23262b;
+  --faixa-neutro-linha: #34383f;
+}
+.card-faixa-agora {
+  background-color: var(--faixa-agora-fundo);
+  border-color: var(--faixa-agora-linha);
+}
+.card-faixa-hoje {
+  background-color: var(--faixa-hoje-fundo);
+  border-color: var(--faixa-hoje-linha);
+}
+.card-faixa-na-semana {
+  background-color: var(--faixa-na-semana-fundo);
+  border-color: var(--faixa-na-semana-linha);
+}
+.card-faixa-sem-pressa {
+  background-color: var(--faixa-sem-pressa-fundo);
+  border-color: var(--faixa-sem-pressa-linha);
+}
+.card-faixa-neutro {
+  background-color: var(--faixa-neutro-fundo);
+  border-color: var(--faixa-neutro-linha);
+}
