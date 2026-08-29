@@ -1,11 +1,18 @@
-import { lerDashboard } from "@/lib/dados/dashboard";
+import { lerDashboardCeo } from "@/lib/dados/dashboard-ceo";
+import { interpretarAtor, interpretarPeriodo } from "@/lib/dados/dashboard-ceo-calculos";
 import { PainelDashboard } from "@/components/dashboard/painel";
 
-// `/` é o dashboard (Rodada 7, D4) — sempre o estado atual do ledger, sem cache.
+// `/` é o dashboard — a tela do CEO (R27 · F6). Sempre o estado atual do ledger, sem cache.
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
-  const dados = await lerDashboard();
-  // hora REAL desta renderização — o carimbo "atualizado há Xs" conta a partir daqui
-  return <PainelDashboard dados={dados} geradoEm={new Date().toISOString()} />;
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  // periodo (7/30/90) e "ver como" (ator) vivem na URL — link compartilhavel, sem estado escondido
+  const periodo = interpretarPeriodo(searchParams.periodo);
+  const ator = interpretarAtor(searchParams.ator);
+  const dados = await lerDashboardCeo(periodo, ator);
+  return <PainelDashboard dados={dados} />;
 }
