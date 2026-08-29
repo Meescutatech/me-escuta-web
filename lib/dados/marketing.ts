@@ -1,86 +1,54 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { lerEtapasReais } from "./funil";
 import {
   montarVisao,
   type CustoCru,
+  type EtapaLeadCru,
   type FonteVocabulario,
   type Periodo,
   type ToqueCru,
   type VisaoMarketing,
 } from "./marketing-calculos";
+import { entradaDeEnsaio } from "./marketing-ensaio";
 
-// O recorte mora nos calculos (testavel sem alias `@/`); a tela continua importando daqui.
-export {
-  PRESETS,
-  hojeSP,
-  periodoDaUrl,
-  RECENTES,
-  type Periodo,
-  type VisaoMarketing,
-} from "./marketing-calculos";
+export { PRESETS, hojeSP, periodoDaUrl, type Periodo, type VisaoMarketing } from "./marketing-calculos";
 
 /**
- * T7 - A LEITURA da tela do Fernando. SERVIDOR (mesma sessao/RLS do resto do app).
+ * Marketing — a LEITURA (servidor, mesma sessao/RLS do resto do app).
  *
- * =========================================================================================
- * O CAMINHO E PROPRIO, E ISSO E O REQUISITO - NAO UMA PREFERENCIA DE ARQUITETURA
- * =========================================================================================
- * A T6 entregou `core.casamento_midia(date,date)`, que responde os cinco baldes em SQL. Esta
- * tela NAO A CHAMA, e o comentario da propria funcao diz por que: ela e o ORACULO contra o
- * qual a tela e conferida. Tela que chama o oraculo compara a consulta consigo mesma.
+ * Linhas cruas de `core.captacao`, `core.custo_midia` e `core.estado_lead`; a composicao e
+ * pura e mora em `marketing-calculos.ts`. Cada leitura degrada para `null` sozinha: o que
+ * falhou vira "—" na tela, nunca zero.
  *
- * Entao aqui a leitura e CRUA - linhas de `core.captacao` e `core.custo_midia` - e a
- * agregacao acontece em `marketing-calculos.ts`, em TypeScript. Dois caminhos de naturezas
- * diferentes; se divergirem, um dos dois esta errado, e o teste tem de poder dizer qual.
- *
- * =========================================================================================
- * TETO DECLARADO, E ELE APARECE NA TELA
- * =========================================================================================
- * Ler linha crua nao escala sozinho. O teto abaixo e o limite; o `+1` no `limit` e o detector
- * (se voltou mais que o teto, ha pelo menos mais uma). Bater no teto NAO vira agregacao
- * silenciosamente parcial: `parcial` acende e a tela avisa - numero parcial com cara de total
- * e a mesma familia de defeito que o zero sem causa.
- *
- * Medido em 22/08/2026: producao tem ZERO linhas em `core.captacao` e ZERO em
- * `core.custo_midia`. O teto e folga larga para o volume medido (43-73 leads/semana, M27).
+ * Teto declarado com `+1` como detector: bater no teto acende `parcial`, nunca vira total
+ * silenciosamente parcial. Medido em 22/08/2026: producao tem ZERO linhas nas duas tabelas.
  */
 
 type Supabase = ReturnType<typeof criarClienteServidor>;
 
 export const TETO_TOQUES = 20000;
 export const TETO_CUSTO = 20000;
+const LOTE_ETAPAS = 400;
 
-/** Colunas lidas de `core.captacao` - so as que a tela usa, nada de `select *`. */
 const COLUNAS_TOQUE =
   "lead_id,fonte,plataforma,campanha_id,campanha_nome,anuncio_id,anuncio_nome,utm,clids,hierarquia_estado,capturado_em,criado_em";
-
 const COLUNAS_CUSTO = "dia,plataforma,campanha_id,campanha_nome,custo,impressoes,cliques,ingerido_em";
 
-// =========================================================================================
-// A VISAO COMPLETA - o que a tela recebe pronto
-// =========================================================================================
+/** Modo de ensaio: fixture no lugar do banco. So com a env explicita; nunca por padrao. */
+export function ensaioLigado(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NEXT_PUBLIC_MARKETING_ENSAIO === "1";
+}
 
-async function contar(
-  supabase: Supabase,
-  tabela: string,
-  filtros: (q: any) => any,
-): Promise<number | null> {
+async function contar(supabase: Supabase, tabela: string, filtros: (q: any) => any): Promise<number | null> {
   try {
-    const { count, error } = await filtros(
-      supabase.schema("core").from(tabela).select("*", { count: "exact", head: true }),
-    );
-    return error ? null : count ?? 0;
+    const { count, error } = await filtros(supabase.schema("core").from(tabela).select("*", { count: "exact", head: true }));
+    return error ? null : (count ?? 0);
   } catch {
     return null;
   }
 }
 
-/** Extremo de uma coluna de data (min ou max). `null` = sem linha, ou leitura falhou. */
-async function extremo(
-  supabase: Supabase,
-  tabela: string,
-  coluna: string,
-  ascendente: boolean,
-): Promise<string | null> {
+async function extremo(supabase: Supabase, tabela: string, coluna: string, ascendente: boolean): Promise<string | null> {
   try {
     const { data, error } = await supabase
       .schema("core")
@@ -97,7 +65,6 @@ async function extremo(
   }
 }
 
-/** O vocabulario v2 (T2). Sem ele, (a) e (b) nao tem como classificar - e a tela diz isso. */
 async function lerVocabulario(supabase: Supabase): Promise<FonteVocabulario[] | null> {
   try {
     const { data, error } = await supabase
@@ -121,16 +88,10 @@ async function lerVocabulario(supabase: Supabase): Promise<FonteVocabulario[] | 
 }
 
 /**
- * A flag de release da spec (`dod`: "deploy atras de `flag.modulo_marketing`").
- *
- * `null` = a linha NAO EXISTE em `core.config` - e ela so nasce por migration, porque a porta
- * recusa publicar `flag.*` pela tela (0075). Enquanto nao nascer, a tela funciona e DECLARA
- * que nao esta atras de flag nenhuma. O contrario - tratar ausente como desligada - deixaria
- * a tela inacessivel esperando trabalho de outro repo, e ninguem veria o aviso para saber por que.
+ * A flag de release. `null` = a linha nao existe em `core.config` (so nasce por migration).
+ * Ausente NAO desliga: a tela funciona; so `false` recusa.
  */
-export async function lerFlagModuloMarketing(
-  supabase: Supabase = criarClienteServidor(),
-): Promise<boolean | null> {
+export async function lerFlagModuloMarketing(supabase: Supabase = criarClienteServidor()): Promise<boolean | null> {
   try {
     const { data, error } = await supabase
       .schema("core")
@@ -146,7 +107,6 @@ export async function lerFlagModuloMarketing(
   }
 }
 
-/** Lista com deteccao de teto pelo `+1`. Falha devolve `null` (diferente de lista vazia). */
 async function listar<T>(
   supabase: Supabase,
   tabela: string,
@@ -155,9 +115,7 @@ async function listar<T>(
   filtros: (q: any) => any,
 ): Promise<{ linhas: T[]; parcial: boolean } | null> {
   try {
-    const { data, error } = await filtros(
-      supabase.schema("core").from(tabela).select(colunas),
-    ).limit(teto + 1);
+    const { data, error } = await filtros(supabase.schema("core").from(tabela).select(colunas)).limit(teto + 1);
     if (error || !data) return null;
     const linhas = data as T[];
     return { linhas: linhas.slice(0, teto), parcial: linhas.length > teto };
@@ -166,65 +124,64 @@ async function listar<T>(
   }
 }
 
-/**
- * A leitura inteira da tela. Nenhuma falha derruba as vizinhas: cada bloco degrada para
- * `null`, e `null` vira "—" na tela, nunca zero.
- */
+/** A etapa ATUAL dos leads captados, em lotes (o `in()` tem limite de URL). */
+async function lerEtapasDosLeads(supabase: Supabase, leadIds: string[]): Promise<EtapaLeadCru[] | null> {
+  const ids = [...new Set(leadIds)];
+  if (ids.length === 0) return [];
+  try {
+    const saida: EtapaLeadCru[] = [];
+    for (let i = 0; i < ids.length; i += LOTE_ETAPAS) {
+      const { data, error } = await supabase
+        .schema("core")
+        .from("estado_lead")
+        .select("lead_id,etapa")
+        .in("lead_id", ids.slice(i, i + LOTE_ETAPAS));
+      if (error) return null;
+      saida.push(...((data ?? []) as EtapaLeadCru[]));
+    }
+    return saida;
+  } catch {
+    return null;
+  }
+}
+
 export async function lerMarketing(periodo: Periodo, agora: Date = new Date()): Promise<VisaoMarketing> {
+  if (ensaioLigado()) return montarVisao(entradaDeEnsaio(periodo, agora));
+
   const supabase = criarClienteServidor();
   const iniIso = `${periodo.ini}T00:00:00-03:00`;
   const fimIso = `${periodo.fim}T00:00:00-03:00`;
 
-  const [
-    toquesLidos,
-    custosLidos,
-    semData,
-    leadsNoPeriodo,
-    inicioSerie,
-    ultimaCaptacao,
-    custoLinhasTotal,
-    ultimaIngestao,
-    ultimoDiaCusto,
-    vocabulario,
-    flagAtiva,
-  ] = await Promise.all([
+  const [toquesLidos, custosLidos, inicioSerie, custoLinhasTotal, vocabulario, flagAtiva, etapas] = await Promise.all([
     listar<ToqueCru>(supabase, "captacao", COLUNAS_TOQUE, TETO_TOQUES, (q) =>
-      q.gte("capturado_em", iniIso).lt("capturado_em", fimIso).order("capturado_em", { ascending: false }),
+      q.gte("capturado_em", iniIso).lt("capturado_em", fimIso).order("capturado_em", { ascending: true }),
     ),
     listar<CustoCru>(supabase, "custo_midia", COLUNAS_CUSTO, TETO_CUSTO, (q) =>
-      q.gte("dia", periodo.ini).lt("dia", periodo.fim).order("dia", { ascending: false }),
+      q.gte("dia", periodo.ini).lt("dia", periodo.fim).order("dia", { ascending: true }),
     ),
-    // FORA do recorte de proposito (C-1d): toque sem data de ocorrencia nao pertence a
-    // periodo nenhum, e sem esta contagem ele sumiria dos dois lados do filtro.
-    contar(supabase, "captacao", (q) => q.is("capturado_em", null)),
-    // OUTRA BASE, e a tela diz isso ao lado do numero: leads em `core.lead`, nao toques.
-    contar(supabase, "lead", (q) => q.gte("criado_em", iniIso).lt("criado_em", fimIso)),
     extremo(supabase, "captacao", "capturado_em", true),
-    extremo(supabase, "captacao", "capturado_em", false),
     contar(supabase, "custo_midia", (q) => q),
-    extremo(supabase, "custo_midia", "ingerido_em", false),
-    extremo(supabase, "custo_midia", "dia", false),
     lerVocabulario(supabase),
     lerFlagModuloMarketing(supabase),
+    lerEtapasReais(supabase),
   ]);
 
-  // A COMPOSICAO E PURA e mora nos calculos: e a mesma funcao que a rota de ensaio usa. Se o
-  // ensaio montasse a visao por conta propria, ele deixaria de provar a tela de verdade.
+  const toques = toquesLidos?.linhas ?? [];
+  const etapasLeads = await lerEtapasDosLeads(
+    supabase,
+    toques.map((t) => t.lead_id),
+  );
+
   return montarVisao({
     periodo,
-    toques: toquesLidos?.linhas ?? [],
+    toques,
     custos: custosLidos?.linhas ?? [],
+    etapasLeads: etapasLeads ?? [],
+    etapas: (etapas ?? []).map((e) => ({ chave: e.chave, nome: e.nome, ordem: e.ordem, tipo: e.tipo })),
     parcial: Boolean(toquesLidos?.parcial || custosLidos?.parcial),
-    leituraFalhou: toquesLidos == null || custosLidos == null,
-    leadsSemData: semData ?? 0,
-    leadsNoPeriodo,
+    leituraFalhou: toquesLidos == null || custosLidos == null || etapasLeads == null,
     inicioSerie,
-    ultimaCaptacao,
     custoLinhasTotal: custoLinhasTotal ?? 0,
-    // O custo tem DOIS carimbos possiveis e eles respondem coisas diferentes: `dia` e ate
-    // quando o gasto vai, `ingerido_em` e quando NOS buscamos. Quem envelhece a tela e o
-    // segundo - a ingestao parada e o que faz o numero de hoje ser o de anteontem.
-    ultimoCusto: ultimaIngestao ?? ultimoDiaCusto,
     vocabulario,
     flagAtiva,
     agora,
