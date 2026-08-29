@@ -36,7 +36,14 @@ interface ItemNav {
 
 const GRUPOS: { rotulo: string; itens: ItemNav[] }[] = [
   { rotulo: "Configurações", itens: [{ href: "/configuracoes/membros", rotulo: "Membros" }] },
-  { rotulo: "Agentes", itens: [{ href: "/configuracoes/clara", rotulo: "Clara", ponto: "on" }] },
+  {
+    rotulo: "Agentes",
+    itens: [
+      { href: "/configuracoes/clara", rotulo: "Clara", ponto: "on" },
+      // F9: o painel de melhoria de prompt saiu de /jarvis (que virou o chat) para cá.
+      { href: "/configuracoes/agentes/jarvis", rotulo: "Jarvis", ponto: "on" },
+    ],
+  },
   {
     rotulo: "Operação",
     itens: [
