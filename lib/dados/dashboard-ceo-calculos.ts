@@ -469,7 +469,7 @@ export function resumirAgora(
   sla: SlaEtapas,
   agora: number,
 ): ResumoAgora {
-  const porFaixa: Record<FaixaPrioridade, number> = { agora: 0, hoje: 0, na_semana: 0, sem_pressa: 0, sem_dado: 0 };
+  const porFaixa: Record<FaixaPrioridade, number> = { agora: 0, hoje: 0, na_semana: 0, sem_pressa: 0, sem_prazo: 0, sem_dado: 0 };
   for (const c of cards) porFaixa[prioridadeCard(c, sla, agora).faixa]++;
   const comDado = FAIXAS_ESCALA.reduce((s, f) => s + porFaixa[f], 0);
   const pctAgora = comDado === 0 ? null : porFaixa.agora / comDado;
