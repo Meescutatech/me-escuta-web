@@ -213,47 +213,6 @@ export function BotaoEnvio({
 }
 
 /**
- * O chip do envio programado — mora ACIMA do campo de texto, onde o Gmail põe a tarja amarela.
- * Sempre com "cancelar" ao lado: programar sem poder desprogramar é um envio que a pessoa não
- * controla mais, e esse é exatamente o medo que ela tem de usar a função.
- */
-export function ChipProgramado({
-  envio,
-  onCancelar,
-}: {
-  envio: EnvioProgramado;
-  onCancelar: () => void;
-}) {
-  const [agora, setAgora] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setAgora(Date.now()), 60_000);
-    return () => clearInterval(t);
-  }, []);
-
-  return (
-    <div className="flex items-center gap-2 border-b border-linha bg-laranja-cl px-3.5 py-2">
-      <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5 shrink-0 stroke-laranja-esc" fill="none">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </svg>
-      <span className="min-w-0 flex-1 truncate text-[0.78rem] text-tinta">
-        <b className="font-semibold text-laranja-esc">Programado</b> para {frasePrograma(envio.quando, agora)}
-        {envio.texto && <span className="text-mute"> · “{envio.texto}”</span>}
-      </span>
-      <span className="shrink-0 rounded-full bg-branco/70 px-1.5 py-px text-[0.62rem] font-semibold uppercase tracking-wide text-laranja-esc">
-        protótipo
-      </span>
-      <button
-        onClick={onCancelar}
-        className="shrink-0 rounded-md px-2 py-1 text-[0.74rem] font-medium text-laranja-esc transition-colors hover:bg-branco/70"
-      >
-        Cancelar
-      </button>
-    </div>
-  );
-}
-
-/**
  * A SEÇÃO "PROGRAMADAS" — mora acima do campo, onde o Gmail põe a tarja amarela, e lista o que
  * ainda vai sair nesta conversa e o que NÃO saiu. Uma linha por envio: o HORÁRIO é o dado forte
  * (é o que a pessoa escolheu e o que ela vai conferir), o texto é prévia, e "Cancelar" está sempre

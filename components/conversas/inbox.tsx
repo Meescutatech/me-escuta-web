@@ -202,7 +202,7 @@ export function Inbox({
   /**
    * F2 / D62 (27/08) · O JARVIS CRIA A TAREFA — no runtime, não aqui.
    *
-   * O protótipo do workshop (regra pura em `lib/conversas/sugestao-jarvis.ts` + cartão de
+   * O protótipo do workshop (regra pura + cartão de
    * aprovar + fila em sessionStorage) SAIU do caminho principal: quem monitora a conversa é o
    * worker `jarvis/tarefas` do runtime, que grava `tarefa_criada` (ator agente:jarvis, origem
    * jarvis_conversa) pela porta. A tarefa chega a esta tela como qualquer outra — pela projeção
