@@ -14,6 +14,7 @@ import {
   type EtapaResumo,
   type Janela,
   type LinhaAtorDia,
+  type LinhaConversaAtor,
   type LinhaDia,
   type LinhaEtapaDia,
   type LinhaFunil,
@@ -88,7 +89,7 @@ export async function lerDashboardCeo(
   const indisponiveis: string[] = [];
   const desde = janela.inicioAnterior;
 
-  const [atores, atorDia, primeira, dias, etapaDia, funil, board] = await Promise.all([
+  const [atores, atorDia, primeira, dias, etapaDia, funil, conversaAtor, board] = await Promise.all([
     lerView<Ator>(supabase, "v_dashboard_ator", indisponiveis),
     lerView<LinhaAtorDia>(supabase, "v_dashboard_ator_dia", indisponiveis, (q) => q.gte("dia", desde)),
     lerView<LinhaPrimeiraResposta>(supabase, "v_dashboard_primeira_resposta", indisponiveis, (q) =>
@@ -97,6 +98,8 @@ export async function lerDashboardCeo(
     lerView<LinhaDia>(supabase, "v_dashboard_dia", indisponiveis, (q) => q.gte("dia", desde)),
     lerView<LinhaEtapaDia>(supabase, "v_dashboard_etapa_dia", indisponiveis, (q) => q.gte("dia", desde)),
     lerView<LinhaFunil>(supabase, "v_dashboard_funil", indisponiveis),
+    // 0302: uma linha por (conversa, ator) — e daqui que "conversas" da tabela Por ator sai
+    lerView<LinhaConversaAtor>(supabase, "v_dashboard_conversa_ator", indisponiveis, (q) => q.gte("primeiro_dia", desde)),
     // o board inteiro (v_lead_card + sla_etapas) — a MESMA leitura do funil, para a % em AGORA
     // sair da mesma regra de cor que pinta os cards (D55).
     lerFunil(supabase).catch(() => null),
@@ -114,7 +117,7 @@ export async function lerDashboardCeo(
     negocio: somarDiasNegocio(dias, janela),
     serie: serieDiaria(dias, atorDia, janela, atorFiltro),
     atendimento: resumirAtendimento(primeiraFiltrada, atorDiaFiltrado, janela),
-    porAtor: resumirPorAtor(atores, atorDia, primeira, janela),
+    porAtor: resumirPorAtor(atores, atorDia, primeira, janela, conversaAtor),
     funil: resumirFunil(funil, etapaDia, janela, atorFiltro),
     valorNegociacao: valorEmNegociacao(funil),
     agora: board && board.cards.length > 0 ? resumirAgora(board.cards, board.sla, agora.getTime()) : null,

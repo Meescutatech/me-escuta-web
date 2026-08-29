@@ -18,6 +18,7 @@ import {
   valorEmNegociacao,
   type Ator,
   type LinhaAtorDia,
+  type LinhaConversaAtor,
   type LinhaDia,
   type LinhaEtapaDia,
   type LinhaFunil,
@@ -26,7 +27,7 @@ import {
 import { SLA_PADRAO_DECLARADO } from "../lib/dados/funil-ordenacao.ts";
 
 /*
- * Logica PURA do dashboard do CEO (R27 · F6). As views (0300/0301) sao provadas no pgTAP 98;
+ * Logica PURA do dashboard do CEO (R27 · F6). As views (0300/0301/0302) sao provadas no pgTAP 98/99;
  * aqui se prova a conta de periodo/comparacao que o web faz sobre as linhas por dia.
  */
 
@@ -112,18 +113,32 @@ const PRIMEIRA: LinhaPrimeiraResposta[] = [
   { conversa_id: "c5", dia: "2026-08-19", respondida_por: "agente:clara", minutos: 9 }, // anterior
 ];
 
+// 0302: uma linha por (conversa, ator). A conversa c1 foi tocada pela Clara em 27, 28 e 29/08 — e UMA linha.
+// (No ATOR_DIA acima, conversas_atendidas da Clara soma 10 na janela: e o numero que a tabela NAO deve mostrar.)
+const CONVERSA_ATOR: LinhaConversaAtor[] = [
+  { conversa_id: "c1", ator: "agente:clara", ator_tipo: "agente", ator_id: "clara", primeiro_dia: "2026-08-27", ultimo_dia: "2026-08-29", mensagens: 3 },
+  { conversa_id: "c2", ator: "agente:clara", ator_tipo: "agente", ator_id: "clara", primeiro_dia: "2026-08-28", ultimo_dia: "2026-08-28", mensagens: 1 },
+  { conversa_id: "c5", ator: "agente:clara", ator_tipo: "agente", ator_id: "clara", primeiro_dia: "2026-08-19", ultimo_dia: "2026-08-19", mensagens: 2 }, // anterior
+  { conversa_id: "c1", ator: "humano:u1", ator_tipo: "humano", ator_id: "u1", primeiro_dia: "2026-08-29", ultimo_dia: "2026-08-29", mensagens: 1 }, // mesma conversa, outro ator
+  { conversa_id: "c3", ator: "humano:u1", ator_tipo: "humano", ator_id: "u1", primeiro_dia: "2026-08-28", ultimo_dia: "2026-08-28", mensagens: 2 },
+  { conversa_id: "c0", ator: "humano:u1", ator_tipo: "humano", ator_id: "u1", primeiro_dia: "2026-08-10", ultimo_dia: "2026-08-29", mensagens: 9 }, // comecou antes das duas janelas: nao e "nova" em nenhuma
+];
+
 test("por ator: soma so a janela atual, compara com a anterior, mediana por quem respondeu primeiro", () => {
-  const r = resumirPorAtor(CATALOGO, ATOR_DIA, PRIMEIRA, j7);
+  const r = resumirPorAtor(CATALOGO, ATOR_DIA, PRIMEIRA, j7, CONVERSA_ATOR);
   const clara = r.find((x) => x.ator === "agente:clara")!;
   assert.equal(clara.mensagens.atual, 15);
   assert.equal(clara.mensagens.anterior, 7);
-  assert.equal(clara.conversas.atual, 10);
+  assert.equal(clara.conversas.atual, 2, "c1 (3 dias) + c2 = 2 conversas distintas, nao a soma 10 dos dias");
+  assert.equal(clara.conversas.anterior, 1);
   assert.equal(clara.primeiraResposta.medianaMin, 2);
   assert.equal(clara.primeiraResposta.amostra, 2);
   assert.equal(clara.primeiraResposta.anteriorMin, 9);
 
   const sarah = r.find((x) => x.ator === "humano:u1")!;
   assert.equal(sarah.mensagens.atual, 3);
+  assert.equal(sarah.conversas.atual, 2, "c1 conta para a Sarah tambem (e dela a linha), c3, e c0 nao (comecou em 10/08)");
+  assert.equal(sarah.conversas.anterior, 0);
   assert.equal(sarah.mensagens.anterior, 0, "15/08 esta fora das duas janelas");
   assert.equal(sarah.transbordos.atual, 2);
   assert.equal(sarah.tarefasConcluidas.atual, 2);
@@ -139,6 +154,23 @@ test("por ator: soma so a janela atual, compara com a anterior, mediana por quem
   assert.equal(antiga.ativo, false);
   // ordem: agentes antes de humanos; entre agentes, mais conversas primeiro
   assert.deepEqual(r.map((x) => x.ator).slice(0, 2), ["agente:clara", "agente:jarvis"]);
+});
+
+test("por ator: sem a view 0302, conversas e zero — nunca a soma dia a dia de conversas_atendidas", () => {
+  const r = resumirPorAtor(CATALOGO, ATOR_DIA, PRIMEIRA, j7);
+  const clara = r.find((x) => x.ator === "agente:clara")!;
+  assert.equal(clara.conversas.atual, 0);
+  assert.equal(clara.conversas.anterior, 0);
+  assert.equal(clara.mensagens.atual, 15, "as demais colunas seguem vindo de ator_dia");
+});
+
+test("por ator: ator que so aparece na 0302 (fora do catalogo e do ator_dia) entra na tabela com atividade", () => {
+  const r = resumirPorAtor(CATALOGO, [], [], j7, [
+    { conversa_id: "c9", ator: "humano:u9", ator_tipo: "humano", ator_id: "u9", primeiro_dia: "2026-08-29", ultimo_dia: "2026-08-29", mensagens: 1 },
+  ]);
+  const u9 = r.find((x) => x.ator === "humano:u9")!;
+  assert.equal(u9.conversas.atual, 1);
+  assert.equal(u9.temAtividade, true);
 });
 
 test("atendimento: agente x humano pela 1a resposta, sem resposta fora do denominador", () => {

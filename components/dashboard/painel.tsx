@@ -356,7 +356,9 @@ function PorAtor({ dados }: { dados: DadosDashboardCeo }) {
             <thead>
               <tr>
                 <th className="pb-2 text-left font-mono text-[10px] font-normal uppercase tracking-[0.04em] text-mute">ator</th>
-                <th className={th}>conversas</th>
+                <th className={th} title="conversas distintas em que este ator deu a sua primeira resposta no período (uma conversa conta uma vez, mesmo tocada em vários dias)">
+                  conversas
+                </th>
                 <th className={th}>mensagens</th>
                 <th className={th} title="mediana das conversas em que este ator deu a primeira resposta">
                   1ª resposta
@@ -395,7 +397,7 @@ export function PainelDashboard({ dados }: { dados: DadosDashboardCeo }) {
   const atorNome = dados.atorFiltro
     ? dados.porAtor.find((r) => r.ator === dados.atorFiltro)?.nome ?? dados.atorFiltro
     : null;
-  const tudoIndisponivel = dados.indisponiveis.length >= 6;
+  const tudoIndisponivel = dados.indisponiveis.length >= 7;
   const conversasAtendidas: Comparado = {
     atual: (atendimento.conversasAgente.atual ?? 0) + (atendimento.conversasHumano.atual ?? 0),
     anterior: (atendimento.conversasAgente.anterior ?? 0) + (atendimento.conversasHumano.anterior ?? 0),
