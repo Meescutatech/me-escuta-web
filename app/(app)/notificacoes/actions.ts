@@ -15,6 +15,7 @@ import type { Notificacao } from "@/lib/notificacoes";
  *  - mencao_promovida_tarefa {mencao_id, tarefa_id}
  *  - tarefa_criada           {titulo, responsavel?, prazo?}   (0011)
  *  - tarefa_concluida        {tarefa_id, resultado}           (0011)
+ *  - notificacao_lida        {chave}                          (0306, F8) — chave = tarefa:<id>:<especie>
  */
 
 function revalidarSino() {
@@ -39,15 +40,54 @@ export async function marcarMencaoLida(mencaoId: string): Promise<ResultadoEvent
   return r;
 }
 
-/** "Marcar todas como lidas": um evento por menção não lida — o ledger registra cada uma. */
+/**
+ * F8 (0306) — a notificação de TAREFA ganha leitura própria. A chave carrega a espécie
+ * (`tarefa:<id>:tarefa_atribuida` ≠ `tarefa:<id>:tarefa_vencendo`): ler o aviso de atribuição
+ * não apaga o "vence em 1h" que chega depois. O usuário vem do ATOR na porta — ninguém marca
+ * lida por outro. Remarcar é no-op (on conflict do nothing) e a conferência é por estado.
+ */
+export async function marcarNotificacaoLida(chave: string): Promise<ResultadoEvento> {
+  const c = chave.trim();
+  if (!c) return { ok: false, motivo: "notificação sem chave — recarregue a lista" };
+  const r = await registrarEventoUI("notificacao_lida", { chave: c }, undefined, await idExternoLida(c));
+  if (r.ok) revalidarSino();
+  return r;
+}
+
+/**
+ * id_externo da marca de leitura POR USUÁRIO. A porta dedupa por UNIQUE(origem,id_externo) com
+ * origem fixa 'ui': se a chave fosse só `lida:<chave>`, o segundo usuário a ler a MESMA tarefa
+ * (tarefa reatribuída, admin que também recebe) cairia no dedupe do primeiro — evento dele nunca
+ * nasceria e a notificação ficaria não lida para sempre (achado do verificador, rodada 2). Com o
+ * uid na chave, cada pessoa tem o seu evento e o retry da mesma pessoa continua idempotente.
+ * Sem uid identificável, cai no uuid por ação (a porta segue recusando ator sem usuário).
+ */
+async function idExternoLida(chave: string): Promise<string | undefined> {
+  const { criarClienteServidor } = await import("@/lib/supabase/server");
+  const { data } = await criarClienteServidor().auth.getUser();
+  const uid = data?.user?.id;
+  return uid ? `lida:${uid}:${chave}` : undefined;
+}
+
+/**
+ * "Marcar todas como lidas": um evento por notificação não lida — o ledger registra cada uma.
+ * Menção emite `mencao_lida`; tarefa (F8) emite `notificacao_lida {chave}`. Alarme não tem leitura.
+ */
 export async function marcarTodasLidas(): Promise<ResultadoEvento> {
   const { itens } = await lerNotificacoes();
-  const alvos = itens.filter((n) => n.especie === "mencao" && n.mencao_id && n.lida_em == null);
-  if (alvos.length === 0) return { ok: true };
+  const naoLidas = itens.filter((n) => n.lida_em == null);
+  const mencoes = naoLidas.filter((n) => n.especie === "mencao" && n.mencao_id);
+  const tarefas = naoLidas.filter((n) => n.especie !== "mencao" && n.tarefa_id);
+  if (mencoes.length === 0 && tarefas.length === 0) return { ok: true };
 
   let falha: string | null = null;
-  for (const n of alvos) {
+  for (const n of mencoes) {
     const r = await registrarEventoUI("mencao_lida", { mencao_id: n.mencao_id });
+    if (!r.ok) falha = r.motivo ?? "erro";
+  }
+  for (const n of tarefas) {
+    const chave = `tarefa:${n.tarefa_id}:${n.especie}`;
+    const r = await registrarEventoUI("notificacao_lida", { chave }, undefined, await idExternoLida(chave));
     if (!r.ok) falha = r.motivo ?? "erro";
   }
   revalidarSino();
