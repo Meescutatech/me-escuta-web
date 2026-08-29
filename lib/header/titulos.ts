@@ -40,6 +40,7 @@ const MAPA: Record<string, string> = {
   "/configuracoes": "Configurações",
   "/configuracoes/membros": "Membros",
   "/configuracoes/clara": "Clara",
+  "/configuracoes/agentes/jarvis": "Jarvis",
   "/configuracoes/canais": "Números de WhatsApp",
   "/configuracoes/funil": "Funil de vendas",
   "/configuracoes/templates": "Templates",
