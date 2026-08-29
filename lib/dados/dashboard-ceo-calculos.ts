@@ -6,6 +6,11 @@
  * linhas. Mediana de 1a resposta e calculada sobre `v_dashboard_primeira_resposta` (uma linha por
  * conversa) — mediana nao se agrega de dias.
  *
+ * Conversas por ator tambem NAO se somam de dias: `v_dashboard_ator_dia.conversas_atendidas` e
+ * distinta POR DIA (a mesma conversa tocada em 3 dias conta 3). "Conversas atendidas por ator no
+ * periodo" sai de `v_dashboard_conversa_ator` (0302, uma linha por conversa x ator): conta-se a
+ * conversa cujo `primeiro_dia` do ator cai na janela — distinta por construcao, como o KPI do topo.
+ *
  * Fuso: os `dia` das views ja vem em America/Sao_Paulo como 'YYYY-MM-DD'; comparacao de janela e
  * comparacao de string, sem Date no meio.
  */
@@ -134,6 +139,17 @@ export interface LinhaAtorDia {
   leads_movidos: number;
 }
 
+/** 0302 · uma linha por (conversa, ator): primeiro/ultimo dia em que o ator mandou saida efetivada. */
+export interface LinhaConversaAtor {
+  conversa_id: string;
+  ator: string;
+  ator_tipo: "agente" | "humano" | "sistema" | string;
+  ator_id: string | null;
+  primeiro_dia: string;
+  ultimo_dia: string;
+  mensagens: number;
+}
+
 export interface LinhaPrimeiraResposta {
   conversa_id: string;
   dia: string;
@@ -186,7 +202,6 @@ export function tipoDoAtor(ator: string): "agente" | "humano" | "sistema" {
 
 const METRICAS_ATOR = [
   "mensagens_enviadas",
-  "conversas_atendidas",
   "transbordos_recebidos",
   "devolucoes",
   "tarefas_criadas",
@@ -201,6 +216,7 @@ export interface ResumoAtor {
   tipo: "agente" | "humano" | "sistema";
   ativo: boolean;
   mensagens: Comparado;
+  /** conversas DISTINTAS em que o ator deu sua primeira resposta na janela (v_dashboard_conversa_ator) */
   conversas: Comparado;
   transbordos: Comparado;
   devolucoes: Comparado;
@@ -226,23 +242,34 @@ export function mediana(valores: number[]): number | null {
   return v.length % 2 === 1 ? v[meio] : (v[meio - 1] + v[meio]) / 2;
 }
 
+/** Conversas distintas do ator cujo primeiro dia de resposta cai no predicado. */
+function contarConversas(linhas: LinhaConversaAtor[], pred: (dia: string) => boolean): number {
+  const vistas = new Set<string>();
+  for (const l of linhas) if (pred(l.primeiro_dia)) vistas.add(l.conversa_id);
+  return vistas.size;
+}
+
 /**
  * Uma linha por ator do catalogo (+ atores que aparecem no ledger e nao estao no catalogo, para
  * historico nao sumir). Ordem: agentes primeiro, depois humanos, cada grupo por conversas desc.
+ * `conversas` vem de `conversaAtor` (0302), nunca da soma de `conversas_atendidas` por dia.
  */
 export function resumirPorAtor(
   catalogo: Ator[],
   atorDia: LinhaAtorDia[],
   primeira: LinhaPrimeiraResposta[],
   j: Janela,
+  conversaAtor: LinhaConversaAtor[] = [],
 ): ResumoAtor[] {
   const chaves = new Set<string>(catalogo.map((a) => a.ator));
   for (const l of atorDia) if (l.ator !== "sistema") chaves.add(l.ator);
+  for (const l of conversaAtor) if (l.ator !== "sistema") chaves.add(l.ator);
   const nomes = new Map(catalogo.map((a) => [a.ator, a] as const));
 
   const out: ResumoAtor[] = [];
   for (const ator of chaves) {
     const linhas = atorDia.filter((l) => l.ator === ator);
+    const conversas = conversaAtor.filter((l) => l.ator === ator);
     const comp = (m: MetricaAtor): Comparado => ({
       atual: somar(linhas, m, (d) => noAtual(d, j)),
       anterior: somar(linhas, m, (d) => noAnterior(d, j)),
@@ -256,7 +283,10 @@ export function resumirPorAtor(
       tipo: tipoDoAtor(ator),
       ativo: cat?.ativo ?? false,
       mensagens: comp("mensagens_enviadas"),
-      conversas: comp("conversas_atendidas"),
+      conversas: {
+        atual: contarConversas(conversas, (d) => noAtual(d, j)),
+        anterior: contarConversas(conversas, (d) => noAnterior(d, j)),
+      },
       transbordos: comp("transbordos_recebidos"),
       devolucoes: comp("devolucoes"),
       tarefasCriadas: comp("tarefas_criadas"),
@@ -267,7 +297,7 @@ export function resumirPorAtor(
         amostra: respAtual.length,
         anteriorMin: mediana(respAnt.map((p) => Number(p.minutos))),
       },
-      temAtividade: linhas.length > 0 || respAtual.length > 0 || respAnt.length > 0,
+      temAtividade: linhas.length > 0 || conversas.length > 0 || respAtual.length > 0 || respAnt.length > 0,
     };
     out.push(r);
   }
