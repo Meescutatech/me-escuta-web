@@ -1,648 +1,523 @@
 import Link from "next/link";
-import type { DadosDashboard, DiaMensagens, FaixaEtapa, SaudeFluxo } from "@/lib/dados/dashboard";
+import type { DadosDashboardCeo } from "@/lib/dados/dashboard-ceo";
 import {
-  MINIMO_DECISOES_PARA_REGUA,
-  amostraFraca,
-  formatarDuracaoMin,
-  idadeCurta,
-  percentualChegouAteAqui,
-  taxaFechamento,
-} from "@/lib/dados/dashboard-calculos";
-import { diasDesde, lacunasDoPainel, DIAS_LEDGER_PARADO, type Lacuna } from "@/lib/dados/dashboard-lacunas";
-import { segmentosReguaAgregada } from "@/lib/dados/funil-calculos";
-import { ReguaFunil } from "@/components/regua-funil";
-import { CarimboVivo } from "./carimbo-vivo";
+  fmtInt,
+  fmtMinutos,
+  fmtMoeda,
+  fmtPct,
+  tendencia,
+  textoVariacao,
+  tipoDoAtor,
+  type Comparado,
+  type EtapaResumo,
+  type ResumoAtor,
+} from "@/lib/dados/dashboard-ceo-calculos";
+import { ROTULO_FAIXA, FAIXAS_ESCALA } from "@/lib/dados/funil-ordenacao";
 import { cn } from "@/lib/utils";
+import { ControlesDashboard } from "./controles";
+import { GraficoBarras } from "./grafico-barras";
 
 /*
- * Visão geral (R9) — mockup r9-dashboard.html: 4 tiles de números-chave (peso 650,
- * -0.02em, tabular — número de operação é leitura, não pôster), leads por etapa com a
- * régua-assinatura + barras, mensagens de hoje em linhas métricas, fechamentos.
- * Números 100% do ledger/projeções (R7); indisponível = "—", nunca zero inventado.
- */
-
-function n(v: number | null): string {
-  return v == null ? "—" : v.toLocaleString("pt-BR");
-}
-
-/** "22/07 14:34" (fuso da operação) pro carimbo de recência do snapshot. */
-function ddmmhhmm(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const dia = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" });
-  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-  return `${dia} ${hora}`;
-}
-
-function Tile({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
-      <div className="text-[12.5px] font-semibold uppercase tracking-[0.05em] text-suave">{rotulo}</div>
-      {children}
-    </div>
-  );
-}
-
-function Num({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-2 text-[34px] font-[650] leading-[1.15] tracking-[-0.02em] tabular-nums text-tinta">
-      {children}
-    </div>
-  );
-}
-
-// ─────────────── leads por etapa ───────────────
-
-function LeadsPorEtapa({ faixas }: { faixas: FaixaEtapa[] }) {
-  const max = Math.max(1, ...faixas.map((f) => f.qtd ?? 0));
-  // R19 (2.3): funil com queda — % dos leads ativos que estão na etapa ou além (leitura
-  // honesta de um snapshot; razão entre etapas vizinhas mediria estoque, não conversão).
-  const chegouAteAqui = percentualChegouAteAqui(faixas.map((f) => f.qtd));
-  const temPct = chegouAteAqui.some((p) => p != null);
-  return (
-    <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
-      <div className="mb-3.5 flex items-baseline gap-2.5">
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Leads por etapa</h2>
-        {/* F5: "ao vivo" saiu daqui. O painel não tem assinatura de Realtime — quem diz de quanto
-            em quanto tempo ele relê é o CarimboVivo do cabeçalho, e agora ele diz a verdade. */}
-        <span className="ml-auto font-mono text-[10.5px] text-mute">derivado do ledger</span>
-      </div>
-      <div className="mb-4">
-        <ReguaFunil segmentos={segmentosReguaAgregada(faixas)} rotulo="Etapas do funil com leads" />
-      </div>
-      {temPct && (
-        <div className="mb-1.5 flex items-center gap-3">
-          <span className="w-[190px] min-w-[190px]" />
-          <span className="flex-1" />
-          <span className="w-11 text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute">leads</span>
-          <span className="w-14 text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute" title="% dos leads ativos que estão nesta etapa ou além">
-            até aqui
-          </span>
-        </div>
-      )}
-      {faixas.map(({ etapa, qtd }, i) => {
-        const alerta = /faltou/i.test(etapa.chave) || /faltou/i.test(etapa.nome);
-        const pct = chegouAteAqui[i];
-        return (
-          <div key={etapa.chave} className="flex min-h-8 items-center gap-3">
-            <span className={cn("w-[190px] min-w-[190px] truncate text-[13px]", alerta ? "text-amarelo" : "text-tinta")} title={etapa.nome}>
-              {etapa.nome}
-            </span>
-            <span className="h-1.5 flex-1 overflow-hidden rounded-[3px] bg-board">
-              {qtd != null && qtd > 0 && (
-                <span
-                  className={cn("block h-full rounded-[3px]", alerta ? "bg-amarelo" : "bg-laranja opacity-85")}
-                  style={{ width: `${Math.max(2, (qtd / max) * 100)}%` }}
-                />
-              )}
-            </span>
-            <span className="w-11 text-right font-mono text-[12px] tabular-nums text-tinta">{n(qtd)}</span>
-            {temPct && (
-              <span className="w-14 text-right font-mono text-[11px] tabular-nums text-suave">
-                {pct == null ? "—" : `${pct.toLocaleString("pt-BR")}%`}
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
-// ─────────────── mensagens · 7 dias (R19, 2.1) ───────────────
-
-/**
- * A série `mensagens7d` sempre foi lida inteira e mostrada só no último dia. Barras finas
- * pareadas por dia: recebidas (laranja) / enviadas (azul-gráfico) — o par validado pela bateria
- * CVD. Dia sem leitura mostra "—" no lugar do par (null não vira barra zero).
- */
-function TendenciaMensagens({ dias }: { dias: DiaMensagens[] }) {
-  const max = Math.max(1, ...dias.flatMap((d) => [d.entrada ?? 0, d.saida ?? 0]));
-  const altura = 64; // px da área de plotagem
-  // Janela inteira em zero MEDIDO (não null): dizer, não deixar o vazio parecer falha de render.
-  const tudoZero = dias.length > 0 && dias.every((d) => d.entrada === 0 && d.saida === 0);
-  return (
-    <div className="relative">
-      {tudoZero && (
-        <span className="absolute inset-x-0 top-5 text-center text-[12px] text-mute">
-          sem mensagens nos últimos 7 dias
-        </span>
-      )}
-      <div className="flex items-end gap-1.5 border-b border-linha pb-px" style={{ height: altura + 1 }}>
-        {dias.map((d, i) => {
-          const semLeitura = d.entrada == null && d.saida == null;
-          const hoje = i === dias.length - 1;
-          const rotuloCompleto = `${d.rotulo} · ${n(d.entrada)} recebidas / ${n(d.saida)} enviadas`;
-          return (
-            <div key={d.rotulo} className="flex flex-1 items-end justify-center gap-[2px]" title={rotuloCompleto}>
-              {semLeitura ? (
-                <span className="pb-0.5 font-mono text-[10.5px] text-mute">—</span>
-              ) : (
-                <>
-                  <span
-                    className={cn("w-2 rounded-t-[2px] bg-laranja", !hoje && "opacity-75")}
-                    style={{ height: `${d.entrada ? Math.max(3, (d.entrada / max) * altura) : 0}px` }}
-                  />
-                  <span
-                    className={cn("w-2 rounded-t-[2px] bg-azul-graf", !hoje && "opacity-75")}
-                    style={{ height: `${d.saida ? Math.max(3, (d.saida / max) * altura) : 0}px` }}
-                  />
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-1 flex gap-1.5">
-        {dias.map((d, i) => (
-          <span
-            key={d.rotulo}
-            className={cn(
-              "flex-1 text-center font-mono text-[10px] tabular-nums",
-              i === dias.length - 1 ? "font-semibold text-tinta" : "text-mute",
-            )}
-          >
-            {d.rotulo.slice(0, 3)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─────────────── operação de agentes (R19, 2.2) ───────────────
-
-/**
- * A fila de `core.sugestao_ia` pendente — o coração do human-on-the-loop, antes invisível no
- * painel. Total sempre; quebra por agente quando a leitura estreita coube no teto.
- */
-function OperacaoAgentes({ dados, geradoEm }: { dados: DadosDashboard["sugestoes"]; geradoEm: string }) {
-  const idade = idadeCurta(dados.maisAntigaEm, new Date(geradoEm));
-  const parada = dados.maisAntigaEm != null && Date.parse(geradoEm) - Date.parse(dados.maisAntigaEm) >= 86400_000;
-  const maxAgente = Math.max(1, ...(dados.porAgente ?? []).map((a) => a.qtd));
-  return (
-    <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
-      <div className="mb-1 flex items-baseline gap-2.5">
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Operação de agentes</h2>
-        <Link href="/fila" className="ml-auto text-[12px] font-semibold text-laranja-esc hover:underline">
-          Ver fila →
-        </Link>
-      </div>
-      <div className="flex items-baseline gap-2">
-        <span className="text-[34px] font-[650] leading-[1.15] tracking-[-0.02em] tabular-nums text-tinta">
-          {n(dados.pendentes)}
-        </span>
-        <span className="text-[12.5px] text-suave">propostas aguardando validação</span>
-      </div>
-      {idade && (
-        <div className={cn("mt-1 text-[12.5px]", parada ? "font-semibold text-amarelo" : "text-suave")}>
-          mais antiga há {idade}
-        </div>
-      )}
-      {dados.porAgente && dados.porAgente.length > 0 && (
-        <div className="mt-3 border-t border-linha/60 pt-2">
-          {dados.porAgente.map((a) => (
-            <div key={a.agente} className="flex min-h-7 items-center gap-3">
-              <span className="w-[72px] min-w-[72px] truncate text-[13px] text-tinta" title={a.agente}>
-                {a.agente}
-              </span>
-              <span className="h-1 flex-1 overflow-hidden rounded-[2px] bg-board">
-                <span
-                  className="block h-full rounded-[2px] bg-laranja opacity-70"
-                  style={{ width: `${Math.max(2, (a.qtd / maxAgente) * 100)}%` }}
-                />
-              </span>
-              <span className="w-11 text-right font-mono text-[12px] tabular-nums text-tinta">
-                {a.qtd.toLocaleString("pt-BR")}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-// ─────────────── precisão por agente (R23, RF-15.3) ───────────────
-
-/**
- * A base da régua de autonomia (RF-M3), visível pela primeira vez.
+ * Dashboard — a tela do CEO (R27 · F6, plano 27/08 §0).
  *
- * Mostra a conta inteira, não só o percentual: aprovadas / corrigidas / rejeitadas ao lado da %.
- * É deliberado — "66,7%" sozinho não deixa ninguém julgar se aquilo é medição ou coincidência, e
- * com 15 decisões é coincidência. A marca "amostra pequena" diz isso na cara, e a % continua
- * aparecendo, porque escondê-la esconderia junto o fato de que a fila não está sendo validada.
+ * Uma pergunta por bloco, e cada numero vem com o mesmo numero do periodo anterior:
+ *   1. o que aconteceu (leads, conversas, 1a resposta, valor, % em AGORA)
+ *   2. quem atendeu — agente x humano (o trilho dividido e a assinatura da tela)
+ *   3. o funil no periodo — entradas por etapa e conversao "ate aqui"
+ *   4. por ator — Clara, Jarvis, Sarah, Fernando… lado a lado, mesmas colunas
+ * Sem explicacao de sistema na tela: estado vazio e uma linha com acao.
  */
-function PrecisaoAgentes({
-  dados,
-  geradoEm,
+
+const FILL_AGENTE = "fill-azul-graf";
+const FILL_HUMANO = "fill-laranja";
+const BG_AGENTE = "bg-azul-graf";
+const BG_HUMANO = "bg-laranja";
+
+// ─────────────── peças ───────────────
+
+function Secao({
+  titulo,
+  direita,
+  children,
+  className,
 }: {
-  dados: DadosDashboard["precisao"];
-  geradoEm: string;
+  titulo: string;
+  direita?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
 }) {
-  const desdeUltima = idadeCurta(dados.ultimaDecisaoEm, new Date(geradoEm));
   return (
-    <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
-      <div className="mb-1 flex items-baseline gap-2.5">
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Precisão por agente</h2>
+    <section className={cn("rounded-[10px] border border-linha bg-branco px-5 py-[18px]", className)}>
+      <div className="mb-3.5 flex items-baseline gap-2.5">
+        <h2 className="text-[12.5px] font-semibold uppercase tracking-[0.05em] text-suave">{titulo}</h2>
+        {direita && <span className="ml-auto">{direita}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** "+12%" verde / "−8%" vermelho / "=" / "—" — sempre com o texto, nunca so a cor. */
+function Delta({ c, menorEhMelhor = false, className }: { c: Comparado; menorEhMelhor?: boolean; className?: string }) {
+  const t = tendencia(c, menorEhMelhor);
+  const txt = textoVariacao(c);
+  return (
+    <span
+      className={cn(
+        "font-mono text-[11.5px] tabular-nums",
+        t === "melhor" && "text-verde",
+        t === "pior" && "text-vermelho",
+        (t === "igual" || t === "sem") && "text-mute",
+        className,
+      )}
+      title={c.anterior == null ? undefined : `período anterior: ${fmtInt(c.anterior)}`}
+    >
+      {txt}
+    </span>
+  );
+}
+
+function Kpi({
+  rotulo,
+  valor,
+  delta,
+  menorEhMelhor,
+  sub,
+  tom,
+}: {
+  rotulo: string;
+  valor: React.ReactNode;
+  delta?: Comparado;
+  menorEhMelhor?: boolean;
+  sub?: React.ReactNode;
+  tom?: "alerta";
+}) {
+  return (
+    <div className={cn("rounded-[10px] border bg-branco px-5 py-4", tom === "alerta" ? "border-vermelho-bd" : "border-linha")}>
+      <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-suave">{rotulo}</div>
+      <div className="mt-1.5 flex items-baseline gap-2">
         <span
-          className="ml-auto font-mono text-[10.5px] text-mute"
-          title="aprovadas sem correção ÷ (aprovadas + corrigidas + rejeitadas). Pendentes e obsoletas ficam fora."
+          className={cn(
+            "text-[30px] font-[650] leading-[1.1] tracking-[-0.02em] tabular-nums",
+            tom === "alerta" ? "text-vermelho" : "text-tinta",
+          )}
         >
-          aprovada sem correção ÷ decididas
+          {valor}
         </span>
+        {delta && <Delta c={delta} menorEhMelhor={menorEhMelhor} />}
       </div>
-
-      {dados.agentes == null ? (
-        <p className="mt-3 text-[13px] text-suave">
-          Leitura indisponível agora — <span className="font-mono">—</span> em vez de um número que não medimos.
-        </p>
-      ) : dados.agentes.length === 0 ? (
-        <p className="mt-3 text-[13px] text-suave">
-          Nenhuma sugestão foi decidida ainda. Precisão sem decisão não é 0% — é pergunta sem resposta.
-        </p>
-      ) : (
-        <>
-          {dados.geral && (
-            <div className="flex items-baseline gap-2">
-              <span className="text-[34px] font-[650] leading-[1.15] tracking-[-0.02em] tabular-nums text-tinta">
-                {dados.geral.pct == null ? "—" : `${dados.geral.pct.toLocaleString("pt-BR")}%`}
-              </span>
-              <span className="text-[12.5px] text-suave">
-                geral · <b className="font-semibold tabular-nums text-tinta">{dados.geral.aprovadas}</b> de{" "}
-                <b className="font-semibold tabular-nums text-tinta">{dados.geral.decididas}</b> decisões
-              </span>
-            </div>
-          )}
-          {desdeUltima && (
-            <div className={cn("mt-1 text-[12.5px]", (dados.geral?.decididas ?? 0) > 0 && "text-suave")}>
-              última decisão há {desdeUltima}
-            </div>
-          )}
-          <div className="mt-3 border-t border-linha/60 pt-2">
-            <div className="mb-1 flex items-center gap-3">
-              <span className="w-[72px] min-w-[72px]" />
-              <span className="flex-1" />
-              <span className="w-[74px] text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute">
-                apr/cor/rej
-              </span>
-              <span className="w-12 text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute">
-                precisão
-              </span>
-            </div>
-            {dados.agentes.map((a) => {
-              const fraca = amostraFraca(a);
-              return (
-                <div key={a.agente} className="flex min-h-7 items-center gap-3">
-                  <span className="w-[72px] min-w-[72px] truncate text-[13px] text-tinta" title={a.agente}>
-                    {a.agente}
-                  </span>
-                  <span className="h-1 flex-1 overflow-hidden rounded-[2px] bg-board">
-                    {a.pct != null && (
-                      <span
-                        className={cn(
-                          "block h-full rounded-[2px]",
-                          // Cinza quando a amostra é pequena: a barra é comparação visual, e comparar
-                          // 4 decisões com 15 pintadas da mesma cor convida exatamente ao erro que a
-                          // marca "amostra pequena" tenta evitar.
-                          fraca ? "bg-mute opacity-50" : a.pct >= 80 ? "bg-verde opacity-80" : "bg-laranja opacity-75",
-                        )}
-                        style={{ width: `${Math.max(2, a.pct)}%` }}
-                      />
-                    )}
-                  </span>
-                  <span className="w-[74px] text-right font-mono text-[11px] tabular-nums text-suave">
-                    {a.aprovadas}/{a.corrigidas}/{a.rejeitadas}
-                  </span>
-                  <span
-                    className={cn(
-                      "w-12 text-right font-mono text-[12px] tabular-nums",
-                      fraca ? "text-mute" : "text-tinta",
-                    )}
-                    title={fraca ? `só ${a.decididas} decisões — pouco para mover a régua de autonomia` : undefined}
-                  >
-                    {a.pct == null ? "—" : `${a.pct.toLocaleString("pt-BR")}%`}
-                    {fraca && <span aria-hidden> *</span>}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          {dados.agentes.some(amostraFraca) && (
-            <p className="mt-2 border-t border-linha/60 pt-2 text-[11.5px] text-mute">
-              * menos de {MINIMO_DECISOES_PARA_REGUA} decisões — número real, amostra pequena demais para mover a
-              régua de autonomia.
-            </p>
-          )}
-        </>
-      )}
-    </section>
+      {sub && <div className="mt-1 text-[12px] text-suave">{sub}</div>}
+    </div>
   );
 }
 
-// ─────────────── saúde do fluxo (R23, RF-15.4) ───────────────
-
-/** "2 min", "3 h", "5 d" a partir de segundos — a idade do item mais velho parado na fila. */
-function segundosCurto(seg: number | null): string {
-  if (seg == null) return "—";
-  if (seg < 90) return `${Math.round(seg)}s`;
-  const min = Math.round(seg / 60);
-  if (min < 90) return `${min}min`;
-  const h = Math.round(min / 60);
-  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
+function Ponto({ tipo }: { tipo: "agente" | "humano" | "sistema" }) {
+  return (
+    <span
+      className={cn(
+        "inline-block h-2 w-2 shrink-0 rounded-[2px]",
+        tipo === "agente" ? BG_AGENTE : tipo === "humano" ? BG_HUMANO : "bg-mute",
+      )}
+      aria-hidden
+    />
+  );
 }
 
-/**
- * Fonte única com o F2: `ops.v_saude_fluxo`, atravessada por `core.v_saude_fluxo` (migration 0180).
- * Sem a view, a seção NÃO desenha zeros — ela diz que não está medindo. Lag 0 e falhas 0 é como um
- * sistema saudável se parece; é o disfarce mais perigoso que um painel pode vestir.
- */
-function SaudeDoFluxo({ dados }: { dados: SaudeFluxo | null }) {
+function Legenda() {
   return (
-    <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
-      <div className="mb-3 flex items-baseline gap-2.5">
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Saúde do fluxo</h2>
-        <span className="ml-auto font-mono text-[10.5px] text-mute">ops.v_saude_fluxo</span>
-      </div>
-      {dados == null || !dados.disponivel ? (
+    <span className="flex items-center gap-3 text-[11.5px] text-suave">
+      <span className="flex items-center gap-1.5">
+        <Ponto tipo="agente" /> agentes
+      </span>
+      <span className="flex items-center gap-1.5">
+        <Ponto tipo="humano" /> pessoas
+      </span>
+    </span>
+  );
+}
+
+function Metrica({ rot, val, delta, menorEhMelhor }: { rot: string; val: string; delta?: Comparado; menorEhMelhor?: boolean }) {
+  return (
+    <div className="flex min-h-8 items-baseline justify-between gap-2">
+      <span className="truncate text-[12.5px] text-suave">{rot}</span>
+      <span className="flex items-baseline gap-1.5">
+        <span className="text-[14px] font-semibold tabular-nums text-tinta">{val}</span>
+        {delta && <Delta c={delta} menorEhMelhor={menorEhMelhor} />}
+      </span>
+    </div>
+  );
+}
+
+function Acao({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className="font-semibold text-laranja-esc hover:underline">
+      {children}
+    </Link>
+  );
+}
+
+// ─────────────── 2. agente × humano ───────────────
+
+function TrilhoAgenteHumano({ dados }: { dados: DadosDashboardCeo }) {
+  const a = dados.atendimento;
+  const ag = a.conversasAgente.atual ?? 0;
+  const hu = a.conversasHumano.atual ?? 0;
+  const total = ag + hu;
+  const frac = a.fracaoAgente;
+  const fracHumano = frac == null ? null : 1 - frac;
+  return (
+    <Secao titulo="Quem atendeu" direita={<Legenda />}>
+      {total === 0 ? (
         <p className="text-[13px] text-suave">
-          <b className="font-semibold text-amarelo">Não medido.</b> A fonte existe, mas ainda não está exposta à
-          API — sem ela, zeros aqui pareceriam saúde.
+          Nenhuma conversa respondida no período. <Acao href="/conversas">Abrir conversas →</Acao>
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-x-5">
-            <Metrica rot="Eventos · última hora" val={n(dados.eventosUltimaHora)} />
-            <Metrica rot="Eventos · último min" val={n(dados.eventosUltimoMinuto)} />
+          {/* o trilho: uma barra, dois lados, os dois percentuais escritos dentro */}
+          <div
+            className="flex h-9 w-full overflow-hidden rounded-[8px] bg-board"
+            role="img"
+            aria-label={`${fmtPct(frac)} das conversas respondidas primeiro por agente, ${fmtPct(fracHumano)} por pessoa`}
+          >
+            {ag > 0 && (
+              <div
+                className={cn("flex items-center px-3 text-[12.5px] font-semibold text-branco", BG_AGENTE)}
+                style={{ width: `${(ag / total) * 100}%`, minWidth: 48 }}
+              >
+                <span className="tabular-nums">{fmtPct(frac)}</span>
+              </div>
+            )}
+            {hu > 0 && (
+              <div
+                className={cn("ml-auto flex items-center justify-end px-3 text-[12.5px] font-semibold text-branco", BG_HUMANO)}
+                style={{ width: `${(hu / total) * 100}%`, minWidth: 48 }}
+              >
+                <span className="tabular-nums">{fmtPct(fracHumano)}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-1 sm:grid-cols-4">
+            <Metrica rot="Por agente" val={fmtInt(ag)} delta={a.conversasAgente} />
+            <Metrica rot="Por pessoa" val={fmtInt(hu)} delta={a.conversasHumano} />
+            <Metrica rot="Transbordos" val={fmtInt(a.transbordos.atual)} delta={a.transbordos} menorEhMelhor />
+            <Metrica rot="Sem resposta" val={fmtInt(a.semResposta.atual)} delta={a.semResposta} menorEhMelhor />
+          </div>
+
+          <div className="mt-2 grid grid-cols-2 gap-x-5 border-t border-linha/60 pt-2 sm:grid-cols-3">
+            <Metrica rot="1ª resposta · agentes" val={fmtMinutos(a.primeiraResposta.agenteMin)} />
+            <Metrica rot="1ª resposta · pessoas" val={fmtMinutos(a.primeiraResposta.humanoMin)} />
             <Metrica
-              rot="Duplicados rejeitados"
-              val={n(dados.duplicadosUltimaHora)}
-              // Duplicado rejeitado é o sistema FUNCIONANDO (idempotência barrando reentrega),
-              // não um defeito — por isso não pinta de alerta.
-            />
-            <Metrica
-              rot="Falhas de ingestão"
-              val={n(dados.falhasUltimaHora)}
-              tom={(dados.falhasUltimaHora ?? 0) > 0 ? "alerta" : undefined}
-            />
-            <Metrica
-              rot="Fila de eventos"
-              val={n(dados.lagFilaEventos)}
-              tom={(dados.lagFilaEventos ?? 0) > 0 ? "alerta" : undefined}
-            />
-            <Metrica
-              rot="Mais antigo na fila"
-              val={segundosCurto(dados.idadeFilaEventosSeg)}
-              // Idade alta com lag baixo = item preso reentregando; é o sintoma que o lag esconde.
-              tom={(dados.idadeFilaEventosSeg ?? 0) > 300 ? "alerta" : undefined}
-            />
-            <Metrica rot="Fila de saída" val={n(dados.lagFilaSaida)} tom={(dados.lagFilaSaida ?? 0) > 0 ? "alerta" : undefined} />
-            <Metrica
-              rot="Envios falhados 24 h"
-              val={n(dados.enviosFalhados24h)}
-              tom={(dados.enviosFalhados24h ?? 0) > 0 ? "alerta" : undefined}
+              rot="1ª resposta · geral"
+              val={fmtMinutos(a.primeiraResposta.geralMin.atual)}
+              delta={a.primeiraResposta.geralMin}
+              menorEhMelhor
             />
           </div>
-          {dados.ultimaIngestaoWhatsapp && (
-            <p className="mt-2.5 border-t border-linha/60 pt-2 font-mono text-[10.5px] text-mute">
-              última entrada de WhatsApp: {ddmmhhmm(dados.ultimaIngestaoWhatsapp) ?? "—"}
+        </>
+      )}
+    </Secao>
+  );
+}
+
+// ─────────────── 3. funil no período ───────────────
+
+function Funil({ etapas, periodo }: { etapas: EtapaResumo[]; periodo: number }) {
+  const visiveis = etapas.filter((e) => e.tipo === "aberto" || (e.entradas.atual ?? 0) > 0 || e.estoque > 0);
+  const max = Math.max(1, ...visiveis.map((e) => e.entradas.atual ?? 0));
+  const semEntradas = visiveis.every((e) => (e.entradas.atual ?? 0) === 0);
+  const cab = "text-right font-mono text-[10px] uppercase tracking-[0.04em] text-mute";
+  return (
+    <Secao titulo="Funil no período" direita={<span className="font-mono text-[10.5px] text-mute">entradas em {periodo} dias</span>}>
+      {visiveis.length === 0 ? (
+        <p className="text-[13px] text-suave">
+          Funil sem etapas configuradas. <Acao href="/configuracoes">Configurar →</Acao>
+        </p>
+      ) : (
+        <>
+          <div className="mb-1.5 flex items-center gap-3">
+            <span className="w-[150px] min-w-[150px]" />
+            <span className="flex-1" />
+            <span className={cn("w-11", cab)}>entrou</span>
+            <span className={cn("w-14", cab)} title="entradas nesta etapa ÷ entradas na primeira etapa, no período">
+              até aqui
+            </span>
+            <span className={cn("w-12", cab)} title="leads na etapa agora">
+              agora
+            </span>
+          </div>
+          {visiveis.map((e) => {
+            const terminal = e.tipo !== "aberto";
+            const entrou = e.entradas.atual ?? 0;
+            return (
+              <div key={e.etapa} className="flex min-h-8 items-center gap-3" title={`antes: ${fmtInt(e.entradas.anterior)} · ${fmtMoeda(e.valor)} em valor`}>
+                <span className={cn("w-[150px] min-w-[150px] truncate text-[13px]", terminal ? "text-suave" : "text-tinta")}>
+                  {e.nome}
+                </span>
+                <span className="h-1.5 flex-1 overflow-hidden rounded-[3px] bg-board">
+                  {entrou > 0 && (
+                    <span
+                      className={cn(
+                        "block h-full rounded-[3px]",
+                        e.tipo === "ganho" ? "bg-verde" : e.tipo === "perdido" ? "bg-vermelho" : "bg-navy opacity-80",
+                      )}
+                      style={{ width: `${Math.max(2, (entrou / max) * 100)}%` }}
+                    />
+                  )}
+                </span>
+                <span className="w-11 text-right font-mono text-[12px] tabular-nums text-tinta">{fmtInt(entrou)}</span>
+                <span className="w-14 text-right font-mono text-[11px] tabular-nums text-suave">
+                  {e.tipo === "aberto" ? fmtPct(e.pctAteAqui) : ""}
+                </span>
+                <span className="w-12 text-right font-mono text-[11px] tabular-nums text-suave">{fmtInt(e.estoque)}</span>
+              </div>
+            );
+          })}
+          {semEntradas && (
+            <p className="mt-2 text-[12.5px] text-suave">
+              Nenhum lead entrou ou mudou de etapa no período. <Acao href="/funil">Abrir funil →</Acao>
             </p>
           )}
         </>
       )}
-    </section>
+    </Secao>
   );
 }
 
-// ─────────────── o que não está sendo medido (R23, RF-15.5) ───────────────
+// ─────────────── 4. por ator ───────────────
 
-/**
- * A regra do Rodolfo, na tela: no Kommo o campo Venda é R$ 0 em 12 das 13 etapas, e quem lê aquilo
- * conclui que a operação não vende. Aqui o que não é medido é ESCRITO, com o motivo — nunca
- * exibido como zero ao lado dos números que foram medidos de verdade.
- */
-function NaoMedido({ lacunas }: { lacunas: Lacuna[] }) {
-  if (lacunas.length === 0) return null;
+function LinhaAtor({ r, maxConversas, periodo, ativo }: { r: ResumoAtor; maxConversas: number; periodo: number; ativo: boolean }) {
+  const cel = "px-2 py-2 text-right font-mono text-[12px] tabular-nums text-tinta";
+  const conv = r.conversas.atual ?? 0;
+  const amostra = r.primeiraResposta.amostra;
   return (
-    <section className="rounded-[10px] border border-dashed border-linha bg-board/40 px-5 py-[18px]">
-      <div className="mb-3 flex items-baseline gap-2.5">
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">
-          O que este painel não está medindo
-        </h2>
-        <span className="ml-auto font-mono text-[10.5px] text-mute">{lacunas.length}</span>
-      </div>
-      <ul className="grid gap-2.5 sm:grid-cols-2">
-        {lacunas.map((l) => (
-          <li key={l.titulo} className="border-l-2 border-linha pl-3">
-            <div className="text-[13px] font-semibold text-tinta">{l.titulo}</div>
-            <div className="mt-0.5 text-[12.5px] leading-[1.45] text-suave">{l.porque}</div>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <tr className={cn("border-t border-linha/60", ativo && "bg-hover/60")}>
+      <td className="py-2 pr-2">
+        <Link
+          href={`/?periodo=${periodo}&ator=${encodeURIComponent(r.ator)}`}
+          className="flex items-center gap-2 text-[13px] font-medium text-tinta hover:underline"
+        >
+          <Ponto tipo={r.tipo} />
+          <span className="truncate">{r.nome}</span>
+          {!r.ativo && <span className="font-mono text-[10px] uppercase tracking-[0.04em] text-mute">inativo</span>}
+        </Link>
+        <div className="mt-1 h-1 w-full max-w-[160px] overflow-hidden rounded-[2px] bg-board">
+          {conv > 0 && (
+            <div
+              className={cn("h-full rounded-[2px]", r.tipo === "agente" ? BG_AGENTE : BG_HUMANO)}
+              style={{ width: `${Math.max(2, (conv / maxConversas) * 100)}%` }}
+            />
+          )}
+        </div>
+      </td>
+      <td className={cel}>
+        {fmtInt(conv)} <Delta c={r.conversas} className="ml-1" />
+      </td>
+      <td className={cel}>
+        {fmtInt(r.mensagens.atual)} <Delta c={r.mensagens} className="ml-1" />
+      </td>
+      <td
+        className={cel}
+        title={amostra > 0 ? `${amostra} conversas · antes: ${fmtMinutos(r.primeiraResposta.anteriorMin)}` : undefined}
+      >
+        {fmtMinutos(r.primeiraResposta.medianaMin)}
+        {amostra > 0 && amostra < 5 && (
+          <span className="text-mute" title="menos de 5 conversas">
+            {" "}*
+          </span>
+        )}
+      </td>
+      <td className={cel}>{fmtInt(r.transbordos.atual)}</td>
+      <td className={cel}>
+        {fmtInt(r.tarefasCriadas.atual)}
+        <span className="text-mute"> / </span>
+        {fmtInt(r.tarefasConcluidas.atual)}
+      </td>
+      <td className={cel}>
+        {fmtInt(r.leadsMovidos.atual)} <Delta c={r.leadsMovidos} className="ml-1" />
+      </td>
+    </tr>
   );
 }
 
-// ─────────────── painel ───────────────
+function PorAtor({ dados }: { dados: DadosDashboardCeo }) {
+  const linhas = dados.porAtor.filter((r) => r.ativo || r.temAtividade);
+  const max = Math.max(1, ...linhas.map((r) => r.conversas.atual ?? 0));
+  const th = "px-2 pb-2 text-right font-mono text-[10px] font-normal uppercase tracking-[0.04em] text-mute";
+  return (
+    <Secao titulo="Por ator" direita={<span className="font-mono text-[10.5px] text-mute">{dados.periodo} dias · vs. anteriores</span>}>
+      {linhas.length === 0 ? (
+        <p className="text-[13px] text-suave">
+          Ninguém atuou no período. <Acao href="/configuracoes/membros">Ver membros →</Acao>
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] border-collapse">
+            <thead>
+              <tr>
+                <th className="pb-2 text-left font-mono text-[10px] font-normal uppercase tracking-[0.04em] text-mute">ator</th>
+                <th className={th}>conversas</th>
+                <th className={th}>mensagens</th>
+                <th className={th} title="mediana das conversas em que este ator deu a primeira resposta">
+                  1ª resposta
+                </th>
+                <th className={th} title="conversas que este ator assumiu da Clara">
+                  transbordos
+                </th>
+                <th className={th} title="tarefas criadas / concluídas por este ator">
+                  tarefas c/c
+                </th>
+                <th className={th} title="leads movidos de etapa por este ator">
+                  leads movidos
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((r) => (
+                <LinhaAtor key={r.ator} r={r} maxConversas={max} periodo={dados.periodo} ativo={dados.atorFiltro === r.ator} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Secao>
+  );
+}
 
-export function PainelDashboard({ dados, geradoEm }: { dados: DadosDashboard; geradoEm: string }) {
-  const { entrega, primeiraResposta, valorNegociacao } = dados;
-  const abertas = dados.leadsPorEtapa.filter((f) => f.etapa.tipo === "aberto");
-  const hoje = dados.mensagens7d[dados.mensagens7d.length - 1] ?? null;
-  const ganhos = dados.leadsPorEtapa.filter((f) => f.etapa.tipo === "ganho");
-  const perdidos = dados.leadsPorEtapa.filter((f) => f.etapa.tipo === "perdido");
-  const somaOuNull = (fs: FaixaEtapa[]) =>
-    fs.length === 0 || fs.some((f) => f.qtd == null) ? null : fs.reduce((s, f) => s + (f.qtd ?? 0), 0);
-  const fechamento = taxaFechamento(somaOuNull(ganhos), somaOuNull(perdidos));
-  const snapshot = ddmmhhmm(dados.ultimoEventoEm);
-  const semDados = dados.ultimoEventoEm == null && (dados.leadsAtivos ?? 0) === 0;
+// ─────────────── a tela ───────────────
 
-  // R23 · a ingestão parou? Então "0 novos hoje" é notícia sobre a IMPORTAÇÃO, não sobre a
-  // operação — e o tile precisa dizer qual das duas, em vez de deixar o zero responder pelas duas.
-  const agora = new Date(geradoEm);
-  const diasSemLeadNovo = diasDesde(dados.recencia.ultimoLeadCriadoEm, agora);
-  const ingestaoParada = diasSemLeadNovo != null && diasSemLeadNovo >= DIAS_LEDGER_PARADO;
-  const lacunas = lacunasDoPainel({
-    ultimoLeadCriadoEm: dados.recencia.ultimoLeadCriadoEm,
-    saudeFluxoDisponivel: dados.saudeFluxo?.disponivel === true,
-    decisoesDeSugestao: dados.precisao.geral?.decididas ?? null,
-    agora,
-  });
+function ddmm(ymd: string): string {
+  return `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
+}
+
+export function PainelDashboard({ dados }: { dados: DadosDashboardCeo }) {
+  const { negocio, atendimento, serie, agora, valorNegociacao, periodo } = dados;
+  const atorNome = dados.atorFiltro
+    ? dados.porAtor.find((r) => r.ator === dados.atorFiltro)?.nome ?? dados.atorFiltro
+    : null;
+  const tudoIndisponivel = dados.indisponiveis.length >= 6;
+  const conversasAtendidas: Comparado = {
+    atual: (atendimento.conversasAgente.atual ?? 0) + (atendimento.conversasHumano.atual ?? 0),
+    anterior: (atendimento.conversasAgente.anterior ?? 0) + (atendimento.conversasHumano.anterior ?? 0),
+  };
 
   return (
-    <main className="mx-auto max-w-[1180px] px-6 pb-12 pt-6">
-      <div className="mb-5 flex items-baseline gap-3.5">
-        {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
-            A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
-        <span className="ml-auto">
-          <CarimboVivo geradoEm={geradoEm} />
+    <main className="mx-auto max-w-[1180px] px-6 pb-12 pt-5">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <ControlesDashboard periodo={periodo} atorFiltro={dados.atorFiltro} atores={dados.atores} />
+        {atorNome && (
+          <span className="flex items-center gap-1.5 text-[12.5px] text-suave">
+            <Ponto tipo={tipoDoAtor(dados.atorFiltro!)} />
+            <b className="font-semibold text-tinta">{atorNome}</b>
+            <Link href={`/?periodo=${periodo}`} className="ml-1 font-semibold text-laranja-esc hover:underline">
+              limpar
+            </Link>
+          </span>
+        )}
+        <span className="ml-auto font-mono text-[10.5px] tabular-nums text-mute">
+          {ddmm(dados.janela.inicio)} – {ddmm(dados.janela.fim)}
         </span>
       </div>
 
-      {semDados ? (
-        <div className="grid place-items-center rounded-[10px] border border-linha bg-branco py-24 text-center">
-          <div>
-            <p className="text-[17px] font-[650] text-tinta">Nada no ledger ainda</p>
-            <p className="mt-2 max-w-md text-[13px] text-suave">
-              Os números daqui derivam dos eventos reais — quando o primeiro lead ou mensagem
-              entrar, o painel acende sozinho.
-            </p>
-          </div>
-        </div>
+      {tudoIndisponivel ? (
+        <p className="rounded-[10px] border border-linha bg-branco px-5 py-10 text-center text-[13px] text-suave">
+          As leituras do dashboard não responderam. <Acao href="/suporte">Relatar →</Acao>
+        </p>
       ) : (
         <>
-          {/* números-chave */}
-          <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <Tile rotulo="Leads ativos no funil">
-              <Num>{n(dados.leadsAtivos)}</Num>
-              {/* R23: o "novos hoje / 7 dias" some quando a ingestão parou. Ele lê a data de
-                  IMPORTAÇÃO do lead, então com o ledger parado ele reporta zero importações — e
-                  esse zero, ao lado de um número medido, é lido como "nenhum lead novo". */}
-              {ingestaoParada ? (
-                <div className="mt-1.5 text-[12.5px] text-amarelo">
-                  nenhum lead entrou no ledger há {diasSemLeadNovo} dias — leads novos{" "}
-                  <b className="font-semibold">não estão sendo medidos</b>
-                </div>
-              ) : (
-                <div className="mt-1.5 text-[12.5px] text-suave">
-                  <b className="font-semibold tabular-nums text-tinta">{n(dados.novosHoje)}</b> novos hoje ·{" "}
-                  <b className="font-semibold tabular-nums text-tinta">{n(dados.novos7d)}</b> nos últimos 7 dias
-                </div>
-              )}
-            </Tile>
-            <Tile rotulo="Mensagens hoje">
-              <Num>
-                {n(hoje?.entrada ?? null)}{" "}
-                <span className="text-[16px] font-semibold tracking-normal text-suave">/ {n(hoje?.saida ?? null)}</span>
-              </Num>
-              <div className="mt-1.5 text-[12.5px] text-suave">
-                recebidas / enviadas · entrega{" "}
-                <b className="font-semibold tabular-nums text-tinta">
-                  {entrega.pct != null ? `${entrega.pct.toLocaleString("pt-BR")}%` : "—"}
-                </b>
-              </div>
-            </Tile>
-            <Tile rotulo="1ª resposta (mediana 7d)">
-              <Num>{formatarDuracaoMin(primeiraResposta.medianaMin)}</Num>
-              <div className="mt-1.5 text-[12.5px] text-suave">
-                {primeiraResposta.amostra > 0
-                  ? `${n(primeiraResposta.amostra)} conversas${primeiraResposta.parcial ? " · amostra parcial" : ""}`
-                  : "sem conversas com resposta"}{" "}
-                · meta: qualificação em <b className="font-semibold text-tinta">48 h</b>
-              </div>
-            </Tile>
-            <Tile rotulo="Valor em negociação">
-              <Num>
-                <span className="text-[16px] font-semibold tracking-normal text-suave">R$</span>{" "}
-                {valorNegociacao.total.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
-              </Num>
-              <div className="mt-1.5 text-[12.5px] text-suave">
-                <b className="font-semibold tabular-nums text-tinta">{n(valorNegociacao.comValor)}</b> leads com valor
-                {(valorNegociacao.semValor ?? 0) > 0 && <> · {n(valorNegociacao.semValor)} sem</>}
-              </div>
-              <div className="mt-1.5 font-mono text-[10.5px] text-mute">valor lançado no fechamento</div>
-            </Tile>
+          {/* 1. o que aconteceu */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            <Kpi
+              rotulo="Leads novos"
+              valor={fmtInt(negocio.leadsNovos.atual)}
+              delta={negocio.leadsNovos}
+              sub={`${fmtInt(negocio.mensagensRecebidas.atual)} mensagens recebidas`}
+            />
+            <Kpi
+              rotulo="Conversas atendidas"
+              valor={fmtInt(conversasAtendidas.atual)}
+              delta={conversasAtendidas}
+              sub={`${fmtPct(atendimento.fracaoAgente)} por agente`}
+            />
+            <Kpi
+              rotulo="1ª resposta"
+              valor={fmtMinutos(atendimento.primeiraResposta.geralMin.atual)}
+              delta={atendimento.primeiraResposta.geralMin}
+              menorEhMelhor
+              sub={
+                atendimento.primeiraResposta.amostra > 0
+                  ? `mediana de ${fmtInt(atendimento.primeiraResposta.amostra)} conversas`
+                  : "sem conversas respondidas"
+              }
+            />
+            <Kpi
+              rotulo="Em negociação"
+              valor={fmtMoeda(valorNegociacao.total)}
+              sub={`${fmtInt(valorNegociacao.leadsComValor)} de ${fmtInt(valorNegociacao.leads)} leads abertos com valor`}
+            />
+            <Kpi
+              rotulo="Em AGORA"
+              valor={agora ? fmtPct(agora.pctAgora) : "—"}
+              tom={agora?.excedeuTeto ? "alerta" : undefined}
+              sub={
+                agora ? (
+                  agora.excedeuTeto ? (
+                    <>
+                      acima do teto de {fmtPct(agora.teto)} · <Acao href="/funil">abrir funil →</Acao>
+                    </>
+                  ) : (
+                    <span className="flex flex-wrap gap-x-2">
+                      {FAIXAS_ESCALA.map((f) => (
+                        <span key={f} className="tabular-nums">
+                          {fmtInt(agora.porFaixa[f])} <span className="text-mute">{ROTULO_FAIXA[f].toLowerCase()}</span>
+                        </span>
+                      ))}
+                    </span>
+                  )
+                ) : (
+                  "sem leads no funil"
+                )
+              }
+            />
           </div>
 
-          <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[1.6fr_1fr]">
-            <LeadsPorEtapa faixas={abertas} />
-
+          <div className="mt-3 grid grid-cols-1 items-start gap-3 lg:grid-cols-[1.35fr_1fr]">
             <div className="flex flex-col gap-3">
-              {/* operação de agentes (R19, 2.2) */}
-              <OperacaoAgentes dados={dados.sugestoes} geradoEm={geradoEm} />
-
-              {/* R23 · RF-15.3: a precisão que a régua de autonomia lê, logo abaixo da fila que a
-                  alimenta — as duas juntas contam a história inteira do human-on-the-loop. */}
-              <PrecisaoAgentes dados={dados.precisao} geradoEm={geradoEm} />
-
-              {/* R23 · RF-15.4 */}
-              <SaudeDoFluxo dados={dados.saudeFluxo} />
-
-              {/* mensagens (R19, 2.1: a série de 7 dias que já era lida vira gráfico) */}
-              <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
-                <div className="mb-3 flex items-baseline gap-2.5">
-                  <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Mensagens · 7 dias</h2>
-                  {/* F5: idem — o carimbo do cabeçalho é o único selo de frescor da página. */}
-                  <span className="ml-auto flex items-center gap-3 text-[11px] text-suave">
-                    <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-2 rounded-[2px] bg-laranja" aria-hidden />
-                      recebidas
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-2 rounded-[2px] bg-azul-graf" aria-hidden />
-                      enviadas
-                    </span>
-                  </span>
-                </div>
-                <TendenciaMensagens dias={dados.mensagens7d} />
-                <div className="mt-3 grid grid-cols-2 gap-x-5">
-                  <Metrica rot="Recebidas hoje" val={n(hoje?.entrada ?? null)} />
-                  <Metrica rot="Enviadas hoje" val={n(hoje?.saida ?? null)} />
-                  <Metrica
-                    rot="Entrega"
-                    val={entrega.pct != null ? `${entrega.pct.toLocaleString("pt-BR")}%` : "—"}
-                    tom={entrega.pct != null && entrega.pct >= 95 ? "ok" : undefined}
-                  />
-                  <Metrica rot="Falhas" val={n(entrega.falhas)} tom={(entrega.falhas ?? 0) > 0 ? "alerta" : undefined} />
-                </div>
-              </section>
-
-              {/* fechamentos (R19, 2.4: os 2 números soltos ganham a razão entre eles) */}
-              <section className="rounded-[10px] border border-linha bg-branco px-5 py-[18px]">
-                <div className="mb-3 flex items-baseline gap-2.5">
-                  <h2 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-suave">Fechamentos</h2>
-                  {snapshot && <span className="ml-auto font-mono text-[10.5px] text-mute">snapshot {snapshot}</span>}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-linha px-3.5 py-3">
-                    <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-verde">Venda ganha</div>
-                    <div className="mt-1 text-2xl font-[650] tracking-[-0.02em] tabular-nums">{n(somaOuNull(ganhos))}</div>
-                  </div>
-                  <div className="rounded-lg border border-linha px-3.5 py-3">
-                    <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-vermelho">Venda perdida</div>
-                    <div className="mt-1 text-2xl font-[650] tracking-[-0.02em] tabular-nums">{n(somaOuNull(perdidos))}</div>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-baseline justify-between border-t border-linha/60 pt-2.5">
-                  <span className="text-[13px] text-suave">Taxa de ganho</span>
-                  <span className="text-[16px] font-[650] tracking-[-0.01em] tabular-nums text-tinta">
-                    {fechamento.pct == null ? "—" : `${fechamento.pct.toLocaleString("pt-BR")}%`}
-                    {fechamento.pct != null && fechamento.base != null && (
-                      <span className="ml-1.5 font-mono text-[10.5px] font-normal text-mute">
-                        de {fechamento.base.toLocaleString("pt-BR")} fechados
-                      </span>
-                    )}
-                  </span>
-                </div>
-              </section>
+              <TrilhoAgenteHumano dados={dados} />
+              <Secao titulo="Mensagens enviadas por dia" direita={<Legenda />}>
+                <GraficoBarras
+                  rotulos={serie.map((p) => p.rotulo)}
+                  series={[
+                    { chave: "agente", rotulo: "agentes", fill: FILL_AGENTE, valores: serie.map((p) => p.enviadasAgente) },
+                    { chave: "humano", rotulo: "pessoas", fill: FILL_HUMANO, valores: serie.map((p) => p.enviadasHumano) },
+                  ]}
+                  rotuloVazio="sem mensagens enviadas no período"
+                />
+              </Secao>
+              <Secao titulo="Leads novos por dia">
+                <GraficoBarras
+                  rotulos={serie.map((p) => p.rotulo)}
+                  series={[{ chave: "leads", rotulo: "leads novos", fill: "fill-navy", valores: serie.map((p) => p.leadsNovos) }]}
+                  altura={72}
+                  rotuloVazio="nenhum lead novo no período"
+                />
+              </Secao>
             </div>
+            <Funil etapas={dados.funil} periodo={periodo} />
           </div>
 
-          {/* R23 · RF-15.5 — por último e com moldura diferente: é o rodapé de honestidade do
-              painel, não mais um número. Separá-lo visualmente é o ponto. */}
           <div className="mt-3">
-            <NaoMedido lacunas={lacunas} />
+            <PorAtor dados={dados} />
           </div>
+
+          {dados.indisponiveis.length > 0 && (
+            <p className="mt-3 text-[12px] text-suave">
+              Sem leitura de {dados.indisponiveis.map((v) => v.replace("v_dashboard_", "")).join(", ")}.{" "}
+              <Acao href="/suporte">Relatar →</Acao>
+            </p>
+          )}
         </>
       )}
     </main>
-  );
-}
-
-function Metrica({ rot, val, tom }: { rot: string; val: string; tom?: "ok" | "alerta" }) {
-  return (
-    <div className="flex min-h-9 items-baseline justify-between border-b border-linha/60 [&:nth-last-child(-n+2)]:border-b-0">
-      <span className="text-[13px] text-suave">{rot}</span>
-      <span
-        className={cn(
-          "text-[16px] font-[650] tracking-[-0.01em] tabular-nums",
-          tom === "ok" && "text-verde",
-          tom === "alerta" && "text-amarelo",
-        )}
-      >
-        {val}
-      </span>
-    </div>
   );
 }
