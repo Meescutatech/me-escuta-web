@@ -8,7 +8,6 @@ import {
   carimboSoHora,
   carimboPrazo,
   destino,
-  fraseNotificacao,
   naoLida,
   podePromover,
   textoAtraso,
@@ -18,7 +17,9 @@ import {
   concluirTarefaNotificacao,
   marcarMencaoLida,
   promoverMencaoTarefa,
+  marcarNotificacaoLida,
 } from "@/app/(app)/notificacoes/actions";
+import { chaveLeitura, ehTarefa, fraseF8, textoVenceEm } from "./regras";
 
 /**
  * Item de notificação — o MESMO no popover e na visão expandida (é assim no mockup
@@ -43,12 +44,19 @@ export function ItemNotificacao({
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
   const lida = !naoLida(n);
-  const { forte, resto } = fraseNotificacao(n);
-  const atraso = n.especie === "tarefa_vencida" ? textoAtraso(n.prazo, agoraMs) : "";
+  // F8: a frase conhece `tarefa_vencendo` e a tarefa que o Jarvis criou; o resto delega à antiga
+  const { forte, resto } = fraseF8(n);
+  const especie = n.especie as string;
+  const atraso = especie === "tarefa_vencida" ? textoAtraso(n.prazo, agoraMs) : "";
+  // "vence em 40 min" — a única linha em laranja: é prazo, não atraso (o vermelho fica pro vencido)
+  const venceEm = especie === "tarefa_vencendo" ? textoVenceEm(n.prazo, agoraMs) : "";
   const citacao = n.especie === "mencao" ? n.trecho : n.titulo ? n.trecho : null;
 
   function abrir() {
     if (n.mencao_id && naoLida(n)) iniciar(() => void marcarMencaoLida(n.mencao_id!));
+    // tarefa (F8, 0306): abrir marca lida ESTA espécie — ler "atribuída" não lê "vence em breve"
+    const chave = ehTarefa(n) && naoLida(n) ? chaveLeitura(n) : null;
+    if (chave) iniciar(() => void marcarNotificacaoLida(chave));
     const url = destino(n);
     if (url) router.push(url);
   }
@@ -94,6 +102,7 @@ export function ItemNotificacao({
         <span className="mt-[5px] flex flex-wrap items-center gap-x-[7px] gap-y-1 text-[11.5px] text-mute">
           {n.lead_nome && <span className="text-suave">{n.lead_nome}</span>}
           {atraso && <span className="whitespace-nowrap font-semibold text-vermelho">{atraso}</span>}
+          {venceEm && <span className="whitespace-nowrap font-semibold text-laranja-esc">{venceEm}</span>}
           {n.especie === "mencao" ? (
             <span className="whitespace-nowrap font-mono tabular-nums">
               {/* na expandida o dia já está no cabeçalho do grupo — aqui só a hora */}

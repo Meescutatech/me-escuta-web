@@ -43,10 +43,15 @@ export function Sino({
   const [pendente, iniciar] = useTransition();
   const caixa = useRef<HTMLDivElement>(null);
 
+  // F8: core.notificacao_lida entrou na publication (0306) — ler numa aba apaga o ponto na outra.
+  // TODO(F8, Web Push): fora desta rodada por decisão do plano. Quando entrar, o gatilho é o mesmo
+  // postgres_changes de core.tarefa (tarefa_criada para mim / prazo dentro da janela da config
+  // notificacao_tarefa), com service worker + assinatura por pessoa; o sino continua sendo a verdade.
   useProjecaoViva(
     [
       { tabela: { schema: "core", table: "mencao" } },
       { tabela: { schema: "core", table: "tarefa" } },
+      { tabela: { schema: "core", table: "notificacao_lida" } },
     ],
     { intervaloMs: INTERVALOS.sino },
   );
