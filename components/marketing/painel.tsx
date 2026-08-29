@@ -103,8 +103,15 @@ export function PainelMarketing({ visao }: { visao: VisaoMarketing }) {
       )}
 
       {semCaptura ? (
-        <div className="rounded-[10px] border border-linha bg-branco px-5 py-6">
-          <Vazio texto={textoVazio} acao={acao90} />
+        <div className="space-y-4">
+          <div className="rounded-[10px] border border-linha bg-branco px-5 py-6">
+            <Vazio texto={textoVazio} acao={acao90} />
+          </div>
+          {visao.campanhas.length > 0 && (
+            <Secao titulo="Campanhas e custo" nota="gasto sem lead">
+              <TabelaCampanhas linhas={visao.campanhas} estadoCusto={visao.estadoCusto} />
+            </Secao>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

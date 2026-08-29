@@ -61,8 +61,8 @@ export function SerieLeads({ pontos }: { pontos: PontoSerie[] }) {
             const y = TOPO + ALTURA - escala(teto * f);
             return (
               <g key={f}>
-                <line x1={ESQ} x2={LARGURA} y1={y} y2={y} stroke="#E8E7E2" strokeWidth={1} />
-                <text x={ESQ - 6} y={y + 3.5} textAnchor="end" fontSize={10} fill="#5F6873" fontFamily="ui-monospace, Menlo, monospace">
+                <line x1={ESQ} x2={LARGURA} y1={y} y2={y} className="stroke-linha" strokeWidth={1} />
+                <text x={ESQ - 6} y={y + 3.5} textAnchor="end" fontSize={10} className="fill-mute" fontFamily="ui-monospace, Menlo, monospace">
                   {teto * f}
                 </text>
               </g>
@@ -107,7 +107,7 @@ export function SerieLeads({ pontos }: { pontos: PontoSerie[] }) {
                     textAnchor="middle"
                     fontSize={10.5}
                     fontWeight={600}
-                    fill="#1F2328"
+                    className="fill-tinta"
                     fontFamily="ui-monospace, Menlo, monospace"
                   >
                     {p.total}
@@ -119,7 +119,7 @@ export function SerieLeads({ pontos }: { pontos: PontoSerie[] }) {
                     y={TOPO + ALTURA + 15}
                     textAnchor="middle"
                     fontSize={10}
-                    fill="#5F6873"
+                    className="fill-mute"
                     fontFamily="ui-monospace, Menlo, monospace"
                   >
                     {n <= 14 ? p.rotulo.slice(4) : p.rotulo.slice(4)}
@@ -128,7 +128,7 @@ export function SerieLeads({ pontos }: { pontos: PontoSerie[] }) {
               </g>
             );
           })}
-          <line x1={ESQ} x2={LARGURA} y1={TOPO + ALTURA} y2={TOPO + ALTURA} stroke="#DCDAD4" strokeWidth={1} />
+          <line x1={ESQ} x2={LARGURA} y1={TOPO + ALTURA} y2={TOPO + ALTURA} className="stroke-linha-forte" strokeWidth={1} />
         </svg>
       </div>
     </figure>

@@ -322,6 +322,8 @@ export function arvoreOrigem(
     const nPlat = filho(nBalde, "plataforma", plat, ROTULO_PLATAFORMA[plat], balde, plat);
     nPlat.leads.add(t.lead_id);
 
+    // Cidade vem de `utm.cidade`, que hoje NENHUM projetor escreve (0201: "NAO escreve cidade").
+    // Com dado real a arvore vem sem cidade ate a borda gravar isso; so a fixture de ensaio a mostra.
     const cidade = t.utm?.cidade ?? null;
     const campChave = t.campanha_id ?? SEM_CAMPANHA;
     const nCamp = filho(nPlat, "campanha", campChave, t.campanha_nome ?? t.campanha_id ?? "Sem campanha", balde, plat);
@@ -442,7 +444,9 @@ export function serieLeadsPorDia(
  */
 export const CANDIDATOS_MARCO = {
   qualificado: ["qualificado", "qualificando"],
-  consulta: ["audiometria_realizada", "avaliacao", "consulta", "consulta_agendada"],
+  // Consulta e consulta: audiometria so entra se o funil vigente nao tiver etapa de consulta
+  // (o funil de producao tem `consulta_agendada` e `consulta_realizada`).
+  consulta: ["consulta_realizada", "consulta_agendada", "consulta", "avaliacao", "audiometria_realizada"],
   venda: ["ganho", "venda", "vendido"],
 } as const;
 
@@ -454,17 +458,21 @@ export interface MarcosResolvidos {
   /** `ordem` minima da etapa que conta como o marco; `null` = o funil vigente nao tem essa etapa. */
   ordem: Record<Marco, number | null>;
   chave: Record<Marco, string | null>;
+  /** Nome da etapa resolvida, para o cabecalho da tela nunca mentir sobre o que conta. */
+  nome: Record<Marco, string | null>;
 }
 
 export function resolverMarcos(etapas: EtapaConfig[]): MarcosResolvidos {
   const ordem: Record<Marco, number | null> = { qualificado: null, consulta: null, venda: null };
   const chave: Record<Marco, string | null> = { qualificado: null, consulta: null, venda: null };
+  const nome: Record<Marco, string | null> = { qualificado: null, consulta: null, venda: null };
   for (const m of MARCOS) {
     for (const cand of CANDIDATOS_MARCO[m]) {
       const e = etapas.find((x) => x.chave === cand);
       if (e) {
         ordem[m] = e.ordem;
         chave[m] = e.chave;
+        nome[m] = e.nome;
         break;
       }
     }
@@ -474,10 +482,11 @@ export function resolverMarcos(etapas: EtapaConfig[]): MarcosResolvidos {
       if (g) {
         ordem[m] = g.ordem;
         chave[m] = g.chave;
+        nome[m] = g.nome;
       }
     }
   }
-  return { ordem, chave };
+  return { ordem, chave, nome };
 }
 
 export interface LinhaFunilOrigem {
@@ -544,6 +553,8 @@ export function funilPorOrigem(
       l.perdidos += 1;
       continue;
     }
+    // Arquivado tem ordem 9000 (0072): nao e "chegou ate o fim", e "saiu do funil". Nao conta marco.
+    if (etapa.tipo === "arquivado") continue;
     for (const m of MARCOS) {
       const o = marcos.ordem[m];
       if (o == null) continue;

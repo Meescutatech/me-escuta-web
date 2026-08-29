@@ -30,9 +30,9 @@ function Linha({ no, total, nivel, resumo }: { no: NoOrigem; total: number; nive
     >
       <div className="flex min-w-0 items-center gap-2">
         {resumo ? (
-          <span className="seta-arvore shrink-0 text-[10px] text-mute transition-transform" aria-hidden>
-            ▶
-          </span>
+          <svg className="seta-arvore h-2 w-2 shrink-0 text-mute transition-transform" viewBox="0 0 8 8" aria-hidden>
+            <path d="M2 1l4 3-4 3z" fill="currentColor" />
+          </svg>
         ) : (
           <span className="w-[10px] shrink-0" aria-hidden />
         )}

@@ -29,8 +29,8 @@ export function FunilOrigem({ linhas, marcos }: { linhas: LinhaFunilOrigem[]; ma
             <th className="pb-1.5 text-left font-normal">Origem</th>
             <th className="pb-1.5 text-right font-normal">Leads</th>
             {marcosAtivos.map((m) => (
-              <th key={m} className="pb-1.5 pl-4 text-left font-normal">
-                {ROTULO_MARCO[m]}
+              <th key={m} className="pb-1.5 pl-4 text-left font-normal" title={`Etapa: ${marcos.nome[m] ?? ""}`}>
+                {marcos.nome[m] ?? ROTULO_MARCO[m]}
               </th>
             ))}
             {temPerdidos && <th className="pb-1.5 text-right font-normal">Perdidos</th>}

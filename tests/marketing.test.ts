@@ -318,3 +318,46 @@ test("podeVerMarketing: so marketing, admin e owner", () => {
   }
   assert.equal(podeVerMarketing(null), false);
 });
+
+// ─── funil REAL de producao (v4, 15 etapas + arquivado) — E-360: a coluna nunca pode mentir ───
+
+const ETAPAS_PRODUCAO: EtapaConfig[] = [
+  { chave: "lead", nome: "Lead", ordem: 10, tipo: "aberto" },
+  { chave: "contato_feito", nome: "Contato feito", ordem: 20, tipo: "aberto" },
+  { chave: "qualificando", nome: "Qualificando", ordem: 30, tipo: "aberto" },
+  { chave: "qualificado", nome: "Qualificado", ordem: 40, tipo: "aberto" },
+  { chave: "audiometria_agendada", nome: "Audiometria agendada", ordem: 50, tipo: "aberto" },
+  { chave: "faltou_audiometria", nome: "Faltou audiometria", ordem: 55, tipo: "aberto" },
+  { chave: "audiometria_realizada", nome: "Audiometria realizada", ordem: 60, tipo: "aberto" },
+  { chave: "consulta_agendada", nome: "Consulta agendada", ordem: 70, tipo: "aberto" },
+  { chave: "faltou_consulta", nome: "Faltou consulta", ordem: 75, tipo: "aberto" },
+  { chave: "consulta_realizada", nome: "Consulta realizada", ordem: 80, tipo: "aberto" },
+  { chave: "proposta", nome: "Proposta", ordem: 90, tipo: "aberto" },
+  { chave: "negociacao", nome: "Negociacao", ordem: 100, tipo: "aberto" },
+  { chave: "venda_ganha", nome: "Venda ganha", ordem: 110, tipo: "ganho" },
+  { chave: "venda_perdida", nome: "Venda perdida", ordem: 120, tipo: "perdido" },
+  { chave: "arquivado", nome: "Arquivado", ordem: 9000, tipo: "arquivado" },
+];
+
+test("resolverMarcos: no funil de producao, consulta e consulta_realizada — nunca audiometria", () => {
+  const m = resolverMarcos(ETAPAS_PRODUCAO);
+  assert.deepEqual(m.chave, { qualificado: "qualificado", consulta: "consulta_realizada", venda: "venda_ganha" });
+  assert.deepEqual(m.nome, { qualificado: "Qualificado", consulta: "Consulta realizada", venda: "Venda ganha" });
+  // Sem etapa de consulta, audiometria realizada entra como ultimo recurso.
+  const semConsulta = ETAPAS_PRODUCAO.filter((e) => !e.chave.startsWith("consulta_"));
+  assert.equal(resolverMarcos(semConsulta).chave.consulta, "audiometria_realizada");
+});
+
+test("funilPorOrigem: arquivado (ordem 9000) nao entra em marco nenhum; audiometria nao conta como consulta", () => {
+  const toques = [toque({ lead_id: "a" }), toque({ lead_id: "b" }), toque({ lead_id: "c" }), toque({ lead_id: "d" })];
+  const etapaPorLead = new Map([
+    ["a", "lead"],
+    ["b", "arquivado"],
+    ["c", "venda_perdida"],
+    ["d", "audiometria_realizada"], // passou por qualificado, NAO chegou a consulta
+  ]);
+  const [meta] = funilPorOrigem(toques, etapaPorLead, ETAPAS_PRODUCAO, vocab);
+  assert.equal(meta.leads, 4);
+  assert.deepEqual(meta.marcos, { qualificado: 1, consulta: 0, venda: 0 });
+  assert.equal(meta.perdidos, 1);
+});
