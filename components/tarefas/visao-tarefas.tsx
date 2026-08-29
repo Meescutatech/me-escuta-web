@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import type { DadosVisaoTarefas } from "@/lib/dados/tarefas-visao";
-import { iniciaisDe, nomeResponsavel, textoPrazo } from "@/lib/dados/tarefa-calculos";
 import {
   agrupar,
   aplicarFiltros,
@@ -19,8 +18,9 @@ import {
   type StatusFiltro,
   type TarefaVisao,
 } from "@/lib/dados/tarefas-visao-calculos";
-import { useProjecaoViva } from "@/components/projecao-viva";
-import { INTERVALOS } from "@/lib/intervalos-vivos";
+import { useTarefasVivas } from "@/lib/tarefas/tempo-real";
+import { MetaTarefa, PorQueJarvis } from "@/components/tarefas/cartao-meta";
+import { QuadroStatus } from "@/components/tarefas/quadro-status";
 import { AcoesTarefa, BotaoAcoes, type PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
 import { BotaoConcluir, PainelConcluir } from "@/components/tarefas/concluir-tarefa";
 import { cn } from "@/lib/utils";
@@ -54,15 +54,23 @@ export function VisaoTarefas({
   meuId,
   mencionaveis,
   tiposTarefa,
+  emAndamento,
+  quadroInicial = false,
 }: {
   dados: DadosVisaoTarefas;
   filtrosIniciais: FiltrosTarefas;
   meuId: string | null;
   mencionaveis: Mencionavel[];
   tiposTarefa: TipoTarefa[];
+  /** F8: ids em andamento (core.v_tarefa.em_andamento) + se a coluna existe no banco */
+  emAndamento: { ids: string[]; disponivel: boolean };
+  /** `?ver=quadro` — terceira exibição, por STATUS. Vive fora de `FiltrosTarefas` (módulo de outra frente). */
+  quadroInicial?: boolean;
 }) {
   const router = useRouter();
   const [filtros, setFiltros] = useState<FiltrosTarefas>(filtrosIniciais);
+  const [quadro, setQuadro] = useState<boolean>(quadroInicial);
+  const idsEmAndamento = useMemo(() => new Set(emAndamento.ids), [emAndamento.ids]);
   const [agora, setAgora] = useState<number>(() => Date.now());
 
   useEffect(() => {
@@ -70,8 +78,9 @@ export function VisaoTarefas({
     return () => clearInterval(t);
   }, []);
 
-  // tarefa muda pouco, mas quem deixa a aba aberta merece ver a fila andar sozinha
-  useProjecaoViva([{ tabela: { schema: "core", table: "tarefa" } }], { intervaloMs: INTERVALOS.tarefas });
+  // tarefa muda pouco, mas quem deixa a aba aberta merece ver a fila andar sozinha — e o quadro
+  // por status (F8) depende disto para atualizar quando OUTRO ator conclui/cria/inicia
+  useTarefasVivas();
 
   function mudar(parcial: Partial<FiltrosTarefas>) {
     setFiltros({ ...filtros, ...parcial });
@@ -90,16 +99,16 @@ export function VisaoTarefas({
    * COMPARTILHAR a visão por link — chega 300 ms depois da última tecla. O ref guarda a última
    * query escrita para o efeito não replicar na montagem a query que o servidor já entregou.
    */
-  const qsEscritaRef = useRef(serializarFiltros(filtrosIniciais));
+  const qsEscritaRef = useRef(comQuadro(serializarFiltros(filtrosIniciais), quadroInicial));
   useEffect(() => {
-    const qs = serializarFiltros(filtros);
+    const qs = comQuadro(serializarFiltros(filtros), quadro);
     if (qs === qsEscritaRef.current) return;
     const t = setTimeout(() => {
       qsEscritaRef.current = qs;
       router.replace(qs ? `/tarefas?${qs}` : "/tarefas", { scroll: false });
     }, 300);
     return () => clearTimeout(t);
-  }, [filtros, filtrosIniciais, router]);
+  }, [filtros, quadro, filtrosIniciais, router]);
 
   const pessoas = useMemo(
     () => mencionaveis.filter((m) => m.tipo === "humano"),
@@ -137,8 +146,20 @@ export function VisaoTarefas({
     [dados.tarefas, filtros, meuId, agora],
   );
 
+  // F8 · o quadro por status cruza abertas E concluídas: aplica os mesmos filtros (busca,
+  // responsável, tipo) duas vezes, uma por status, e ignora o recorte de prazo/vencidas —
+  // no quadro a coluna é o status, e o prazo é informação do card, não de coluna.
+  const tarefasQuadro = useMemo(() => {
+    if (!quadro) return [];
+    const base = { ...filtros, vencidas: false, prazo: "todos" as const };
+    return [
+      ...aplicarFiltros(dados.tarefas, { ...base, status: "abertas" }, meuId, agora),
+      ...aplicarFiltros(dados.tarefas, { ...base, status: "concluidas" }, meuId, agora),
+    ];
+  }, [quadro, dados.tarefas, filtros, meuId, agora]);
+
   // histórico é lista, não funil (bucket de prazo só descreve compromisso futuro)
-  const modoFunil = filtros.exibicao === "funil" && filtros.status === "abertas";
+  const modoFunil = !quadro && filtros.exibicao === "funil" && filtros.status === "abertas";
   const grupos = useMemo(
     () => (modoFunil ? agrupar(filtradas, filtros, agora, nomes) : []),
     [modoFunil, filtradas, filtros, agora, nomes],
@@ -153,7 +174,7 @@ export function VisaoTarefas({
   // (sessionStorage) saiu daqui.
 
   const nadaNoWorkspace = dados.tarefas.length === 0;
-  const nadaComFiltro = !nadaNoWorkspace && filtradas.length === 0;
+  const nadaComFiltro = !nadaNoWorkspace && (quadro ? tarefasQuadro.length === 0 : filtradas.length === 0);
 
   return (
     <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
@@ -204,22 +225,29 @@ export function VisaoTarefas({
             </select>
           )}
           <div className="flex overflow-hidden rounded-[6px] border border-linha bg-branco" role="group" aria-label="Modo de exibição">
-            {(["funil", "lista"] as const).map((modo) => (
-              <button
-                key={modo}
-                type="button"
-                onClick={() => mudar({ exibicao: modo })}
-                aria-pressed={filtros.exibicao === modo}
-                className={cn(
-                  "px-3 py-1.5 text-[12.5px] font-medium transition-colors",
-                  filtros.exibicao === modo
-                    ? "bg-[#EAECF5] font-semibold text-navy"
-                    : "text-suave hover:bg-hover hover:text-tinta",
-                )}
-              >
-                {modo === "funil" ? "Funil" : "Lista"}
-              </button>
-            ))}
+            {(["funil", "quadro", "lista"] as const).map((modo) => {
+              const ativo = modo === "quadro" ? quadro : !quadro && filtros.exibicao === modo;
+              return (
+                <button
+                  key={modo}
+                  type="button"
+                  onClick={() => {
+                    if (modo === "quadro") setQuadro(true);
+                    else {
+                      setQuadro(false);
+                      mudar({ exibicao: modo });
+                    }
+                  }}
+                  aria-pressed={ativo}
+                  className={cn(
+                    "px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+                    ativo ? "bg-[#EAECF5] font-semibold text-navy" : "text-suave hover:bg-hover hover:text-tinta",
+                  )}
+                >
+                  {modo === "funil" ? "Prazo" : modo === "quadro" ? "Status" : "Lista"}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -292,6 +320,7 @@ export function VisaoTarefas({
           ))}
         </select>
 
+        {!quadro && (
         <div className="flex overflow-hidden rounded-full border border-linha bg-branco" role="group" aria-label="Status">
           {(
             [
@@ -316,8 +345,9 @@ export function VisaoTarefas({
             </button>
           ))}
         </div>
+        )}
 
-        {filtros.status === "abertas" && (
+        {!quadro && filtros.status === "abertas" && (
           <>
             <button
               type="button"
@@ -425,6 +455,15 @@ export function VisaoTarefas({
             Limpar filtros
           </button>
         </Vazio>
+      ) : quadro ? (
+        <QuadroStatus
+          tarefas={tarefasQuadro}
+          emAndamento={idsEmAndamento}
+          emAndamentoDisponivel={emAndamento.disponivel}
+          agora={agora}
+          nomes={nomes}
+          aoMudar={() => router.refresh()}
+        />
       ) : modoFunil ? (
         <div className="flex flex-1 items-stretch gap-3 overflow-x-auto px-5 pb-5">
           {grupos.map((g) => (
@@ -501,6 +540,14 @@ export function VisaoTarefas({
   );
 }
 
+/** `?ver=quadro` entra na URL por fora de `serializarFiltros` (módulo de outra frente). */
+function comQuadro(qs: string, quadro: boolean): string {
+  if (!quadro) return qs;
+  const p = new URLSearchParams(qs);
+  p.set("ver", "quadro");
+  return p.toString();
+}
+
 function Vazio({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid flex-1 place-items-center px-5 pb-16">
@@ -514,32 +561,6 @@ function Vazio({ children }: { children: React.ReactNode }) {
  * vez de <Link>: as ações de ciclo de vida (R14) moram DENTRO do card, e botão dentro de
  * âncora não é HTML válido. O painel de ações faz stopPropagation — clicar nele não navega.
  */
-/**
- * F2 / D62 · o POR QUE e o TRECHO da tarefa que o Jarvis criou (0298). Só existe quando existe:
- * tarefa humana não ganha bloco vazio. O que a autonomia muda é quem aprova, não a transparência.
- */
-function PorQueJarvis({ t, apagada }: { t: TarefaVisao; apagada?: boolean }) {
-  if (!t.por_que && !t.trecho) return null;
-  const jarvis = t.origem === "jarvis_conversa";
-  return (
-    <div className={cn("mt-1 text-[12px] leading-snug", apagada ? "text-mute" : "text-suave")}>
-      {t.por_que && (
-        <p>
-          {jarvis && (
-            <span className="mr-1.5 rounded-full bg-navy px-1.5 py-px font-mono text-[9.5px] font-semibold uppercase tracking-wide text-branco">
-              Jarvis
-            </span>
-          )}
-          {t.por_que}
-        </p>
-      )}
-      {t.trecho && (
-        <blockquote className="mt-0.5 border-l-2 border-linha-forte pl-2 italic">“{t.trecho}”</blockquote>
-      )}
-    </div>
-  );
-}
-
 function ComLead({
   t,
   className,
@@ -578,46 +599,6 @@ interface PropsAcoes {
   onToggleConcluir: () => void;
   onFecharConcluir: () => void;
   aoMudar: () => void;
-}
-
-function MetaTarefa({
-  t,
-  agora,
-  nomes,
-  apagada,
-}: {
-  t: TarefaVisao;
-  agora: number;
-  nomes: { membros: Map<string, string>; tipos: Map<string, string> };
-  apagada?: boolean;
-}) {
-  const quem = nomeResponsavel(t, nomes.membros);
-  return (
-    <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]", apagada ? "text-mute" : "text-suave")}>
-      {quem && (
-        <span className="inline-flex items-center gap-1.5">
-          <span
-            className={cn(
-              "grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[8.5px] font-semibold text-branco",
-              apagada ? "bg-mute" : "bg-navy",
-            )}
-          >
-            {iniciaisDe(quem)}
-          </span>
-          {quem}
-        </span>
-      )}
-      {quem && <span className="text-linha">·</span>}
-      <span className={cn("font-mono tabular-nums", t.vencida && "font-semibold text-vermelho")}>
-        {textoPrazo(t, agora)}
-      </span>
-      {t.tipo && (
-        <span className="rounded-full border border-linha bg-board px-2 py-px text-[10.5px]">
-          {nomes.tipos.get(t.tipo) ?? t.tipo}
-        </span>
-      )}
-    </div>
-  );
 }
 
 function CartaoTarefa({
