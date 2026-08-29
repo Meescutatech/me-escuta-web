@@ -1,4 +1,5 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
+import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 import { caminhosParaAssinar } from "@/lib/conversas/midia";
 import {
   TTL_ASSINATURA_SEG,
@@ -683,6 +684,37 @@ export async function lerSugestoesConversa(conversaId: string): Promise<Sugestao
       }))
       .filter((s) => s.corpo.length > 0) // ignora propostas de teste sem texto (ruído de webhook)
       .slice(0, 3); // no máximo as 3 mais recentes com texto — evita empilhar
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * R27/F1 — envios programados da conversa, pela view `api.v_envios_programados` (0290,
+ * security_invoker: a RLS de core.envio_programado delega à de core.conversa). Degrade honesto:
+ * view ausente (a 0290 ainda não subiu neste ambiente) ⇒ lista vazia, e a seção não aparece.
+ */
+export async function lerEnviosProgramados(conversaId: string): Promise<EnvioProgramadoLinha[]> {
+  try {
+    const supabase = criarClienteServidor();
+    const { data, error } = await supabase
+      .schema("api")
+      .from("v_envios_programados")
+      .select("id,conversa_id,corpo,enviar_em,status,erro,criado_por")
+      .eq("conversa_id", conversaId)
+      .in("status", ["agendado", "falhou"])
+      .order("enviar_em", { ascending: true })
+      .limit(50);
+    if (error || !data) return [];
+    return data.map((l: any) => ({
+      id: String(l.id),
+      conversa_id: String(l.conversa_id),
+      corpo: String(l.corpo ?? ""),
+      enviar_em: String(l.enviar_em),
+      status: l.status as EnvioProgramadoLinha["status"],
+      erro: l.erro ?? null,
+      criado_por: l.criado_por ?? null,
+    }));
   } catch {
     return [];
   }

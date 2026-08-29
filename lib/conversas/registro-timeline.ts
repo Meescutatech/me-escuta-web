@@ -21,6 +21,24 @@ export interface RegistroInterno {
   criado_em: string;
   /** rótulos das menções resolvidas (via core.mencao) — base do destaque na leitura. */
   mencoes: { rotulo: string; tipo: TipoMencionavel }[];
+  /**
+   * F2 / D62: a tarefa que o JARVIS criou a partir desta conversa (origem `jarvis_conversa`).
+   * Aparece como REGISTRO — "Jarvis criou tarefa: FAZER — POR QUE" — sem botão de aprovar:
+   * a capacidade está em `auto` (0297). null em nota e em tarefa humana.
+   */
+  jarvis: { fazer: string; por_que: string | null; trecho: string | null } | null;
+}
+
+export const ORIGEM_JARVIS_CONVERSA = "jarvis_conversa";
+
+/** A parte "do Jarvis" de uma tarefa, ou null. Exportada para o teste travar o contrato. */
+export function jarvisDaTarefa(
+  t: Pick<TarefaLead, "titulo" | "origem" | "fazer" | "por_que" | "trecho">,
+): RegistroInterno["jarvis"] {
+  if (t.origem !== ORIGEM_JARVIS_CONVERSA) return null;
+  const fazer = t.fazer?.trim() || t.titulo?.trim() || "";
+  if (!fazer) return null;
+  return { fazer, por_que: t.por_que?.trim() || null, trecho: t.trecho?.trim() || null };
 }
 
 function nomeDe(id: string | null, porId: Map<string, Mencionavel>): string | null {
@@ -67,6 +85,7 @@ export function montarRegistros(
       prazo: null,
       criado_em: a.criado_em,
       mencoes: porOrigem.get(a.id) ?? [],
+      jarvis: null,
     });
   }
 
@@ -80,6 +99,7 @@ export function montarRegistros(
       prazo: t.prazo,
       criado_em: t.criado_em,
       mencoes: porOrigem.get(t.id) ?? [],
+      jarvis: jarvisDaTarefa(t),
     });
   }
 

@@ -15,10 +15,14 @@ import {
   carregarMaisConversas,
   devolverConversa,
   enviarMensagem,
+  programarEnvio,
+  cancelarEnvioProgramado,
   sinalizarPresenca,
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
 import { criarGatilhoDigitando } from "@/lib/conversas/presenca";
+import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
+import { frasePrograma } from "@/lib/conversas/programar-envio";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
@@ -38,10 +42,6 @@ import {
 import { diasNaEtapa } from "@/lib/tempo";
 import type { PainelLead } from "@/lib/dados/lead-painel";
 import { FichaKommo } from "@/components/lead/ficha-kommo";
-import { CartaoSugestaoTarefa } from "./sugestao-tarefa";
-import { avaliarConversa } from "@/lib/conversas/sugestao-jarvis";
-import { LinhaTarefaAutomatica } from "@/components/tarefas/tarefa-automatica";
-import { criarSeNova, useFilaPrototipo } from "@/lib/tarefas/fila-prototipo";
 import { ReguaFunil } from "@/components/regua-funil";
 import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import type { EtapaFunil } from "@/lib/dados/funil";
@@ -135,6 +135,7 @@ export function Inbox({
   templates,
   etapas,
   departamentoAtivo,
+  programadas,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -169,6 +170,8 @@ export function Inbox({
    * o dia em que ele decidir o que aparece, o escopo virou filtro de cliente.
    */
   departamentoAtivo?: { chave: string; rotulo: string } | null;
+  /** R27/F1 · envios programados da conversa selecionada (agendado + falhou), lidos no servidor. */
+  programadas: EnvioProgramadoLinha[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -197,24 +200,16 @@ export function Inbox({
   const fimRef = useRef<HTMLDivElement>(null);
 
   /**
-   * R23 protótipo (workshop 12/08) · O JARVIS SUGERE A TAREFA.
+   * F2 / D62 (27/08) · O JARVIS CRIA A TAREFA — no runtime, não aqui.
    *
-   * `agora` nasce null e só é preenchido depois da montagem: a página é renderizada no servidor, e
-   * um Date.now() nos dois lados daria horas diferentes e hidratação divergente. Enquanto é null,
-   * a sugestão simplesmente não existe — nenhum piscar de cartão errado.
-   *
-   * `decididas` guarda o que já foi aprovado/recusado NESTA TELA. O `.env.local` aponta para o
-   * Supabase de produção, então a decisão morre aqui: aprovar não cria tarefa, recusar não grava
-   * recusa. No sistema real cada uma vira evento no ledger com o nome de quem validou.
+   * O protótipo do workshop (regra pura em `lib/conversas/sugestao-jarvis.ts` + cartão de
+   * aprovar + fila em sessionStorage) SAIU do caminho principal: quem monitora a conversa é o
+   * worker `jarvis/tarefas` do runtime, que grava `tarefa_criada` (ator agente:jarvis, origem
+   * jarvis_conversa) pela porta. A tarefa chega a esta tela como qualquer outra — pela projeção
+   * `painel.tarefas` — e `montarRegistros` a marca como do Jarvis pela `origem`. O registro na
+   * timeline diz "Jarvis criou tarefa: FAZER — POR QUE", sem botão de aprovar (criar_tarefa=auto).
+   * Os módulos do protótipo continuam no repo porque `components/prototipo/workshop.tsx` os usa.
    */
-  const [agoraJarvis, setAgoraJarvis] = useState<number | null>(null);
-  const [decididas, setDecididas] = useState<Map<string, "aprovada" | "recusada">>(new Map());
-  const filaPrototipo = useFilaPrototipo();
-  useEffect(() => {
-    setAgoraJarvis(Date.now());
-    const t = setInterval(() => setAgoraJarvis(Date.now()), 60_000);
-    return () => clearInterval(t);
-  }, []);
   const divisorRef = useRef<HTMLDivElement>(null);
   const noFimRef = useRef(true);
   const totalAnteriorRef = useRef(-1); // -1 = próxima renderização é abertura de conversa
@@ -488,6 +483,35 @@ export function Inbox({
     });
   }
 
+  /**
+   * R27/F1 — PROGRAMAR: grava `envio_programado` e só devolve true quando a porta aceitou (o
+   * composer esvazia o campo por esse retorno). O texto NÃO vira bolha otimista: ele não foi
+   * enviado — aparece na seção "Programadas", que o refresh traz da view.
+   */
+  async function programar(quandoMs: number, texto: string): Promise<boolean> {
+    if (!selecionada) return false;
+    const r = await programarEnvio(selecionada.id, selecionada.lead_id ?? null, texto, quandoMs);
+    if (r.ok) {
+      avisar(`Programado para ${frasePrograma(quandoMs, Date.now())}.`);
+      router.refresh();
+      return true;
+    }
+    avisar(`Não programou: ${r.motivo ?? "erro"}`);
+    return false;
+  }
+
+  function cancelarProgramado(id: string) {
+    startTransition(async () => {
+      const r = await cancelarEnvioProgramado(id);
+      if (r.ok) {
+        avisar("Envio programado cancelado.");
+        router.refresh();
+      } else {
+        avisar(`Não cancelou: ${r.motivo ?? "erro"}`);
+      }
+    });
+  }
+
   /** "Tentar de novo" de falha LOCAL: reusa a mesma bolha/chave; mídia não sobe de novo. */
   function tentarDeNovoLocal(m: Mensagem) {
     const midia: MidiaPronta | null = m.midia_caminho
@@ -577,41 +601,6 @@ export function Inbox({
       ? fmtTelefone(selecionada.telefone)
       : selecionada.nome!
     : "";
-
-  /**
-   * A proposta do Jarvis para ESTA conversa. Sai da regra pura (`sugerirTarefa`), que lê o fio de
-   * verdade — as mensagens que estão na tela — e devolve `null` na maioria das conversas. Isso é
-   * o desenho, não uma limitação: agente que sugere algo em toda conversa vira ruído, e ruído é
-   * como uma sugestão boa passa despercebida.
-   */
-  const despachoJarvis = useMemo(() => {
-    if (agoraJarvis == null || !selecionada) return null;
-    const eu = mencionaveis.find((m) => m.id === autorId && m.tipo === "humano");
-    return avaliarConversa(visiveis, agoraJarvis, {
-      nomeLead: titulo || "o cliente",
-      responsavel: eu?.nome ?? "você",
-    });
-  }, [agoraJarvis, selecionada, visiveis, titulo, mencionaveis, autorId]);
-
-  /**
-   * D10 · tipo `auto` NÃO abre cartão: a tarefa nasce criada e vai para a fila. Aqui isso é
-   * `sessionStorage` (o banco é o de produção), e a criação é idempotente pelo id da proposta —
-   * a regra recalcula a cada minuto e devolveria a mesma tarefa para sempre.
-   */
-  useEffect(() => {
-    if (despachoJarvis?.modo !== "criada" || agoraJarvis == null) return;
-    criarSeNova({
-      proposta: despachoJarvis.proposta,
-      fundamento: despachoJarvis.fundamento,
-      criadaEm: agoraJarvis,
-    });
-  }, [despachoJarvis, agoraJarvis]);
-
-  /** A tarefa automática desta conversa, se ela já existe na fila. */
-  const automaticaAqui =
-    despachoJarvis?.modo === "criada"
-      ? filaPrototipo.find((t) => t.proposta.id === despachoJarvis.proposta.id) ?? null
-      : null;
 
   // §5.2: só variável CONFIÁVEL entra. Nome ruim (o título vira telefone) fica DE FORA —
   // "Oi (31) 98888-7777" não é mensagem; o placeholder literal trava o envio e a Sara completa.
@@ -1011,24 +1000,9 @@ export function Inbox({
                     </div>
                   );
                 })}
-              {/* R23 · a sugestão de TAREFA do Jarvis fecha o fio: ela é sobre o que fazer a
-                  seguir, então mora colada no composer, onde a decisão acontece. A sugestão de
-                  MENSAGEM da Clara (acima) continua no lugar dela — são propostas diferentes. */}
-              {despachoJarvis?.modo === "propor" && (
-                <CartaoSugestaoTarefa
-                  // `key` pelo id: mensagem nova = proposta nova, e o cartão renasce zerado
-                  key={despachoJarvis.proposta.id}
-                  sugestao={despachoJarvis.proposta}
-                  fundamento={despachoJarvis.fundamento}
-                  decisaoInicial={decididas.get(despachoJarvis.proposta.id) ?? null}
-                  onDecidir={(id, d) => setDecididas((m) => new Map(m).set(id, d))}
-                />
-              )}
-              {/* D10 · tipo `auto`: sem cartão, sem clique. A tarefa JÁ existe — o fio só
-                  informa, com o motivo à vista e o desfazer do lado. */}
-              {automaticaAqui && (
-                <LinhaTarefaAutomatica key={automaticaAqui.proposta.id} tarefa={automaticaAqui} compacta />
-              )}
+              {/* F2 / D62 · a tarefa que o Jarvis cria entra no FIO, como registro
+                  (`RegistroInterno` com `jarvis`), no horário em que nasceu — não colada
+                  ao composer: ela não pede decisão. */}
               <div ref={fimRef} />
             </div>
 
@@ -1077,6 +1051,9 @@ export function Inbox({
               onDigitar={aoDigitar}
               aoPublicar={() => router.refresh()}
               avisar={avisar}
+              programadas={programadas}
+              onProgramar={programar}
+              onCancelarProgramado={cancelarProgramado}
             />
           </>
         )}

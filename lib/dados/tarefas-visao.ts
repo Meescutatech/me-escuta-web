@@ -19,6 +19,8 @@ import type { TarefaVisao } from "./tarefas-visao-calculos";
 export const TETO_ABERTAS = 500;
 export const TETO_FECHADAS = 200;
 
+const COLS_VIEW_R27 =
+  "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em,vencida,por_que,fazer,trecho,origem";
 const COLS_VIEW =
   "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em,vencida";
 const COLS_TABELA_R13 =
@@ -53,6 +55,10 @@ function paraTarefa(r: any, agoraMs: number, comVencida: boolean): TarefaVisao {
     vencida: comVencida
       ? r.vencida === true
       : String(r.status ?? "pendente") === "pendente" && vencidaLocal(r.prazo ?? null, agoraMs),
+    por_que: r.por_que ?? null,
+    fazer: r.fazer ?? null,
+    trecho: r.trecho ?? null,
+    origem: r.origem ?? null,
   };
 }
 
@@ -111,8 +117,10 @@ export async function lerVisaoTarefas(): Promise<DadosVisaoTarefas> {
     const supabase = criarClienteServidor();
     const agoraMs = Date.now();
 
-    let bruto = await lerDeUmaFonte(supabase, "v_tarefa", COLS_VIEW);
+    // F2: as colunas da 0298 primeiro; sem elas a view antiga; sem a view, a tabela.
+    let bruto = await lerDeUmaFonte(supabase, "v_tarefa", COLS_VIEW_R27);
     let derivadaNoBanco = true;
+    if (!bruto) bruto = await lerDeUmaFonte(supabase, "v_tarefa", COLS_VIEW);
     if (!bruto) {
       bruto = await lerDeUmaFonte(supabase, "tarefa", COLS_TABELA_R13);
       derivadaNoBanco = false;

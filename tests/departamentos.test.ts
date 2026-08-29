@@ -282,7 +282,7 @@ test("escopo que não sobrou nenhuma chave válida NÃO vira consulta aberta —
 // ═════════════ 6 · fonte única rota→título ═════════════
 
 test("rota conhecida devolve o nome em PT-BR", () => {
-  assert.equal(lerTituloDaRota("/"), "Visão geral");
+  assert.equal(lerTituloDaRota("/"), "Dashboard");
   assert.equal(lerTituloDaRota("/funil"), "Funil de vendas");
   assert.equal(lerTituloDaRota("/fila"), "Fila de sugestões");
   assert.equal(lerTituloDaRota("/timeline"), "Timeline do ledger");

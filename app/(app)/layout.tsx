@@ -62,7 +62,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen pl-[60px]">
       <Sidebar
-        email={user.email ?? "usuario"}
         contFunil={contadores.funil}
         contNaoLidas={contadores.naoLidas}
         contVencidas={contadores.tarefasVencidas}

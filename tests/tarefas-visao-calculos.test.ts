@@ -42,6 +42,10 @@ function tarefa(sobrescreve: Partial<TarefaVisao>): TarefaVisao {
     criado_em: "2026-07-20T12:00:00.000Z",
     concluida_em: null,
     vencida: false,
+    por_que: null,
+    fazer: null,
+    trecho: null,
+    origem: null,
     ...sobrescreve,
   };
 }

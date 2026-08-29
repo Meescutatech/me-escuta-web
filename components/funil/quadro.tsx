@@ -22,16 +22,13 @@ import { SeletorOrdem } from "./seletor-ordem";
 import {
   ordenarCards,
   prioridadeCard,
-  excedeuTetoAgora,
   ORDEM_PADRAO,
-  ROTULO_FAIXA,
-  TETO_AGORA,
-  TRILHO_FAIXA,
-  FAIXAS_ESCALA,
   type ChaveOrdem,
   type FaixaPrioridade,
   type SlaEtapas,
 } from "@/lib/dados/funil-ordenacao";
+import { ChipSemResponsavel } from "./faixa-sem-responsavel";
+import type { LeadsSemResponsavel } from "@/lib/dados/identidades";
 import { NovoLead } from "./novo-lead";
 import { DialogoMotivoPerda } from "./motivo-perda";
 import type { MotivoPerda } from "@/lib/dados/motivo-perda";
@@ -171,122 +168,16 @@ function Terminal({ etapa, quantidade }: { etapa: EtapaFunil; quantidade: number
   );
 }
 
-// ─────────────── legenda da cor (R23/W2) ───────────────
-
-/**
- * A LEGENDA DO BOARD. Antes ela existia — escondida como parágrafo no rodapé do dropdown de
- * ordenação, ou seja, visível só para quem já tinha aberto outro menu. Legenda que só aparece
- * dentro de um menu é legenda que ninguém leu, e a cor sem legenda é adivinhação.
- *
- * Ela carrega três coisas que o board precisa confessar:
- *  1. o que cada cor quer dizer, com a CONTAGEM ao lado (a cor vira número acionável);
- *  2. o TETO DE 15% em AGORA (D56 item 2) — acima disso o critério está frouxo e a cor virou
- *     ruído, que é o estado do Kommo com 97,9% da fila vencida. O teto sem alarme era só uma
- *     frase num documento; aqui ele acende;
- *  3. quando os prazos são o PADRÃO DECLARADO porque `sla_etapas` ainda não existe no banco.
- *
- * ── CONTRASTE: o que esta nota dizia até 22/08 e por que ela mudou ────────────────────────────
- *
- * Ela afirmava duas coisas, e as duas deixaram de ser verdade no MESMO dia, por motivos opostos:
- *
- *  1. "Nada aqui usa o token `mute`" — falso já quando foi escrito: o rótulo "Cor = prioridade",
- *     15 linhas abaixo, usa `text-mute`.
- *  2. "`mute` #9AA1AA dá 2,43:1 sobre o board" — verdade na hora em que foi medida, e obsoleta
- *     algumas horas depois: a frente de design refez a escada de cinza inteira (tailwind.config.ts,
- *     "W4 · A ESCADA DE CINZA FOI REFEITA PORQUE O DEGRAU DE BAIXO REPROVAVA") e `mute` deixou de
- *     ser #9AA1AA.
- *
- * Remedido em 22/08 sobre os tokens VIGENTES (WCAG 2.x, luminância relativa, script conferido
- * contra os números da própria tailwind.config.ts):
- *
- *              branco #FFFFFF   board #F7F7F4   hover #EAE9E3
- *   mute  #5F6873     5,65:1         5,27:1         4,65:1
- *   suave #4E5763     7,32:1         6,82:1         6,02:1
- *
- * As três superfícies reais do app passam o piso de 4,5:1 do SC 1.4.3 nos DOIS tokens. Ou seja: o
- * `text-mute` do rótulo abaixo, e os dois do card (a seta da última mensagem e o timer em estado
- * calmo), NÃO são mais dívida de contraste — trocá-los por `suave` hoje seria achatar terciário e
- * secundário no mesmo degrau para consertar um problema que outra frente já consertou na raiz.
- *
- * O que continua valendo, e é o motivo de o parágrafo existir: o item 3 desta legenda (o aviso de
- * que os prazos são o PADRÃO DECLARADO) é justamente o que o contrato manda ser visível, e ele usa
- * `suave`, o degrau mais alto. Aviso ilegível é default silencioso com outro nome.
+/*
+ * F5 (27/08) · O QUE SAIU DAQUI, E PARA ONDE FOI.
+ * A legenda "COR = PRIORIDADE …", o botão "Só os estourados" e o alerta "N% em AGORA — acima do
+ * teto" viviam numa linha própria entre o cabeçalho e as colunas. Três coisas que a Sarah lia
+ * todo dia e não podia resolver: o teto de 15% (D56) é decisão de GESTÃO (ajustar `sla_etapas`),
+ * não da fila. A cor agora é o próprio papel do card (card-lead.tsx / FUNDO_FAIXA), e não precisa
+ * de legenda para ser lida. A conta do teto virou dado para o dashboard: `resumoFaixas()` em
+ * lib/dados/funil-ordenacao.ts. O aviso "prazos no padrão declarado (sem config)" continua —
+ * é o único que muda a LEITURA do card, e fica no tooltip do contador.
  */
-function LegendaPrioridade({
-  contagem,
-  total,
-  sla,
-  soAgora,
-  onSoAgora,
-}: {
-  contagem: Record<FaixaPrioridade, number>;
-  total: number;
-  sla: SlaEtapas;
-  soAgora: boolean;
-  onSoAgora: () => void;
-}) {
-  const frouxo = excedeuTetoAgora(contagem.agora, total);
-  const pct = total > 0 ? Math.round((contagem.agora / total) * 100) : 0;
-  return (
-    <div className="flex flex-shrink-0 flex-wrap items-center gap-x-3.5 gap-y-1.5 px-5 pb-2.5">
-      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-mute">Cor = prioridade</span>
-      {FAIXAS_ESCALA.map((f) => (
-        <span key={f} className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px] text-suave">
-          <span className={cn("h-[9px] w-[9px] shrink-0 rounded-[2px]", TRILHO_FAIXA[f])} aria-hidden />
-          {ROTULO_FAIXA[f]}
-          <span className="font-mono tabular-nums text-suave">{contagem[f]}</span>
-        </span>
-      ))}
-      {contagem.sem_dado > 0 && (
-        <span
-          className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px] text-suave"
-          title="Sem data de entrada na etapa e sem mensagem datada — a prioridade não foi medida, e o card não finge que foi"
-        >
-          <span className="h-[9px] w-[9px] shrink-0 rounded-[2px] bg-linha" aria-hidden />
-          sem medida
-          <span className="font-mono tabular-nums">{contagem.sem_dado}</span>
-        </span>
-      )}
-
-      {/* "só os estourados" — a versão acionável da cor. Só aparece quando há o que filtrar:
-          zero é silêncio, mesma regra do chip "sem próxima ação". */}
-      {(contagem.agora > 0 || soAgora) && (
-        <button
-          type="button"
-          onClick={onSoAgora}
-          aria-pressed={soAgora}
-          title="Mostrar só os cards na faixa AGORA (passaram do prazo da própria etapa)"
-          className={cn(
-            "rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors",
-            soAgora
-              ? "border-vermelho bg-vermelho-bg font-medium text-vermelho"
-              : "border-linha bg-branco text-suave hover:border-linha-forte",
-          )}
-        >
-          Só os estourados
-        </button>
-      )}
-
-      {frouxo && (
-        <span
-          className="inline-flex items-center gap-1 rounded-full bg-amarelo-bg px-2.5 py-0.5 text-[11px] font-medium text-amarelo"
-          title={`Teto de ${Math.round(TETO_AGORA * 100)}% da fila em AGORA (D56). Acima disso o critério está frouxo e a cor vira ruído — é o estado do Kommo, com 97,9% da fila vencida. O caminho é ajustar sla_etapas, não ignorar o vermelho.`}
-        >
-          {pct}% em AGORA — acima do teto de {Math.round(TETO_AGORA * 100)}%
-        </span>
-      )}
-
-      {!sla.daConfig && (
-        <span
-          className="inline-flex items-center gap-1 rounded-full border border-linha bg-branco px-2.5 py-0.5 text-[11px] text-suave"
-          title="A config core.config nome='sla_etapas' ainda não existe. Os prazos por etapa são o padrão declarado em lib/dados/funil-ordenacao.ts (SLA_PADRAO_DECLARADO) — não um valor que alguém definiu para esta operação."
-        >
-          prazos no padrão declarado (sem config)
-        </span>
-      )}
-    </div>
-  );
-}
 
 // ─────────────── board ───────────────
 
@@ -300,6 +191,7 @@ export function Quadro({
   tiposTarefa = [],
   motivosPerda = [],
   motivosDaConfig = false,
+  semResponsavel = null,
 }: {
   dados: DadosFunil;
   /** hora da renderização server — carimbo "ao vivo · atualizado há Xs" */
@@ -313,6 +205,8 @@ export function Quadro({
   /** R20 — vocabulário de motivo de perda (config `motivo_perda`, com degrau para a semente) */
   motivosPerda?: MotivoPerda[];
   motivosDaConfig?: boolean;
+  /** F5 · contagem de órfãos / aguardando de-para → chip ao lado do contador (R18/M3, era faixa) */
+  semResponsavel?: LeadsSemResponsavel | null;
 }) {
   const [cards, setCards] = useState<CardLead[]>(dados.cards);
   const [arrastando, setArrastando] = useState<string | null>(null);
@@ -424,21 +318,6 @@ export function Quadro({
     () => new Set(dados.etapas.filter((e) => e.tipo === "aberto").map((e) => e.chave)),
     [dados.etapas],
   );
-  // contagem da legenda: sobre os leads ATIVOS, não sobre o board inteiro. Card em venda_ganha /
-  // venda_perdida não tem prioridade nenhuma, e contá-lo diluiria o percentual do teto de 15%.
-  const contagemFaixa = useMemo(() => {
-    const z: Record<FaixaPrioridade, number> = { agora: 0, hoje: 0, na_semana: 0, sem_pressa: 0, sem_dado: 0 };
-    for (const c of cards) {
-      if (!chavesAbertas.has(c.etapa)) continue;
-      z[faixaPorLead.get(c.lead_id) ?? "sem_dado"] += 1;
-    }
-    return z;
-  }, [cards, chavesAbertas, faixaPorLead]);
-  const totalComFaixa = useMemo(
-    () => Object.values(contagemFaixa).reduce((a, b) => a + b, 0) - contagemFaixa.sem_dado,
-    [contagemFaixa],
-  );
-
   const leadsAtivos = useMemo(
     () => cards.filter((c) => chavesAbertas.has(c.etapa)).length,
     [cards, chavesAbertas],
@@ -561,11 +440,28 @@ export function Quadro({
       <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-5 pb-3 pt-4">
         {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
             A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
-        <span className="font-mono text-[12px] text-suave">
+        <span
+          className="font-mono text-[12px] text-suave"
+          title={
+            dados.sla.daConfig
+              ? "Cor do card = prioridade: AGORA, HOJE, NA SEMANA, SEM PRESSA (razão entre o tempo parado e o prazo da etapa)"
+              : "Cor do card = prioridade. Os prazos por etapa são o PADRÃO DECLARADO — a config sla_etapas ainda não existe no banco."
+          }
+        >
           {filtroAtivo
             ? `${leadsAtivosFiltrados.toLocaleString("pt-BR")} de ${leadsAtivos.toLocaleString("pt-BR")} leads ativos`
             : `${leadsAtivos.toLocaleString("pt-BR")} leads ativos`}
         </span>
+        {/* F5 · órfãos + aguardando de-para: um chip, não dois parágrafos acima do board */}
+        {semResponsavel && <ChipSemResponsavel dados={semResponsavel} />}
+        {!dados.sla.daConfig && (
+          <span
+            className="rounded-full border border-linha bg-branco px-2.5 py-0.5 text-[11px] text-suave"
+            title="A config core.config nome='sla_etapas' ainda não existe. Os prazos por etapa são o padrão declarado em lib/dados/funil-ordenacao.ts (SLA_PADRAO_DECLARADO) — não um valor que alguém definiu para esta operação."
+          >
+            prazos no padrão declarado
+          </span>
+        )}
         {dados.corte && (
           <span
             className="rounded-full bg-laranja-cl px-2.5 py-0.5 text-[11.5px] font-medium text-laranja-esc"
@@ -650,14 +546,6 @@ export function Quadro({
           />
         </div>
       </div>
-
-      <LegendaPrioridade
-        contagem={contagemFaixa}
-        total={totalComFaixa}
-        sla={dados.sla}
-        soAgora={filtros.soAgora}
-        onSoAgora={() => setFiltros((f) => ({ ...f, soAgora: !f.soAgora }))}
-      />
 
       {/* R23 · o que a busca achou FORA do board — logo abaixo do cabeçalho, antes das colunas,
           porque a resposta a "existe?" tem que chegar antes de o operador desistir e abrir o Kommo. */}

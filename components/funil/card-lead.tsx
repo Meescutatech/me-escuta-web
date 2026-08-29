@@ -9,6 +9,7 @@ import {
   dataUltimaMensagem,
   prioridadeCard,
   textoExcedente,
+  FUNDO_FAIXA,
   ROTULO_FAIXA,
   TEXTO_COR_FAIXA,
   TEXTO_FAIXA,
@@ -49,6 +50,13 @@ import { cn } from "@/lib/utils";
  * hex do `amarelo` da faixa HOJE (#B27A00), com um limiar seu (`d >= 4`) seis linhas distante do
  * da faixa (`d > 4`). Resultado: card classificado AGORA (vermelho) exibia um timer da cor de
  * HOJE. Agora o destaque do timer deriva da MESMA faixa — uma fonte, um alarme.
+ *
+ * ── F5 (27/08) · a cor virou o PAPEL do card ─────────────────────────────────────────────────
+ * O trilho de 3px não se lê varrendo uma coluna de 236px — a Sarah tinha de focar card a card.
+ * Agora o FUNDO do card é a faixa (`FUNDO_FAIXA` → classes `.card-faixa-*` sobre tokens de tema em
+ * globals.css, claro e escuro). O trilho fica como reforço. O rótulo "AGORA +771d" desceu um tom:
+ * o papel já grita, o rótulo só nomeia (WCAG 1.4.1 continua atendido — ele é o canal escrito).
+ * Faixa `sem_prazo` (etapa de entrada, workshop §6): papel neutro, sem rótulo, nunca AGORA.
  */
 
 const ORIGEM_ROTULO: Record<Origem, string> = { wa: "WhatsApp", ig: "Instagram", meta: "Meta Ads", ind: "Indicação" };
@@ -147,7 +155,9 @@ export function CartaoLead({
   const explicacao = [
     TEXTO_FAIXA[faixa],
     prio.horasParadas != null
-      ? `parado há ${Math.floor(prio.horasParadas)}h · prazo da etapa ${prio.horasPrazo}h`
+      ? prio.horasPrazo == null
+        ? `parado há ${Math.floor(prio.horasParadas)}h · etapa sem prazo`
+        : `parado há ${Math.floor(prio.horasParadas)}h · prazo da etapa ${prio.horasPrazo}h`
       : null,
     prio.prazoDeclarado ? null : `prazo PADRÃO (${prio.horasPrazo}h) — "${card.etapa}" não está em sla_etapas`,
     prio.pausado ? "relógio pausado: há compromisso marcado no futuro" : null,
@@ -192,12 +202,14 @@ export function CartaoLead({
       }}
       title={titulo || undefined}
       className={cn(
-        "relative cursor-grab touch-none select-none overflow-hidden rounded-[10px] border bg-branco py-[10px] pl-[13px] pr-3 transition-all",
+        "relative cursor-grab touch-none select-none overflow-hidden rounded-[10px] border py-[10px] pl-[13px] pr-3 transition-all",
+        // o PAPEL do card é a faixa — fundo + hairline no mesmo tom (tokens de tema)
+        FUNDO_FAIXA[faixa],
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/50",
         // seleção saiu da barra esquerda (agora é o prazo) e virou anel — mesma leitura, sem disputa
         selecionado
-          ? "border-laranja ring-[1.5px] ring-laranja/45"
-          : "border-linha hover:border-linha-forte hover:shadow-[0_1px_6px_rgba(37,47,99,.06)]",
+          ? "!border-laranja ring-[1.5px] ring-laranja/45"
+          : "hover:shadow-[0_1px_6px_rgba(37,47,99,.08)]",
         isDragging && "opacity-40",
       )}
     >
@@ -211,17 +223,19 @@ export function CartaoLead({
       {/* RÓTULO + EXCEDENTE. "AGORA · +3d" e não só "atrasado": sem o excedente, atrasado há 2h e
           atrasado há 142d viram a mesma coisa — que é literalmente o estado do Kommo hoje. */}
       {ROTULO_FAIXA[faixa] && (
+        // eyebrow discreto: o papel já carrega a urgência; o rótulo só a nomeia. Peso 600, 10px,
+        // opacidade cheia (contraste AA medido sobre o fundo da própria faixa — ver FUNDO_FAIXA).
         <div className="mb-[3px] flex items-baseline gap-1.5" title={explicacao}>
           <span
             className={cn(
-              "shrink-0 text-[10.5px] font-semibold uppercase leading-none tracking-[0.07em]",
+              "shrink-0 text-[10px] font-semibold uppercase leading-none tracking-[0.05em]",
               TEXTO_COR_FAIXA[faixa],
             )}
           >
             {ROTULO_FAIXA[faixa]}
           </span>
           {excedente && (
-            <span className={cn("shrink-0 font-mono text-[10px] font-bold leading-none", TEXTO_COR_FAIXA[faixa])}>
+            <span className={cn("shrink-0 font-mono text-[10px] font-medium leading-none opacity-80", TEXTO_COR_FAIXA[faixa])}>
               {excedente}
             </span>
           )}

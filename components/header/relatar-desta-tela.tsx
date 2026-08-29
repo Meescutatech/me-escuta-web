@@ -3,15 +3,18 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 import { FormularioRelato } from "@/components/suporte/formulario-relato";
+import { hrefRelatarProblema } from "@/lib/header/navegacao";
 import type { Papel } from "@/components/configuracoes/regras/canais.ts";
 
 /**
  * RELATAR O PROBLEMA **DESTA TELA** — o ato, não o lugar.
  *
- * Isto NÃO duplica o item "Relatar problema" da sidebar, e a distinção é a metade da resposta que o
- * M5 precisava (§4.3): a sidebar é o **lugar** (`/configuracoes/suporte`, onde a pessoa vê os
- * relatos dela e a conversa com o time); o header é o **ato com contexto**, sem sair da tela. O
+ * F4 (27/08): o item "Relatar problema" SAIU da sidebar; este botão é o único ponto de entrada.
+ * O header continua sendo o **ato com contexto** (a folha, sem sair da tela), e o **lugar**
+ * (`/suporte?de=<rota>`, onde a pessoa vê os relatos dela) virou o link "Meus relatos" no topo da
+ * folha — o contrato `?de=` com a rota real continua valendo, agora a partir daqui. O
  * valor não é o atalho — é que o relato nasce sabendo onde o problema aconteceu, coisa que um
  * formulário três cliques abaixo perde.
  *
@@ -84,6 +87,13 @@ export function RelatarDestaTela({ meuPapel }: { meuPapel: Papel | null }) {
             aria-label="Relatar problema desta tela"
             className="relative flex h-full w-full max-w-[520px] flex-col overflow-y-auto border-l border-linha bg-branco p-5"
           >
+            <Link
+              href={hrefRelatarProblema(pathname)}
+              onClick={() => setAberto(false)}
+              className="mb-3 self-end text-[12.5px] font-medium text-suave underline-offset-2 hover:text-tinta hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45"
+            >
+              Meus relatos
+            </Link>
             {/* A pessoa NÃO SAI DA TELA: ao enviar, a folha fecha e ela continua onde estava. */}
             <FormularioRelato
               rotaAtual={pathname}
