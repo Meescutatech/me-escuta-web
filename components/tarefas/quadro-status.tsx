@@ -295,7 +295,7 @@ export function QuadroStatus({
                     className={cn(
                       "ml-auto rounded-full border px-2 py-px font-mono text-[11.5px] tabular-nums",
                       c.chave === "em_andamento" && lista.length > 0
-                        ? "border-navy bg-[#EAECF5] font-semibold text-navy"
+                        ? "border-navy bg-bolha-out font-semibold text-navy"
                         : "border-linha bg-branco text-suave",
                     )}
                   >
@@ -305,7 +305,7 @@ export function QuadroStatus({
                 <div
                   className={cn(
                     "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[10px] px-0.5 pb-8 pt-px transition-colors",
-                    alvo && "bg-[#EAECF5]/60 outline-dashed outline-1 outline-offset-[-1px] outline-laranja",
+                    alvo && "bg-bolha-out/60 outline-dashed outline-1 outline-offset-[-1px] outline-laranja",
                   )}
                 >
                   {lista.length === 0 ? (
@@ -418,12 +418,12 @@ function Cartao({
       onDragEnd={onDragEnd}
       onClick={onFocar}
       onDoubleClick={() => t.lead_id && router.push(`/funil?lead=${t.lead_id}`)}
-      aria-selected={focado}
+      aria-current={focado ? "true" : undefined}
       className={cn(
         "rounded-[10px] border bg-branco px-3 py-2.5 transition-[opacity,box-shadow,border-color] cursor-grab active:cursor-grabbing",
         t.vencida && !fechada ? "border-vermelho-bd" : "border-linha",
         coluna === "em_andamento" && "border-l-[3px] border-l-navy",
-        focado && "shadow-[0_0_0_2px_#252F63]",
+        focado && "ring-2 ring-navy",
         arrastando && "opacity-40",
         pendenteNaPorta && "opacity-70",
       )}

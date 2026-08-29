@@ -49,9 +49,24 @@ export async function marcarMencaoLida(mencaoId: string): Promise<ResultadoEvent
 export async function marcarNotificacaoLida(chave: string): Promise<ResultadoEvento> {
   const c = chave.trim();
   if (!c) return { ok: false, motivo: "notificação sem chave — recarregue a lista" };
-  const r = await registrarEventoUI("notificacao_lida", { chave: c }, undefined, `lida:${c}`);
+  const r = await registrarEventoUI("notificacao_lida", { chave: c }, undefined, await idExternoLida(c));
   if (r.ok) revalidarSino();
   return r;
+}
+
+/**
+ * id_externo da marca de leitura POR USUÁRIO. A porta dedupa por UNIQUE(origem,id_externo) com
+ * origem fixa 'ui': se a chave fosse só `lida:<chave>`, o segundo usuário a ler a MESMA tarefa
+ * (tarefa reatribuída, admin que também recebe) cairia no dedupe do primeiro — evento dele nunca
+ * nasceria e a notificação ficaria não lida para sempre (achado do verificador, rodada 2). Com o
+ * uid na chave, cada pessoa tem o seu evento e o retry da mesma pessoa continua idempotente.
+ * Sem uid identificável, cai no uuid por ação (a porta segue recusando ator sem usuário).
+ */
+async function idExternoLida(chave: string): Promise<string | undefined> {
+  const { criarClienteServidor } = await import("@/lib/supabase/server");
+  const { data } = await criarClienteServidor().auth.getUser();
+  const uid = data?.user?.id;
+  return uid ? `lida:${uid}:${chave}` : undefined;
 }
 
 /**
@@ -72,7 +87,7 @@ export async function marcarTodasLidas(): Promise<ResultadoEvento> {
   }
   for (const n of tarefas) {
     const chave = `tarefa:${n.tarefa_id}:${n.especie}`;
-    const r = await registrarEventoUI("notificacao_lida", { chave }, undefined, `lida:${chave}`);
+    const r = await registrarEventoUI("notificacao_lida", { chave }, undefined, await idExternoLida(chave));
     if (!r.ok) falha = r.motivo ?? "erro";
   }
   revalidarSino();

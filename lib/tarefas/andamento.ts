@@ -21,8 +21,7 @@ export async function lerEmAndamento(): Promise<EmAndamento> {
       .schema("core")
       .from("v_tarefa")
       .select("id")
-      .eq("em_andamento", true)
-      .limit(500);
+      .eq("em_andamento", true);
     if (error) return { ids: [], disponivel: false };
     return { ids: (data ?? []).map((r: { id: string }) => String(r.id)), disponivel: true };
   } catch {
