@@ -187,6 +187,13 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
   tarefa_prazo_repactuado: { tabela: "tarefa", por: "posicao", coluna: "ultima_posicao" },
   tarefa_arquivada: { tabela: "tarefa", por: "posicao", coluna: "ultima_posicao" },
   tarefa_assumida: { tabela: "tarefa", por: "posicao", coluna: "ultima_posicao" },
+  /*
+   * R27/F8 · quadro por status (0305). `proj_tarefa_andamento` carimba `ultima_posicao` com a
+   * `posicao_global` do evento nos dois tipos — a posição prova que ESTE evento projetou, igual às
+   * outras linhas de tarefa. "Em andamento" é carimbo (`iniciada_em`), nunca um 4º status.
+   */
+  tarefa_iniciada: { tabela: "tarefa", por: "posicao", coluna: "ultima_posicao" },
+  tarefa_reaberta: { tabela: "tarefa", por: "posicao", coluna: "ultima_posicao" },
 
   mencao_criada: { tabela: "mencao", por: "posicao", coluna: "ultima_posicao" },
   mencao_promovida_tarefa: { tabela: "mencao", por: "posicao", coluna: "ultima_posicao" },
@@ -195,6 +202,19 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
     por: "estado",
     chave: "id",
     campoPayload: "mencao_id",
+    naoNulo: "lida_em",
+  },
+  /*
+   * R27/F8 · leitura de notificação de TAREFA (0306). Guardado por ESTADO como `mencao_lida`:
+   * `proj_notificacao_lida` faz `on conflict do nothing` (primeira leitura manda), então remarcar
+   * é no-op correto e a chave é a linha existir com `lida_em`. A RLS da tabela corta por
+   * `usuario_id = auth.uid()`, e o ator do evento é quem lê — a leitura confere a própria linha.
+   */
+  notificacao_lida: {
+    tabela: "notificacao_lida",
+    por: "estado",
+    chave: "chave",
+    campoPayload: "chave",
     naoNulo: "lida_em",
   },
 
