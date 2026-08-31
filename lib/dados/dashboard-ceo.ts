@@ -1,5 +1,6 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { lerFunil } from "./funil";
+import { ensaioDashboardLigado, gerarEnsaioDashboard } from "./dashboard-ensaio";
 import {
   janelaDoPeriodo,
   resumirAgora,
@@ -84,8 +85,30 @@ export async function lerDashboardCeo(
   agora = new Date(),
   cliente?: Supabase,
 ): Promise<DadosDashboardCeo> {
+  const janelaEnsaio = janelaDoPeriodo(periodo, agora);
+  if (ensaioDashboardLigado()) {
+    const en = gerarEnsaioDashboard(agora);
+    const atorDiaF = atorFiltro ? en.atorDia.filter((l) => l.ator === atorFiltro) : en.atorDia;
+    const primeiraF = atorFiltro ? en.primeira.filter((p) => p.respondida_por === atorFiltro) : en.primeira;
+    return {
+      periodo,
+      janela: janelaEnsaio,
+      geradoEm: agora.toISOString(),
+      atorFiltro,
+      atores: en.atores,
+      negocio: somarDiasNegocio(en.dias, janelaEnsaio),
+      serie: serieDiaria(en.dias, en.atorDia, janelaEnsaio, atorFiltro),
+      atendimento: resumirAtendimento(primeiraF, atorDiaF, janelaEnsaio),
+      porAtor: resumirPorAtor(en.atores, en.atorDia, en.primeira, janelaEnsaio, en.conversaAtor),
+      funil: resumirFunil(en.funil, en.etapaDia, janelaEnsaio, atorFiltro),
+      valorNegociacao: valorEmNegociacao(en.funil),
+      agora: null,
+      indisponiveis: [],
+    };
+  }
+
   const supabase = cliente ?? criarClienteServidor();
-  const janela = janelaDoPeriodo(periodo, agora);
+  const janela = janelaEnsaio;
   const indisponiveis: string[] = [];
   const desde = janela.inicioAnterior;
 

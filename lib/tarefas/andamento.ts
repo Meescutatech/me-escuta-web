@@ -1,4 +1,5 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { ensaioTarefasLigado, visaoTarefasDeEnsaio } from "@/lib/dados/tarefas-ensaio";
 
 /**
  * Leitura do "EM ANDAMENTO" (F8 · 0305): os ids das tarefas pendentes com `iniciada_em`.
@@ -15,6 +16,7 @@ export interface EmAndamento {
 }
 
 export async function lerEmAndamento(): Promise<EmAndamento> {
+  if (ensaioTarefasLigado()) return { ids: visaoTarefasDeEnsaio().emAndamento, disponivel: true };
   try {
     const supabase = criarClienteServidor();
     const { data, error } = await supabase

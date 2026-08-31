@@ -1,5 +1,6 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { vencida as vencidaLocal } from "@/lib/dados/tarefa-calculos";
+import { ensaioTarefasLigado, visaoTarefasDeEnsaio } from "./tarefas-ensaio";
 import type { TarefaVisao } from "./tarefas-visao-calculos";
 
 /**
@@ -113,6 +114,10 @@ async function resolverNomesLead(supabase: Supabase, leadIds: string[]): Promise
 }
 
 export async function lerVisaoTarefas(): Promise<DadosVisaoTarefas> {
+  if (ensaioTarefasLigado()) {
+    const { emAndamento: _ignorado, ...dados } = visaoTarefasDeEnsaio();
+    return dados;
+  }
   try {
     const supabase = criarClienteServidor();
     const agoraMs = Date.now();
@@ -146,6 +151,7 @@ export async function lerVisaoTarefas(): Promise<DadosVisaoTarefas> {
  * índice parcial `tarefa_prazo_pendente_idx`). Indisponível = null, nunca zero inventado.
  */
 export async function contarVencidas(): Promise<number | null> {
+  if (ensaioTarefasLigado()) return visaoTarefasDeEnsaio().tarefas.filter((t) => t.vencida).length;
   try {
     const supabase = criarClienteServidor();
     const { count, error } = await supabase
