@@ -8,6 +8,7 @@ import {
   carimboSoHora,
   carimboPrazo,
   destino,
+  ehEspecieDeTarefa,
   naoLida,
   podePromover,
   textoAtraso,
@@ -46,7 +47,7 @@ export function ItemNotificacao({
   const lida = !naoLida(n);
   // F8: a frase conhece `tarefa_vencendo` e a tarefa que o Jarvis criou; o resto delega à antiga
   const { forte, resto } = fraseF8(n);
-  const especie = n.especie as string;
+  const especie = n.especie;
   const atraso = especie === "tarefa_vencida" ? textoAtraso(n.prazo, agoraMs) : "";
   // "vence em 40 min" — a única linha em laranja: é prazo, não atraso (o vermelho fica pro vencido)
   const venceEm = especie === "tarefa_vencendo" ? textoVenceEm(n.prazo, agoraMs) : "";
@@ -103,13 +104,21 @@ export function ItemNotificacao({
           {n.lead_nome && <span className="text-suave">{n.lead_nome}</span>}
           {atraso && <span className="whitespace-nowrap font-semibold text-vermelho">{atraso}</span>}
           {venceEm && <span className="whitespace-nowrap font-semibold text-laranja-esc">{venceEm}</span>}
-          {n.especie === "mencao" ? (
+          {/*
+            O carimbo era escolhido por `especie === "mencao"`: menção mostrava a HORA e TODO o
+            resto caía em `carimboPrazo`. Com o alarme de cobertura — que não tem prazo — isso
+            renderizava a palavra **"sem prazo"** debaixo de um aviso que nunca teve prazo nenhum:
+            a tela afirmando ausência de algo que não se aplica.
+            Agora quem carimba prazo é a ESPÉCIE DE TAREFA; o resto (menção, alarme) carimba quando
+            aconteceu, que é a informação que existe.
+          */}
+          {ehEspecieDeTarefa(especie) ? (
+            <span className="whitespace-nowrap">{carimboPrazo(n.prazo, agoraMs)}</span>
+          ) : (
             <span className="whitespace-nowrap font-mono tabular-nums">
               {/* na expandida o dia já está no cabeçalho do grupo — aqui só a hora */}
               {expandido ? carimboSoHora(n.quando) : carimbo(n.quando, agoraMs)}
             </span>
-          ) : (
-            <span className="whitespace-nowrap">{carimboPrazo(n.prazo, agoraMs)}</span>
           )}
         </span>
       </span>

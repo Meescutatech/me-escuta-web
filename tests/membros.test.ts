@@ -2,15 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   convidadoHa,
+  ehPapel,
   emailConviteValido,
   iniciaisMembro,
   opcoesDePapel,
   ordenarTabela,
+  PAPEIS,
+  PAPEIS_CONVIDAVEIS,
+  papelConvidavelOuPadrao,
   podeEditarFuncao,
   podeGerirMembros,
   podeMudarPapel,
   podeRevogar,
   rotuloPapel,
+  rotuloPapelBruto,
   type ConviteLinha,
   type MembroLinha,
 } from "../lib/membros.ts";
@@ -35,10 +40,44 @@ test("papel: ninguém edita o próprio; o owner é intocável", () => {
   assert.equal(podeMudarPapel("admin", { papel: "owner", souEu: false }), false);
 });
 
-test("papel: owner muda admin<->membro de qualquer um", () => {
+test("papel: owner muda o papel de qualquer não-owner", () => {
   assert.equal(podeMudarPapel("owner", { papel: "admin", souEu: false }), true);
   assert.equal(podeMudarPapel("owner", { papel: "membro", souEu: false }), true);
-  assert.deepEqual(opcoesDePapel("owner", "admin"), ["admin", "membro"]);
+  assert.equal(podeMudarPapel("owner", { papel: "marketing", souEu: false }), true);
+  assert.deepEqual(opcoesDePapel("owner", "admin"), ["admin", "membro", "marketing"]);
+});
+
+test("opcoesDePapel: a opção do papel ATUAL sempre existe — senão o select fica com valor órfão", () => {
+  // Este é o defeito que a lista `["admin","membro"]` do owner causava: para um alvo que JÁ era
+  // `marketing`, o `<select value="marketing">` não tinha `<option>` correspondente e a tela
+  // exibia o papel ERRADO de quem já era marketing. Itera PAPEIS: o quinto papel cai aqui.
+  for (const alvo of PAPEIS) {
+    if (alvo === "owner") continue; // owner não tem select, vira texto fixo
+    assert.ok(
+      opcoesDePapel("owner", alvo).includes(alvo),
+      `owner: sem <option> para alvo ${alvo} — valor órfão no select`,
+    );
+    if (podeMudarPapel("admin", { papel: alvo, souEu: false })) {
+      assert.ok(opcoesDePapel("admin", alvo).includes(alvo), `admin: sem <option> para alvo ${alvo}`);
+    }
+  }
+});
+
+test("quem JÁ é marketing só o owner alcança — mas o admin PROMOVE membro→marketing", () => {
+  // A regra NÃO é "marketing é do owner". Lida do corpo vivo de `api.registrar_evento` em produção
+  // (31/08): para `v_meu_papel = 'admin'` o banco exige
+  //     v_alvo_papel = 'membro' and v_papel_para in ('admin','marketing')
+  // Ou seja, o que trava o admin é o alvo já ter SAÍDO de `membro` — a mesma regra que sempre valeu
+  // para `admin`, e não uma proteção especial do dado de mídia.
+  assert.equal(podeMudarPapel("admin", { papel: "marketing", souEu: false }), false);
+  assert.equal(podeRevogar("admin", { papel: "marketing", souEu: false }), false);
+  assert.equal(podeRevogar("owner", { papel: "marketing", souEu: false }), true);
+  // sem select para o admin, o papel vira texto — e o texto tem que estar certo
+  assert.deepEqual(opcoesDePapel("admin", "marketing"), ["marketing"]);
+  // ⭐ o caso que o BANCO AUTORIZA e a tela tem que oferecer: admin promovendo um membro a marketing.
+  // Sem esta asserção, tirar `marketing` da lista do admin passa despercebido e o Fernando volta a
+  // depender do owner para uma coisa que qualquer admin já pode fazer.
+  assert.ok(opcoesDePapel("admin", "membro").includes("marketing"));
 });
 
 test("papel: admin SÓ promove membro (rebaixar admin é do owner); membro nada", () => {
@@ -65,10 +104,42 @@ test("função: a própria qualquer um edita; a de outro só admin/owner (§3 + 
   assert.equal(podeEditarFuncao("owner", false), true);
 });
 
-test("rótulos PT-BR (nunca a palavra proibida)", () => {
+test("rótulos PT-BR (nunca a palavra proibida) — os QUATRO papéis, sem buraco", () => {
   assert.equal(rotuloPapel("owner"), "Proprietário");
   assert.equal(rotuloPapel("admin"), "Admin");
   assert.equal(rotuloPapel("membro"), "Membro");
+  assert.equal(rotuloPapel("marketing"), "Marketing");
+  // Itera PAPEIS de propósito: um quinto papel entrando na união FAZ ESTE TESTE FALHAR sozinho, em
+  // vez de sair silenciosamente rotulado "Membro" — que é como `marketing` passou despercebido.
+  const rotulos = new Set(PAPEIS.map(rotuloPapel));
+  assert.equal(rotulos.size, PAPEIS.length, "papel sem rótulo próprio caiu no fallback 'Membro'");
+});
+
+test("papel vindo de FORA do type-system: peneira antes de rotular (tela pública de aceite)", () => {
+  for (const p of PAPEIS) {
+    assert.ok(ehPapel(p), p);
+    assert.equal(rotuloPapelBruto(p), rotuloPapel(p), p);
+  }
+  assert.equal(ehPapel("gerente"), false);
+  assert.equal(ehPapel(null), false);
+  // Valor fora do domínio degrada para o de MENOR acesso — nunca para "Admin", nunca para o cru.
+  assert.equal(rotuloPapelBruto("gerente"), "Membro");
+  assert.equal(rotuloPapelBruto(undefined), "Membro");
+});
+
+test("convite: o vocabulário convidável tem marketing e NÃO tem owner", () => {
+  assert.deepEqual([...PAPEIS_CONVIDAVEIS], ["membro", "admin", "marketing"]);
+  // proprietário não nasce de convite: oferecer a opção seria montar ação que a porta recusa
+  assert.ok(!(PAPEIS_CONVIDAVEIS as readonly string[]).includes("owner"));
+});
+
+test("leitura do select de convite: toda opção convidável sobrevive à ida e volta", () => {
+  // O defeito era `(value === "admin" ? "admin" : "membro")`: escolher Marketing devolvia Membro
+  // SEM erro nenhum. Iterar a lista garante que a próxima opção acrescentada seja lida de verdade.
+  for (const p of PAPEIS_CONVIDAVEIS) assert.equal(papelConvidavelOuPadrao(p), p, p);
+  assert.equal(papelConvidavelOuPadrao("owner"), "membro", "owner não é convidável");
+  assert.equal(papelConvidavelOuPadrao(undefined), "membro");
+  assert.equal(papelConvidavelOuPadrao("gerente"), "membro");
 });
 
 test("iniciais: nome composto usa primeira+última; sem nome cai no email", () => {

@@ -3,6 +3,7 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
+import type { PapelConvidavel } from "@/lib/membros";
 
 /**
  * Ações da aba Configurações > Membros (Bloco C).
@@ -100,8 +101,14 @@ async function chamarConvites(caminho: string, corpo: Record<string, unknown>): 
   }
 }
 
-/** Gera o convite por LINK (caminho único da V1) e devolve a URL de aceite pra copiar. */
-export async function gerarLinkConvite(email: string, papel: "admin" | "membro"): Promise<ResultadoConvite> {
+/**
+ * Gera o convite por LINK (caminho único da V1) e devolve a URL de aceite pra copiar.
+ *
+ * `papel` era `"admin" | "membro"` escrito à mão aqui — a terceira cópia do vocabulário. Com
+ * `PapelConvidavel` (fonte única em `lib/membros.ts`), acrescentar papel convidável passa a ser
+ * uma linha lá, e o compilador cobra o resto do caminho em vez de deixar passar em silêncio.
+ */
+export async function gerarLinkConvite(email: string, papel: PapelConvidavel): Promise<ResultadoConvite> {
   return chamarConvites("/admin/convites", { email, papel, canal: "link" });
 }
 

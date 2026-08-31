@@ -3,21 +3,26 @@ import { fraseNotificacao, nomeDoAtor, type Notificacao } from "../../lib/notifi
 /**
  * Regras do sino que a F8 acrescentou (0306/0307), PURAS — o item e o sino só formatam.
  *
- * Por que aqui e não em `lib/notificacoes.ts`: aquele módulo é de outra dona e o tipo `especie`
- * dele é uma união fechada de três valores. A view passou a devolver um quarto
- * (`tarefa_vencendo`) e um `origem_tipo` para tarefa (`jarvis_conversa`, 0298). Este arquivo
- * lê os dois SEM alargar o tipo alheio; quando a união for alargada lá, isto encolhe.
+ * ENCOLHEU em 31/08, como este comentário previa. Ele dizia: "o tipo `especie` de
+ * `lib/notificacoes.ts` é uma união fechada de três valores; este arquivo lê o quarto SEM alargar
+ * o tipo alheio; quando a união for alargada lá, isto encolhe." A união foi alargada (`Especie`,
+ * com `tarefa_vencendo` e `cobertura_atribuicao_degradada`), então o tipo local `EspecieF8` e o
+ * atalho `especieDe(n)` — que só existiam para reler `n.especie as string` — saíram. Lê-se
+ * `n.especie` direto, e agora o compilador cobra cada espécie nova em vez de deixá-la virar
+ * `string`.
  */
 
-/** A espécie como o banco manda — inclui o que a união antiga não conhece. */
-export type EspecieF8 = "mencao" | "tarefa_atribuida" | "tarefa_vencendo" | "tarefa_vencida" | string;
-
-export function especieDe(n: Notificacao): EspecieF8 {
-  return n.especie as string;
-}
-
+/**
+ * ⚠️ PROTEÇÃO ACIDENTAL, e ela é a mesma em três lugares: aqui, em `chaveLeitura` abaixo e em
+ * `app/(app)/notificacoes/actions.ts:79-80` (`marcarTodasLidas`). O alarme só fica de fora da
+ * leitura de tarefa porque hoje ele chega com `tarefa_id` nulo — nenhum dos três testa a ESPÉCIE.
+ * No dia em que uma espécie sem semântica de tarefa trouxer `tarefa_id`, as três caem juntas: o
+ * alarme ganharia botão Concluir e chave `tarefa:<id>:<especie>`. O conserto é trocar o teste por
+ * `ehEspecieDeTarefa(n.especie)` nos três; fica registrado, não feito agora — mexer no caminho de
+ * leitura sem um caso real é reescrever o que não está quebrado.
+ */
 export function ehTarefa(n: Notificacao): boolean {
-  return n.tarefa_id != null && especieDe(n) !== "mencao";
+  return n.tarefa_id != null && n.especie !== "mencao";
 }
 
 /** A tarefa nasceu do Jarvis (payload `origem: jarvis_conversa`, D62) ou de qualquer agente. */
@@ -38,7 +43,7 @@ function nomeDoAgente(n: Notificacao): string {
  * O resto delega para a frase que já existia.
  */
 export function fraseF8(n: Notificacao): { forte: string; resto: string } {
-  const esp = especieDe(n);
+  const esp = n.especie;
   if (esp === "tarefa_vencendo") {
     return { forte: "Tarefa vence em breve", resto: n.titulo ? ` — ${n.titulo}` : "" };
   }
@@ -46,14 +51,16 @@ export function fraseF8(n: Notificacao): { forte: string; resto: string } {
     return { forte: nomeDoAgente(n), resto: " criou uma tarefa para você" };
   }
   if (esp === "tarefa_vencida" || esp === "tarefa_atribuida" || esp === "mencao") return fraseNotificacao(n);
-  // espécie que este cliente ainda não conhece (ex.: alarme): mostra o título, nunca esconde
+  // Alarme e qualquer espécie que a view venha a devolver antes deste cliente saber dela: mostra o
+  // título, nunca esconde. Continua valendo com a união alargada — o servidor pode ir na frente do
+  // cliente em produção, então isto NÃO é código morto por o tipo agora ser fechado.
   return { forte: n.titulo ?? nomeDoAtor(n), resto: "" };
 }
 
 /** A chave que o evento `notificacao_lida` grava — tem a ESPÉCIE, para "vencendo" não herdar leitura. */
 export function chaveLeitura(n: Notificacao): string | null {
   if (!ehTarefa(n)) return null;
-  return `tarefa:${n.tarefa_id}:${especieDe(n)}`;
+  return `tarefa:${n.tarefa_id}:${n.especie}`;
 }
 
 /** "vence em 40 min" / "vence em 1 h" — a linha 2 do aviso de prazo próximo. Vazio fora da janela. */

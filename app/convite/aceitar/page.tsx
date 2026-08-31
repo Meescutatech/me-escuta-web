@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { aceitarConviteAction, validarConvite, type ConviteValidado } from "./actions";
+import { rotuloPapelBruto } from "@/lib/membros";
 
 /**
  * Página PÚBLICA de aceite de convite (/convite/aceitar?token=...). O conhecimento do
@@ -82,7 +83,10 @@ function AceitarConvite() {
           <div>
             <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Você foi convidado</h1>
             <p className="mt-1.5 text-[13.5px] text-suave">
-              Acesso de <strong className="text-tinta">{convite.papel === "admin" ? "Admin" : "Membro"}</strong>
+              {/* Era `papel === "admin" ? "Admin" : "Membro"` — um convite `marketing` anunciava
+                  "Acesso de Membro" no exato momento em que a pessoa decide aceitar. `papel` chega
+                  como `string` cru do runtime, então a peneira e o rótulo vêm da fonte única. */}
+              Acesso de <strong className="text-tinta">{rotuloPapelBruto(convite.papel)}</strong>
               {convite.funcao ? ` · ${convite.funcao}` : ""} para {convite.email_mascarado ?? "seu email"}. Confirme o
               email do convite e crie sua senha.
             </p>

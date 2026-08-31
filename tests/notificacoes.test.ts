@@ -15,6 +15,8 @@ import {
   nomeDoAtor,
   podePromover,
   diaEfetivo,
+  ehEspecieDeTarefa,
+  ESPECIES_DE_TAREFA,
   textoAtraso,
   tituloDoDia,
   type Notificacao,
@@ -161,17 +163,30 @@ test("agruparPorDia ordena por recência e agrupa sem repetir cabeçalho", () =>
   );
 });
 
-test("filtrar: tarefa atribuída e vencida caem juntas em 'tarefas'", () => {
+test("filtrar: a aba Tarefas é a LISTA de espécies de tarefa, não 'tudo que não é menção'", () => {
+  // O teste antigo cristalizava a semântica por negação (`especie !== "mencao"`) e por isso não
+  // falhava quando uma espécie que não é tarefa entrava na aba. `a` é o alarme de cobertura: sem
+  // tarefa, sem prazo, sem botão Concluir — ele pertence a "Todas", nunca a "Tarefas".
   const itens = [
     base({ id: "m", especie: "mencao" }),
     base({ id: "t", especie: "tarefa_atribuida" }),
+    base({ id: "p", especie: "tarefa_vencendo" }),
     base({ id: "v", especie: "tarefa_vencida" }),
+    base({ id: "a", especie: "cobertura_atribuicao_degradada", mencao_id: null, tarefa_id: null }),
     base({ id: "l", especie: "mencao", lida_em: em(21, 9) }),
   ];
-  assert.deepEqual(filtrar(itens, "todas").map((n) => n.id), ["m", "t", "v", "l"]);
+  assert.deepEqual(filtrar(itens, "todas").map((n) => n.id), ["m", "t", "p", "v", "a", "l"]);
   assert.deepEqual(filtrar(itens, "mencoes").map((n) => n.id), ["m", "l"]);
-  assert.deepEqual(filtrar(itens, "tarefas").map((n) => n.id), ["t", "v"]);
-  assert.deepEqual(filtrar(itens, "nao_lidas").map((n) => n.id), ["m", "t", "v"]);
+  assert.deepEqual(filtrar(itens, "tarefas").map((n) => n.id), ["t", "p", "v"]);
+  assert.deepEqual(filtrar(itens, "nao_lidas").map((n) => n.id), ["m", "t", "p", "v", "a"]);
+});
+
+test("ehEspecieDeTarefa: quem carimba prazo é a espécie de tarefa — alarme e menção não", () => {
+  // Falha sozinho quando alguém acrescentar espécie a ESPECIES_DE_TAREFA sem pensar no carimbo.
+  assert.deepEqual([...ESPECIES_DE_TAREFA], ["tarefa_atribuida", "tarefa_vencendo", "tarefa_vencida"]);
+  for (const e of ESPECIES_DE_TAREFA) assert.equal(ehEspecieDeTarefa(e), true, e);
+  assert.equal(ehEspecieDeTarefa("mencao"), false);
+  assert.equal(ehEspecieDeTarefa("cobertura_atribuicao_degradada"), false);
 });
 
 test("maisRecentes corta a lista do popover sem mutar a entrada", () => {

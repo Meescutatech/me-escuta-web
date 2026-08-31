@@ -51,7 +51,13 @@ export interface MembroLinha {
 export interface ConviteLinha {
   id: string;
   email: string;
-  papel: "admin" | "membro";
+  /**
+   * Era `"admin" | "membro"` — o UNICO lugar deste arquivo que reescrevia o vocabulario em vez de
+   * usar `Papel`, e por isso o unico que a `0250` nao alcancou. Um convite `marketing` gravado no
+   * banco chegava aqui como valor fora do tipo. Leitura: a fonte e o CHECK do banco, entao o tipo
+   * daqui e `Papel` inteiro; quem ESCREVE convite usa `PapelConvidavel` (owner nunca nasce de convite).
+   */
+  papel: Papel;
   funcao: string | null;
   criado_em: string;
   expira_em: string;
@@ -67,6 +73,47 @@ export function rotuloPapel(papel: Papel): string {
   return "Membro";
 }
 
+/** `valor` veio de fora do type-system (rede, banco, `<select>`) e pertence ao dominio? */
+export function ehPapel(valor: unknown): valor is Papel {
+  return typeof valor === "string" && (PAPEIS as readonly string[]).includes(valor);
+}
+
+/**
+ * Rótulo a partir de um papel CRU. A tela pública de aceite (`app/convite/aceitar/page.tsx`) lê
+ * `ConviteValidado.papel` como `string` — o runtime devolve o que o banco gravou, sem tipo. Sem
+ * esta peneira a tela cai num ternário `=== "admin" ? "Admin" : "Membro"`, que foi exatamente o
+ * defeito: um convite `marketing` anunciava **"Acesso de Membro"** no instante em que a pessoa
+ * decide aceitar.
+ *
+ * Valor fora do domínio degrada para o papel de MENOR acesso — nunca para um rótulo inventado, e
+ * nunca para o rótulo do papel mais poderoso.
+ */
+export function rotuloPapelBruto(valor: string | null | undefined): string {
+  return ehPapel(valor) ? rotuloPapel(valor) : "Membro";
+}
+
+/**
+ * O que um convite pode conceder. `owner` está fora de propósito: proprietário não nasce de
+ * convite, e oferecê-lo no `<select>` seria montar uma ação que a porta recusa.
+ *
+ * A ordem é a do `<select>` (o padrão primeiro) e a lista é a fonte única das `<option>` —
+ * acrescentar papel aqui acrescenta a opção na tela, e é assim que a próxima adição não repete
+ * o defeito de 22/08: `<option>` nova e leitor do `<select>` desalinhados.
+ */
+export const PAPEIS_CONVIDAVEIS = ["membro", "admin", "marketing"] as const satisfies readonly Papel[];
+export type PapelConvidavel = (typeof PAPEIS_CONVIDAVEIS)[number];
+
+/**
+ * Lê o valor de um `<select>` de papel de convite. Existe porque a leitura anterior era
+ * `(ref.value === "admin" ? "admin" : "membro")`: qualquer `<option>` acrescentada e não prevista
+ * ali virava **"membro" em silêncio** — a pessoa escolhia Marketing, o convite saía Membro, e não
+ * havia erro em lugar nenhum. Aqui, valor fora do domínio cai no padrão porque É o padrão do
+ * `<select>` (`defaultValue="membro"`), não porque foi engolido.
+ */
+export function papelConvidavelOuPadrao(valor: string | null | undefined): PapelConvidavel {
+  return (PAPEIS_CONVIDAVEIS as readonly string[]).includes(valor ?? "") ? (valor as PapelConvidavel) : "membro";
+}
+
 /** Gestão de membros/convites (convidar, reenviar, revogar convite): admin e owner. */
 export function podeGerirMembros(meuPapel: Papel | null): boolean {
   return meuPapel === "admin" || meuPapel === "owner";
@@ -75,9 +122,21 @@ export function podeGerirMembros(meuPapel: Papel | null): boolean {
 /**
  * Select de papel na linha (§3):
  *  - ninguém edita o próprio papel; o papel do owner é fixo ("Proprietário", texto);
- *  - owner: muda admin<->membro de qualquer um;
- *  - admin: só PROMOVE membro -> admin (rebaixar admin é só do owner);
+ *  - owner: muda o papel de qualquer um que não seja owner;
+ *  - admin: só PROMOVE membro -> admin OU marketing (rebaixar é só do owner);
  *  - membro: nada.
+ *
+ * O alvo que JÁ é `marketing` é inalcançável para o admin, e isto aqui está certo — mas a razão não
+ * é a que estava escrita antes ("quem dá acesso a mídia é o proprietário"). Lido do corpo VIVO de
+ * `api.registrar_evento` em produção (31/08):
+ *
+ *     elsif v_meu_papel = 'admin' then
+ *       if not (v_alvo_papel = 'membro' and v_papel_para in ('admin','marketing')) then raise ...
+ *
+ * Ou seja: o banco autoriza o admin a promover **membro -> marketing**; o que ele recusa é mexer em
+ * quem já saiu de `membro`. É a mesma regra que já valia para `admin`, não uma proteção especial do
+ * dado de mídia. A função abaixo bate com isso porque `alvo.papel === "membro"` cobre exatamente o
+ * caso autorizado.
  */
 export function podeMudarPapel(meuPapel: Papel | null, alvo: { papel: Papel; souEu: boolean }): boolean {
   if (alvo.souEu || alvo.papel === "owner") return false;
@@ -86,10 +145,27 @@ export function podeMudarPapel(meuPapel: Papel | null, alvo: { papel: Papel; sou
   return false;
 }
 
-/** Opções que o select de papel pode oferecer para um alvo (já sabendo que é editável). */
+/**
+ * Opções que o select de papel pode oferecer para um alvo (já sabendo que é editável).
+ *
+ * ⚠️ Esta função É o hardcode da promoção — a `<option>` da tela sai daqui. Enquanto ela devolvia
+ * `["admin", "membro"]` para o owner, dois defeitos andavam juntos: ninguém conseguia conceder
+ * `marketing` pela interface (o Fernando só ganhava acesso virando `admin`, o que lhe entrega TODO
+ * lead, conversa e dado de paciente), e o alvo que JÁ era `marketing` renderizava um
+ * `<select value="marketing">` sem `<option>` correspondente — **valor órfão: a tela exibia o papel
+ * errado de quem já era marketing**.
+ *
+ * A lista do owner tem que conter todo papel não-owner alcançável por ele, senão o órfão volta.
+ *
+ * 🔴 A do admin também inclui `marketing`, e isso foi conferido contra o banco, não deduzido: o corpo
+ * vivo de `api.registrar_evento` em produção autoriza `v_alvo_papel = 'membro' and v_papel_para in
+ * ('admin','marketing')` para quem é admin. Deixar `marketing` de fora aqui criava o pior dos dois
+ * mundos — o banco aceitaria a promoção e a interface não a ofereceria, então o Fernando continuaria
+ * dependendo do owner para uma coisa que qualquer admin já podia fazer.
+ */
 export function opcoesDePapel(meuPapel: Papel | null, papelAlvo: Papel): Papel[] {
-  if (meuPapel === "owner") return ["admin", "membro"];
-  if (meuPapel === "admin" && papelAlvo === "membro") return ["admin", "membro"]; // só promover de fato
+  if (meuPapel === "owner") return ["admin", "membro", "marketing"];
+  if (meuPapel === "admin" && papelAlvo === "membro") return ["admin", "membro", "marketing"];
   return [papelAlvo];
 }
 
@@ -137,6 +213,8 @@ export function ordenarTabela(membros: MembroLinha[], convites: ConviteLinha[]):
   ativos: MembroLinha[];
   pendentes: ConviteLinha[];
 } {
+  // `marketing` cai no mesmo degrau de `membro` (2) — a ordenação é por alcance de gestão, e
+  // marketing não gere ninguém. Dentro do degrau desempata o nome, então a lista fica estável.
   const peso = (p: Papel) => (p === "owner" ? 0 : p === "admin" ? 1 : 2);
   const ativos = [...membros]
     .filter((m) => m.ativo)

@@ -10,10 +10,34 @@
  *  - contador não vira "9+": mostra o número.
  */
 
+/**
+ * As espécies que `core.v_notificacao` devolve HOJE.
+ *
+ * A união listava três (`mencao`, `tarefa_atribuida`, `tarefa_vencida`) e a view já devolvia mais:
+ * `tarefa_vencendo` desde a F8 (0306/0307) e `cobertura_atribuicao_degradada` (o alarme). O efeito
+ * de mentir aqui não era erro de compilação em lugar nenhum — era `components/notificacoes/regras.ts`
+ * ter que reler `n.especie as string` para enxergar o que o tipo escondia, e o comentário de lá
+ * (§6-10) registrar que "quando a união for alargada, isto encolhe". É este o alargamento.
+ *
+ * `ESPECIES_DE_TAREFA` é o subconjunto que tem TAREFA atrás: é o que carimba prazo e é o que a aba
+ * Tarefas mostra. O alarme não está nele de propósito — não é tarefa, não tem prazo, e não tem
+ * botão Concluir.
+ */
+export const ESPECIES_DE_TAREFA = ["tarefa_atribuida", "tarefa_vencendo", "tarefa_vencida"] as const;
+
+export type Especie =
+  | "mencao"
+  | (typeof ESPECIES_DE_TAREFA)[number]
+  | "cobertura_atribuicao_degradada";
+
+export function ehEspecieDeTarefa(especie: Especie): boolean {
+  return (ESPECIES_DE_TAREFA as readonly string[]).includes(especie);
+}
+
 /** Uma linha de core.v_notificacao. */
 export interface Notificacao {
   id: string;
-  especie: "mencao" | "tarefa_atribuida" | "tarefa_vencida";
+  especie: Especie;
   quando: string; // ISO
   lida_em: string | null;
   lead_id: string | null;
@@ -173,7 +197,12 @@ export function filtrar(itens: readonly Notificacao[], filtro: Filtro): Notifica
     case "mencoes":
       return itens.filter((n) => n.especie === "mencao");
     case "tarefas":
-      return itens.filter((n) => n.especie !== "mencao");
+      // Era `especie !== "mencao"` — a aba definida por NEGAÇÃO. Toda espécie nova caía em Tarefas
+      // por omissão, e foi o que aconteceu com `cobertura_atribuicao_degradada`: um alarme de
+      // cobertura, que não tem tarefa nem prazo nem botão Concluir, aparecia na aba de tarefas
+      // porque ninguém o excluiu. Lista explícita: espécie nova só entra aqui quando alguém disser
+      // que ela é tarefa. O alarme continua visível em "Todas" e em "Não lidas".
+      return itens.filter((n) => ehEspecieDeTarefa(n.especie));
     default:
       return [...itens];
   }

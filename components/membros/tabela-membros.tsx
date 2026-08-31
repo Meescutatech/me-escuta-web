@@ -8,6 +8,8 @@ import {
   iniciaisMembro,
   opcoesDePapel,
   ordenarTabela,
+  papelConvidavelOuPadrao,
+  PAPEIS_CONVIDAVEIS,
   podeEditarFuncao,
   podeGerirMembros,
   podeMudarPapel,
@@ -79,7 +81,11 @@ export function TabelaMembros({
 
   function gerarLink() {
     const email = emailRef.current?.value.trim().toLowerCase() ?? "";
-    const papel = (papelRef.current?.value === "admin" ? "admin" : "membro") as "admin" | "membro";
+    // Era `(value === "admin" ? "admin" : "membro")`: um ternário que traduzia TODA opção não
+    // prevista para "membro" sem erro nenhum. Acrescentar a `<option value="marketing">` sem
+    // consertar esta linha faria a pessoa escolher Marketing e receber Membro — em silêncio, com
+    // a tela confirmando o convite. O leitor tem que sair da MESMA lista que monta as opções.
+    const papel = papelConvidavelOuPadrao(papelRef.current?.value);
     if (!emailConviteValido(email)) {
       setErro("informe um email válido");
       return;
@@ -149,8 +155,11 @@ export function TabelaMembros({
               defaultValue="membro"
               className="h-[34px] cursor-pointer appearance-none rounded-md border border-linha bg-branco pl-2.5 pr-7 text-[13px] text-tinta"
             >
-              <option value="membro">Membro</option>
-              <option value="admin">Admin</option>
+              {PAPEIS_CONVIDAVEIS.map((p) => (
+                <option key={p} value={p}>
+                  {rotuloPapel(p)}
+                </option>
+              ))}
             </select>
             <span aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 h-1.5 w-1.5 -translate-y-[70%] rotate-45 border-b-[1.5px] border-r-[1.5px] border-suave" />
           </span>
