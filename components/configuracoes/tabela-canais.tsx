@@ -14,8 +14,10 @@ import {
   colunasVisiveis,
   avisoDesativacao,
   estadoDoCanal,
+  opcoesDepartamento,
   ordenarCanais,
   podeGerirCanais,
+  rotuloDepartamento,
   rotuloEstadoCanal,
   rotuloFinalidade,
   semProblemas,
@@ -27,6 +29,7 @@ import {
   type Papel,
   type Provedor,
 } from "./regras/canais.ts";
+import type { Departamento } from "@/lib/departamentos/escopo";
 import { PainelSessao } from "./painel-sessao";
 import { BTN, BarraPublicacao, BlocoVazio, Cabecalho, Dialogo, ENTRADA, Faixa, Fantasma } from "./kit";
 
@@ -51,30 +54,47 @@ export interface CanalNaTela extends Canal {
 }
 
 /**
- * ⚠ VOCABULÁRIO INVENTADO, e fica aqui até o M8 trocá-lo — isto NÃO é endosso.
+ * ✅ R22/A1 · A CONSTANTE MORREU AQUI (D22-1, e paga a ARB-R18-02).
  *
- * Esta lista é byte a byte a do mockup `numeros-whatsapp-r10.html`, que provavelmente é a origem
- * dela. Medido em produção: `financeiro` não existe em lugar nenhum, e `clinica` × `clinico` é
- * divergência real. Ou seja: **mockup e código concordam entre si e divergem só do banco** — quem
- * abrir os dois encontra duas fontes coerentes e nenhuma correta, e sai mais confiante do que
- * entrou.
+ * O que havia neste lugar era um array de QUATRO strings, copiado byte a byte do mockup
+ * `numeros-whatsapp-r10.html`. Os quatro valores estão preservados no commit que os removeu e no
+ * `ESTADO-R22.md` §2 (B1) — deliberadamente NÃO repetidos aqui, porque o portão de `grep` não
+ * distingue comentário de código, e um literal citado é exatamente como alguém o cola de volta.
+ * Medido no banco: dois deles não eram chave de nada (um era sinônimo, o outro nem existia) e os
+ * outros dois eram nós de agrupamento, que a porta RECUSA desde o M8. Quatro opções, quatro erradas.
  *
- * O M8 substitui este `<select>` por `core.v_departamento` (config, não constante) e entra neste
- * arquivo como SEGUNDO commit (ARB-R18-02). Não mexo: não é meu, e consertar por conta própria
- * criaria uma TERCEIRA versão do vocabulário. O que cabe a mim é deixar a armadilha nomeada.
+ * O efeito perverso estava escrito no próprio comentário que aqui existia, e era preciso: *"mockup
+ * e código concordam entre si e divergem só do banco — quem abrir os dois encontra duas fontes
+ * coerentes e nenhuma correta, e sai mais confiante do que entrou."*
+ *
+ * O domínio agora vem de `core.v_departamento` pelo servidor (`lerDominioDepartamentos`), desce por
+ * prop, e a regra de quais nós são ESCOLHÍVEIS vive em `regras/canais.ts` (`opcoesDepartamento`),
+ * junto do resto das regras puras — não aqui, no componente.
+ *
+ * ⚠ Não recriar uma lista de departamentos neste arquivo, em nenhuma forma. `tests/canais.test.ts`
+ * varre o repositório inteiro e fica VERMELHO se ela voltar — a guarda é `grep`, não revisão
+ * humana, porque isto já aconteceu uma vez.
  */
-const AREAS = ["comercial", "clinica", "financeiro", "pos_venda"];
 
 export function TabelaCanais({
   canais,
   meuPapel,
   indisponivel,
   f8Pronto,
+  departamentos,
+  dominioIndisponivel,
+  r22Legivel,
 }: {
   canais: CanalNaTela[];
   meuPapel: Papel | null;
   indisponivel: boolean;
   f8Pronto: boolean;
+  /** R22/A1 · o domínio vindo de `core.v_departamento`, já ordenado. Nunca uma constante local. */
+  departamentos: Departamento[];
+  /** `true` = a view de departamento não respondeu. O `<select>` diz isso e não oferece nada. */
+  dominioIndisponivel: boolean;
+  /** `false` = a coluna `departamento` não existe nesta base (0130 não aplicada). */
+  r22Legivel: boolean;
 }) {
   const router = useRouter();
   const gestor = podeGerirCanais(meuPapel);
@@ -102,7 +122,7 @@ export function TabelaCanais({
     // M7 / ARB-R18-05 · `finalidade` entra antes de Provedor e NÃO é condicional a valor único.
     cols.finalidade ? "110px" : null,
     cols.provedor ? "96px" : null,
-    cols.area ? "104px" : null,
+    cols.departamento ? "104px" : null,
     "182px",
     "28px",
   ]
@@ -187,6 +207,8 @@ export function TabelaCanais({
           aoFechar={() => setAbrindo(false)}
           aoErro={setErro}
           aoAviso={setAviso}
+          departamentos={departamentos}
+          dominioIndisponivel={dominioIndisponivel}
         />
       ) : null}
 
@@ -199,7 +221,7 @@ export function TabelaCanais({
           <span>Número</span>
           {cols.finalidade ? <span>Finalidade</span> : null}
           {cols.provedor ? <span>Provedor</span> : null}
-          {cols.area ? <span>Área</span> : null}
+          {cols.departamento ? <span>Departamento</span> : null}
           <span>Estado</span>
           <span />
         </div>
@@ -235,6 +257,8 @@ export function TabelaCanais({
               canal={c}
               grade={grade}
               cols={cols}
+              departamentos={departamentos}
+              r22Legivel={r22Legivel}
               gestor={gestor}
               pendente={pendente}
               expandido={expandido === c.canal_id}
@@ -291,10 +315,14 @@ function LinhaCanal({
   aoAtivar,
   meuPapel,
   f8Pronto,
+  departamentos,
+  r22Legivel,
 }: {
   canal: CanalNaTela;
   grade: string;
-  cols: { provedor: boolean; area: boolean; finalidade: boolean; consentimento: boolean };
+  departamentos: Departamento[];
+  r22Legivel: boolean;
+  cols: { provedor: boolean; departamento: boolean; finalidade: boolean; consentimento: boolean };
   gestor: boolean;
   pendente: boolean;
   expandido: boolean;
@@ -369,9 +397,28 @@ function LinhaCanal({
             </span>
           </div>
         ) : null}
-        {cols.area ? (
+        {cols.departamento ? (
           <div className="flex min-h-[30px] items-center self-center">
-            <span className="text-[13px] text-suave">{canal.area_efetiva ?? "comercial"}</span>
+            {/* RÓTULO, nunca a chave: `Pré-venda`, não `pre_venda`. Chave é identificador de banco,
+                e a gestora não deveria precisar aprendê-la para usar a tela. Sem departamento a
+                célula fica ÂMBAR e diz "não declarado" — é o mesmo tratamento de `finalidade`
+                ausente, porque as duas ausências são aviso, não metadado. */}
+            {canal.departamento ? (
+              <span className="text-[13px] text-suave">
+                {rotuloDepartamento(canal.departamento, departamentos)}
+              </span>
+            ) : (
+              <span
+                className="rounded-full bg-amarelo/12 px-2 py-0.5 text-[12px] font-semibold text-amarelo"
+                title={
+                  r22Legivel
+                    ? "este número não declara departamento — enquanto não declarar, ninguém sabe qual time responde por ele"
+                    : "esta base ainda não tem a coluna `departamento` (migration 0130 não aplicada) — a tela não sabe, e não supõe"
+                }
+              >
+                Não declarado
+              </span>
+            )}
           </div>
         ) : null}
         <div className="flex min-h-[30px] items-center gap-2 self-center">
@@ -452,10 +499,14 @@ function BlocoAdicionar({
   aoFechar,
   aoErro,
   aoAviso,
+  departamentos,
+  dominioIndisponivel,
 }: {
   aoFechar: () => void;
   aoErro: (m: string | null) => void;
   aoAviso: (m: string) => void;
+  departamentos: Departamento[];
+  dominioIndisponivel: boolean;
 }) {
   const router = useRouter();
   const [provedor, setProvedor] = useState<Provedor>("waba");
@@ -465,7 +516,10 @@ function BlocoAdicionar({
     provedor: "waba",
     numeroE164: "",
     wabaId: "",
-    area: "comercial",
+    // R22/A1 · NASCE VAZIO, como `finalidade`. `"comercial"` era o valor de antes — e `comercial` é
+    // nó de agrupamento, que a porta RECUSA desde o M8. O default conveniente não era só feio:
+    // era o único valor que o banco não aceita.
+    departamento: "",
     // sem valor: quem cadastra é quem sabe. Ver o campo lá embaixo.
     finalidade: "",
   });
@@ -587,16 +641,35 @@ function BlocoAdicionar({
             <option value="producao">Produção — fala com paciente</option>
           </select>
         </Campo>
-        <Campo rotulo="Área">
-          <select
-            className={ENTRADA}
-            value={form.area}
-            onChange={(e) => setForm({ ...form, area: e.target.value })}
-          >
-            {AREAS.map((a) => (
-              <option key={a}>{a}</option>
-            ))}
-          </select>
+        {/* R22/A1 · O `<select>` que lê o BANCO.
+            Os 7 nós aparecem com a hierarquia inteira, e só as 5 FOLHAS são escolhíveis —
+            `comercial` e `pos_venda` entram desabilitados, como cabeçalho. Não é enfeite: a porta
+            recusa nó de agrupamento (GUARDA:M8:escrita_so_em_folha, herdada pela VD1 da 0130), e
+            oferecer o que será recusado faria a recusa ser a primeira notícia. Esconder os pais
+            também não serve: sem eles, cinco folhas chegam como uma lista plana e a árvore que
+            explica os nomes some da tela. */}
+        <Campo rotulo="Departamento">
+          {dominioIndisponivel ? (
+            <p className="text-[12.5px] text-amarelo">
+              Não deu para ler os departamentos do banco agora. O número pode ser cadastrado sem
+              departamento e declarado depois — o campo é opcional, e “não declarado” é um estado
+              honesto. Escolher às cegas não é.
+            </p>
+          ) : (
+            <select
+              className={ENTRADA}
+              value={form.departamento}
+              onChange={(e) => setForm({ ...form, departamento: e.target.value })}
+            >
+              <option value="">— não declarado —</option>
+              {opcoesDepartamento(departamentos).map((o) => (
+                <option key={o.chave} value={o.chave} disabled={!o.selecionavel}>
+                  {o.nivel > 1 ? `\u00a0\u00a0\u00a0\u00a0${o.rotulo}` : o.rotulo}
+                  {o.selecionavel ? "" : " (agrupamento)"}
+                </option>
+              ))}
+            </select>
+          )}
         </Campo>
       </div>
 

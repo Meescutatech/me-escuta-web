@@ -44,6 +44,7 @@ function canal(p: Partial<Canal> = {}): Canal {
     numero: null,
     waba_id: null,
     area_efetiva: "comercial",
+    departamento: null,
     pareado_em: null,
     consentimento_em: "2026-07-26T12:00:00Z",
     consentimento_titular: "Jade",

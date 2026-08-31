@@ -159,6 +159,56 @@ export async function lerEstadoEscopo(): Promise<EstadoEscopo> {
 }
 
 /**
+ * R22/A1 · O DOMÍNIO DE DEPARTAMENTO, para quem precisa OFERECER a escolha (a tela de canais).
+ *
+ * NÃO é `lerEstadoEscopo`, e a diferença é o item: aquela devolve o que ESTA PESSOA vê (escopo, com
+ * o fail-closed do `clinico`); esta devolve o DOMÍNIO — todos os departamentos ativos. Um número de
+ * WhatsApp pertence à empresa, não a quem está olhando a tela: recortar o domínio pelo vínculo do
+ * operador faria a lista de destinos mudar de tamanho conforme quem abre a tela, e o `<select>`
+ * ficaria mentindo sobre o que existe. O recorte por pessoa é escopo de LEITURA (T-a), outra coisa.
+ *
+ * `indisponivel` é estado próprio e nunca lista vazia: sem a view, a tela diz que não conseguiu ler
+ * o domínio, em vez de oferecer um `<select>` sem opção nenhuma — que é indistinguível de "não há
+ * departamento" e foi exatamente a família de defeito que o M7 pagou caro (`m7Legivel`).
+ */
+export interface DominioDepartamento {
+  /** Ativos, já na ordem de exibição (nível 1, filhos logo abaixo do pai). */
+  departamentos: Departamento[];
+  /** `true` = a view não respondeu. A tela DIZ isso; não finge domínio vazio. */
+  indisponivel: boolean;
+}
+
+export async function lerDominioDepartamentos(
+  opcoes: { cliente?: ReturnType<typeof criarClienteServidor> } = {},
+): Promise<DominioDepartamento> {
+  try {
+    const supabase = opcoes.cliente ?? criarClienteServidor();
+    const { data, error } = await supabase
+      .schema("core")
+      .from("v_departamento")
+      .select("chave,rotulo,pai,nivel,ativo,entrada,ordem");
+    if (error || !data) return { departamentos: [], indisponivel: true };
+
+    const deps: Departamento[] = (data as any[])
+      .map((d) => ({
+        chave: String(d.chave),
+        rotulo: String(d.rotulo ?? d.chave),
+        pai: d.pai ? String(d.pai) : null,
+        nivel: Number(d.nivel ?? (d.pai ? 2 : 1)),
+        ativo: d.ativo !== false,
+        entrada: d.entrada === true,
+        ordem: Number(d.ordem ?? 0),
+      }))
+      .filter((d) => d.ativo);
+
+    if (deps.length === 0) return { departamentos: [], indisponivel: true };
+    return { departamentos: ordenar(deps), indisponivel: false };
+  } catch {
+    return { departamentos: [], indisponivel: true };
+  }
+}
+
+/**
  * A chave é válida PARA ESTA PESSOA? É a pergunta que a server action de troca faz antes de gravar
  * o cookie — e é o único caminho de escrita do escopo. Não existe `document.cookie` no cliente para
  * isto: se o cliente gravasse, o servidor validaria depois de já ter renderizado, e o rótulo

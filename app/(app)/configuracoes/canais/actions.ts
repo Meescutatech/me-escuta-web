@@ -45,9 +45,18 @@ export async function registrarCanal(form: FormCanal): Promise<ResultadoAcao> {
   });
 }
 
+/**
+ * R22/A1 · `area` SAIU desta assinatura, e a saída não é cosmética.
+ *
+ * Enquanto ela ficasse aqui, o campo seria aceito e DESCARTADO em silêncio: `payloadCanalAtualizado`
+ * passou a emitir `departamento`, e `{ area }` continuaria compilando porque TypeScript só faz
+ * checagem de propriedade excedente sobre literal de objeto — um `patch` vindo de variável passaria
+ * limpo e o evento sairia sem departamento nenhum. Chamador que ainda mande `area` agora quebra o
+ * `tsc`, que é onde esse tipo de engano deve aparecer.
+ */
 export async function atualizarCanal(
   canalId: string,
-  patch: { nome?: string; numeroE164?: string; wabaId?: string; area?: string },
+  patch: { nome?: string; numeroE164?: string; wabaId?: string; departamento?: string },
 ): Promise<ResultadoAcao> {
   if (Object.keys(patch).length === 0) {
     return { ok: false, motivo: "nada para atualizar", classe: "recusa" };
