@@ -63,7 +63,7 @@ export function GraficoBarras({
         aria-labelledby={`${id}-t`}
         onMouseLeave={() => setHover(null)}
       >
-        <title id={`${id}-t`}>{series.map((s) => s.rotulo).join(" e ")} por dia</title>
+        <title id={`${id}-t`}>{`${series.map((s) => s.rotulo).join(" e ")} por dia`}</title>
         {/* grade recessiva */}
         {[0.5, 1].map((f) => (
           <line
