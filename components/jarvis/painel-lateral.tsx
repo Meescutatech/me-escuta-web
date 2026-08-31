@@ -54,12 +54,8 @@ export function PainelLateralJarvis({
 
   return (
     <div className="fixed inset-0 z-50" role="presentation">
-      <button
-        type="button"
-        aria-label="Fechar o Jarvis"
-        onClick={onFechar}
-        className="absolute inset-0 bg-tinta/20"
-      />
+      {/* clique fora fecha; SEM escurecer a tela — o painel se sobrepõe e nada por baixo se move */}
+      <button type="button" aria-label="Fechar o Jarvis" onClick={onFechar} className="absolute inset-0 cursor-default bg-transparent" />
       <div
         ref={caixa}
         role="dialog"

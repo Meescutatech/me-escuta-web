@@ -75,6 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         notificacoes={notificacoes.itens}
         notificacoesDisponiveis={notificacoes.disponivel}
         email={user.email ?? "usuario"}
+        usuarioId={user.id}
         nome={nome}
         meuPapel={papel}
       />

@@ -68,6 +68,7 @@ export function Header({
   email,
   nome,
   meuPapel,
+  usuarioId,
 }: {
   departamentos: Departamento[];
   ativo: Departamento | null;
@@ -78,6 +79,7 @@ export function Header({
   email: string;
   nome: string | null;
   meuPapel: Papel | null;
+  usuarioId: string;
 }) {
   const pathname = usePathname();
   const titulo = lerTituloDaRota(pathname);
@@ -132,7 +134,7 @@ export function Header({
           fallback ocupa a mesma caixa para o header não pular.
         */}
         <Suspense fallback={<span aria-hidden className="h-8 w-8" />}>
-          <JarvisGatilho />
+          <JarvisGatilho usuarioId={usuarioId} papel={meuPapel} />
         </Suspense>
 
         <RelatarDestaTela meuPapel={meuPapel} />

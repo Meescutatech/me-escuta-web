@@ -127,7 +127,7 @@ test("menu do avatar é role=menu com menuitems, fecha com Esc e tem Configuraç
 });
 
 test("header tem o gatilho do Jarvis ao lado do sino e o Relatar problema desta tela", () => {
-  assert.match(header, /<JarvisGatilho \/>/);
+  assert.match(header, /<JarvisGatilho usuarioId=\{usuarioId\} papel=\{meuPapel\} \/>/);
   assert.match(header, /<RelatarDestaTela/);
   assert.ok(header.indexOf("<JarvisGatilho") < header.indexOf("<Sino"), "Jarvis vem antes do sino");
   assert.ok(!/data-slot="jarvis"/.test(header), "o slot vazio foi ocupado");

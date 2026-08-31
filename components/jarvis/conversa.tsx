@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
-  fraseDoContexto,
   lerEventosSse,
   rotuloFerramenta,
   sugestoesPorContexto,
@@ -192,7 +191,6 @@ export function ConversaJarvis({
   // aborta o stream se o componente sair da tela
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const frase = useMemo(() => fraseDoContexto(contexto), [contexto]);
   const sugestoes = useMemo(() => sugestoesPorContexto(contexto, papel), [contexto, papel]);
 
   const enviar = useCallback(
@@ -295,39 +293,90 @@ export function ConversaJarvis({
   const vazio = pronto && mensagens.length === 0;
   const px = compacto ? "px-4" : "px-6";
 
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-branco">
-      {/* faixa de contexto — uma linha, some com um clique */}
-      {frase && (
-        <div className={cn("flex items-center gap-2 border-b border-linha py-2 text-[12.5px] text-suave", px)}>
-          <span aria-hidden className="h-1.5 w-1.5 flex-none rounded-full bg-laranja" />
-          <span className="truncate">{frase}</span>
+  // O composer é UM, renderizado em dois lugares: no centro (conversa nova, como se abre uma folha
+  // em branco) ou no rodapé (conversa andando). O contexto da tela continua indo no pedido — ele só
+  // não vira faixa na interface: quem pergunta "quantos estão parados?" DE DENTRO do funil recebe a
+  // resposta do funil, sem precisar ler onde está.
+  const composer = (central: boolean) => (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void enviar(texto);
+      }}
+      className={cn("w-full", central ? "max-w-[560px]" : "mx-auto max-w-[640px]")}
+    >
+      <div className="flex items-end gap-1.5 rounded-[26px] border border-linha bg-branco py-1.5 pl-4 pr-1.5 shadow-[0_1px_3px_rgba(31,35,40,.07)] transition-colors focus-within:border-foco-comp">
+        <textarea
+          ref={inputRef}
+          rows={1}
+          value={texto}
+          onChange={(e) => {
+            setTexto(e.target.value);
+            const el = e.target;
+            el.style.height = "auto";
+            el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+          }}
+          onKeyDown={aoTeclar}
+          placeholder="Pergunte ao Jarvis"
+          aria-label="Pergunta para o Jarvis"
+          disabled={!pronto}
+          className="max-h-[160px] min-h-[38px] flex-1 resize-none bg-transparent py-2 text-[14.5px] leading-[1.5] text-tinta outline-none placeholder:text-mute"
+        />
+        {enviando ? (
           <button
             type="button"
-            onClick={() => setContexto({ rota: "/", busca: null, lead_id: null, conversa_id: null })}
-            className="ml-auto rounded px-1.5 py-0.5 text-[12px] text-mute outline-none hover:bg-hover hover:text-tinta focus-visible:ring-2 focus-visible:ring-laranja"
-            aria-label="Conversar sem o contexto da tela"
+            onClick={() => abortRef.current?.abort()}
+            aria-label="Parar a resposta"
+            className="grid h-9 w-9 flex-none place-items-center rounded-full border-[1.5px] border-borda-forte text-suave outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-laranja"
           >
-            sem contexto
+            <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current" aria-hidden>
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!texto.trim() || !pronto}
+            aria-label="Enviar"
+            className="grid h-9 w-9 flex-none place-items-center rounded-full bg-laranja text-branco outline-none hover:bg-laranja-esc focus-visible:ring-2 focus-visible:ring-laranja focus-visible:ring-offset-2 disabled:opacity-40"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current" fill="none" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 19V5M5 12l7-7 7 7" />
+            </svg>
+          </button>
+        )}
+      </div>
+      {!central && (
+        <div className="mt-1.5 flex justify-end">
+          <button
+            type="button"
+            onClick={novaConversa}
+            className="rounded px-1.5 py-0.5 text-[11.5px] text-mute outline-none hover:bg-hover hover:text-tinta focus-visible:ring-2 focus-visible:ring-laranja"
+          >
+            Nova conversa
           </button>
         </div>
       )}
+    </form>
+  );
 
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-branco">
       {/* lista */}
       <div ref={listaRef} className={cn("min-h-0 flex-1 overflow-y-auto", px, compacto ? "py-4" : "py-6")} aria-live="polite" aria-busy={enviando}>
         {vazio ? (
-          <div className={cn("mx-auto flex h-full max-w-[640px] flex-col justify-end gap-4", compacto ? "pb-2" : "pb-6")}>
-            <div className="flex items-center gap-2.5">
-              <AvatarJarvis />
-              <p className="text-[14px] text-suave">Pergunte sobre o funil, uma conversa, as tarefas ou os números.</p>
-            </div>
-            <ul className="flex flex-wrap gap-2" aria-label="Sugestões">
+          <div className={cn("mx-auto flex h-full w-full max-w-[640px] flex-col items-center justify-center", compacto ? "gap-5" : "gap-6")}>
+            <h2 className={cn("text-balance text-center font-[650] tracking-[-0.01em] text-tinta", compacto ? "text-[20px]" : "text-[28px]")}>
+              Por onde começamos?
+            </h2>
+            {composer(true)}
+            <ul className="flex flex-wrap justify-center gap-2" aria-label="Sugestões">
               {sugestoes.map((s) => (
                 <li key={s}>
                   <button
                     type="button"
                     onClick={() => void enviar(s)}
-                    className="rounded-full border border-linha bg-branco px-3 py-1.5 text-[13px] text-tinta outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-laranja focus-visible:ring-offset-2"
+                    className="rounded-full border border-linha bg-branco px-3 py-1.5 text-[13px] text-suave outline-none hover:bg-hover hover:text-tinta focus-visible:ring-2 focus-visible:ring-laranja focus-visible:ring-offset-2"
                   >
                     {s}
                   </button>
@@ -372,65 +421,8 @@ export function ConversaJarvis({
         )}
       </div>
 
-      {/* composer fixo embaixo */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void enviar(texto);
-        }}
-        className={cn("border-t border-linha bg-branco", px, compacto ? "py-3" : "py-4")}
-      >
-        <div className="mx-auto flex max-w-[640px] items-end gap-2 rounded-[12px] border border-linha bg-branco p-2 focus-within:border-foco-comp">
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={texto}
-            onChange={(e) => {
-              setTexto(e.target.value);
-              const el = e.target;
-              el.style.height = "auto";
-              el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-            }}
-            onKeyDown={aoTeclar}
-            placeholder="Pergunte ao Jarvis"
-            aria-label="Pergunta para o Jarvis"
-            disabled={!pronto}
-            className="max-h-[160px] min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[14px] leading-[1.5] text-tinta outline-none placeholder:text-mute"
-          />
-          {enviando ? (
-            <button
-              type="button"
-              onClick={() => abortRef.current?.abort()}
-              className="h-9 rounded-md border-[1.5px] border-borda-forte px-3 text-[13px] font-semibold text-suave outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-laranja"
-            >
-              Parar
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={!texto.trim() || !pronto}
-              aria-label="Enviar"
-              className="grid h-9 w-9 place-items-center rounded-md bg-laranja text-branco outline-none hover:bg-laranja-esc focus-visible:ring-2 focus-visible:ring-laranja focus-visible:ring-offset-2 disabled:opacity-40"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current" fill="none" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 19V5M5 12l7-7 7 7" />
-              </svg>
-            </button>
-          )}
-        </div>
-        <div className="mx-auto mt-1.5 flex max-w-[640px] items-center justify-between text-[11.5px] text-mute">
-          <span>Enter envia · Shift+Enter quebra linha</span>
-          {mensagens.length > 0 && (
-            <button
-              type="button"
-              onClick={novaConversa}
-              className="rounded px-1.5 py-0.5 outline-none hover:bg-hover hover:text-tinta focus-visible:ring-2 focus-visible:ring-laranja"
-            >
-              Nova conversa
-            </button>
-          )}
-        </div>
-      </form>
+      {/* composer no rodapé — só quando a conversa já anda; a folha em branco o tem no centro */}
+      {!vazio && <div className={cn("bg-branco", px, compacto ? "pb-3 pt-1" : "pb-4 pt-1")}>{composer(false)}</div>}
     </div>
   );
 }
