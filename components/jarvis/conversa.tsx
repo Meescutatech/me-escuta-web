@@ -406,7 +406,16 @@ export function ConversaJarvis({
                     {m.texto ? (
                       <Texto texto={m.texto} />
                     ) : vivo && !consultando ? (
-                      <span className="inline-block h-4 w-2 animate-pulse rounded-sm bg-linha-forte" aria-label="Jarvis escrevendo" />
+                      <span className="inline-flex items-center gap-1 py-1.5" role="status" aria-label="Jarvis pensando">
+                        {[0, 1, 2].map((i) => (
+                          <span
+                            key={i}
+                            aria-hidden
+                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-mute"
+                            style={{ animationDelay: `${i * 160}ms`, animationDuration: "0.9s" }}
+                          />
+                        ))}
+                      </span>
                     ) : null}
                     {m.erro && (
                       <p className="mt-2 rounded-md bg-vermelho-bg px-3 py-1.5 text-[12.5px] text-vermelho" role="alert">
