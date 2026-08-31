@@ -35,7 +35,7 @@ export const dynamic = "force-dynamic";
 export default async function ConversasPage({
   searchParams,
 }: {
-  searchParams: { c?: string; lead?: string };
+  searchParams: { c?: string; lead?: string; em?: string };
 }) {
   // autor exibido (getUser vai à rede) + insumos do composer em paralelo com a lista —
   // nada aqui depende de nada. O autor das notas/tarefas sai desta mesma chamada: o uuid é o
@@ -60,12 +60,20 @@ export default async function ConversasPage({
   // {{atendente}} vem do NOME de core.v_membro — nunca do e-mail (spec §5.1)
   const nomeAtendente = await lerNomeMembro(user?.id ?? null);
 
-  // conversa selecionada: ?c explícito → ?lead (vindo do funil) → a primeira do inbox
-  const selecionadaId =
+  // conversa selecionada: ?c explícito → ?lead (do funil ou de uma TAREFA) → a primeira do inbox.
+  //
+  // 31/08 · quando o alvo foi PEDIDO e não está na caixa de entrada, a tela NÃO cai na primeira
+  // conversa: abrir outro fio como se fosse o pedido é mentira silenciosa — e agora que a tarefa
+  // linka para cá com âncora de tempo, a mentira viria com uma bolha anelada dizendo "é aqui".
+  // A conversa pode faltar por dois motivos legítimos: o filtro `visivel_inbox` (fio sem entrada
+  // real) e o escopo de departamento. Os dois merecem frase, não silêncio.
+  const alvoPedido = searchParams.c ?? searchParams.lead ?? null;
+  const doAlvo =
     (searchParams.c && conversas.find((c) => c.id === searchParams.c)?.id) ||
     (searchParams.lead && conversas.find((c) => c.lead_id === searchParams.lead)?.id) ||
-    conversas[0]?.id ||
     null;
+  const selecionadaId = doAlvo || (alvoPedido ? null : conversas[0]?.id) || null;
+  const alvoNaoEncontrado = !!alvoPedido && !doAlvo;
   const selecionada = conversas.find((c) => c.id === selecionadaId) ?? null;
 
   // mensagens + sugestões + painel do lead (ficha/tarefas/anotações/menções, R8/R13) em
@@ -106,6 +114,8 @@ export default async function ConversasPage({
           : null
       }
       programadas={programadas}
+      ancoraEm={searchParams.em ?? null}
+      alvoNaoEncontrado={alvoNaoEncontrado}
     />
   );
 }

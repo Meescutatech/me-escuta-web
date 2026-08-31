@@ -655,11 +655,18 @@ export function Composer({
                 "flex items-center gap-2 rounded-t-[11px] border-b py-[7px] pl-3.5 pr-3 text-[12px]",
                 modo === "nota"
                   ? "border-nota-linha bg-nota-faixa text-amarelo"
-                  : "border-tarefa-linha bg-tarefa-faixa text-navy",
+                  : "border-tarefa-linha bg-tarefa-faixa text-tarefa-tinta",
               )}
             >
-              <span className="font-[650] tracking-[0.01em]">{rotuloModo(modo)}</span>
-              <span className="truncate text-suave">
+              <span
+                aria-hidden
+                className={cn(
+                  "h-[7px] w-[7px] shrink-0 rounded-full",
+                  modo === "nota" ? "bg-amarelo/70" : "bg-tarefa-tinta/70",
+                )}
+              />
+              <span className="font-[650] uppercase tracking-[0.07em] text-[10.5px]">{rotuloModo(modo)}</span>
+              <span className={cn("truncate", modo === "nota" ? "text-suave" : "text-tarefa-suave")}>
                 {modo === "nota"
                   ? "o cliente não vê nada disto"
                   : `fica no lead${nomeLead ? ` de ${nomeLead}` : ""} · o cliente não vê`}
@@ -803,7 +810,7 @@ export function Composer({
 
           {/* campos que a tarefa exige: responsável, prazo, tipo (mockup, estado d) */}
           {modo === "tarefa" && (
-            <div className="flex flex-wrap gap-2 px-3.5 pb-0.5 pt-0.5">
+            <div className="flex flex-wrap items-center gap-1.5 px-3.5 pb-1 pt-1.5">
               <Campo rotulo="Responsável">
                 <select
                   value={responsavelId}
@@ -847,12 +854,19 @@ export function Composer({
                   ))}
                 </select>
               </Campo>
+            </div>
+          )}
+
+          {/* a descrição é OPCIONAL e estava com a maior largura da caixa — peso invertido. Desce
+              para linha própria, sem caixa: quem não precisa dela nem repara; quem precisa, escreve. */}
+          {modo === "tarefa" && (
+            <div className="px-3.5 pb-1">
               <input
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
-                placeholder="Descrição (opcional)"
+                placeholder="Descrição, se precisar"
                 aria-label="Descrição da tarefa"
-                className="h-[30px] min-w-[180px] flex-1 rounded-md border border-tarefa-linha bg-branco px-2.5 text-[12.5px] text-tinta outline-none placeholder:text-mute focus:border-laranja"
+                className="w-full border-b border-transparent bg-transparent py-1 text-[12.5px] text-tinta outline-none transition-colors placeholder:text-tarefa-suave/70 hover:border-tarefa-linha focus:border-laranja"
               />
             </div>
           )}
@@ -940,8 +954,8 @@ function Cabecalho({ children }: { children: React.ReactNode }) {
 
 function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
-    <span className="flex h-[30px] items-center gap-[7px] rounded-md border border-tarefa-linha bg-branco px-2.5 text-[12.5px]">
-      <span className="text-suave">{rotulo}</span>
+    <span className="flex h-[30px] items-center gap-2 rounded-[7px] border border-tarefa-linha bg-branco px-2.5 text-[12.5px] transition-colors focus-within:border-laranja">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-tarefa-suave">{rotulo}</span>
       {children}
     </span>
   );

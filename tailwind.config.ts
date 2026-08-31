@@ -45,7 +45,14 @@ const config: Config = {
         // composer-comandos-v3.html e tarefas-lead-v3.html. Nota = ÂMBAR, tarefa = NAVY;
         // laranja NÃO entra aqui — segue reservado a ação primária e foco.
         nota: { fundo: "#FDF8EC", linha: "#E4D2A6", faixa: "#F9EFD8" },
-        tarefa: { fundo: "#EFF1F8", linha: "#C9CFE4", faixa: "#E7EAF5" },
+        // 31/08 · o modo TAREFA sai do navy e vira o IRMÃO MAIS ESCURO do âmbar da nota (pedido do
+        // Diogo): as duas superfícies internas passam a ser a mesma família — quente, "isto fica
+        // entre nós" — e o que as separa é o DEGRAU, não o hue. Nota é o tom claro, tarefa é o
+        // âmbar tostado. Medido (W4/AA): rótulo `tarefa.tinta` 6,27:1 na faixa e 7,04:1 no fundo;
+        // `tarefa.suave` 4,88:1 na faixa; tinta padrão 14,38:1 no fundo.
+        // O navy NÃO some do produto — ele continua sendo identidade; só deixa de ser a pele de
+        // um modo de escrita, onde competia com o laranja da ação primária.
+        tarefa: { fundo: "#F7EFDD", linha: "#D9C08C", faixa: "#EFE2C4", tinta: "#6B4A05", suave: "#6A5F4B" },
         // azul.graf (R19): degrau de GRÁFICO do azul — par categórico com o laranja no painel
         // (validado CVD/contraste pela bateria da skill dataviz; o DEFAULT reprova banda de
         // luminância como cor de barra). Só pra marca de dado; texto segue nos tons de tinta.

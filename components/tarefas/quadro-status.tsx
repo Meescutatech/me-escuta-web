@@ -20,6 +20,7 @@ import { iniciarTarefa, reabrirTarefa } from "@/app/(app)/tarefas/actions";
 import { PainelConcluir } from "@/components/tarefas/concluir-tarefa";
 import { MetaTarefa, PorQueJarvis } from "@/components/tarefas/cartao-meta";
 import { cn } from "@/lib/utils";
+import { destinoDaTarefa } from "@/lib/tarefas/destino";
 
 /*
  * QUADRO POR STATUS (`/tarefas?ver=quadro`, F8 · 27/08) — três colunas, A fazer · Em andamento ·
@@ -183,7 +184,8 @@ export function QuadroStatus({
     }
     if (!foco) return;
     if (k === "Enter") {
-      if (foco.lead_id) router.push(`/funil?lead=${foco.lead_id}`);
+      const d = destinoDaTarefa(foco);
+      if (d) router.push(d);
       return;
     }
     if (k === "Escape") {
@@ -417,7 +419,7 @@ function Cartao({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onFocar}
-      onDoubleClick={() => t.lead_id && router.push(`/funil?lead=${t.lead_id}`)}
+      onDoubleClick={() => { const d = destinoDaTarefa(t); if (d) router.push(d); }}
       aria-current={focado ? "true" : undefined}
       className={cn(
         "rounded-[10px] border bg-branco px-3 py-2.5 transition-[opacity,box-shadow,border-color] cursor-grab active:cursor-grabbing",
