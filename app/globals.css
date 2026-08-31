@@ -21,6 +21,8 @@
  */
 :root {
   --altura-topo: 52px;
+  /* anel do acento (laranja) — usado pela âncora de tarefa */
+  --laranja-anel: rgba(236, 102, 46, 0.55);
 
   /*
    * O SISTEMA E CLARO, E ISSO PRECISA ESTAR DECLARADO — nao so implicito no `background` do body.
@@ -172,4 +174,18 @@ body {
 .card-faixa-neutro {
   background-color: var(--faixa-neutro-fundo);
   border-color: var(--faixa-neutro-linha);
+}
+
+/*
+ * ÂNCORA DE TAREFA (31/08): quem chega de `/tarefas` cai NESTA bolha, e ela fica anelada até a
+ * pessoa rolar o fio (o inbox tira a classe no primeiro scroll).
+ *
+ * Por que anel estático e não animação: o realce por keyframes de 3s já tinha apagado quando a
+ * tela terminou de montar — quem abre uma conversa de 34 mensagens não vê nada. Marca que depende
+ * de cronômetro é marca que falha justamente na conversa grande, que é onde ela importa.
+ * Sem animação também não há nada a desativar em reduced-motion.
+ */
+.ancora-tarefa > :first-child {
+  box-shadow: 0 0 0 2px var(--laranja-anel);
+  border-radius: 13px;
 }

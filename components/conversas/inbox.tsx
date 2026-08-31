@@ -53,6 +53,7 @@ import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import type { TemplateMensagem, VariaveisTemplate } from "@/lib/templates";
 import { cn } from "@/lib/utils";
+import { idDaAncora } from "@/lib/tarefas/destino";
 
 /*
  * /conversas — redesign "Kommo minimalista" (fase 2) + thread real (rodada 4, SPEC RF-27..33).
@@ -136,6 +137,8 @@ export function Inbox({
   etapas,
   departamentoAtivo,
   programadas,
+  ancoraEm = null,
+  alvoNaoEncontrado = false,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -172,6 +175,13 @@ export function Inbox({
   departamentoAtivo?: { chave: string; rotulo: string } | null;
   /** R27/F1 · envios programados da conversa selecionada (agendado + falhou), lidos no servidor. */
   programadas: EnvioProgramadoLinha[];
+  /**
+   * 31/08 · `?em=<ISO>` — abrir o fio NA ALTURA de um instante (hoje: quando uma tarefa nasceu).
+   * Tem precedência sobre o divisor de não-lidas: quem clicou numa tarefa pediu ESTE ponto.
+   */
+  ancoraEm?: string | null;
+  /** 31/08 · veio `?c=`/`?lead=` que não está na caixa: diz o porquê em vez de abrir outra. */
+  alvoNaoEncontrado?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -211,6 +221,11 @@ export function Inbox({
    * Os módulos do protótipo continuam no repo porque `components/prototipo/workshop.tsx` os usa.
    */
   const divisorRef = useRef<HTMLDivElement>(null);
+  const ancoraRef = useRef<HTMLDivElement>(null);
+  const [ancoraViva, setAncoraViva] = useState(true);
+  // instante em que a tela rolou SOZINHA até a âncora — o scroll que ela mesma provoca não conta
+  // como "a pessoa se moveu" (era o que apagava o anel antes de alguém ver).
+  const ancoradoEmRef = useRef(0);
   const noFimRef = useRef(true);
   const totalAnteriorRef = useRef(-1); // -1 = próxima renderização é abertura de conversa
 
@@ -286,6 +301,10 @@ export function Inbox({
 
   const blocos = useMemo(() => montarBlocos(visiveis), [visiveis]);
 
+  // 31/08 · a mensagem onde o fio para quando se chega por uma tarefa (`?em=`). `exata=false`
+  // significa que a tarefa é anterior ao que foi carregado — a tela DIZ isso em vez de fingir.
+  const ancora = useMemo(() => idDaAncora(visiveis, ancoraEm), [visiveis, ancoraEm]);
+
   // R13/C2: notas e tarefas do lead viram registros no mesmo fio das mensagens
   const registros = useMemo(
     () =>
@@ -300,8 +319,10 @@ export function Inbox({
   useEffect(() => {
     const total = visiveis.length;
     if (totalAnteriorRef.current === -1) {
-      const alvo = divisorRef.current ?? fimRef.current;
-      const centro = !!divisorRef.current;
+      // precedência: âncora pedida na URL > divisor de não-lidas > fim do fio
+      const alvo = ancoraRef.current ?? divisorRef.current ?? fimRef.current;
+      const centro = !!(ancoraRef.current ?? divisorRef.current);
+      if (ancoraRef.current) ancoradoEmRef.current = Date.now();
       requestAnimationFrame(() => alvo?.scrollIntoView({ block: centro ? "center" : "end" }));
     } else if (total > totalAnteriorRef.current) {
       if (noFimRef.current) fimRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -799,8 +820,10 @@ export function Inbox({
       {/* ═══════════ ZONA 2 · THREAD ═══════════ */}
       <section className="flex min-w-0 flex-1 flex-col bg-board">
         {!selecionada ? (
-          <div className="m-auto text-center text-sm text-mute">
-            {conversas.length > 0
+          <div className="m-auto max-w-[46ch] text-center text-sm text-mute">
+            {alvoNaoEncontrado
+              ? "Esta conversa não está na sua caixa de entrada — ou o fio ainda não teve mensagem recebida, ou é de outro departamento. Troque o departamento no topo, ou abra o lead pelo funil."
+              : conversas.length > 0
               ? "Selecione uma conversa."
               : departamentoAtivo
                 ? `${departamentoAtivo.rotulo} ainda não tem conversa. A primeira mensagem recebida num número deste departamento abre aqui — e o número se configura em Configurações → Números de WhatsApp.`
@@ -842,7 +865,10 @@ export function Inbox({
 
             {/* mensagens — thread real (RF-27..33) */}
             <div className="relative flex min-h-0 flex-1 flex-col">
-            <div ref={rolagemRef} onScroll={aoRolar} className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-6 py-5">
+            <div ref={rolagemRef} onScroll={aoRolar}
+                onWheel={() => ancoraViva && setAncoraViva(false)}
+                onTouchMove={() => ancoraViva && setAncoraViva(false)}
+                onPointerDown={() => ancoraViva && setAncoraViva(false)} className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-6 py-5">
               {visiveis.length === 0 && props_.length === 0 && (
                 <div className="m-auto max-w-sm text-center text-sm text-mute">Sem mensagens ainda nesta conversa.</div>
               )}
@@ -879,8 +905,17 @@ export function Inbox({
                             const falhou = m.status_entrega === "falhou" || m.falha_local;
                             const motivo = motivoErroPermanente(m.erro_codigo);
                             const podeRetry = podeTentarDeNovo(m);
+                            const ehAncora = ancora?.id === m.id;
                             return (
-                              <div key={m.id} className={cn("flex flex-col", saida ? "items-end" : "items-start")}>
+                              <div
+                                key={m.id}
+                                ref={ehAncora ? ancoraRef : undefined}
+                                className={cn(
+                                  "flex flex-col",
+                                  saida ? "items-end" : "items-start",
+                                  ehAncora && ancoraViva && "ancora-tarefa",
+                                )}
+                              >
                                 <div
                                   className={cn(
                                     "whitespace-pre-wrap break-words px-3.5 py-2.5 text-[0.88rem] leading-relaxed",

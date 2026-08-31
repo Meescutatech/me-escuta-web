@@ -23,6 +23,13 @@ const RESPONSAVEIS = [
 
 interface Molde {
   titulo: string;
+  /**
+   * lead REAL de produção + instante no meio do fio dele. Só nos três primeiros moldes, e só
+   * para o ensaio conseguir demonstrar o elo tarefa → conversa ancorada (31/08): com lead
+   * sintético o clique cai, corretamente, em "esta conversa não está na caixa de entrada".
+   */
+  leadReal?: string;
+  ancora?: string;
   tipo: string;
   lead: string | null;
   prazoHoras: number | null; // relativo a agora; negativo = vencida
@@ -39,6 +46,8 @@ const MOLDES: Molde[] = [
     titulo: "Ligar para agendar a audiometria",
     tipo: "ligar",
     lead: "Maria Aparecida Souza",
+    leadReal: "3594fd74-1fbf-55e0-ab03-affedf0f55ef",
+    ancora: "2026-07-17T19:48:53.466Z",
     prazoHoras: -30,
     resp: 0,
     jarvis: {
@@ -47,11 +56,13 @@ const MOLDES: Molde[] = [
       trecho: "vou ver certinho depois do exame aí te falo",
     },
   },
-  { titulo: "Cobrar retorno da simulação da Caixa", tipo: "cobranca", lead: "José Carlos Menezes", prazoHoras: -4, resp: 0, andamento: true },
+  { titulo: "Cobrar retorno da simulação da Caixa", tipo: "cobranca", lead: "José Carlos Menezes", leadReal: "70ba301b-eeb6-5bdf-b44e-b10d82829a7c", ancora: "2026-07-17T10:53:21.620Z", prazoHoras: -4, resp: 0, andamento: true },
   {
     titulo: "Responder dúvida sobre o teste em casa",
     tipo: "followup",
     lead: "Antônia Ribeiro Prado",
+    leadReal: "6317dc62-35ef-5fcd-be41-dfae57425a74",
+    ancora: "2026-07-20T17:48:35.447Z",
     prazoHoras: 2,
     resp: 0,
     jarvis: {
@@ -105,7 +116,7 @@ export function visaoTarefasDeEnsaio(agora: Date = new Date()): DadosVisaoTarefa
     if (m.andamento && status === "pendente") emAndamento.push(id);
     return {
       id,
-      lead_id: m.lead ? `1ead0000-0000-4000-8000-${String(i + 1).padStart(12, "0")}` : null,
+      lead_id: m.leadReal ?? (m.lead ? `1ead0000-0000-4000-8000-${String(i + 1).padStart(12, "0")}` : null),
       lead_nome: m.lead,
       titulo: m.titulo,
       descricao: null,
@@ -116,7 +127,7 @@ export function visaoTarefasDeEnsaio(agora: Date = new Date()): DadosVisaoTarefa
       status,
       resultado: m.resultado ?? null,
       motivo_arquivo: m.motivo_arquivo ?? null,
-      criado_em: iso((m.prazoHoras ?? 0) - 48),
+      criado_em: m.ancora ?? iso((m.prazoHoras ?? 0) - 48),
       concluida_em: status === "pendente" ? null : iso((m.prazoHoras ?? 0) + 1),
       vencida: status === "pendente" && m.prazoHoras != null && m.prazoHoras < 0,
       por_que: m.jarvis?.por_que ?? null,

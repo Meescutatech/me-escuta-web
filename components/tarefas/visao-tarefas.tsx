@@ -24,6 +24,7 @@ import { QuadroStatus } from "@/components/tarefas/quadro-status";
 import { AcoesTarefa, BotaoAcoes, type PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
 import { BotaoConcluir, PainelConcluir } from "@/components/tarefas/concluir-tarefa";
 import { cn } from "@/lib/utils";
+import { destinoDaTarefa } from "@/lib/tarefas/destino";
 
 /*
  * VISÃO DE TAREFAS (`/tarefas`, Rodada 14) — a tela de tarefas do Kommo, com o contrato nosso.
@@ -572,8 +573,8 @@ function ComLead({
 }) {
   const router = useRouter();
   // `id` estável: a timeline da conversa linka `/tarefas#tarefa-<id>` (F2).
-  if (!t.lead_id) return <div id={`tarefa-${t.id}`} className={className}>{children}</div>;
-  const destino = `/funil?lead=${t.lead_id}`;
+  const destino = destinoDaTarefa(t);
+  if (!destino) return <div id={`tarefa-${t.id}`} className={className}>{children}</div>;
   return (
     <div
       id={`tarefa-${t.id}`}
