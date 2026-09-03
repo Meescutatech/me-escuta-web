@@ -28,7 +28,9 @@ type Supabase = ReturnType<typeof criarClienteServidor>;
 
 export const TETO_TOQUES = 20000;
 export const TETO_CUSTO = 20000;
-const LOTE_ETAPAS = 400;
+// Medido em 03/09: com 400 ids o `in()` falha (4 tentativas com backoff, o lote seguinte nunca
+// sai). Limiar observado no navegador: 322 leads passa, 398 falha. 200 fica com folga.
+const LOTE_ETAPAS = 200;
 
 const COLUNAS_TOQUE =
   "lead_id,fonte,plataforma,campanha_id,campanha_nome,anuncio_id,anuncio_nome,utm,clids,hierarquia_estado,capturado_em,criado_em";
@@ -176,7 +178,12 @@ export async function lerMarketing(periodo: Periodo, agora: Date = new Date()): 
     periodo,
     toques,
     custos: custosLidos?.linhas ?? [],
-    etapasLeads: etapasLeads ?? [],
+    // 🔴 SEM `?? []` DE PROPOSITO. O `?? []` apagava a diferenca entre "a leitura FALHOU" e
+    // "nao achou ninguem", e o funil imprimia 0 (0%) com toda a confianca — que e a conclusao
+    // OPOSTA. Medido em 03/09 na janela de 90 dias: a tela dizia qualificado 0 / consulta 0 /
+    // venda 0 enquanto o SQL dava 5 / 2 / 1. O banner vermelho ate acendia; ninguem olha o
+    // banner quando a tabela ao lado mostra numero. `null` viaja ate o fim e vira "—".
+    etapasLeads,
     etapas: (etapas ?? []).map((e) => ({ chave: e.chave, nome: e.nome, ordem: e.ordem, tipo: e.tipo })),
     parcial: Boolean(toquesLidos?.parcial || custosLidos?.parcial),
     leituraFalhou: toquesLidos == null || custosLidos == null || etapasLeads == null,

@@ -508,12 +508,15 @@ export interface LinhaFunilOrigem {
  */
 export function funilPorOrigem(
   toques: ToqueCru[],
-  etapaPorLead: Map<string, string>,
+  etapaPorLead: Map<string, string> | null,
   etapas: EtapaConfig[],
   vocab: Map<string, FonteVocabulario>,
 ): LinhaFunilOrigem[] {
   const marcos = resolverMarcos(etapas);
   const etapaDe = new Map(etapas.map((e) => [e.chave, e]));
+  // Mapa nulo = nao SABEMOS a etapa de ninguem. Marco fica `null` (vira "—"), nunca 0 — zero aqui
+  // afirmaria "ninguem qualificou", que e o contrario de "nao consegui ler".
+  const indisponivel = etapaPorLead == null;
   const linhas = new Map<string, LinhaFunilOrigem>();
 
   const garantir = (chave: string, rotulo: string, balde: Balde, plataforma: Plataforma | null) => {
@@ -526,9 +529,9 @@ export function funilPorOrigem(
         plataforma,
         leads: 0,
         marcos: {
-          qualificado: marcos.ordem.qualificado == null ? null : 0,
-          consulta: marcos.ordem.consulta == null ? null : 0,
-          venda: marcos.ordem.venda == null ? null : 0,
+          qualificado: indisponivel || marcos.ordem.qualificado == null ? null : 0,
+          consulta: indisponivel || marcos.ordem.consulta == null ? null : 0,
+          venda: indisponivel || marcos.ordem.venda == null ? null : 0,
         },
         taxas: { qualificado: null, consulta: null, venda: null },
         perdidos: 0,
@@ -546,7 +549,7 @@ export function funilPorOrigem(
     const l = garantir(chave, rotulo, balde, plat);
     l.leads += 1;
 
-    const etapaChave = etapaPorLead.get(t.lead_id);
+    const etapaChave = etapaPorLead?.get(t.lead_id);
     const etapa = etapaChave ? etapaDe.get(etapaChave) : undefined;
     if (!etapa) continue;
     if (etapa.tipo === "perdido") {
@@ -656,7 +659,8 @@ export interface EntradaVisao {
   periodo: Periodo;
   toques: ToqueCru[];
   custos: CustoCru[];
-  etapasLeads: EtapaLeadCru[];
+  /** `null` = a leitura das etapas FALHOU. Vazio = leu e nao havia. Nao sao a mesma coisa. */
+  etapasLeads: EtapaLeadCru[] | null;
   etapas: EtapaConfig[];
   parcial: boolean;
   leituraFalhou: boolean;
@@ -678,7 +682,7 @@ export function montarVisao(e: EntradaVisao): VisaoMarketing {
   const pagos = arvore.find((n) => n.chave === "pago")?.leads ?? 0;
   const gastoTotal = e.custos.reduce((s, c) => s + dinheiro(c.custo), 0);
   const gasto = houveIngestao ? gastoTotal : null;
-  const etapaPorLead = new Map(e.etapasLeads.map((x) => [x.lead_id, x.etapa]));
+  const etapaPorLead = e.etapasLeads == null ? null : new Map(e.etapasLeads.map((x) => [x.lead_id, x.etapa]));
 
   return {
     periodo: e.periodo,

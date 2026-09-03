@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   arvoreOrigem,
   brl,
@@ -360,4 +361,93 @@ test("funilPorOrigem: arquivado (ordem 9000) nao entra em marco nenhum; audiomet
   assert.equal(meta.leads, 4);
   assert.deepEqual(meta.marcos, { qualificado: 1, consulta: 0, venda: 0 });
   assert.equal(meta.perdidos, 1);
+});
+
+test("funilPorOrigem: leitura de etapas INDISPONIVEL vira '—', nunca 0 — o defeito de 03/09", () => {
+  /*
+   * O DEFEITO, medido em producao na janela de 90 dias: `lerEtapasDosLeads` devolvia `null` (o lote
+   * de 400 ids falhava), `montarVisao` fazia `etapasLeads ?? []`, e o funil imprimia
+   * qualificado 0 (0%) / consulta 0 (0%) / venda 0 (0%). O SQL da mesma janela dava 5 / 2 / 1.
+   *
+   * "Nao consegui ler" virava "ninguem qualificou" — a conclusao OPOSTA, e sem nada vermelho na
+   * propria tabela. O banner de leitura parcial acendia ao lado, mas numero ao lado de aviso ganha
+   * do aviso: quem olha a coluna VENDA GANHA = 0 conclui que a midia nao vendeu.
+   *
+   * A guarda e o `null`: marco nulo renderiza "—". Trocar `null` por 0 aqui deixa este teste VERMELHO.
+   */
+  const toques = [toque({ lead_id: "a" }), toque({ lead_id: "b" }), organico({ lead_id: "c" })];
+
+  const linhas = funilPorOrigem(toques, null, ETAPAS, vocab);
+  const meta = linhas.find((l) => l.rotulo === "Meta")!;
+
+  // os LEADS continuam sendo verdade: eles vem do toque, que foi lido com sucesso
+  assert.equal(meta.leads, 2);
+  // ja os marcos sao desconhecidos — e desconhecido nao e zero
+  assert.deepEqual(meta.marcos, { qualificado: null, consulta: null, venda: null });
+  assert.deepEqual(meta.taxas, { qualificado: null, consulta: null, venda: null });
+  // e nenhuma linha pode afirmar zero, em nenhuma origem
+  for (const l of linhas) {
+    for (const m of ["qualificado", "consulta", "venda"] as const) {
+      assert.equal(l.marcos[m], null, `${l.rotulo}.${m} afirmou um numero sem ter lido as etapas`);
+    }
+  }
+});
+
+test("montarVisao: etapasLeads null propaga ate o funil (o `?? []` nao pode voltar)", () => {
+  /*
+   * Guarda de INTEGRACAO, separada de proposito: o teste acima protege `funilPorOrigem`, mas o
+   * defeito real nasceu uma camada ACIMA — em `lerMarketing`, no `etapasLeads ?? []`. Se alguem
+   * reintroduzir o `??` la, o funil recebe [] em vez de null, o teste de cima continua VERDE e a
+   * tela volta a mentir. Este aqui e o que morre nesse caso.
+   */
+  const visao = montarVisao({
+    periodo: periodoDaUrl(new URLSearchParams("p=90d"), new Date("2026-09-03T12:00:00-03:00")),
+    toques: [toque({ lead_id: "a" }), toque({ lead_id: "b" })],
+    custos: [],
+    etapasLeads: null,
+    etapas: ETAPAS,
+    parcial: false,
+    leituraFalhou: true,
+    inicioSerie: "2026-06-05T08:00:00-03:00",
+    custoLinhasTotal: 0,
+    vocabulario: null,
+    flagAtiva: true,
+    agora: new Date("2026-09-03T12:00:00-03:00"),
+  });
+  assert.equal(visao.leituraFalhou, true);
+  for (const l of visao.funil) {
+    assert.equal(l.marcos.qualificado, null, `${l.rotulo}: marco virou numero com leitura falha`);
+    assert.equal(l.marcos.venda, null, `${l.rotulo}: marco virou numero com leitura falha`);
+  }
+});
+
+test("marketing.ts NAO pode reintroduzir `etapasLeads ?? []` — guarda de FONTE, e eu explico por que", () => {
+  /*
+   * POR QUE UM TESTE QUE LE O FONTE, e nao um teste de comportamento: o `??` mora em `lerMarketing`,
+   * que abre cliente do Supabase e faz I/O real. Nao ha injecao de dependencia ali, entao nenhum
+   * teste de unidade alcanca aquela linha — e eu descobri isso do jeito certo: escrevi um teste de
+   * integracao sobre `montarVisao`, rodei MUTACAO reintroduzindo o `?? []`, e o mutante SOBREVIVEU
+   * com 837 verdes. Um teste que nao mata o mutante nao esta protegendo nada.
+   *
+   * Entao ou se refatora `lerMarketing` para aceitar leitor injetavel (mudanca maior, em arquivo que
+   * outra sessao esta editando), ou se guarda o idioma perigoso no fonte. Escolhi guardar o idioma e
+   * dizer em voz alta que e isso — guarda honesta e melhor que teste de comportamento que finge
+   * cobrir o que nao cobre.
+   *
+   * O QUE ESTA GUARDA IMPEDE: `etapasLeads ?? []` apaga a diferenca entre "a leitura falhou" e "nao
+   * havia ninguem", e o funil passa a imprimir 0 (0%) onde a verdade era 5 / 2 / 1 (medido em
+   * producao, janela de 90 dias, 03/09/2026).
+   */
+  const fonte = readFileSync(new URL("../lib/dados/marketing.ts", import.meta.url), "utf8");
+  const semComentarios = fonte
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("//"))
+    .join("\n");
+  assert.ok(
+    !/etapasLeads\s*(\?\?|\|\|)/.test(semComentarios),
+    "`etapasLeads ?? []` (ou `||`) voltou a lerMarketing: o funil vai imprimir 0 onde deveria dizer '—'",
+  );
+  // e o campo tem que continuar sendo passado, senao a guarda acima passa por ausencia
+  assert.ok(/etapasLeads[,:]/.test(semComentarios), "lerMarketing parou de passar etapasLeads");
 });
