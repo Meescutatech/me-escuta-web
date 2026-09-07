@@ -93,19 +93,61 @@ export const INTERVALO_RELEITURA_MS = 5_000;
  * `null` (e não 0) obriga quem chama a decidir explicitamente — um número sempre positivo viraria
  * polling eterno contra o runtime.
  */
-export function intervaloRelituraMs(estado: EstadoSessao): number | null {
+export function intervaloRelituraMs(
+  estado: EstadoSessao,
+  provedorIndisponivel = false,
+): number | null {
+  // ⚠️ NÃO SEI ≠ DESCONECTADO. Enquanto o runtime não conseguir falar com o provedor, continuar
+  // relendo é a ÚNICA forma de a tela voltar sozinha quando a rede voltar. Parar aqui é o defeito
+  // que já aconteceu duas vezes por caminhos diferentes: a fono fica olhando "nenhuma sessão ativa"
+  // com a instância viva esperando o scan, e só um F5 desfaz. O estado que chega junto é o último
+  // conhecido — reler sobre ele é barato e converge; parar é definitivo.
+  if (provedorIndisponivel) return INTERVALO_RELEITURA_MS;
   return estado === "aguardando_qr" ? INTERVALO_RELEITURA_MS : null;
 }
 
-export function devoRelerEstado(estado: EstadoSessao): boolean {
-  return intervaloRelituraMs(estado) !== null;
+export function devoRelerEstado(estado: EstadoSessao, provedorIndisponivel = false): boolean {
+  return intervaloRelituraMs(estado, provedorIndisponivel) !== null;
 }
 
-/** O QR expira em segundos. Sem `qr_expira_em` a tela assume expirado — nunca desenha QR velho. */
+/**
+ * Predicado ESTRITO: sem instante legível, assume expirado. Continua existindo porque é a leitura
+ * certa em qualquer lugar que precise decidir "posso confiar neste QR?" sem ter como avisar
+ * ninguém. Quem desenha a TELA usa `validadeQr` — ver ali o porquê.
+ */
 export function qrExpirado(qrExpiraEm: string | null | undefined, agoraMs: number): boolean {
   const t = Date.parse((qrExpiraEm ?? "").trim());
   if (!Number.isFinite(t)) return true;
   return t <= agoraMs;
+}
+
+/**
+ * A validade do QR em TRÊS valores, e a diferença entre o do meio e os outros dois é a diferença
+ * entre uma tela que funciona e uma que some.
+ *
+ * MEDIDO no provedor (WuzAPI, D65 — `wmiau.go` e `handlers.go`): **não existe campo de expiração
+ * em lugar nenhum** do que ele devolve. Nem no webhook de QR, nem no `GET /session/qr`. O prazo é
+ * o do WhatsApp, de segundos, e o único sinal de que estourou é o provedor passar a devolver `""`
+ * ou 500 `"no session"` — porque ele MATA o cliente quando o QR vence. Ou seja: em produção o
+ * `qr_expira_em` chega **ausente**, sempre.
+ *
+ * Com o predicado estrito isso significava `expirado` para todo QR real, e a tela desenhava um
+ * quadro vazio em cima de uma imagem perfeitamente escaneável — o defeito mais caro possível, que
+ * é o que PARECE estar certo. `sem_prazo` separa "o provedor disse que morreu" de "o provedor não
+ * disse nada": o primeiro esconde, o segundo mostra E avisa que não há prazo declarado.
+ *
+ * Instante ilegível cai em `sem_prazo`, não em `expirado`: string quebrada é o runtime falando
+ * errado, e nada nela afirma que o código morreu. O que a tela nunca pode fazer é esconder um QR
+ * vivo — e nunca mostrar um que uma data legível já declarou morto.
+ */
+export type ValidadeQr = "valido" | "sem_prazo" | "expirado";
+
+export function validadeQr(qrExpiraEm: string | null | undefined, agoraMs: number): ValidadeQr {
+  const bruto = (qrExpiraEm ?? "").trim();
+  if (!bruto) return "sem_prazo";
+  const t = Date.parse(bruto);
+  if (!Number.isFinite(t)) return "sem_prazo";
+  return t <= agoraMs ? "expirado" : "valido";
 }
 
 export function rotuloEstadoSessao(e: EstadoSessao): string {
@@ -126,7 +168,10 @@ export function descricaoEstadoSessao(e: EstadoSessao): string {
     case "conectado":
       return "O número está pareado e as mensagens de contraparte conhecida entram no sistema.";
     case "aguardando_qr":
-      return "Abra o WhatsApp no celular dela, em Aparelhos conectados, e leia o código. Ele expira em segundos e é redesenhado sozinho.";
+      // "redesenhado sozinho" era falso e custava uma sessão: quando o QR vence, o provedor MATA
+      // o cliente (`wmiau.go`, evento `timeout`) e para de emitir. A releitura de 5 s encontra
+      // vazio, não um código novo. Quem redesenha é a pessoa, no botão.
+      return "Abra o WhatsApp no celular dela, em Aparelhos conectados, e leia o código. Ele vale por segundos; passou do tempo, gere outro.";
     case "banido":
       return "O WhatsApp bloqueou este número. Não há reconexão possível por aqui — e o bloqueio atinge o WhatsApp pessoal de quem cedeu o número.";
     default:
@@ -396,11 +441,64 @@ export function suspeitaFiltroCego(janela: {
  */
 export interface RespostaSessaoRuntime {
   estado: EstadoSessao;
-  /** código CRU do QR (WuzAPI devolve o código, não a imagem). Quem desenha é o cliente. */
+  /**
+   * código CRU do QR, quando o provedor devolve um. **Não é o caso do WuzAPI** — ver `qr_imagem`.
+   * Quem desenha o código cru é o cliente (`regras/qr-pareamento.ts`).
+   */
   qr?: string | null;
+  /**
+   * O QR JÁ COMO IMAGEM, em `data:` — e é ESTE o campo que o dialeto de produção preenche.
+   *
+   * O nome é o do contrato do runtime (`whatsapp/lite/sessao.ts`, campos `qr_imagem`/`qr_formato`),
+   * copiado letra por letra de propósito: a última vez que esta trilha quebrou foi por um nome que
+   * não casava entre as duas pontas, e o sintoma de um nome errado aqui é exatamente o de um QR que
+   * não chegou — quadro vazio, sem erro nenhum.
+   *
+   * MEDIDO no Go do provedor: `wmiau.go` faz `qrcode.Encode(...)` e grava
+   * `"data:image/png;base64," + base64(PNG)`; `handlers.go` devolve isso em `{"QRCode": …}`. Ou
+   * seja, o que chega já é um PNG pronto — e era descartado na fronteira, porque esta interface só
+   * transportava `qr`.
+   */
+  qr_imagem?: string | null;
+  /** o que o runtime diz ter mandado. A tela decide pelo que CHEGOU e usa isto só para denunciar a divergência. */
+  qr_formato?: "codigo" | "imagem" | null;
+  /**
+   * `true` ⇒ o runtime **não conseguiu falar com o provedor** nesta leitura, e o `estado` acima é
+   * o ÚLTIMO CONHECIDO — não um palpite, e não foi regravado no banco.
+   *
+   * Existe porque a versão anterior colapsava "não sei" em `desconectado`: um timeout de rede
+   * derrubava a tela para "nenhuma sessão ativa", o relê parava (só rearma em `aguardando_qr`) e a
+   * fono ficava travada no meio do pareamento até recarregar. Quem consome DEVE continuar relendo
+   * enquanto isto for `true`.
+   */
+  provedor_indisponivel?: boolean;
+  /** quando indisponível, o que falhou — para a tela dizer, em vez de sumir. */
+  causa_rede?: string | null;
   qr_expira_em?: string | null;
   desde?: string | null;
   motivo?: string | null;
+}
+
+/**
+ * Os tipos de imagem que a tela aceita pôr num `<img>`, e por que a lista é fechada.
+ *
+ * O `data:` chega de outro processo por HTTP. Um `src` que aceitasse qualquer string aceitaria
+ * também `javascript:`; um que aceitasse `data:image/svg+xml,<svg …>` em texto puro aceitaria a
+ * carga sem passar por base64. Exigir `data:image/<tipo conhecido>;base64,` fecha os dois de uma
+ * vez, e é uma linha. `svg+xml` está na lista porque é o que o STUB do runtime manda (uma imagem
+ * que se anuncia como não escaneável, para ninguém confundir bancada com produção).
+ */
+const RE_IMAGEM_QR = /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+/** Um QR de 256px em PNG dá ~2-6 KB em base64. Meio mega é folga larga e ainda barra despejo. */
+export const LIMITE_IMAGEM_QR_BYTES = 512 * 1024;
+
+/** Devolve a imagem só se ela for exibível; qualquer outra coisa vira `null`, nunca um `src` torto. */
+export function imagemQrSegura(bruta: unknown): string | null {
+  if (typeof bruta !== "string") return null;
+  const v = bruta.trim();
+  if (!v || v.length > LIMITE_IMAGEM_QR_BYTES) return null;
+  return RE_IMAGEM_QR.test(v) ? v : null;
 }
 
 export const TIMEOUT_RUNTIME_MS = 10_000;
@@ -419,11 +517,21 @@ export function normalizarRespostaRuntime(bruta: unknown): RespostaSessaoRuntime
   const b = (bruta ?? {}) as Record<string, unknown>;
   const estado = estadoSessaoValido(b.estado) ? b.estado : "desconectado";
   const qr = typeof b.qr === "string" && b.qr.length > 0 ? b.qr : null;
+  const formato = b.qr_formato === "codigo" || b.qr_formato === "imagem" ? b.qr_formato : null;
   return {
     estado,
     qr,
+    // a imagem passa pelo filtro AQUI, na borda, e não no componente: assim existe um lugar só
+    // onde um `src` pode nascer, e ele é o mesmo que os testes exercem.
+    qr_imagem: imagemQrSegura(b.qr_imagem),
+    qr_formato: formato,
     qr_expira_em: typeof b.qr_expira_em === "string" ? b.qr_expira_em : null,
     desde: typeof b.desde === "string" ? b.desde : null,
     motivo: typeof b.motivo === "string" ? b.motivo : null,
+    // "não consegui falar com o provedor NESTA leitura" — e o `estado` que veio junto é o último
+    // conhecido, não um palpite. É o que mantém o relê armado; sem transportar, o conserto do
+    // runtime morre na borda e a tela volta a congelar.
+    provedor_indisponivel: b.provedor_indisponivel === true,
+    causa_rede: typeof b.causa_rede === "string" ? b.causa_rede : null,
   };
 }

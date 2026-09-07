@@ -115,13 +115,64 @@ test("a resposta do runtime é normalizada; fora do contrato vira desconectado s
   assert.deepEqual(normalizarRespostaRuntime({ estado: "conectado", desde: "x" }), {
     estado: "conectado",
     qr: null,
+    // o contrato passou a transportar a IMAGEM (campo `qr_imagem` do runtime), porque é ela que o
+    // dialeto de produção manda. `deepEqual` é de propósito: campo novo que entre no contrato sem
+    // passar por normalização REPROVA aqui, em vez de chegar cru ao `src` de um `<img>`.
+    qr_imagem: null,
+    qr_formato: null,
     qr_expira_em: null,
     desde: "x",
     motivo: null,
+    provedor_indisponivel: false,
+    causa_rede: null,
   });
   assert.equal(normalizarRespostaRuntime({ estado: "seiLá" }).estado, "desconectado");
   assert.equal(normalizarRespostaRuntime(null).estado, "desconectado");
   assert.equal(normalizarRespostaRuntime({ estado: "aguardando_qr", qr: "" }).qr, null);
+});
+
+test("'não sei' atravessa a normalização e MANTÉM o relê armado", () => {
+  // O runtime, quando não alcança o provedor, devolve o ÚLTIMO estado conhecido + a marca. Se a
+  // marca não atravessasse, a tela leria `aguardando_qr` sem saber que a leitura falhou — ou, pior,
+  // no desenho antigo leria `desconectado` e PARARIA de reler, congelando a fono no meio do
+  // pareamento com a instância viva do outro lado.
+  const r = normalizarRespostaRuntime({
+    estado: "aguardando_qr",
+    provedor_indisponivel: true,
+    causa_rede: "timeout",
+  });
+  assert.equal(r.provedor_indisponivel, true);
+  assert.equal(r.causa_rede, "timeout");
+
+  // e o relê: armado enquanto indisponível, INCLUSIVE nos estados em que normalmente pararia
+  assert.equal(intervaloRelituraMs("aguardando_qr", true), INTERVALO_RELEITURA_MS);
+  assert.equal(intervaloRelituraMs("desconectado", true), INTERVALO_RELEITURA_MS);
+  assert.equal(intervaloRelituraMs("conectado", true), INTERVALO_RELEITURA_MS);
+  // sem a marca, nada muda: o comportamento antigo continua valendo
+  assert.equal(intervaloRelituraMs("desconectado"), null);
+  assert.ok(devoRelerEstado("desconectado", true));
+  assert.ok(!devoRelerEstado("desconectado"));
+});
+
+test("a IMAGEM do QR atravessa a normalização — era aqui que ela morria", () => {
+  // O runtime já mandava `qr_imagem` (contrato de `whatsapp/lite/sessao.ts`) e a rota serializa o
+  // estado inteiro. Quem descartava era esta função, que só copiava `qr`: o PNG do provedor chegava
+  // à fronteira da web e sumia sem erro nenhum — quadro vazio, log limpo.
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const r = normalizarRespostaRuntime({ estado: "aguardando_qr", qr_imagem: png, qr_formato: "imagem" });
+  assert.equal(r.qr_imagem, png);
+  assert.equal(r.qr_formato, "imagem");
+});
+
+test("imagem que não é `data:image/…;base64,` não passa da borda", () => {
+  // a normalização é o ÚNICO lugar onde um `src` de `<img>` pode nascer nesta trilha.
+  assert.equal(normalizarRespostaRuntime({ estado: "aguardando_qr", qr_imagem: "javascript:alert(1)" }).qr_imagem, null);
+  assert.equal(normalizarRespostaRuntime({ estado: "aguardando_qr", qr_imagem: "https://exemplo.com/qr.png" }).qr_imagem, null);
+});
+
+test("`qr_formato` fora do vocabulário vira null, não a string crua", () => {
+  assert.equal(normalizarRespostaRuntime({ estado: "aguardando_qr", qr_formato: "png" }).qr_formato, null);
+  assert.equal(normalizarRespostaRuntime({ estado: "aguardando_qr", qr_formato: "codigo" }).qr_formato, "codigo");
 });
 
 test("cada estado tem rótulo e explicação — e a do banido diz que o dano é pessoal", () => {
