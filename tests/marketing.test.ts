@@ -421,7 +421,7 @@ test("montarVisao: etapasLeads null propaga ate o funil (o `?? []` nao pode volt
   }
 });
 
-test("marketing.ts NAO pode reintroduzir `etapasLeads ?? []` — guarda de FONTE, e eu explico por que", () => {
+test("marketing-leitura.ts NAO pode reintroduzir `etapasLeads ?? []` — guarda de FONTE, e eu explico por que", () => {
   /*
    * POR QUE UM TESTE QUE LE O FONTE, e nao um teste de comportamento: o `??` mora em `lerMarketing`,
    * que abre cliente do Supabase e faz I/O real. Nao ha injecao de dependencia ali, entao nenhum
@@ -434,11 +434,21 @@ test("marketing.ts NAO pode reintroduzir `etapasLeads ?? []` — guarda de FONTE
    * dizer em voz alta que e isso — guarda honesta e melhor que teste de comportamento que finge
    * cobrir o que nao cobre.
    *
+   * ⭐ 07/09/2026 (D68) — A REFATORACAO QUE ESTE COMENTARIO PEDIA FOI FEITA. A leitura saiu de
+   * `marketing.ts` para `marketing-leitura.ts`, que agora RECEBE o cliente por parametro
+   * (`lerMarketingCom`), porque o servidor MCP do Fernando le pelas mesmas consultas. A guarda
+   * mudou de arquivo junto com o codigo que ela guarda — se ela tivesse ficado apontando para
+   * `marketing.ts`, passaria para sempre por AUSENCIA, vigiando um arquivo que nao tem mais a
+   * linha perigosa. Guarda que segue o codigo, nao o nome.
+   *
+   * (A injecao agora existe, entao um teste de comportamento tambem seria possivel. A guarda de
+   * fonte fica porque e barata e mata o mutante direto, no idioma; as duas nao se excluem.)
+   *
    * O QUE ESTA GUARDA IMPEDE: `etapasLeads ?? []` apaga a diferenca entre "a leitura falhou" e "nao
    * havia ninguem", e o funil passa a imprimir 0 (0%) onde a verdade era 5 / 2 / 1 (medido em
    * producao, janela de 90 dias, 03/09/2026).
    */
-  const fonte = readFileSync(new URL("../lib/dados/marketing.ts", import.meta.url), "utf8");
+  const fonte = readFileSync(new URL("../lib/dados/marketing-leitura.ts", import.meta.url), "utf8");
   const semComentarios = fonte
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n")

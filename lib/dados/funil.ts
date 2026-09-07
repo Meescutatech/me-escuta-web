@@ -14,6 +14,14 @@ import {
 } from "./funil-calculos";
 import { parseTags } from "./ficha-calculos";
 import { SLA_PADRAO_DECLARADO, interpretarSlaEtapas, type SlaEtapas } from "./funil-ordenacao";
+import { ETAPAS_PADRAO, mapearEtapas, type EtapaFunil, type TipoEtapa } from "./funil-etapas";
+
+/**
+ * Reexportado para não tocar nos quatro importadores existentes (`dashboard.ts`, `sidebar.ts`,
+ * `conversas/page.tsx` e este arquivo). A definição mora em `funil-etapas.ts` porque o servidor
+ * MCP precisa dela SEM arrastar `next/headers` junto — ver o cabeçalho de lá.
+ */
+export { ETAPAS_PADRAO, type EtapaFunil, type TipoEtapa };
 
 /**
  * Camada de leitura do FUNIL. Casada com o schema real (Agent 2, migrations 0009+0010) —
@@ -32,25 +40,6 @@ import { SLA_PADRAO_DECLARADO, interpretarSlaEtapas, type SlaEtapas } from "./fu
 export type Origem = "wa" | "ig" | "meta" | "ind";
 export type TipoResp = "dm" | "sara" | "fono";
 export type AgenteProp = "clara" | "lev";
-/**
- * R23: `arquivado` é um tipo real da config vigente — não uma etapa do funil. Deixá-lo fora do
- * union era o que fazia o TypeScript concordar com um board que a produção já contradizia.
- */
-export type TipoEtapa = "aberto" | "ganho" | "perdido" | "arquivado";
-
-export interface EtapaFunil {
-  chave: string; // 'novo', 'qualificando', … (contrato: chave, não id)
-  nome: string;
-  cor: string; // hex
-  tipo: TipoEtapa;
-  ordem: number;
-  /**
-   * R23 · a config marca com `no_board: true` a etapa que EXISTE no funil mas não é coluna de
-   * trabalho (hoje: `arquivado`, com 582 dos 679 leads). O campo estava na config e o código não
-   * o lia — ver o comentário de `chavesDoBoard`.
-   */
-  no_board: boolean;
-}
 
 export interface PropostaPendente {
   agente: AgenteProp;
@@ -123,18 +112,6 @@ export interface DadosFunil {
   sla: SlaEtapas;
 }
 
-// ─────────────── etapas padrão (espelho do funil_vendas v2 real) ───────────────
-
-export const ETAPAS_PADRAO: EtapaFunil[] = [
-  { chave: "novo", nome: "Novo lead", cor: "#94a3b8", tipo: "aberto", ordem: 1, no_board: false },
-  { chave: "qualificando", nome: "Qualificando", cor: "#38bdf8", tipo: "aberto", ordem: 2, no_board: false },
-  { chave: "avaliacao", nome: "Avaliação auditiva", cor: "#a78bfa", tipo: "aberto", ordem: 3, no_board: false },
-  { chave: "proposta", nome: "Proposta enviada", cor: "#fbbf24", tipo: "aberto", ordem: 4, no_board: false },
-  { chave: "negociacao", nome: "Negociação", cor: "#fb923c", tipo: "aberto", ordem: 5, no_board: false },
-  { chave: "ganho", nome: "Ganho", cor: "#34d399", tipo: "ganho", ordem: 90, no_board: false },
-  { chave: "perdido", nome: "Perdido", cor: "#f87171", tipo: "perdido", ordem: 91, no_board: false },
-];
-
 // ─────────────── leitura real ───────────────
 
 const MAPA_ORIGEM: Record<string, Origem> = {
@@ -168,20 +145,7 @@ export async function lerEtapasReais(cliente?: Supabase): Promise<EtapaFunil[] |
     .eq("nome", "funil_vendas")
     .maybeSingle();
   if (error || !data) return null;
-  const etapas = (data.payload as any)?.etapas;
-  if (!Array.isArray(etapas) || etapas.length === 0) return null;
-  return etapas
-    .map((e: any, i: number) => ({
-      chave: String(e.chave ?? e.id ?? i),
-      nome: String(e.nome ?? e.chave),
-      cor: String(e.cor ?? ETAPAS_PADRAO[i]?.cor ?? "#94a3b8"),
-      tipo: (e.tipo ?? "aberto") as TipoEtapa,
-      ordem: Number(e.ordem ?? i + 1),
-      // `no_board` explícito OU tipo 'arquivado': as duas marcas dizem a mesma coisa, e ler as
-      // duas evita que uma config futura que use só uma delas volte a encher o board.
-      no_board: e.no_board === true || e.tipo === "arquivado",
-    }))
-    .sort((a, b) => a.ordem - b.ordem);
+  return mapearEtapas(data.payload);
 }
 
 /** Teto da leitura de tarefas pendentes. Hoje `core.tarefa` tem 0 linhas — folga larga. */

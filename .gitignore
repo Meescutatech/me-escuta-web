@@ -19,3 +19,6 @@ tsconfig.tsbuildinfo
 .env.local.bak*
 .env*.bak*
 .vercel
+
+# artefato do servidor MCP — embute URL/anon key no build; nunca versionado
+dist-mcp/
