@@ -148,6 +148,13 @@ export interface Canal {
    * comportamento e significados opostos para quem opera: o primeiro e um canal que ninguem
    * configurou, o segundo e uma escolha. Colapsar os dois esconderia justamente a linha que ainda
    * precisa de decisao.
+   *
+   * ⚠️ ESTE CAMPO NAO SE LE SOZINHO. `false` significa "nao declarado" OU "esta base nao sabe
+   * dizer" — a view pode expor `nivel` sem `nivel_declarado` (a forma B do contrato em
+   * `dados/canais.ts`, e e a forma mais provavel, ja que o valor sai de `config_jsonb`). Quem
+   * separa os dois e o `declaracaoLegivel` de `CanaisLidos`, e a tela mostra texto diferente para
+   * cada um. Ler `nivel_declarado` sem ele afirma "ninguem escolheu" sobre uma leitura que nao
+   * houve — o engano do M7 outra vez.
    */
   nivel_declarado: boolean;
 }

@@ -85,6 +85,7 @@ export function TabelaCanais({
   dominioIndisponivel,
   r22Legivel,
   nivelLegivel,
+  declaracaoLegivel,
 }: {
   canais: CanalNaTela[];
   meuPapel: Papel | null;
@@ -98,6 +99,8 @@ export function TabelaCanais({
   r22Legivel: boolean;
   /** D70 · `false` = a coluna `nivel` não existe nesta base. O painel DIZ que não leu. */
   nivelLegivel: boolean;
+  /** D70 · `false` = a view não expõe `nivel_declarado`; não dá para dizer se alguém escolheu. */
+  declaracaoLegivel: boolean;
 }) {
   const router = useRouter();
   const gestor = podeGerirCanais(meuPapel);
@@ -263,6 +266,7 @@ export function TabelaCanais({
               departamentos={departamentos}
               r22Legivel={r22Legivel}
               nivelLegivel={nivelLegivel}
+              declaracaoLegivel={declaracaoLegivel}
               gestor={gestor}
               pendente={pendente}
               expandido={expandido === c.canal_id}
@@ -322,12 +326,14 @@ function LinhaCanal({
   departamentos,
   r22Legivel,
   nivelLegivel,
+  declaracaoLegivel,
 }: {
   canal: CanalNaTela;
   grade: string;
   departamentos: Departamento[];
   r22Legivel: boolean;
   nivelLegivel: boolean;
+  declaracaoLegivel: boolean;
   cols: { provedor: boolean; departamento: boolean; finalidade: boolean; consentimento: boolean };
   gestor: boolean;
   pendente: boolean;
@@ -505,6 +511,7 @@ function LinhaCanal({
           meuPapel={meuPapel}
           f8Pronto={f8Pronto}
           nivelLegivel={nivelLegivel}
+          declaracaoLegivel={declaracaoLegivel}
         />
       ) : null}
 

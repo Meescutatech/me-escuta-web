@@ -339,11 +339,25 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
    * existia antes da troca, entao "existe" e verdade mesmo quando nada mudou, e a tela diria
    * "salvo" para uma troca que nao aconteceu.
    *
-   * ⚠️ Numa base sem a coluna `nivel` (o caso de PRODUCAO em 08/09/2026: `core.v_canal_whatsapp`
-   * tem 18 colunas e nenhuma e `nivel`), esta releitura devolve erro de coluna inexistente e a
-   * acao REPROVA. E o desfecho certo: o evento entra no ledger, mas o nivel nao passa a valer, e
-   * declarar sucesso ali seria exatamente o "diz salvo e nada muda" que este arquivo existe para
-   * matar.
+   * ⚠️ CORRIGIDO 08/09/2026 — aqui estava escrito que numa base sem a coluna "o evento entra no
+   * ledger, mas o nivel nao passa a valer" e que esta releitura reprovaria a acao. As duas frases
+   * eram FALSAS, e a segunda descrevia um caminho que nao roda. O que a producao faz, medido:
+   *
+   *   · `porta.projetor_registro` NAO tem a linha `canal_nivel_definido` (7 tipos `canal_*` la
+   *     dentro, e este nao e um deles — `select tipo from porta.projetor_registro where tipo like
+   *     'canal%'`);
+   *   · `porta.aplicar_projetores` termina com `if not v_achou then raise ... errcode='PMEE1'`;
+   *   · `porta.inserir_evento` faz `perform porta.aplicar_projetores(v_id)` DEPOIS do insert
+   *     (posicoes 14717 e 20152 do corpo vivo) e NAO tem um unico `exception when`.
+   *
+   * Logo o PMEE1 aborta a transacao inteira: o evento **nao entra** no ledger, esta releitura
+   * **nunca roda**, e o que a gestora ve e o texto cru do PMEE1. O desfecho e mais seguro do que
+   * o que estava descrito — nao ha escrita orfa —, mas a descricao mentia em tres pontos.
+   *
+   * O que continua verdade e a razao desta linha existir: quando o tipo ESTIVER registrado e a
+   * view expuser `nivel`, conferir so a existencia da linha seria vacuo do pior tipo, porque a
+   * linha do canal ja existia antes da troca. Enquanto o banco nao entrar, o unico exercicio
+   * desta regra e o teste — ver `tests/confirmar-projecao.test.ts`, secao D70.
    */
   canal_nivel_definido: {
     tabela: "v_canal_whatsapp",

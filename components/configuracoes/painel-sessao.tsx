@@ -53,6 +53,7 @@ export function PainelSessao({
   meuPapel,
   f8Pronto,
   nivelLegivel,
+  declaracaoLegivel,
 }: {
   canal: Canal;
   meuPapel: Papel | null;
@@ -63,6 +64,14 @@ export function PainelSessao({
    * afirmar ter lido o que não se leu foi o engano do M7, e ele custou uma rodada.
    */
   nivelLegivel: boolean;
+  /**
+   * D70. `false` = esta base não sabe dizer se ALGUÉM declarou o nível. Duas causas, e a tela
+   * separa as duas: ou `nivel` também não existe (`nivelLegivel` false), ou a view expõe `nivel`
+   * sem `nivel_declarado` — a forma B do contrato em `dados/canais.ts`, que é a que o banco pode
+   * muito bem escolher, já que o valor sai de `config_jsonb` e não de uma coluna. Nesse caso o
+   * nível vigente FOI lido; o que não dá para saber é se ele foi escolhido ou se é o padrão.
+   */
+  declaracaoLegivel: boolean;
 }) {
   const veredito = podeCriarSessao({ papel: meuPapel, canal, f8Pronto });
   const [estado, setEstado] = useState<EstadoSessaoNaTela | null>(null);
@@ -186,6 +195,7 @@ export function PainelSessao({
       <BlocoNivel
         canal={canal}
         nivelLegivel={nivelLegivel}
+        declaracaoLegivel={declaracaoLegivel}
         podePapel={podeGerirCanais(meuPapel)}
       />
 
@@ -531,18 +541,24 @@ function CamposAceite({
  * a decisão inteira — “aberto” não quer dizer nada para quem lê, enquanto “o sistema pode escrever
  * primeiro para quem nunca falou com você, e é isso que costuma fazer o WhatsApp banir” quer.
  *
- * TRÊS estados de leitura, não dois (e é o mesmo degrade honesto do M7 e do R22):
- *   · coluna ausente        → a tela diz que NÃO LEU. O que vale é estrito, e ela diz por quê.
- *   · lido, nunca declarado → vale estrito, mas ninguém escolheu. É a linha que pede decisão.
- *   · lido e declarado      → alguém escolheu, e a tela marca qual.
+ * QUATRO estados de leitura, não dois (e é o mesmo degrade honesto do M7 e do R22):
+ *   · sem `nivel`            → a tela diz que NÃO LEU. O que vale é estrito, e ela diz por quê.
+ *   · `nivel` sem declaração → o nível vigente foi LIDO; esta base é que não sabe dizer se alguém
+ *                              o escolheu. A tela mostra o vigente e nomeia o que não sabe — e
+ *                              salvar continua liberado, senão a forma B da view desabilitaria o
+ *                              botão para sempre num ambiente sem defeito nenhum.
+ *   · lido, nunca declarado  → vale estrito, mas ninguém escolheu. É a linha que pede decisão.
+ *   · lido e declarado       → alguém escolheu, e a tela marca qual.
  */
 function BlocoNivel({
   canal,
   nivelLegivel,
+  declaracaoLegivel,
   podePapel,
 }: {
   canal: Canal;
   nivelLegivel: boolean;
+  declaracaoLegivel: boolean;
   podePapel: boolean;
 }) {
   const router = useRouter();
@@ -572,8 +588,13 @@ function BlocoNivel({
    *     nada. Declarar o estrito de propósito não é no-op — muda o canal de "ninguém decidiu" para
    *     "alguém decidiu que é assim", que são os dois estados que a flag `nivel_declarado` separa.
    */
-  const declararODefault = nivelLegivel && !canal.nivel_declarado && escolha === vigente;
-  const podeSalvar = nivelLegivel && (escolha !== vigente || declararODefault);
+  //  3. quando a view traz `nivel` mas NÃO `nivel_declarado` (forma B), salvar continua liberado
+  //     mesmo com a escolha igual à vigente. Aqui não se sabe se alguém já declarou, e travar o
+  //     botão por uma ignorância NOSSA seria transformar o degrade transitório em estado final:
+  //     a gestora ficaria sem poder declarar nada num ambiente onde o banco está inteiro.
+  const declararODefault = nivelLegivel && declaracaoLegivel && !canal.nivel_declarado && escolha === vigente;
+  const podeSalvar =
+    nivelLegivel && (escolha !== vigente || declararODefault || !declaracaoLegivel);
 
   function salvar(nivel: NivelCanal) {
     setErro(null);
@@ -611,6 +632,16 @@ function BlocoNivel({
             daqui vai falhar na conferência até a migration entrar.
           </Faixa>
         </div>
+      ) : !declaracaoLegivel ? (
+        <p className="mt-2.5 text-[13px] text-tinta">
+          Vigente: <b>{rotuloNivel(vigente)}</b> —{" "}
+          <span className="text-suave">
+            e esta base não diz se alguém escolheu isso ou se é o padrão de quem nunca declarou. A
+            view expõe <span className="font-mono">nivel</span>, mas não{" "}
+            <span className="font-mono">nivel_declarado</span>. O nível acima FOI lido; a
+            procedência dele é que não.
+          </span>
+        </p>
       ) : canal.nivel_declarado ? (
         <p className="mt-2.5 text-[13px] text-tinta">
           Vigente: <b>{rotuloNivel(vigente)}</b> — declarado.
@@ -697,7 +728,7 @@ function BlocoNivel({
                 ? "Sem a coluna, não dá para salvar"
                 : precisaAceite
                   ? "Ler o termo e salvar nível"
-                  : declararODefault
+                  : declararODefault || (!declaracaoLegivel && escolha === vigente)
                     ? "Declarar este nível"
                     : escolha === vigente
                       ? "Nível salvo"

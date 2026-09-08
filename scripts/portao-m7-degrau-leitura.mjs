@@ -173,27 +173,38 @@ const CANAIS = [
 ];
 
 /**
- * @param {"d70"|"r22"|"m7"|"corte"|"base"|"nenhum"} ate  o degrau mais alto que o "banco" aceita.
+ * @param {"d70"|"so_nivel"|"r22"|"m7"|"corte"|"base"|"nenhum"} ate  o degrau mais alto que o
+ *        "banco" aceita.
  *
  * ⚠️ O NOME DA VARIÁVEL LOCAL É `altura`, e não `nivel`, desde a D70 — `nivel` agora é uma COLUNA
  * do produto, e duas coisas diferentes com o mesmo nome dentro do mesmo fixture é exatamente como
  * um portão passa a medir a si mesmo.
+ *
+ * ⭐ `so_nivel` existe porque o FORMATO DA VIEW AINDA NÃO FOI ESCRITO pela trilha do banco, e a
+ * forma mais provável é justamente essa: `nivel` derivado de `config_jsonb` (é o que o runtime já
+ * faz) e nenhuma coluna `nivel_declarado`. Sem este degrau, a web exigiria as duas colunas, o
+ * degrau de cima erraria 42703 e `nivelLegivel` ficaria false PARA SEMPRE — botão desabilitado e
+ * feature nascida morta, com rc=0 e nenhum erro em log nenhum.
  */
 function responderCanais(ate) {
-  const ordem = { d70: 5, r22: 4, m7: 3, corte: 2, base: 1, nenhum: 0 };
+  const ordem = { d70: 6, so_nivel: 5, r22: 4, m7: 3, corte: 2, base: 1, nenhum: 0 };
   return (q) => {
     if (q.tabela !== "v_canal_whatsapp") return { data: [] };
     const cols = q.colunas ?? "";
-    const nivel = cols.includes("nivel")
-      ? 5
-      : cols.includes("departamento")
-        ? 4
-        : cols.includes("finalidade")
-          ? 3
-          : cols.includes("inbox_desde")
-            ? 2
-            : 1;
-    if (nivel > ordem[ate]) {
+    // a ORDEM importa: "nivel_declarado" contém "nivel", então ele tem de ser testado primeiro,
+    // senão os dois degraus de cima viram um só e o `so_nivel` nunca é exercitado.
+    const altura = cols.includes("nivel_declarado")
+      ? 6
+      : cols.includes("nivel")
+        ? 5
+        : cols.includes("departamento")
+          ? 4
+          : cols.includes("finalidade")
+            ? 3
+            : cols.includes("inbox_desde")
+              ? 2
+              : 1;
+    if (altura > ordem[ate]) {
       return { data: null, error: { message: `column v_canal_whatsapp.x does not exist` } };
     }
     const pedidas = cols.split(",").map((c) => c.trim());
@@ -208,6 +219,7 @@ if (cD70.canais.length === 0) {
   process.exit(2);
 }
 exigir(cD70.nivelLegivel === true, "canais degrau D70: nivelLegivel devia estar ligado");
+exigir(cD70.declaracaoLegivel === true, "canais degrau D70: declaracaoLegivel devia estar ligado");
 exigir(cD70.canais.length === CANAIS.length, `canais degrau D70 PERDEU LINHA: veio ${cD70.canais.length}`);
 {
   const aberto = cD70.canais.find((c) => c.canal_id === "627327023793464");
@@ -240,15 +252,76 @@ console.log(
     `nivel=${JSON.stringify(cPodre.canais[0]?.nivel ?? null)} declarado=${cPodre.canais[0]?.nivel_declarado}`,
 );
 
+// ─────── DEGRAU SÓ-`nivel`: a view expõe `nivel` e NÃO `nivel_declarado` (forma B) ───────
+//
+// É o degrau que impede a feature de nascer morta. Se a trilha do banco derivar o nível de
+// `config_jsonb` sem criar uma coluna de "alguém declarou" — que é o que o runtime já faz —, a web
+// TEM de continuar lendo o nível e dizer, com todas as letras, que a PROCEDÊNCIA dele é que não
+// deu para ler. O que não pode acontecer é `nivelLegivel=false` permanente.
+const cSoNivel = await lerCanais({ cliente: criarClienteFalso(responderCanais("so_nivel")) });
+if (cSoNivel.canais.length === 0) {
+  console.error("PORTÃO RECUSA POR VACUIDADE: o fixture do degrau só-nivel não devolveu linha nenhuma.");
+  process.exit(2);
+}
+exigir(cSoNivel.canais.length === CANAIS.length, `degrau só-nivel PERDEU LINHA: veio ${cSoNivel.canais.length}`);
+exigir(
+  cSoNivel.nivelLegivel === true,
+  "degrau só-nivel: nivelLegivel devia estar LIGADO — exigir `nivel_declarado` mataria a feature numa base sã",
+);
+exigir(
+  cSoNivel.declaracaoLegivel === false,
+  "degrau só-nivel: declaracaoLegivel devia ser FALSE — esta base não diz quem escolheu",
+);
+{
+  const aberto = cSoNivel.canais.find((c) => c.canal_id === "627327023793464");
+  exigir(aberto?.nivel === "aberto", "degrau só-nivel: o nível VIGENTE tem de chegar mesmo sem a segunda coluna");
+  exigir(
+    cSoNivel.canais.every((c) => c.nivel_declarado === false),
+    "degrau só-nivel: sem a coluna, `nivel_declarado` NÃO pode ser afirmado — quem separa os casos é declaracaoLegivel",
+  );
+}
+
+// ─────── DEGRAU R22 · ⭐ ESTE É O MUNDO DE HOJE, e é ele que produção responde ───────
+//
+// MEDIDO em produção 08/09/2026 (`information_schema.columns` de `core.v_canal_whatsapp`): 18
+// colunas, exatamente as de COLUNAS_R22, incluindo `departamento`. Ou seja, o degrau que responde
+// hoje é o do R22 — NÃO o do M7, como este arquivo dizia até 08/09.
+//
+// Sem este bloco o portão não exercitava o degrau de produção: marcar `d70: true` na linha do R22
+// (o erro de copiar-colar mais provável quando a migration entrar) passava com rc=0 — e aí a tela
+// AFIRMA ter lido um nível que nunca leu, `podeSalvar` destrava, e a gestora dispara uma troca que
+// não pode ter efeito. É o engano do M7 outra vez, com um botão junto.
+const cR22 = await lerCanais({ cliente: criarClienteFalso(responderCanais("r22")) });
+if (cR22.canais.length === 0) {
+  console.error("PORTÃO RECUSA POR VACUIDADE: o fixture do degrau R22 não devolveu linha nenhuma.");
+  process.exit(2);
+}
+exigir(cR22.canais.length === CANAIS.length, `degrau R22 (produção HOJE) PERDEU LINHA: veio ${cR22.canais.length}`);
+exigir(cR22.indisponivel === false && cR22.corteLegivel && cR22.m7Legivel && cR22.r22Legivel,
+  "degrau R22: os quatro sinais antigos deviam estar ligados");
+exigir(
+  cR22.nivelLegivel === false,
+  "degrau R22: nivelLegivel devia ser FALSE — é o estado REAL de produção em 08/09/2026",
+);
+exigir(cR22.declaracaoLegivel === false, "degrau R22: declaracaoLegivel devia ser FALSE");
+exigir(
+  cR22.canais.every((c) => c.nivel === null && c.nivel_declarado === false),
+  "degrau R22: sem a coluna, nível vem nulo e NÃO declarado — supor 'estrito lido' é o engano do M7",
+);
+exigir(cR22.canais[0].departamento === "pre_venda", "degrau R22: departamento devia chegar");
+
 const cM7 = await lerCanais({ cliente: criarClienteFalso(responderCanais("m7")) });
 if (cM7.canais.length === 0) {
   console.error("PORTÃO RECUSA POR VACUIDADE: o fixture de canais não devolveu linha nenhuma.");
   process.exit(2);
 }
 exigir(cM7.indisponivel === false && cM7.corteLegivel && cM7.m7Legivel, "canais degrau M7: os três sinais deviam estar ligados");
-// ⭐ ESTE É O MUNDO DE HOJE (medido em produção 08/09/2026: `select nivel from
-// core.v_canal_whatsapp` devolve 42703 — a coluna não existe). A tela TEM de dizer que não leu.
-exigir(cM7.nivelLegivel === false, "canais degrau M7: nivelLegivel devia ser FALSE — é o estado real de produção hoje");
+// ⚠️ CORRIGIDO 08/09: este comentário dizia "⭐ ESTE É O MUNDO DE HOJE" sobre o degrau M7, e era
+// falso — produção tem `departamento`, logo responde no degrau R22, exercitado logo acima. Aqui o
+// que se mede é o degrau ANTERIOR (base sem a 0130). A exigência continua valendo nos dois: sem a
+// coluna, a tela TEM de dizer que não leu, em vez de desenhar "Estrito" como se soubesse.
+exigir(cM7.nivelLegivel === false, "canais degrau M7: nivelLegivel devia ser FALSE");
+exigir(cM7.declaracaoLegivel === false, "canais degrau M7: declaracaoLegivel devia ser FALSE");
 exigir(
   cM7.canais.every((c) => c.nivel === null && c.nivel_declarado === false),
   "canais degrau M7: sem a coluna, nível tem de vir nulo e NÃO declarado — supor 'estrito lido' é o engano do M7",
@@ -293,7 +366,9 @@ if (falhas.length > 0) {
 console.log(`\nPORTÃO APROVA — degrau alto e degrau baixo medidos, controle negativo disparou.`);
 console.log(`  conversas · alto:  ${alto.conversas.length} · origemLegivel=${alto.origemLegivel}`);
 console.log(`  conversas · baixo: ${baixo.conversas.length} · origemLegivel=${baixo.origemLegivel}`);
-console.log(`  canais    · d70:   ${cD70.canais.length} · nivelLegivel=${cD70.nivelLegivel}
+console.log(`  canais    · d70:   ${cD70.canais.length} · nivelLegivel=${cD70.nivelLegivel} declaracaoLegivel=${cD70.declaracaoLegivel}
+  canais    · so_nivel: ${cSoNivel.canais.length} · nivelLegivel=${cSoNivel.nivelLegivel} declaracaoLegivel=${cSoNivel.declaracaoLegivel}
+  canais    · r22 (o que PRODUÇÃO responde hoje): ${cR22.canais.length} · nivelLegivel=${cR22.nivelLegivel}
   canais    · m7:    ${cM7.canais.length} · m7Legivel=${cM7.m7Legivel} corte=${cM7.corteLegivel}`);
 console.log(`  canais    · hoje:  ${cHoje.canais.length} · m7Legivel=${cHoje.m7Legivel} corte=${cHoje.corteLegivel}`);
 console.log(`  canais    · base:  ${cBase.canais.length} · m7Legivel=${cBase.m7Legivel} corte=${cBase.corteLegivel}`);

@@ -332,6 +332,21 @@ test("PMEE3 é descarte ESPERADO, não falha — não retentar", () => {
   assert.ok(!exigeRecarregar("descarte_esperado"));
 });
 
+test("D70 · PMEE1 é MIGRATION QUE FALTA, não erro genérico — a classe muda o que a tela diz", () => {
+  /*
+   * `porta.aplicar_projetores` levanta PMEE1 quando o tipo não está em `porta.projetor_registro`,
+   * e — medido no corpo vivo em 08/09/2026 — `porta.inserir_evento` aplica os projetores DEPOIS
+   * do insert, na MESMA transação, sem um único `exception when`. Ou seja: o PMEE1 aborta tudo, o
+   * evento NÃO entra no ledger, e o que sobe para a tela é o texto cru dele.
+   *
+   * `canal_nivel_definido` está exatamente nesse estado em produção hoje (7 tipos `canal_*`
+   * registrados, e este não é um deles). Sem esta linha a recusa chegaria como "outro" — a classe
+   * do erro que ninguém sabe explicar — em vez de "o objeto do banco não existe neste ambiente".
+   */
+  assert.equal(classificarErroPorta("PMEE1"), "indisponivel");
+  assert.ok(!exigeRecarregar(classificarErroPorta("PMEE1")));
+});
+
 test("papel insuficiente, recusa de conteúdo e objeto ausente são classes distintas", () => {
   assert.equal(classificarErroPorta("42501"), "permissao");
   assert.equal(classificarErroPorta("23514"), "recusa");

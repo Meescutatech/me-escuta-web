@@ -30,6 +30,7 @@
     "portao:f13": "node --experimental-strip-types scripts/portao-f13-midia.mjs",
     "bateria:f13": "node --experimental-strip-types scripts/bateria-f13.mjs",
     "portao:m7-degrau": "node --experimental-strip-types scripts/portao-m7-degrau-leitura.mjs",
+    "portao:d70-nivel": "node --experimental-strip-types scripts/portao-d70-nivel-acao.mjs",
     "mcp:empacotar": "node scripts/empacotar-mcp.mjs",
     "mcp:dev": "node --experimental-strip-types mcp/servidor.ts"
   },

@@ -47,22 +47,46 @@ const COLUNAS_BASE =
  */
 const COLUNAS_R22 = `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por,departamento`;
 
-const DEGRAUS: { colunas: string; corte: boolean; m7: boolean; r22: boolean; d70: boolean }[] = [
+const DEGRAUS: {
+  colunas: string;
+  corte: boolean;
+  m7: boolean;
+  r22: boolean;
+  d70: boolean;
+  /** a view diz, por si, se ALGUEM declarou o nivel (coluna `nivel_declarado`) */
+  declarado: boolean;
+}[] = [
   /*
-   * D70 · o degrau NOVO e o de cima, com `nivel` e `nivel_declarado`, e existe pela MESMA razao
-   * dos outros tres: a web sobe antes do banco (D18), PostgREST recusa a consulta INTEIRA por
-   * causa de uma coluna que nao existe, e sem o degrau a tela de canais ficaria VAZIA num
-   * ambiente sem defeito nenhum — indistinguivel de "nao ha canais".
+   * D70 · os dois degraus de cima sao novos, e existem pela MESMA razao dos outros tres: a web
+   * sobe antes do banco (D18), PostgREST recusa a consulta INTEIRA por causa de uma coluna que
+   * nao existe, e sem o degrau a tela de canais ficaria VAZIA num ambiente sem defeito nenhum —
+   * indistinguivel de "nao ha canais".
    *
-   * MEDIDO em producao 08/09/2026: `core.v_canal_whatsapp` tem 18 colunas e NENHUMA delas e
-   * `nivel`. Ou seja, hoje o degrau que responde e o SEGUNDO, e `nivelLegivel` volta `false` —
-   * a tela diz que nao conseguiu ler, em vez de mostrar "estrito" como se soubesse.
+   * ⭐ SAO DOIS, e nao um, porque o FORMATO DA VIEW AINDA NAO EXISTE — a trilha do banco nao
+   * escreveu a migration. Exigir as DUAS colunas seria um contrato unilateral: se o banco expuser
+   * so `nivel` (derivado de `config_jsonb`, que e a forma que a trilha do runtime ja adotou —
+   * `me-escuta-runtime/src/whatsapp/canais.ts` le `config_jsonb.nivel` e nao conhece coluna
+   * nenhuma), o degrau de cima erraria 42703 em `nivel_declarado`, a leitura cairia para o degrau
+   * do R22 e `nivelLegivel` ficaria `false` PARA SEMPRE — botao desabilitado, faixa ambar
+   * permanente, feature nascida morta com rc=0 e nenhum erro em log nenhum. O degrade desenhado
+   * para ser transitorio viraria o estado final.
+   *
+   * Entao a web aceita AS DUAS FORMAS, e o contrato com o banco fica escrito aqui:
+   *   forma A · `nivel` text + `nivel_declarado` boolean  → nivelLegivel E declaracaoLegivel
+   *   forma B · so `nivel` text                           → nivelLegivel; declaracaoLegivel=false,
+   *             e a tela DIZ que esta base nao sabe dizer se alguem escolheu ou se e o padrao.
+   *
+   * MEDIDO em producao 08/09/2026: `core.v_canal_whatsapp` tem 18 colunas, exatamente as de
+   * `COLUNAS_R22`, e nenhuma delas e `nivel`. Ou seja, HOJE quem responde e o TERCEIRO degrau
+   * (`r22`) e `nivelLegivel` volta `false` — a tela diz que nao conseguiu ler, em vez de mostrar
+   * "estrito" como se soubesse.
    */
-  { colunas: `${COLUNAS_R22},nivel,nivel_declarado`, corte: true, m7: true, r22: true, d70: true },
-  { colunas: COLUNAS_R22, corte: true, m7: true, r22: true, d70: false },
-  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por`, corte: true, m7: true, r22: false, d70: false },
-  { colunas: `${COLUNAS_BASE},inbox_desde`, corte: true, m7: false, r22: false, d70: false },
-  { colunas: COLUNAS_BASE, corte: false, m7: false, r22: false, d70: false },
+  { colunas: `${COLUNAS_R22},nivel,nivel_declarado`, corte: true, m7: true, r22: true, d70: true, declarado: true },
+  { colunas: `${COLUNAS_R22},nivel`, corte: true, m7: true, r22: true, d70: true, declarado: false },
+  { colunas: COLUNAS_R22, corte: true, m7: true, r22: true, d70: false, declarado: false },
+  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por`, corte: true, m7: true, r22: false, d70: false, declarado: false },
+  { colunas: `${COLUNAS_BASE},inbox_desde`, corte: true, m7: false, r22: false, d70: false, declarado: false },
+  { colunas: COLUNAS_BASE, corte: false, m7: false, r22: false, d70: false, declarado: false },
 ];
 
 /** Nada respondeu. Um objeto so, para os dois caminhos nao divergirem na proxima coluna nova. */
@@ -73,6 +97,7 @@ const INDISPONIVEL: CanaisLidos = {
   m7Legivel: false,
   r22Legivel: false,
   nivelLegivel: false,
+  declaracaoLegivel: false,
 };
 
 export interface CanaisLidos {
@@ -100,6 +125,15 @@ export interface CanaisLidos {
    * M7 outra vez. Mesma distincao que `m7Legivel` e `r22Legivel` ja faziam.
    */
   nivelLegivel: boolean;
+  /**
+   * D70. `false` = esta base NAO diz se alguem declarou o nivel — ou porque a coluna `nivel` nao
+   * existe (e ai `nivelLegivel` tambem e false), ou porque a view expoe `nivel` SEM
+   * `nivel_declarado` (a forma B do contrato acima). No segundo caso o nivel VIGENTE foi lido e e
+   * confiavel; o que nao da para saber e se ele foi ESCOLHIDO por alguem ou se e o padrao de quem
+   * nunca declarou. A tela diz exatamente isso, em vez de afirmar "ninguem escolheu" — que seria
+   * inventar uma leitura que nao houve.
+   */
+  declaracaoLegivel: boolean;
 }
 
 function mapear(
@@ -108,6 +142,7 @@ function mapear(
   temM7: boolean,
   temR22: boolean,
   temD70: boolean,
+  temDeclarado: boolean,
 ): Canal | null {
   const canalId = String(linha.canal_id ?? "").trim();
   if (!canalId) return null;
@@ -141,7 +176,13 @@ function mapear(
     nivel: temD70 && nivelValido(linha.nivel) ? linha.nivel : null,
     // Valor gravado fora do dominio NAO conta como declaracao — e ruido, e ruido nao e escolha de
     // ninguem. Por isso o `nivelValido` aparece nas duas linhas, e nao so na de cima.
-    nivel_declarado: temD70 && linha.nivel_declarado === true && nivelValido(linha.nivel),
+    //
+    // `temDeclarado` false (forma B da view: `nivel` sem `nivel_declarado`) tambem devolve false
+    // aqui, e por isso a tela NAO pode ler este campo sozinha: false significa "nao declarado" OU
+    // "esta base nao sabe dizer", e quem separa os dois e `declaracaoLegivel`. Derivar a
+    // declaracao de `nivel != null` seria adivinhar o encoding da view que ainda nao existe.
+    nivel_declarado:
+      temD70 && temDeclarado && linha.nivel_declarado === true && nivelValido(linha.nivel),
   };
 }
 
@@ -170,7 +211,7 @@ export async function lerCanais(opcoes: { cliente?: Supabase } = {}): Promise<Ca
       const { data, error } = await consulta(degrau.colunas);
       if (error || !data) continue;
       const canais = (data as unknown as Record<string, unknown>[])
-        .map((l) => mapear(l, degrau.corte, degrau.m7, degrau.r22, degrau.d70))
+        .map((l) => mapear(l, degrau.corte, degrau.m7, degrau.r22, degrau.d70, degrau.declarado))
         .filter((c): c is Canal => c !== null);
       return {
         canais,
@@ -179,6 +220,7 @@ export async function lerCanais(opcoes: { cliente?: Supabase } = {}): Promise<Ca
         m7Legivel: degrau.m7,
         r22Legivel: degrau.r22,
         nivelLegivel: degrau.d70,
+        declaracaoLegivel: degrau.declarado,
       };
     }
     // Nenhum degrau respondeu: a view não existe, ou a leitura falhou por outro motivo.

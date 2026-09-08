@@ -54,6 +54,17 @@ const POR_SQLSTATE: Record<string, ClasseErroPorta> = {
   "23503": "recusa", // foreign_key_violation
   PMEE3: "descarte_esperado", // contraparte desconhecida em canal não oficial
   PMEE2: "sem_bloco_conversa",
+  /*
+   * D70 · PMEE1 = `porta.aplicar_projetores` não achou o tipo em `porta.projetor_registro`, e por
+   * isso ABORTOU a transação inteira (o `perform` acontece depois do insert, na mesma transação,
+   * e `porta.inserir_evento` não tem `exception when` nenhum — medido no corpo vivo em 08/09).
+   *
+   * É `indisponivel` pela definição desta lista: o objeto do banco ainda não existe neste
+   * ambiente. `canal_nivel_definido` está exatamente nesse estado em produção hoje — a migration
+   * que registra o tipo não subiu —, e sem esta linha a recusa chegaria como "outro", que é a
+   * classe do erro que ninguém sabe explicar.
+   */
+  PMEE1: "indisponivel",
   "42883": "indisponivel", // undefined_function
   "42P01": "indisponivel", // undefined_table
   "42703": "indisponivel", // undefined_column

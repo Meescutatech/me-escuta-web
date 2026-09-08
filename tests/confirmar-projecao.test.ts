@@ -432,3 +432,110 @@ test("enxerto · modo filtros monta a releitura com todos os filtros, e falha se
   assert.equal(semDado.ok, false);
   assert.match(semDado.motivo ?? "", /faltou dado/);
 });
+
+/*
+ * ═══════════ D70 · `canal_nivel_definido` — a CONFERÊNCIA POR EFEITO, exercitada ═══════════
+ *
+ * Por que estes três testes existem, e a razão é um furo real desta rodada: a linha do
+ * `canal_nivel_definido` entrou em CONFERENCIA e NADA a exercitava. Os dois testes que citavam o
+ * tipo asseravam que a CHAVE existe (`temConferencia(tipo) || excecaoDe(tipo)`) e que a lista tem
+ * 11 itens — nenhum olhava os FILTROS. Provado por mutação: apagar
+ * `{ campo: "nivel", op: "igualPayload", dePayload: "nivel" }` deixava a suíte inteira verde
+ * (913/913) e o portão do degrau com rc=0.
+ *
+ * Sem esse filtro a releitura vira "a linha do canal existe" — linha que já existia ANTES da
+ * ação —, e a tela diria "salvo" para um nível que não mudou. É o "readback vira decoração" que o
+ * cabeçalho deste arquivo existe para matar, e agora está medido em vez de declarado.
+ *
+ * Agrava: hoje esta regra NÃO PODE ser exercida em produção (`porta.projetor_registro` não tem o
+ * tipo; o PMEE1 aborta a transação antes do insert). Enquanto a trilha do banco não registrar o
+ * tipo, o teste é a única rede que existe.
+ */
+
+/** Um "banco" que guarda uma linha por canal e só devolve a linha que casa com TODOS os eq. */
+function bancoDeCanais(linhas: Array<Record<string, unknown>>) {
+  const emitidas: Array<Array<{ campo: string; valor: unknown }>> = [];
+  const cliente = {
+    schema: () => ({
+      from: () => {
+        const eqs: Array<{ campo: string; valor: unknown }> = [];
+        const q: any = {
+          select: () => q,
+          eq(campo: string, valor: unknown) {
+            eqs.push({ campo, valor });
+            return q;
+          },
+          not(campo: string, _op: string, _v: unknown) {
+            eqs.push({ campo, valor: "<naoNulo>" });
+            return q;
+          },
+          limit: async () => {
+            emitidas.push(eqs);
+            const casam = linhas.filter((l) =>
+              eqs.every((f) =>
+                f.valor === "<naoNulo>" ? l[f.campo] != null : l[f.campo] === f.valor,
+              ),
+            );
+            return { data: casam, error: null };
+          },
+        };
+        return q;
+      },
+    }),
+  } as never;
+  return { cliente, emitidas };
+}
+
+test("D70 · o readback do nível confere O VALOR RESULTANTE, não a existência da linha", () => {
+  const r = CONFERENCIA["canal_nivel_definido"];
+  assert.ok(r && r.por === "filtros");
+  const filtros = (r as Extract<ConferenciaProjecao, { por: "filtros" }>).filtros;
+  assert.deepEqual(resolverFiltros(filtros, { canal_id: "lite:jade", nivel: "aberto" }, null), [
+    { campo: "canal_id", tipo: "igual", valor: "lite:jade" },
+    { campo: "nivel", tipo: "igual", valor: "aberto" },
+  ]);
+  // sem o `nivel` no payload a conferência CAI — nunca confere "qualquer linha do canal"
+  assert.equal(resolverFiltros(filtros, { canal_id: "lite:jade" }, null), null);
+});
+
+test("D70 · nível que NÃO mudou no banco reprova a escrita (a mutação que a suíte deixava passar)", async () => {
+  // a linha do canal EXISTE e continua em `estrito`; a ação pediu `aberto`.
+  const { cliente, emitidas } = bancoDeCanais([{ canal_id: "lite:jade", nivel: "estrito" }]);
+  const r = await confirmarProjecao(
+    cliente,
+    "canal_nivel_definido",
+    { canal_id: "lite:jade", nivel: "aberto" },
+    { evento_id: "e1", posicao_global: 10 },
+  );
+  assert.equal(r.ok, false, "conferir só a existência da linha diria 'salvo' para uma troca que não aconteceu");
+  assert.equal(r.motivo, MOTIVO_NAO_PROJETADO);
+  // e a consulta emitida TEM de carregar o nível — é o que separa "esta linha" de "qualquer linha"
+  assert.deepEqual(emitidas, [
+    [
+      { campo: "canal_id", valor: "lite:jade" },
+      { campo: "nivel", valor: "aberto" },
+    ],
+  ]);
+});
+
+test("D70 · nível que MUDOU de verdade aprova — sem isto o teste acima passaria por vacuidade", async () => {
+  const { cliente } = bancoDeCanais([{ canal_id: "lite:jade", nivel: "aberto" }]);
+  const r = await confirmarProjecao(
+    cliente,
+    "canal_nivel_definido",
+    { canal_id: "lite:jade", nivel: "aberto" },
+    { evento_id: "e1", posicao_global: 10 },
+  );
+  assert.deepEqual(r, { ok: true });
+});
+
+test("D70 · a conferência é do canal PEDIDO — outro canal no mesmo nível não conta", async () => {
+  const { cliente } = bancoDeCanais([{ canal_id: "lite:outra", nivel: "aberto" }]);
+  const r = await confirmarProjecao(
+    cliente,
+    "canal_nivel_definido",
+    { canal_id: "lite:jade", nivel: "aberto" },
+    { evento_id: "e1", posicao_global: 10 },
+  );
+  assert.equal(r.ok, false);
+});
