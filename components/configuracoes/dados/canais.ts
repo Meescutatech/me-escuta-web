@@ -287,7 +287,7 @@ export async function lerHistoricoNivel(
       .schema("core")
       .from("evento")
       .select("id,tipo,ator,payload,criado_em")
-      .eq("tipo", "canal_nivel_definido")
+      .eq("tipo", "canal_nivel_alterado")
       .eq("payload->>canal_id", canalId)
       .order("criado_em", { ascending: false })
       .limit(opcoes.limite ?? 20);

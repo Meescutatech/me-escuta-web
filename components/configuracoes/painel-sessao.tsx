@@ -14,9 +14,11 @@ import {
 import { definirNivelCanal, lerTrocasDeNivel } from "@/app/(app)/configuracoes/canais/actions";
 import {
   MEIOS_CONSENTIMENTO,
+  MOTIVO_ACEITE_NAO_GRAVOU,
   ROTULO_MOTIVO_DESCARTE,
   TERMO_CANAL_PESSOAL,
   TERMO_VERSAO,
+  aceiteEntaoNivel,
   descricaoEstadoSessao,
   exigeAceiteDoTermo,
   intervaloRelituraMs,
@@ -630,7 +632,7 @@ function BlocoNivel({
             nível não subiu aqui). O que está valendo é o <b>Estrito</b>, porque é o que o código
             faz quando não há nível declarado — mas isso é dedução, não leitura. O botão fica
             desligado: enquanto a migration não entrar, a troca nem chega a ser gravada (o banco
-            não conhece o evento <span className="font-mono">canal_nivel_definido</span> e recusa
+            não conhece o evento <span className="font-mono">canal_nivel_alterado</span> e recusa
             a transação inteira), então oferecer o botão seria prometer uma escrita que não
             acontece.
           </Faixa>
@@ -848,19 +850,20 @@ function DialogoAceiteENivel({
             disabled={pendente || gravando || Object.keys(problemas).length > 0}
             onClick={() =>
               iniciar(async () => {
-                // 1º o aceite. Se ele não gravar, o nível NÃO é trocado.
-                const r = await registrarConsentimento({
-                  ...form,
-                  textoVersao: TERMO_VERSAO,
-                  aceitoEm: new Date(form.aceitoEm).toISOString(),
+                // A ORDEM é a regra, e ela mora em `aceiteEntaoNivel` (regras/lite-sessao.ts) para
+                // poder ser exercida: 1º o aceite; se ele não gravar, o nível NÃO é trocado. O 2º
+                // passo é a action, que reconfere a versão do aceite pelo BANCO — este caminho não
+                // “passa por cima” do portão, ele o satisfaz.
+                const r = await aceiteEntaoNivel({
+                  registrarAceite: () =>
+                    registrarConsentimento({
+                      ...form,
+                      textoVersao: TERMO_VERSAO,
+                      aceitoEm: new Date(form.aceitoEm).toISOString(),
+                    }),
+                  trocarNivel: aoConcluirAceite,
                 });
-                if (!r.ok) {
-                  aoErro(r.motivo ?? "não deu para registrar o aceite — o nível não foi trocado");
-                  return;
-                }
-                // 2º o nível. A action reconfere a versão do aceite pelo BANCO, então este
-                // caminho não “passa por cima” do portão: ele o satisfaz.
-                aoConcluirAceite();
+                if (!r.trocou) aoErro(r.motivo ?? MOTIVO_ACEITE_NAO_GRAVOU);
               })
             }
           >

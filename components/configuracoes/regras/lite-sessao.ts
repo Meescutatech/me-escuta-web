@@ -281,7 +281,7 @@ export const TERMO_CANAL_PESSOAL = [
   "Quanto do que chega a este número a empresa passa a ler depende do NÍVEL configurado. O nível é escolhido por um admin ou pelo Proprietário — nunca pelo sistema, e nunca sozinho. São três, e todo canal começa no primeiro:",
   "1) Estrito — é como todo canal nasce, e é o que vale enquanto ninguém escolher outro. A empresa lê apenas as mensagens de quem já é lead, de quem já é paciente, ou de quem teve o aceite de contato registrado antes. Mensagem de qualquer outra pessoa é descartada na borda: não entra, não é lida e não é guardada em lugar nenhum.",
   "2) Responde quem escrever — passa a entrar no sistema, e a ficar guardada, a mensagem de QUALQUER pessoa que escrever para este número. Inclusive quem é seu conhecido e não tem nada a ver com a empresa. O sistema só responde a quem escreveu primeiro; ele não começa conversa.",
-  "3) Aberto — entra mensagem de qualquer pessoa E o sistema pode escrever primeiro, para quem nunca falou com você. É o nível de maior risco: mensagem para quem não pediu contato é o que costuma fazer o WhatsApp banir, e quem perde a conta é você, não a empresa.",
+  "3) Aberto — entra mensagem de qualquer pessoa E o sistema pode escrever primeiro, para quem nunca falou com você. E tem uma parte que não é sobre a empresa, é sobre você: neste nível o sistema também passa a guardar o que VOCÊ manda do seu celular, para QUALQUER pessoa — sua família, o grupo do condomínio, seu médico, um amigo. Fica gravado o telefone de quem recebeu e o texto do que você escreveu, e cada uma dessas pessoas vira um contato dentro do sistema da empresa. Quem trabalha aqui e tem acesso consegue ler. Hoje NÃO existe apagar depois: esse registro é permanente. É também o nível de maior risco de bloqueio: mensagem para quem não pediu contato é o que costuma fazer o WhatsApp banir, e quem perde a conta é você, não a empresa.",
   "Sair do Estrito só acontece com você aceitando este texto, nesta versão. Um aceite dado sobre uma versão anterior não vale para esta.",
   "Você pode pedir a volta ao Estrito, ou a desconexão do número, a qualquer momento.",
 ].join("\n\n");
@@ -333,6 +333,85 @@ export const TERMO_EXIGE_DIZER = [
 export function termoNomeiaODano(texto: string): boolean {
   const t = (texto ?? "").toLowerCase();
   return TERMO_EXIGE_DIZER.every((frase) => t.includes(frase.toLowerCase()));
+}
+
+/*
+ * ─────────── D72 · o que o nivel ABERTO faz com o celular DELA, dito nos DOIS lugares ───────────
+ *
+ * D72, cravada pelo dono em 08/09/2026: no nivel `aberto` o que a titular manda do celular pessoal
+ * dela para QUALQUER pessoa — familia, condominio, medico — tambem entra no sistema. Vira evento no
+ * ledger append-only, com telefone e corpo em claro, e a porta fabrica um lead de cada
+ * destinatario. Funcao de esquecimento nao existe (C1/D58: adiada para depois do lancamento).
+ *
+ * Ate aqui isso estava dito na TELA (`consequenciaNivel("aberto")`, em `regras/canais.ts`) e NAO
+ * estava no TERMO. E a divergencia mais cara possivel neste par: o aceite da titular so cobre o que
+ * o TEXTO conta, e o texto e o que ela aceita. Tela honesta com termo omisso nao e consentimento
+ * informado — e quem assina e ela.
+ *
+ * Por isso a lista abaixo e aplicada aos DOIS textos pelo mesmo teste. Ela nao pede as mesmas
+ * palavras (a tela fala "a dona do numero", o termo fala "voce"): pede os mesmos FATOS. Mexer num
+ * dos dois sem o outro reprova.
+ *
+ * Comparacao insensivel a acento de proposito — os dois arquivos seguem convencoes diferentes
+ * (`regras/canais.ts` escreve sem acento) e nenhum fato pode depender disso.
+ */
+export function semAcento(texto: string): string {
+  return (texto ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+export const ABERTO_EXIGE_DIZER: ReadonlyArray<{ fato: string; padrao: RegExp }> = [
+  { fato: "que o que ELA manda do proprio celular passa a ser gravado", padrao: /manda do (seu )?celular/ },
+  { fato: "que vale para QUALQUER destinatario", padrao: /qualquer pessoa/ },
+  { fato: "o exemplo `familia`", padrao: /familia/ },
+  { fato: "o exemplo `condominio`", padrao: /condominio/ },
+  { fato: "o exemplo `medico`", padrao: /medico/ },
+  { fato: "que fica gravado o TELEFONE de quem recebeu", padrao: /telefone/ },
+  { fato: "que fica gravado o TEXTO da mensagem", padrao: /texto/ },
+  { fato: "que hoje NAO existe apagar depois", padrao: /hoje\s+nao\s+existe[^.]{0,40}apagar/ },
+  { fato: "o risco de ban, que continua sendo dela", padrao: /banir/ },
+];
+
+/** Os fatos do `aberto` que o texto NAO diz. Vazio = diz todos. Nomeia o que faltou. */
+export function fatosDoAbertoQueFaltam(texto: string): string[] {
+  const t = semAcento(texto);
+  const faltando: string[] = [];
+  for (const { fato, padrao } of ABERTO_EXIGE_DIZER) {
+    if (!padrao.test(t) && !faltando.includes(fato)) faltando.push(fato);
+  }
+  return faltando;
+}
+
+/** O paragrafo do termo que descreve o nivel `aberto` — `null` se ninguem o escreveu. */
+export function itemAbertoDoTermo(termo: string = TERMO_CANAL_PESSOAL): string | null {
+  return (termo ?? "").split("\n\n").find((p) => /^3\)\s*Aberto/i.test(p.trim())) ?? null;
+}
+
+/*
+ * ─────────── A ORDEM do aceite → nivel, fora do componente para poder ser exercida ───────────
+ *
+ * O dialogo grava DUAS coisas: `canal_consentimento_registrado` e, so depois,
+ * `canal_nivel_alterado`. A ordem nao e estetica — se o aceite nao gravar e o nivel trocar assim
+ * mesmo, o canal sai do estrito com a titular tendo aceitado outro texto, e o evento do nivel fica
+ * num ledger append-only sem base nenhuma atras dele.
+ *
+ * Enquanto isso morava dentro do `onClick` do componente, nada exercia a ordem: da para trocar as
+ * duas chamadas de lugar, ou apagar o `return`, e a suite nao ve. Aqui e uma funcao pura de
+ * orquestracao, e o teste (`tests/nivel-acao.test.ts`) a chama com espioes que registram a
+ * sequencia.
+ */
+export const MOTIVO_ACEITE_NAO_GRAVOU = "nao deu para registrar o aceite — o nivel nao foi trocado";
+
+export async function aceiteEntaoNivel(passos: {
+  registrarAceite: () => Promise<{ ok: boolean; motivo?: string }>;
+  trocarNivel: () => void | Promise<void>;
+}): Promise<{ trocou: boolean; motivo?: string }> {
+  const r = await passos.registrarAceite();
+  if (!r?.ok) return { trocou: false, motivo: r?.motivo ?? MOTIVO_ACEITE_NAO_GRAVOU };
+  await passos.trocarNivel();
+  return { trocou: true };
 }
 
 export interface FormConsentimento {

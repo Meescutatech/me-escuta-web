@@ -296,7 +296,7 @@ const TIPOS_ESCRITOS_WEB_B = [
   "canal_ativado",
   "canal_desativado",
   "canal_consentimento_registrado",
-  "canal_nivel_definido",
+  "canal_nivel_alterado",
   "config_publicada",
   "suporte_ticket_aberto",
   "suporte_ticket_comentado",
@@ -434,10 +434,10 @@ test("enxerto · modo filtros monta a releitura com todos os filtros, e falha se
 });
 
 /*
- * ═══════════ D70 · `canal_nivel_definido` — a CONFERÊNCIA POR EFEITO, exercitada ═══════════
+ * ═══════════ D70 · `canal_nivel_alterado` — a CONFERÊNCIA POR EFEITO, exercitada ═══════════
  *
  * Por que estes três testes existem, e a razão é um furo real desta rodada: a linha do
- * `canal_nivel_definido` entrou em CONFERENCIA e NADA a exercitava. Os dois testes que citavam o
+ * `canal_nivel_alterado` entrou em CONFERENCIA e NADA a exercitava. Os dois testes que citavam o
  * tipo asseravam que a CHAVE existe (`temConferencia(tipo) || excecaoDe(tipo)`) e que a lista tem
  * 11 itens — nenhum olhava os FILTROS. Provado por mutação: apagar
  * `{ campo: "nivel", op: "igualPayload", dePayload: "nivel" }` deixava a suíte inteira verde
@@ -487,7 +487,7 @@ function bancoDeCanais(linhas: Array<Record<string, unknown>>) {
 }
 
 test("D70 · o readback do nível confere O VALOR RESULTANTE, não a existência da linha", () => {
-  const r = CONFERENCIA["canal_nivel_definido"];
+  const r = CONFERENCIA["canal_nivel_alterado"];
   assert.ok(r && r.por === "filtros");
   const filtros = (r as Extract<ConferenciaProjecao, { por: "filtros" }>).filtros;
   assert.deepEqual(resolverFiltros(filtros, { canal_id: "lite:jade", nivel: "aberto" }, null), [
@@ -503,7 +503,7 @@ test("D70 · nível que NÃO mudou no banco reprova a escrita (a mutação que a
   const { cliente, emitidas } = bancoDeCanais([{ canal_id: "lite:jade", nivel: "estrito" }]);
   const r = await confirmarProjecao(
     cliente,
-    "canal_nivel_definido",
+    "canal_nivel_alterado",
     { canal_id: "lite:jade", nivel: "aberto" },
     { evento_id: "e1", posicao_global: 10 },
   );
@@ -522,7 +522,7 @@ test("D70 · nível que MUDOU de verdade aprova — sem isto o teste acima passa
   const { cliente } = bancoDeCanais([{ canal_id: "lite:jade", nivel: "aberto" }]);
   const r = await confirmarProjecao(
     cliente,
-    "canal_nivel_definido",
+    "canal_nivel_alterado",
     { canal_id: "lite:jade", nivel: "aberto" },
     { evento_id: "e1", posicao_global: 10 },
   );
@@ -533,7 +533,7 @@ test("D70 · a conferência é do canal PEDIDO — outro canal no mesmo nível n
   const { cliente } = bancoDeCanais([{ canal_id: "lite:outra", nivel: "aberto" }]);
   const r = await confirmarProjecao(
     cliente,
-    "canal_nivel_definido",
+    "canal_nivel_alterado",
     { canal_id: "lite:jade", nivel: "aberto" },
     { evento_id: "e1", posicao_global: 10 },
   );

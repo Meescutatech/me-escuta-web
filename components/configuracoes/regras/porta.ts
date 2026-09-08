@@ -60,7 +60,7 @@ const POR_SQLSTATE: Record<string, ClasseErroPorta> = {
    * e `porta.inserir_evento` não tem `exception when` nenhum — medido no corpo vivo em 08/09).
    *
    * É `indisponivel` pela definição desta lista: o objeto do banco ainda não existe neste
-   * ambiente. `canal_nivel_definido` está exatamente nesse estado em produção hoje — a migration
+   * ambiente. `canal_nivel_alterado` está exatamente nesse estado em produção hoje — a migration
    * que registra o tipo não subiu —, e sem esta linha a recusa chegaria como "outro", que é a
    * classe do erro que ninguém sabe explicar.
    */
@@ -178,8 +178,8 @@ export const TIPOS_ESCRITOS_WEB_B: string[] = [
   // D70 · o nivel do canal. Estreia com a linha em CONFERENCIA (conferencia por EFEITO: o `nivel`
   // resultante na view), nao com excecao — o efeito e legivel, entao nao ha o que declarar como
   // inconferivel. Foi o portao `tipos_declarados` que exigiu esta linha aqui: sem ela, o literal
-  // "canal_nivel_definido" na action reprova estaticamente antes de chegar a producao.
-  "canal_nivel_definido",
+  // "canal_nivel_alterado" na action reprova estaticamente antes de chegar a producao.
+  "canal_nivel_alterado",
   "config_publicada",
   "suporte_ticket_aberto",
   "suporte_ticket_comentado",

@@ -339,7 +339,7 @@ test("D70 · PMEE1 é MIGRATION QUE FALTA, não erro genérico — a classe muda
    * do insert, na MESMA transação, sem um único `exception when`. Ou seja: o PMEE1 aborta tudo, o
    * evento NÃO entra no ledger, e o que sobe para a tela é o texto cru dele.
    *
-   * `canal_nivel_definido` está exatamente nesse estado em produção hoje (7 tipos `canal_*`
+   * `canal_nivel_alterado` está exatamente nesse estado em produção hoje (7 tipos `canal_*`
    * registrados, e este não é um deles). Sem esta linha a recusa chegaria como "outro" — a classe
    * do erro que ninguém sabe explicar — em vez de "o objeto do banco não existe neste ambiente".
    */
@@ -380,11 +380,11 @@ test("a guarda antissegredo espelha a regex da porta e desce nos níveis", () =>
 
 test("todo tipo escrito pela Web-B tem conferência OU exceção declarada", () => {
   for (const tipo of TIPOS_ESCRITOS_WEB_B) assert.ok(tipoDeclarado(tipo), tipo);
-  // 10 → 11 em 08/09/2026: entrou `canal_nivel_definido` (D70). O número é atualizado no MESMO
+  // 10 → 11 em 08/09/2026: entrou `canal_nivel_alterado` (D70). O número é atualizado no MESMO
   // commit que acrescenta o tipo, de propósito — é ele que obriga quem acrescenta uma escrita nova
   // a passar por aqui e declarar como ela se confere.
   assert.equal(TIPOS_ESCRITOS_WEB_B.length, 11);
-  assert.ok(TIPOS_ESCRITOS_WEB_B.includes("canal_nivel_definido"));
+  assert.ok(TIPOS_ESCRITOS_WEB_B.includes("canal_nivel_alterado"));
 });
 
 test("tipo NÃO declarado é FALHA, não sucesso — é a correção sobre o helper do F6", () => {

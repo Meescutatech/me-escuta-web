@@ -182,19 +182,19 @@ export async function definirNivelCanal(
   }
 
   // CONFERE O EFEITO, nunca o rc: `registrarEventoComReadback` relê `core.v_canal_whatsapp` e
-  // exige que o `nivel` de lá seja o que acabou de ser pedido (linha `canal_nivel_definido` em
+  // exige que o `nivel` de lá seja o que acabou de ser pedido (linha `canal_nivel_alterado` em
   // CONFERENCIA).
   //
   // ⚠️ CORRIGIDO 08/09 — aqui estava escrito que numa base sem a coluna "o evento entrou no ledger
   // mas o nível não passou a valer". É falso, e medido: `porta.projetor_registro` não tem a linha
-  // `canal_nivel_definido`, `porta.aplicar_projetores` levanta PMEE1 quando não acha o tipo, e
+  // `canal_nivel_alterado`, `porta.aplicar_projetores` levanta PMEE1 quando não acha o tipo, e
   // `porta.inserir_evento` aplica os projetores DEPOIS do insert e na MESMA transação, sem um
   // único `exception when`. O PMEE1 aborta tudo: nada entra no ledger e a releitura nem chega a
   // rodar. Enquanto a trilha do banco não registrar o tipo, esta ação falha inteira, com o texto
   // cru do PMEE1 na faixa vermelha — e é por isso que o PMEE1 está classificado como
   // `indisponivel` em `regras/porta.ts`: o que falta é migration, não permissão.
   return registrarEventoComReadback({
-    tipo: "canal_nivel_definido",
+    tipo: "canal_nivel_alterado",
     payload: payloadNivelCanal(canalId, alvo, opcoes.motivo),
     idExterno: randomUUID(),
     revalidar: [ROTA, "/conversas"],

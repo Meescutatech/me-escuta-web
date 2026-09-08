@@ -27,7 +27,12 @@ import {
   termoNomeiaODano,
   validarConsentimento,
   type FormConsentimento,
+  ABERTO_EXIGE_DIZER,
+  fatosDoAbertoQueFaltam,
+  itemAbertoDoTermo,
+  semAcento,
 } from "../components/configuracoes/regras/lite-sessao.ts";
+import { consequenciaNivel } from "../components/configuracoes/regras/canais.ts";
 import type { Canal } from "../components/configuracoes/regras/canais.ts";
 
 /*
@@ -435,4 +440,66 @@ test("D70.b · a trava vale para os DOIS canais lite de produção, que aceitara
   const producaoHoje = "v1";
   assert.equal(exigeAceiteDoTermo("aberto", producaoHoje), true);
   assert.notEqual(TERMO_VERSAO, producaoHoje);
+});
+
+/*
+ * ═══════════ D72 · o `aberto` grava o que ELA manda — e o TERMO tem de contar isso ═══════════
+ *
+ * D72, cravada pelo dono em 08/09/2026: em `aberto`, o que a fono manda do celular PESSOAL dela
+ * para qualquer pessoa (família, condomínio, médico) também entra — vira `mensagem_recebida` no
+ * ledger append-only, com telefone e corpo em claro, e a porta fabrica um lead de cada
+ * destinatário. Função de esquecimento não existe (C1/D58).
+ *
+ * O item "3) Aberto" do termo falava SÓ do risco de ban. O aceite da titular cobre o que o texto
+ * conta — então o texto tem de contar. E a tela (`consequenciaNivel("aberto")`) já contava: as
+ * duas divergindo é a pior configuração possível deste par, porque a tela promete uma coisa e o
+ * papel que ela aceita promete outra.
+ */
+
+test("D72 · o termo TEM um item que descreve o nível aberto", () => {
+  const item = itemAbertoDoTermo(TERMO_CANAL_PESSOAL);
+  assert.ok(item, "o termo v2 deixou de descrever o nível aberto");
+  assert.match(item!, /Aberto/);
+});
+
+test("D72 · o item 3 do termo nomeia o que o aberto faz com o celular DELA", () => {
+  const faltando = fatosDoAbertoQueFaltam(itemAbertoDoTermo(TERMO_CANAL_PESSOAL) ?? "");
+  assert.deepEqual(faltando, [], `o item "3) Aberto" não diz: ${faltando.join(" · ")}`);
+});
+
+test("D72 · a TELA diz os mesmos fatos — a lista é a mesma, aplicada aos dois", () => {
+  const faltando = fatosDoAbertoQueFaltam(consequenciaNivel("aberto"));
+  assert.deepEqual(faltando, [], `consequenciaNivel("aberto") não diz: ${faltando.join(" · ")}`);
+});
+
+test("D72 · COERÊNCIA tela × termo: mexer num sem o outro reprova", () => {
+  // é o teste que trava o par. Não exige as MESMAS PALAVRAS (a tela fala "a dona do número", o
+  // termo fala "você"): exige os mesmos FATOS, e nomeia qual faltou de que lado.
+  const naTela = fatosDoAbertoQueFaltam(consequenciaNivel("aberto"));
+  const noTermo = fatosDoAbertoQueFaltam(itemAbertoDoTermo(TERMO_CANAL_PESSOAL) ?? "");
+  assert.deepEqual(
+    { naTela, noTermo },
+    { naTela: [], noTermo: [] },
+    "tela e termo divergiram sobre o que o nível aberto faz",
+  );
+  assert.equal(ABERTO_EXIGE_DIZER.length, 9, "a lista de fatos mudou — atualize junto os dois textos");
+});
+
+test("D72 · o item 3 diz que o registro é PERMANENTE, não que 'pode ser apagado depois'", () => {
+  // C1/D58: `pii.pessoa` nunca saiu do TODO e não existe função de esquecimento. Prometer apagar
+  // seria o único jeito de este texto virar mentira sem trocar nenhum fato de lugar.
+  const item = semAcento(itemAbertoDoTermo(TERMO_CANAL_PESSOAL) ?? "");
+  assert.match(item, /hoje\s+nao\s+existe[^.]{0,40}apagar/);
+  assert.doesNotMatch(item, /pode(ra|remos)?\s+(ser\s+)?apagad/);
+});
+
+test("D72 · o v2 CONTINUA nomeando o dano depois da reescrita do item 3", () => {
+  // a reescrita não pode ter derrubado nenhuma das cinco palavras de TERMO_EXIGE_DIZER
+  assert.ok(termoNomeiaODano(TERMO_CANAL_PESSOAL));
+});
+
+test("D72 · semAcento compara FATO, não ortografia — os dois arquivos escrevem diferente", () => {
+  assert.equal(semAcento("Família CONDOMÍNIO médico"), "familia condominio medico");
+  // e a tela realmente escreve sem acento: se um dia passar a escrever com, nada aqui pode quebrar
+  assert.match(semAcento(consequenciaNivel("aberto")), /familia/);
 });

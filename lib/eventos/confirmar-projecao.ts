@@ -343,7 +343,7 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
    * ledger, mas o nivel nao passa a valer" e que esta releitura reprovaria a acao. As duas frases
    * eram FALSAS, e a segunda descrevia um caminho que nao roda. O que a producao faz, medido:
    *
-   *   · `porta.projetor_registro` NAO tem a linha `canal_nivel_definido` (7 tipos `canal_*` la
+   *   · `porta.projetor_registro` NAO tem a linha `canal_nivel_alterado` (7 tipos `canal_*` la
    *     dentro, e este nao e um deles — `select tipo from porta.projetor_registro where tipo like
    *     'canal%'`);
    *   · `porta.aplicar_projetores` termina com `if not v_achou then raise ... errcode='PMEE1'`;
@@ -359,7 +359,7 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
    * linha do canal ja existia antes da troca. Enquanto o banco nao entrar, o unico exercicio
    * desta regra e o teste — ver `tests/confirmar-projecao.test.ts`, secao D70.
    */
-  canal_nivel_definido: {
+  canal_nivel_alterado: {
     tabela: "v_canal_whatsapp",
     por: "filtros",
     coluna: "nivel",

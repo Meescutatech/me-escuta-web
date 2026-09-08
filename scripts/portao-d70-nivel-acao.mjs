@@ -40,6 +40,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 
 import { ligarStubsDeServidor } from "./portao-resolver.mjs";
+import { CANAL_LITE, COLUNAS_COM_NIVEL, criarBancoDeCanal } from "./apoio-banco-canal.mjs";
 
 // os stubs precisam estar ligados ANTES do primeiro import do código de produção: `next/cache`
 // (revalidatePath) e `@/lib/supabase/server` (cookies) estouram fora de uma requisição do Next.
@@ -63,106 +64,10 @@ function recusar(msg) {
 
 // ── o "banco": uma linha de canal, os filtros de verdade, e a porta contada ──────────────────
 //
-// Implementa a parte do postgrest-js que a action usa (select/eq/not/limit), aplicando os `eq` de
-// verdade — sem isso o readback aprovaria qualquer coisa e o portão mediria a si mesmo.
-function criarBanco({ canal, papel, colunasDaView, aoRegistrar }) {
-  const rpcs = [];
-  const consultas = [];
-
-  function tabela(nome) {
-    const eqs = [];
-    const q = {
-      select(colunas) {
-        q._colunas = colunas ?? "";
-        return q;
-      },
-      eq(campo, valor) {
-        eqs.push({ campo, valor });
-        return q;
-      },
-      not(campo) {
-        eqs.push({ campo, valor: "<naoNulo>" });
-        return q;
-      },
-      order: () => q,
-      limit() {
-        return q._resolver();
-      },
-      _resolver() {
-        const pedidas = String(q._colunas ?? "")
-          .split(",")
-          .map((c) => c.trim())
-          .filter(Boolean);
-        // PostgREST recusa a CONSULTA INTEIRA por uma coluna que a view não tem — é o degrau.
-        const faltando = pedidas.find((c) => !colunasDaView.includes(c));
-        consultas.push({ tabela: nome, colunas: q._colunas, faltando: faltando ?? null });
-        if (faltando) {
-          return Promise.resolve({
-            data: null,
-            error: { message: `column ${nome}.${faltando} does not exist`, code: "42703" },
-          });
-        }
-        const casa = eqs.every((f) =>
-          f.valor === "<naoNulo>" ? canal[f.campo] != null : canal[f.campo] === f.valor,
-        );
-        const linhasResp = casa ? [Object.fromEntries(pedidas.map((c) => [c, canal[c] ?? null]))] : [];
-        return Promise.resolve({ data: linhasResp, error: null });
-      },
-      then(res, rej) {
-        return q._resolver().then(res, rej);
-      },
-    };
-    return q;
-  }
-
-  return {
-    rpcs,
-    consultas,
-    schema(nomeSchema) {
-      return {
-        from: (t) => tabela(t),
-        rpc: async (nome, args) => {
-          rpcs.push({ schema: nomeSchema, nome, args });
-          if (nome === "papel_atual") return { data: papel, error: null };
-          if (nome === "registrar_evento") return aoRegistrar(args);
-          return { data: null, error: { message: `rpc inesperada: ${nome}` } };
-        },
-      };
-    },
-    auth: { getUser: async () => ({ data: { user: null } }) },
-  };
-}
-
-/** As 18 colunas medidas em produção + as duas do D70 — o mundo DEPOIS da migration. */
-const COLUNAS_COM_NIVEL = [
-  "canal_id", "nome", "provedor", "ativo", "numero", "waba_id", "area_efetiva", "inbox_desde",
-  "pareado_em", "consentimento_em", "consentimento_titular", "consentimento_texto_versao",
-  "risco_ban_aceito", "desativado_em", "criado_em", "finalidade", "consentimento_por",
-  "departamento", "nivel", "nivel_declarado",
-];
-
-const CANAL_LITE = {
-  canal_id: "lite:jade",
-  nome: "Jade",
-  provedor: "nao_oficial",
-  ativo: true,
-  numero: null,
-  waba_id: null,
-  area_efetiva: "comercial",
-  inbox_desde: "2026-09-08T00:00:00Z",
-  pareado_em: "2026-09-08T17:06:00Z",
-  consentimento_em: "2026-09-08T17:00:00Z",
-  consentimento_titular: "Jade",
-  consentimento_texto_versao: "v2", // = TERMO_VERSAO vigente
-  risco_ban_aceito: true,
-  desativado_em: null,
-  criado_em: "2026-09-08T16:00:00Z",
-  finalidade: "producao",
-  consentimento_por: null,
-  departamento: "pre_venda",
-  nivel: "estrito",
-  nivel_declarado: false,
-};
+// O cliente falso MUDOU DE CASA em 08/09: ele vive em `apoio-banco-canal.mjs` porque a suíte
+// (`tests/nivel-acao.test.ts`) julga a MESMA ação e precisa do MESMO cliente. Duas cópias
+// divergiriam em silêncio — e a divergência barata é justamente parar de aplicar os `eq`, o que
+// faria o readback aprovar qualquer linha nos dois lados.
 
 /**
  * Roda a AÇÃO REAL uma vez.
@@ -175,7 +80,7 @@ const CANAL_LITE = {
  */
 async function rodar({ canal = {}, papel = "admin", nivel, nivelDepois }) {
   const linha = { ...CANAL_LITE, ...canal };
-  const banco = criarBanco({
+  const banco = criarBancoDeCanal({
     canal: linha,
     papel,
     colunasDaView: COLUNAS_COM_NIVEL,
@@ -211,7 +116,7 @@ if (!feliz.r.ok || feliz.escritas.length !== 1) {
   );
 }
 const env = feliz.escritas[0].args?.p ?? {};
-exigir(env.tipo === "canal_nivel_definido", `caminho feliz escreve o tipo certo (${env.tipo})`);
+exigir(env.tipo === "canal_nivel_alterado", `caminho feliz escreve o tipo certo (${env.tipo})`);
 exigir(
   env.payload?.canal_id === "lite:jade" && env.payload?.nivel === "aberto",
   `payload leva canal e nível (${JSON.stringify(env.payload ?? null)})`,
@@ -316,7 +221,7 @@ for (const podre of ["livre_total", "ABERTO", "aberto ", "", "estritoo"]) {
 
 // ── 5 · canal inexistente: recusa antes de tudo ─────────────────────────────────────────────
 {
-  const banco = criarBanco({
+  const banco = criarBancoDeCanal({
     canal: { ...CANAL_LITE, canal_id: "lite:outra" },
     papel: "admin",
     colunasDaView: COLUNAS_COM_NIVEL,

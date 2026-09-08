@@ -233,8 +233,11 @@ export function consequenciaNivel(n: NivelCanal): string {
     case "aberto":
       return (
         "Entra mensagem de qualquer pessoa E o sistema pode escrever primeiro, para quem nunca " +
-        "falou com este numero. E o nivel de maior risco de bloqueio: mensagem para quem nao pediu " +
-        "contato e o que costuma fazer o WhatsApp banir — e o numero e pessoal, de uma pessoa."
+        "falou com este numero. ⚠️ E passa a ser gravado tambem o que a DONA DO NUMERO manda do " +
+        "celular dela para QUALQUER pessoa — familia, condominio, medico. Fica no historico com " +
+        "telefone e texto, e hoje nao existe como apagar depois. E tambem o nivel de maior risco " +
+        "de bloqueio: mensagem para quem nao pediu contato e o que costuma fazer o WhatsApp banir " +
+        "— e o numero e pessoal, de uma pessoa."
       );
     default:
       return (
