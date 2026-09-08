@@ -365,7 +365,11 @@ test("a guarda antissegredo espelha a regex da porta e desce nos níveis", () =>
 
 test("todo tipo escrito pela Web-B tem conferência OU exceção declarada", () => {
   for (const tipo of TIPOS_ESCRITOS_WEB_B) assert.ok(tipoDeclarado(tipo), tipo);
-  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 10);
+  // 10 → 11 em 08/09/2026: entrou `canal_nivel_definido` (D70). O número é atualizado no MESMO
+  // commit que acrescenta o tipo, de propósito — é ele que obriga quem acrescenta uma escrita nova
+  // a passar por aqui e declarar como ela se confere.
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 11);
+  assert.ok(TIPOS_ESCRITOS_WEB_B.includes("canal_nivel_definido"));
 });
 
 test("tipo NÃO declarado é FALHA, não sucesso — é a correção sobre o helper do F6", () => {

@@ -333,6 +333,27 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
     // consentimento é o PORTÃO da sessão: "registrado" sem a coluna preenchida liberaria o
     // pareamento de um número pessoal sem base.
   },
+  /*
+   * D70 · o nivel do canal, conferido pelo EFEITO — o `nivel` na view TEM de ser o que a acao
+   * pediu. Conferir so a existencia da linha seria vacuo do pior tipo aqui: a linha do canal ja
+   * existia antes da troca, entao "existe" e verdade mesmo quando nada mudou, e a tela diria
+   * "salvo" para uma troca que nao aconteceu.
+   *
+   * ⚠️ Numa base sem a coluna `nivel` (o caso de PRODUCAO em 08/09/2026: `core.v_canal_whatsapp`
+   * tem 18 colunas e nenhuma e `nivel`), esta releitura devolve erro de coluna inexistente e a
+   * acao REPROVA. E o desfecho certo: o evento entra no ledger, mas o nivel nao passa a valer, e
+   * declarar sucesso ali seria exatamente o "diz salvo e nada muda" que este arquivo existe para
+   * matar.
+   */
+  canal_nivel_definido: {
+    tabela: "v_canal_whatsapp",
+    por: "filtros",
+    coluna: "nivel",
+    filtros: [
+      { campo: "canal_id", op: "igualPayload", dePayload: "canal_id" },
+      { campo: "nivel", op: "igualPayload", dePayload: "nivel" },
+    ],
+  },
   config_publicada: {
     tabela: "v_config_vigente",
     por: "filtros",

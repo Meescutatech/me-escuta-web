@@ -6,7 +6,10 @@ import {
   INTERVALO_RELEITURA_MS,
   MEIOS_CONSENTIMENTO,
   TERMO_CANAL_PESSOAL,
+  TERMO_EXIGE_DIZER,
   TERMO_VERSAO,
+  exigeAceiteDoTermo,
+  motivoAceiteDesatualizado,
   descricaoEstadoSessao,
   devoRelerEstado,
   estadoDeFlags,
@@ -55,6 +58,10 @@ function canal(p: Partial<Canal> = {}): Canal {
     desativado_em: null,
     criado_em: null,
     inbox_desde: "2026-07-20T00:00:00Z",
+    // D70 · o fixture nasce SEM nivel e SEM declaracao, que e o estado real de todo canal em
+    // producao hoje (medido 08/09/2026: a view nao tem a coluna). `nivelDoCanal` cai em `estrito`.
+    nivel: null,
+    nivel_declarado: false,
     ...p,
   };
 }
@@ -337,4 +344,95 @@ test("descartados > 0 e NADA guardado em 24 h acende a suspeita", () => {
 test("com alguma coisa guardada, não acende — sinal falso desliga portão", () => {
   assert.equal(suspeitaFiltroCego({ descartados24h: 37, persistidas24h: 2 }).suspeito, false);
   assert.equal(suspeitaFiltroCego({ descartados24h: 0, persistidas24h: 0 }).suspeito, false);
+});
+
+// ═════════════════ D70.b · o termo v2 e a TRAVA DE VERSÃO que não existia ═════════════════
+
+/*
+ * MEDIDO em 08/09/2026: `TERMO_VERSAO` tinha UM uso em todo o repositório — carimbar o valor no
+ * envio do formulário. NADA comparava a versão gravada no banco com a vigente, apesar de a própria
+ * tela prometer à titular que "se o texto mudar, este aceite não cobre o novo". Os testes abaixo
+ * são o que transforma aquela frase em regra.
+ */
+
+test("D70 · o termo subiu para v2 — e o v1 deixou de ser o vigente", () => {
+  assert.equal(TERMO_VERSAO, "v2");
+});
+
+test("D70 · o v2 CONTINUA nomeando o dano — as cinco palavras de TERMO_EXIGE_DIZER", () => {
+  assert.ok(termoNomeiaODano(TERMO_CANAL_PESSOAL));
+  // uma por uma, para a falha dizer QUAL sumiu em vez de só "false"
+  for (const frase of TERMO_EXIGE_DIZER) {
+    assert.ok(
+      TERMO_CANAL_PESSOAL.toLowerCase().includes(frase.toLowerCase()),
+      `o termo v2 deixou de dizer "${frase}"`,
+    );
+  }
+  // e o dano segue sendo O DELA, não o da empresa (a asserção que já existia sobre o v1)
+  assert.match(TERMO_CANAL_PESSOAL, /SEU WhatsApp pessoal/);
+});
+
+test("D70 · 'descartada' no v2 é VERDADE, não palavra posta para passar no teste", () => {
+  // A palavra só continua honesta porque o descarte segue existindo — no estrito, que é o padrão.
+  // Então ela tem de aparecer JUNTO da descrição do estrito, e não solta numa frase qualquer.
+  const paragrafos = TERMO_CANAL_PESSOAL.split("\n\n");
+  const oDoDescarte = paragrafos.find((p) => p.toLowerCase().includes("descartada"));
+  assert.ok(oDoDescarte, "nenhum parágrafo fala de descarte");
+  assert.match(oDoDescarte!.toLowerCase(), /estrito/);
+});
+
+test("D70 · o v2 descreve os TRÊS níveis, e nomeia os TRÊS casos de contraparte conhecida", () => {
+  const t = TERMO_CANAL_PESSOAL.toLowerCase();
+  assert.match(t, /estrito/);
+  assert.match(t, /responde quem escrever/);
+  assert.match(t, /aberto/);
+  // a infidelidade do v1: ele dizia "lead ou paciente" e escondia o TERCEIRO caso do oráculo —
+  // quem tem `aceite_contato_registrado`. O v2 nomeia os três.
+  assert.match(t, /lead/);
+  assert.match(t, /paciente/);
+  assert.match(t, /aceite de contato/);
+});
+
+test("D70 · o v2 avisa que sair do estrito exige aceitar ESTA versão", () => {
+  assert.match(TERMO_CANAL_PESSOAL.toLowerCase(), /sair do estrito/);
+});
+
+// ─────────────────────────── exigeAceiteDoTermo ───────────────────────────
+
+test("D70.b · aceite v1 BLOQUEIA qualquer nível não estrito", () => {
+  assert.equal(exigeAceiteDoTermo("aberto", "v1"), true);
+  assert.equal(exigeAceiteDoTermo("responde_qualquer_um", "v1"), true);
+});
+
+test("D70.b · aceite na versão VIGENTE passa", () => {
+  assert.equal(exigeAceiteDoTermo("aberto", TERMO_VERSAO), false);
+  assert.equal(exigeAceiteDoTermo("responde_qualquer_um", "v2"), false);
+  // espaço em volta não é versão diferente
+  assert.equal(exigeAceiteDoTermo("aberto", "  v2  "), false);
+});
+
+test("D70.b · versão ausente, nula ou vazia EXIGE — não saber é o mesmo que não ter", () => {
+  for (const v of [null, undefined, "", "   "]) {
+    assert.equal(exigeAceiteDoTermo("aberto", v), true, String(v));
+  }
+});
+
+test("D70.b · VOLTAR ao estrito nunca exige aceite — apertar o filtro é sempre seguro", () => {
+  for (const v of [null, undefined, "", "v0", "v1", "v2"]) {
+    assert.equal(exigeAceiteDoTermo("estrito", v), false, String(v));
+  }
+});
+
+test("D70.b · o motivo NOMEIA a versão velha, para ninguém procurar no escuro", () => {
+  assert.match(motivoAceiteDesatualizado("v1"), /v1/);
+  assert.match(motivoAceiteDesatualizado("v1"), new RegExp(TERMO_VERSAO));
+  assert.match(motivoAceiteDesatualizado(null), /nao registrada|não registrada/);
+});
+
+test("D70.b · a trava vale para os DOIS canais lite de produção, que aceitaram v1", () => {
+  // Medido em 08/09/2026: `lite:diogo` e `lite:teste-tecnico` têm consentimento_texto_versao='v1'.
+  // Este teste é o que impede alguém de "resolver" a trava baixando TERMO_VERSAO de volta a v1.
+  const producaoHoje = "v1";
+  assert.equal(exigeAceiteDoTermo("aberto", producaoHoje), true);
+  assert.notEqual(TERMO_VERSAO, producaoHoje);
 });

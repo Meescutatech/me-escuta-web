@@ -30,8 +30,18 @@ import {
   finalidadeValida,
   rotuloDepartamento,
   rotuloFinalidade,
+  NIVEIS,
+  NIVEL_PADRAO,
+  consequenciaNivel,
+  nivelAfrouxaOFiltro,
+  nivelDoCanal,
+  nivelValido,
+  payloadNivelCanal,
+  rotuloNivel,
+  validarTrocaNivel,
   type Canal,
   type FormCanal,
+  type NivelCanal,
 } from "../components/configuracoes/regras/canais.ts";
 
 /*
@@ -77,6 +87,10 @@ function canal(p: Partial<Canal> = {}): Canal {
     criado_em: null,
     inbox_desde: null,
     finalidade: "teste",
+    // D70 · o fixture nasce SEM nivel e SEM declaracao, que e o estado real de todo canal em
+    // producao hoje (medido 08/09/2026: a view nao tem a coluna). `nivelDoCanal` cai em `estrito`.
+    nivel: null,
+    nivel_declarado: false,
     ...p,
   };
 }
@@ -758,4 +772,177 @@ test("PORTÃO · nenhuma lista de departamentos hardcoded voltou ao repositório
       "Se este teste ficou vermelho por um caso legítimo, o conserto é ler do banco — não é " +
       "afrouxar o portão:\n" + violacoes.join("\n"),
   );
+});
+
+// ═══════════════════════════ D70 · o NÍVEL do canal ═══════════════════════════
+
+/*
+ * O que estes testes seguram, em ordem de dano:
+ *  1. ignorância virar permissão — nível ausente, nulo, vazio ou fora do domínio TEM de valer
+ *     `estrito`. É a única direção em que errar é barato;
+ *  2. a tela oferecer troca de nível a quem a porta recusa (todo evento `canal_*` exige admin);
+ *  3. afrouxar o filtro de um canal cuja titular nunca consentiu.
+ */
+
+test("D70 · o domínio tem exatamente três níveis, e o primeiro é o mais fechado", () => {
+  assert.deepEqual(NIVEIS, ["estrito", "responde_qualquer_um", "aberto"]);
+  assert.equal(NIVEL_PADRAO, "estrito");
+  assert.equal(NIVEIS[0], NIVEL_PADRAO);
+});
+
+test("D70 · nivelValido é allowlist — nada de fora entra", () => {
+  for (const n of NIVEIS) assert.ok(nivelValido(n));
+  for (const lixo of ["", " ", "ESTRITO", "livre", "aberto ", null, undefined, 1, {}, ["aberto"]]) {
+    assert.equal(nivelValido(lixo), false, String(lixo));
+  }
+});
+
+test("D70 · FAIL-CLOSED: toda ignorância vale estrito, e nenhuma vale aberto", () => {
+  // a lista é literal de propósito: cada item já apareceu, ou pode aparecer, vindo do banco.
+  assert.equal(nivelDoCanal(canal()), "estrito"); // nunca declarado
+  assert.equal(nivelDoCanal({ nivel: null }), "estrito");
+  assert.equal(nivelDoCanal({ nivel: undefined }), "estrito");
+  assert.equal(nivelDoCanal({}), "estrito"); // coluna ausente na view
+  assert.equal(nivelDoCanal(null), "estrito");
+  assert.equal(nivelDoCanal(undefined), "estrito");
+  assert.equal(nivelDoCanal({ nivel: "" }), "estrito");
+  assert.equal(nivelDoCanal({ nivel: "ABERTO" }), "estrito"); // caixa errada não é o domínio
+  assert.equal(nivelDoCanal({ nivel: "aberto_total" }), "estrito"); // valor inventado
+  assert.equal(nivelDoCanal({ nivel: true }), "estrito");
+});
+
+test("D70 · nível declarado é lido como veio — o fail-closed não engole valor legítimo", () => {
+  assert.equal(nivelDoCanal(canal({ nivel: "aberto" })), "aberto");
+  assert.equal(nivelDoCanal(canal({ nivel: "responde_qualquer_um" })), "responde_qualquer_um");
+  assert.equal(nivelDoCanal(canal({ nivel: "estrito" })), "estrito");
+});
+
+test("D70 · a consequência de cada nível diz o que PASSA A ACONTECER, nos dois sentidos", () => {
+  // entrada E saída em toda frase: um nível que só falasse de entrada esconderia metade do efeito.
+  const estrito = consequenciaNivel("estrito").toLowerCase();
+  assert.match(estrito, /lead/);
+  assert.match(estrito, /paciente/);
+  assert.match(estrito, /aceite/);
+  assert.match(estrito, /descartada/);
+
+  const responde = consequenciaNivel("responde_qualquer_um").toLowerCase();
+  assert.match(responde, /qualquer pessoa/);
+  assert.match(responde, /ja escreveu|já escreveu/);
+
+  const aberto = consequenciaNivel("aberto").toLowerCase();
+  assert.match(aberto, /banir/);
+  assert.match(aberto, /qualquer/);
+
+  // as três são distintas: consequência copiada é consequência que ninguém lê.
+  assert.equal(new Set(NIVEIS.map(consequenciaNivel)).size, 3);
+  // e nenhuma é o nome do nível em outra roupa
+  for (const n of NIVEIS) assert.ok(consequenciaNivel(n).length > 80, n);
+});
+
+test("D70 · rótulo é português de gente, nunca a chave do banco", () => {
+  for (const n of NIVEIS) assert.ok(!rotuloNivel(n).includes("_"), n);
+  assert.equal(rotuloNivel("estrito"), "Estrito");
+  assert.equal(new Set(NIVEIS.map(rotuloNivel)).size, 3);
+});
+
+test("D70 · afrouxar é tudo que não é estrito — e é o que exige aceite", () => {
+  assert.equal(nivelAfrouxaOFiltro("estrito"), false);
+  assert.equal(nivelAfrouxaOFiltro("responde_qualquer_um"), true);
+  assert.equal(nivelAfrouxaOFiltro("aberto"), true);
+});
+
+// ─────────────── validarTrocaNivel: papel, provedor, consentimento ───────────────
+
+const litePronto = canal({ consentimento_em: "2026-09-08T00:00:00Z", consentimento_texto_versao: "v2" });
+
+test("D71.a · trocar nível é da GESTÃO — membro e null são recusados", () => {
+  for (const papel of ["membro", "marketing", null] as const) {
+    const p = validarTrocaNivel({ canal: litePronto, nivel: "aberto", papel });
+    assert.ok(p.papel, String(papel));
+    assert.match(p.papel!, /admin/);
+  }
+  for (const papel of ["admin", "owner"] as const) {
+    assert.equal(validarTrocaNivel({ canal: litePronto, nivel: "aberto", papel }).papel, undefined);
+  }
+});
+
+test("D70 · nível só existe no canal NÃO OFICIAL — é lá que a borda filtra por contraparte", () => {
+  const oficial = canal({ provedor: "waba", consentimento_em: "2026-09-08T00:00:00Z" });
+  const p = validarTrocaNivel({ canal: oficial, nivel: "aberto", papel: "owner" });
+  assert.ok(p.provedor);
+  assert.match(p.provedor!, /nao oficial|não oficial/);
+});
+
+test("D70 · sem consentimento da titular, o canal NÃO sai do estrito", () => {
+  const semConsent = canal({ consentimento_em: null });
+  const p = validarTrocaNivel({ canal: semConsent, nivel: "responde_qualquer_um", papel: "owner" });
+  assert.ok(p.consentimento);
+  // mas VOLTAR ao estrito nunca é bloqueado por consentimento: apertar o filtro é sempre seguro.
+  assert.equal(
+    validarTrocaNivel({ canal: semConsent, nivel: "estrito", papel: "owner" }).consentimento,
+    undefined,
+  );
+});
+
+test("D70 · nível fora do domínio é recusado antes de chegar ao banco", () => {
+  const p = validarTrocaNivel({
+    canal: litePronto,
+    nivel: "livre" as unknown as NivelCanal,
+    papel: "owner",
+  });
+  assert.ok(p.nivel);
+});
+
+test("D70 · troca válida não tem problema nenhum", () => {
+  assert.ok(semProblemas(validarTrocaNivel({ canal: litePronto, nivel: "aberto", papel: "admin" })));
+});
+
+// ─────────────── o payload, e a guarda antissegredo por cima dele ───────────────
+
+test("D70 · payload leva canal_id e nivel; motivo só quando existe", () => {
+  assert.deepEqual(payloadNivelCanal("lite:jade", "aberto"), {
+    canal_id: "lite:jade",
+    nivel: "aberto",
+  });
+  assert.deepEqual(payloadNivelCanal("lite:jade", "estrito", "   "), {
+    canal_id: "lite:jade",
+    nivel: "estrito",
+  });
+  assert.deepEqual(payloadNivelCanal("lite:jade", "estrito", " voltou ao padrão "), {
+    canal_id: "lite:jade",
+    nivel: "estrito",
+    motivo: "voltou ao padrão",
+  });
+});
+
+test("D70 · o payload de nível passa pela guarda antissegredo (nada com cara de token)", () => {
+  const r = envelopeCanal(
+    "canal_atualizado",
+    "id-externo",
+    payloadNivelCanal("lite:jade", "aberto", "decisão da gestão"),
+  );
+  assert.equal(r.ok, true);
+});
+
+// ─────────────── os TRÊS estados de leitura, não dois ───────────────
+
+test("D70 · a tela distingue 'não li' de 'ninguém declarou' de 'declarado'", () => {
+  // 1. coluna ausente nesta base: `nivelLegivel` (da leitura) é false e o canal vem sem nível.
+  const naoLido = canal({ nivel: null, nivel_declarado: false });
+  assert.equal(nivelDoCanal(naoLido), "estrito");
+  assert.equal(naoLido.nivel_declarado, false);
+
+  // 2. coluna lida, ninguém declarou: MESMO comportamento, significado oposto para quem opera.
+  const nuncaDeclarado = canal({ nivel: "estrito", nivel_declarado: false });
+  assert.equal(nivelDoCanal(nuncaDeclarado), "estrito");
+  assert.equal(nuncaDeclarado.nivel_declarado, false);
+
+  // 3. declarado como estrito: alguém escolheu, e a escolha é visível.
+  const declarado = canal({ nivel: "estrito", nivel_declarado: true });
+  assert.equal(nivelDoCanal(declarado), "estrito");
+  assert.equal(declarado.nivel_declarado, true);
+
+  // os estados 2 e 3 têm o mesmo nível vigente — colapsá-los é o erro que a flag existe para evitar.
+  assert.equal(nivelDoCanal(nuncaDeclarado), nivelDoCanal(declarado));
+  assert.notEqual(nuncaDeclarado.nivel_declarado, declarado.nivel_declarado);
 });

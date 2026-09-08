@@ -11,12 +11,14 @@ import {
   type EstadoSessaoNaTela,
   type PainelDescartes,
 } from "@/app/(app)/configuracoes/canais/lite/actions";
+import { definirNivelCanal, lerTrocasDeNivel } from "@/app/(app)/configuracoes/canais/actions";
 import {
   MEIOS_CONSENTIMENTO,
   ROTULO_MOTIVO_DESCARTE,
   TERMO_CANAL_PESSOAL,
   TERMO_VERSAO,
   descricaoEstadoSessao,
+  exigeAceiteDoTermo,
   intervaloRelituraMs,
   podeCriarSessao,
   rotuloEstadoSessao,
@@ -24,9 +26,20 @@ import {
   type FormConsentimento,
   type MeioConsentimento,
 } from "./regras/lite-sessao.ts";
-import type { Canal, Papel } from "./regras/canais.ts";
+import {
+  NIVEIS,
+  consequenciaNivel,
+  nivelDoCanal,
+  podeGerirCanais,
+  rotuloNivel,
+  type Canal,
+  type HistoricoNivel,
+  type NivelCanal,
+  type Papel,
+} from "./regras/canais.ts";
 import { AVISO_QR_SEM_PRAZO, decidirQuadro, type QuadroPareamento } from "./regras/qr-pareamento.ts";
 import { BTN, ENTRADA, Faixa, dataHora } from "./kit";
+import { Dialogo } from "./dialogo";
 
 /**
  * F11 · Painel de sessão do canal NÃO OFICIAL — dentro da linha do canal, não em página nova.
@@ -39,10 +52,17 @@ export function PainelSessao({
   canal,
   meuPapel,
   f8Pronto,
+  nivelLegivel,
 }: {
   canal: Canal;
   meuPapel: Papel | null;
   f8Pronto: boolean;
+  /**
+   * D70. `false` = a view não expõe `nivel` nesta base. O bloco de nível DIZ que não leu, em vez
+   * de desenhar "Estrito" como se soubesse — o comportamento em vigor é mesmo o estrito, mas
+   * afirmar ter lido o que não se leu foi o engano do M7, e ele custou uma rodada.
+   */
+  nivelLegivel: boolean;
 }) {
   const veredito = podeCriarSessao({ papel: meuPapel, canal, f8Pronto });
   const [estado, setEstado] = useState<EstadoSessaoNaTela | null>(null);
@@ -162,6 +182,12 @@ export function PainelSessao({
           </ol>
         </div>
       </div>
+
+      <BlocoNivel
+        canal={canal}
+        nivelLegivel={nivelLegivel}
+        podePapel={podeGerirCanais(meuPapel)}
+      />
 
       <ContadorCego painel={descartes} />
     </div>
@@ -378,9 +404,7 @@ function TermoConsentimento({ canal, podePapel }: { canal: Canal; podePapel: boo
       <h3 className="text-[14px] font-semibold text-tinta">
         Antes de conectar: o consentimento de quem cedeu o número
       </h3>
-      <div className="mt-2.5 whitespace-pre-line rounded-md border border-linha bg-branco p-3.5 text-[13px] leading-relaxed text-tinta">
-        {TERMO_CANAL_PESSOAL}
-      </div>
+      <BlocoTermo />
 
       {!podePapel ? (
         <p className="mt-3 text-[13px] text-suave">
@@ -389,52 +413,7 @@ function TermoConsentimento({ canal, podePapel }: { canal: Canal; podePapel: boo
       ) : (
         <>
           {erro ? <div className="mt-3"><Faixa tom="erro">{erro}</Faixa></div> : null}
-          <div className="mt-3.5 grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] text-suave">Quem é a titular</span>
-              <input
-                className={ENTRADA}
-                value={form.titularNome}
-                onChange={(e) => setForm({ ...form, titularNome: e.target.value })}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] text-suave">Como ela consentiu</span>
-              <select
-                className={ENTRADA}
-                value={form.meio}
-                onChange={(e) => setForm({ ...form, meio: e.target.value as MeioConsentimento })}
-              >
-                {MEIOS_CONSENTIMENTO.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] text-suave">Quando</span>
-              <input
-                className={ENTRADA}
-                type="date"
-                value={form.aceitoEm.slice(0, 10)}
-                onChange={(e) => setForm({ ...form, aceitoEm: e.target.value })}
-              />
-            </label>
-          </div>
-
-          <label className="mt-3.5 flex items-start gap-2.5 text-[13px] text-tinta">
-            <input
-              type="checkbox"
-              className="mt-1 accent-[#252F63]"
-              checked={form.aceiteMarcado}
-              onChange={(e) => setForm({ ...form, aceiteMarcado: e.target.checked })}
-            />
-            <span>
-              Confirmo que ela leu este texto e concordou. O consentimento fica registrado com a
-              versão do termo — se o texto mudar, este aceite não cobre o novo.
-            </span>
-          </label>
+          <CamposAceite form={form} aoMudar={setForm} />
 
           <div className="mt-3.5 flex items-center justify-end gap-2.5">
             <button
@@ -461,5 +440,411 @@ function TermoConsentimento({ canal, podePapel }: { canal: Canal; podePapel: boo
         </>
       )}
     </div>
+  );
+}
+
+// ══════════════════ D70.b · as duas peças do termo, compartilhadas por DESENHO ══════════════════
+
+/**
+ * O TEXTO do termo, e ele é UM só.
+ *
+ * A extração não é arrumação: o termo aparece em DOIS portões — o inicial (antes de parear) e o da
+ * troca de nível — e dois blocos copiados divergem na primeira manutenção. Divergir aqui significa
+ * a titular aceitar um texto na tela e o banco carimbar outra versão, que é exatamente o defeito
+ * que a trava de versão (`exigeAceiteDoTermo`) existe para impedir. Um lugar, um texto, uma versão.
+ */
+function BlocoTermo() {
+  return (
+    <div className="mt-2.5 whitespace-pre-line rounded-md border border-linha bg-branco p-3.5 text-[13px] leading-relaxed text-tinta">
+      {TERMO_CANAL_PESSOAL}
+    </div>
+  );
+}
+
+/** Os três campos do aceite + a confirmação. Mesmos campos nos dois portões, pela mesma razão. */
+function CamposAceite({
+  form,
+  aoMudar,
+}: {
+  form: FormConsentimento;
+  aoMudar: (f: FormConsentimento) => void;
+}) {
+  return (
+    <>
+      <div className="mt-3.5 grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[12px] text-suave">Quem é a titular</span>
+          <input
+            className={ENTRADA}
+            value={form.titularNome}
+            onChange={(e) => aoMudar({ ...form, titularNome: e.target.value })}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[12px] text-suave">Como ela consentiu</span>
+          <select
+            className={ENTRADA}
+            value={form.meio}
+            onChange={(e) => aoMudar({ ...form, meio: e.target.value as MeioConsentimento })}
+          >
+            {MEIOS_CONSENTIMENTO.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[12px] text-suave">Quando</span>
+          <input
+            className={ENTRADA}
+            type="date"
+            value={form.aceitoEm.slice(0, 10)}
+            onChange={(e) => aoMudar({ ...form, aceitoEm: e.target.value })}
+          />
+        </label>
+      </div>
+
+      <label className="mt-3.5 flex items-start gap-2.5 text-[13px] text-tinta">
+        <input
+          type="checkbox"
+          className="mt-1 accent-[#252F63]"
+          checked={form.aceiteMarcado}
+          onChange={(e) => aoMudar({ ...form, aceiteMarcado: e.target.checked })}
+        />
+        <span>
+          Confirmo que ela leu este texto e concordou. O consentimento fica registrado com a versão
+          do termo — se o texto mudar, este aceite não cobre o novo.
+        </span>
+      </label>
+    </>
+  );
+}
+
+// ═══════════════════════════ D70 · o bloco “Nível do canal” ═══════════════════════════
+
+/**
+ * De quem este canal aceita mensagem, e para quem ele deixa enviar. **Cartões, nunca `<select>`.**
+ *
+ * A escolha do desenho é a mesma do seletor de provedor lá em `tabela-canais.tsx`, e pela mesma
+ * razão: um `<select>` mostra três NOMES e esconde as três CONSEQUÊNCIAS, e aqui a consequência é
+ * a decisão inteira — “aberto” não quer dizer nada para quem lê, enquanto “o sistema pode escrever
+ * primeiro para quem nunca falou com você, e é isso que costuma fazer o WhatsApp banir” quer.
+ *
+ * TRÊS estados de leitura, não dois (e é o mesmo degrade honesto do M7 e do R22):
+ *   · coluna ausente        → a tela diz que NÃO LEU. O que vale é estrito, e ela diz por quê.
+ *   · lido, nunca declarado → vale estrito, mas ninguém escolheu. É a linha que pede decisão.
+ *   · lido e declarado      → alguém escolheu, e a tela marca qual.
+ */
+function BlocoNivel({
+  canal,
+  nivelLegivel,
+  podePapel,
+}: {
+  canal: Canal;
+  nivelLegivel: boolean;
+  podePapel: boolean;
+}) {
+  const router = useRouter();
+  const vigente = nivelDoCanal(canal);
+  const [escolha, setEscolha] = useState<NivelCanal>(vigente);
+  const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [pedindoAceite, setPedindoAceite] = useState<NivelCanal | null>(null);
+  const [historico, setHistorico] = useState<HistoricoNivel | null>(null);
+  const [pendente, iniciar] = useTransition();
+
+  useEffect(() => {
+    void lerTrocasDeNivel(canal.canal_id).then(setHistorico);
+  }, [canal.canal_id]);
+
+  // O aceite vigente da titular. `exigeAceiteDoTermo` é a regra pura, e é ela que decide — aqui
+  // só se pergunta, para o botão dizer de antemão o que vai acontecer no clique.
+  const precisaAceite = exigeAceiteDoTermo(escolha, canal.consentimento_texto_versao);
+
+  /*
+   * DUAS coisas contra-intuitivas, e as duas são deliberadas:
+   *
+   *  1. sem `nivelLegivel` NÃO SE SALVA. A coluna não existe nesta base, então a conferência de
+   *     projeção falharia — e oferecer um botão que se sabe que vai falhar é a mesma "recusa como
+   *     primeira notícia" que esta tela recusa desde o F9. A faixa acima diz o porquê.
+   *  2. dá para salvar mesmo com a escolha IGUAL à vigente, num caso só: quando ninguém declarou
+   *     nada. Declarar o estrito de propósito não é no-op — muda o canal de "ninguém decidiu" para
+   *     "alguém decidiu que é assim", que são os dois estados que a flag `nivel_declarado` separa.
+   */
+  const declararODefault = nivelLegivel && !canal.nivel_declarado && escolha === vigente;
+  const podeSalvar = nivelLegivel && (escolha !== vigente || declararODefault);
+
+  function salvar(nivel: NivelCanal) {
+    setErro(null);
+    setAviso(null);
+    iniciar(async () => {
+      const r = await definirNivelCanal(canal.canal_id, nivel);
+      if (!r.ok) {
+        setErro(r.motivo ?? "não deu para trocar o nível");
+        return;
+      }
+      setPedindoAceite(null);
+      setAviso(
+        `Nível deste canal agora é “${rotuloNivel(nivel)}”. O runtime relê os canais a cada 60 segundos — até lá, a borda continua aplicando o nível anterior.`,
+      );
+      setHistorico(await lerTrocasDeNivel(canal.canal_id));
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="mt-5 border-t border-linha pt-4">
+      <h3 className="text-[14px] font-semibold text-tinta">Nível do canal</h3>
+      <p className="mt-1 text-[13px] text-suave">
+        De quem este número aceita mensagem e para quem o sistema pode enviar. É configuração — não
+        depende de deploy —, e todo canal nasce no mais fechado.
+      </p>
+
+      {!nivelLegivel ? (
+        <div className="mt-3">
+          <Faixa tom="ambar">
+            Esta tela <b>não conseguiu ler</b> o nível deste canal: a coluna{" "}
+            <span className="font-mono">nivel</span> ainda não existe nesta base (a migration do
+            nível não subiu aqui). O que está valendo é o <b>Estrito</b>, porque é o que o código
+            faz quando não há nível declarado — mas isso é dedução, não leitura, e trocar o nível
+            daqui vai falhar na conferência até a migration entrar.
+          </Faixa>
+        </div>
+      ) : canal.nivel_declarado ? (
+        <p className="mt-2.5 text-[13px] text-tinta">
+          Vigente: <b>{rotuloNivel(vigente)}</b> — declarado.
+        </p>
+      ) : (
+        <p className="mt-2.5 text-[13px] text-tinta">
+          Vigente: <b>Estrito</b> — <span className="text-suave">e ninguém escolheu isso</span>. É o
+          padrão de quem nunca declarou nível. Vale o mesmo que o Estrito escolhido; o que muda é
+          que esta linha ainda espera uma decisão.
+        </p>
+      )}
+
+      {erro ? <div className="mt-3"><Faixa tom="erro">{erro}</Faixa></div> : null}
+      {aviso ? <div className="mt-3"><Faixa tom="info">{aviso}</Faixa></div> : null}
+
+      {!podePapel ? (
+        <p className="mt-3 text-[13px] text-suave">
+          Só admin e Proprietário trocam o nível — a porta recusa evento de canal de quem não é.
+        </p>
+      ) : (
+        <>
+          <div className="mt-3">
+            {NIVEIS.map((n) => {
+              const marcado = escolha === n;
+              const eOVigente = vigente === n;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setEscolha(n)}
+                  aria-pressed={marcado}
+                  className={`mb-2 flex w-full items-start gap-2.5 rounded-md border p-3 text-left hover:bg-hover ${
+                    marcado ? "border-navy bg-[#EAECF5]" : "border-linha"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1 h-3.5 w-3.5 flex-none rounded-full border ${
+                      marcado ? "border-navy bg-navy" : "border-mute"
+                    }`}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px] font-medium text-tinta">
+                      {rotuloNivel(n)}
+                      {eOVigente ? (
+                        <span className="ml-2 text-[11.5px] font-normal text-suave">· em vigor</span>
+                      ) : null}
+                      {n === "estrito" ? (
+                        <span className="ml-2 text-[11.5px] font-normal text-suave">· padrão</span>
+                      ) : null}
+                    </span>
+                    <span className="mt-0.5 block text-[12.5px] text-suave">
+                      {consequenciaNivel(n)}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {precisaAceite ? (
+            <Faixa tom="ambar">
+              Sair do Estrito muda o que a titular aceitou. Ela consentiu sobre a versão{" "}
+              <b>{canal.consentimento_texto_versao ?? "não registrada"}</b> do termo, e a vigente é
+              a <b>{TERMO_VERSAO}</b> — salvar abre o texto novo para o aceite antes de trocar.
+            </Faixa>
+          ) : null}
+
+          <div className="flex items-center justify-end gap-2.5">
+            <button
+              className={BTN.primario}
+              type="button"
+              disabled={pendente || !podeSalvar}
+              onClick={() => {
+                if (precisaAceite) {
+                  setErro(null);
+                  setPedindoAceite(escolha);
+                  return;
+                }
+                salvar(escolha);
+              }}
+            >
+              {!nivelLegivel
+                ? "Sem a coluna, não dá para salvar"
+                : precisaAceite
+                  ? "Ler o termo e salvar nível"
+                  : declararODefault
+                    ? "Declarar este nível"
+                    : escolha === vigente
+                      ? "Nível salvo"
+                      : "Salvar nível"}
+            </button>
+          </div>
+        </>
+      )}
+
+      <HistoricoNivelNaTela historico={historico} />
+
+      {pedindoAceite ? (
+        <DialogoAceiteENivel
+          canal={canal}
+          nivel={pedindoAceite}
+          pendente={pendente}
+          aoFechar={() => setPedindoAceite(null)}
+          aoErro={setErro}
+          aoConcluirAceite={() => salvar(pedindoAceite)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * D71.c · A AUDITORIA, e ela é uma série de INTENÇÕES — não o estado.
+ *
+ * O que está escrito no rodapé não é ressalva de rodapé: o nível vigente vive em
+ * `core.canal_whatsapp.config_jsonb`, e `porta.reconstruir_projecao` NÃO reconstrói essa tabela
+ * (`no_replay: false`, medido). Um UPDATE direto no banco muda o nível sem passar por evento
+ * nenhum, e não aparece aqui. Dizer “o nível fica no ledger com autor e data” seria vender esta
+ * lista como o que ela não é.
+ */
+function HistoricoNivelNaTela({ historico }: { historico: HistoricoNivel | null }) {
+  if (!historico || historico.indisponivel) return null;
+  return (
+    <div className="mt-4">
+      <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-suave">
+        Quem pediu qual nível
+      </span>
+      {historico.trocas.length === 0 ? (
+        <p className="mt-1.5 text-[12.5px] text-suave">
+          Nenhuma troca de nível registrada para este canal.
+        </p>
+      ) : (
+        <ul className="mt-1.5 flex flex-col gap-1">
+          {historico.trocas.map((t) => (
+            <li key={t.evento_id} className="text-[12.5px] text-suave">
+              <span className="text-tinta">{t.autor_nome ?? t.ator}</span> pediu{" "}
+              <span className="text-tinta">{t.nivel}</span> em {dataHora(t.quando)}
+              {t.motivo ? ` — ${t.motivo}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-1.5 text-[11.5px] text-mute">
+        Esta lista são os pedidos registrados no ledger. O valor que está valendo agora vem da
+        configuração do canal — alteração feita direto no banco não passa por evento e não aparece
+        aqui.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * D70.b · O portão que não existia: sair do estrito exige aceite na versão VIGENTE do termo.
+ *
+ * A ORDEM É A METADE DO ITEM. Grava-se PRIMEIRO o `canal_consentimento_registrado` na versão nova
+ * e só então o evento de nível — e se o primeiro falhar, o segundo não sai. Na ordem inversa, uma
+ * falha no meio deixaria o canal afrouxado com a titular tendo aceitado outro texto, que é o
+ * estado exato que este portão existe para impedir; e o ledger é append-only, então não há
+ * desfazer barato.
+ */
+function DialogoAceiteENivel({
+  canal,
+  nivel,
+  pendente,
+  aoFechar,
+  aoErro,
+  aoConcluirAceite,
+}: {
+  canal: Canal;
+  nivel: NivelCanal;
+  pendente: boolean;
+  aoFechar: () => void;
+  aoErro: (m: string) => void;
+  aoConcluirAceite: () => void;
+}) {
+  const [form, setForm] = useState<FormConsentimento>({
+    canalId: canal.canal_id,
+    titularNome: canal.consentimento_titular ?? canal.nome,
+    meio: "whatsapp",
+    aceitoEm: new Date().toISOString().slice(0, 10),
+    textoVersao: TERMO_VERSAO,
+    aceiteMarcado: false,
+  });
+  const [gravando, iniciar] = useTransition();
+  const problemas = validarConsentimento(form, Date.now());
+
+  return (
+    <Dialogo
+      titulo={`Aceite do termo ${TERMO_VERSAO} para ir a “${rotuloNivel(nivel)}”`}
+      largura={620}
+      aoFechar={aoFechar}
+      acoes={
+        <>
+          <button className={BTN.secundario} type="button" onClick={aoFechar}>
+            Cancelar
+          </button>
+          <button
+            className={BTN.primario}
+            type="button"
+            disabled={pendente || gravando || Object.keys(problemas).length > 0}
+            onClick={() =>
+              iniciar(async () => {
+                // 1º o aceite. Se ele não gravar, o nível NÃO é trocado.
+                const r = await registrarConsentimento({
+                  ...form,
+                  textoVersao: TERMO_VERSAO,
+                  aceitoEm: new Date(form.aceitoEm).toISOString(),
+                });
+                if (!r.ok) {
+                  aoErro(r.motivo ?? "não deu para registrar o aceite — o nível não foi trocado");
+                  return;
+                }
+                // 2º o nível. A action reconfere a versão do aceite pelo BANCO, então este
+                // caminho não “passa por cima” do portão: ele o satisfaz.
+                aoConcluirAceite();
+              })
+            }
+          >
+            Aceitar e trocar o nível
+          </button>
+        </>
+      }
+    >
+      <p className="text-[13px] text-suave">
+        O texto abaixo é a versão <b>{TERMO_VERSAO}</b>. A titular aceitou a versão{" "}
+        <b>{canal.consentimento_texto_versao ?? "não registrada"}</b>, que descrevia um canal onde
+        mensagem de desconhecido era sempre descartada — e é justamente isso que muda.
+      </p>
+      <BlocoTermo />
+      <CamposAceite form={form} aoMudar={setForm} />
+      {Object.values(problemas)[0] ? (
+        <p className="mt-2 text-[11.5px] text-suave">{Object.values(problemas)[0]}</p>
+      ) : null}
+    </Dialogo>
   );
 }

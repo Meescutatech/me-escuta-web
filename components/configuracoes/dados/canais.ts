@@ -14,7 +14,15 @@
  */
 
 import { criarClienteServidor } from "@/lib/supabase/server";
-import { finalidadeValida, provedorValido, type Canal, type Provedor } from "../regras/canais.ts";
+import {
+  finalidadeValida,
+  nivelValido,
+  provedorValido,
+  type Canal,
+  type HistoricoNivel,
+  type Provedor,
+  type TrocaDeNivel,
+} from "../regras/canais.ts";
 
 /**
  * M7 · As colunas são pedidas em DEGRAUS, do mais completo para o mais antigo, e a razão é de
@@ -37,12 +45,35 @@ const COLUNAS_BASE =
  * a consulta INTEIRA por causa de uma coluna e a tela de canais fica vazia — indistinguível de
  * "não há canais".
  */
-const DEGRAUS: { colunas: string; corte: boolean; m7: boolean; r22: boolean }[] = [
-  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por,departamento`, corte: true, m7: true, r22: true },
-  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por`, corte: true, m7: true, r22: false },
-  { colunas: `${COLUNAS_BASE},inbox_desde`, corte: true, m7: false, r22: false },
-  { colunas: COLUNAS_BASE, corte: false, m7: false, r22: false },
+const COLUNAS_R22 = `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por,departamento`;
+
+const DEGRAUS: { colunas: string; corte: boolean; m7: boolean; r22: boolean; d70: boolean }[] = [
+  /*
+   * D70 · o degrau NOVO e o de cima, com `nivel` e `nivel_declarado`, e existe pela MESMA razao
+   * dos outros tres: a web sobe antes do banco (D18), PostgREST recusa a consulta INTEIRA por
+   * causa de uma coluna que nao existe, e sem o degrau a tela de canais ficaria VAZIA num
+   * ambiente sem defeito nenhum — indistinguivel de "nao ha canais".
+   *
+   * MEDIDO em producao 08/09/2026: `core.v_canal_whatsapp` tem 18 colunas e NENHUMA delas e
+   * `nivel`. Ou seja, hoje o degrau que responde e o SEGUNDO, e `nivelLegivel` volta `false` —
+   * a tela diz que nao conseguiu ler, em vez de mostrar "estrito" como se soubesse.
+   */
+  { colunas: `${COLUNAS_R22},nivel,nivel_declarado`, corte: true, m7: true, r22: true, d70: true },
+  { colunas: COLUNAS_R22, corte: true, m7: true, r22: true, d70: false },
+  { colunas: `${COLUNAS_BASE},inbox_desde,finalidade,consentimento_por`, corte: true, m7: true, r22: false, d70: false },
+  { colunas: `${COLUNAS_BASE},inbox_desde`, corte: true, m7: false, r22: false, d70: false },
+  { colunas: COLUNAS_BASE, corte: false, m7: false, r22: false, d70: false },
 ];
+
+/** Nada respondeu. Um objeto so, para os dois caminhos nao divergirem na proxima coluna nova. */
+const INDISPONIVEL: CanaisLidos = {
+  canais: [],
+  indisponivel: true,
+  corteLegivel: false,
+  m7Legivel: false,
+  r22Legivel: false,
+  nivelLegivel: false,
+};
 
 export interface CanaisLidos {
   canais: Canal[];
@@ -62,6 +93,13 @@ export interface CanaisLidos {
    * ninguém preencheu, quando o que falta é a coluna. É a mesma distinção que o `m7Legivel` fez.
    */
   r22Legivel: boolean;
+  /**
+   * D70. `false` = a view ainda nao expoe `nivel` (a migration do nivel nao esta aplicada neste
+   * ambiente). A tela DIZ isso, e nao mostra "Estrito" como se tivesse lido — o comportamento
+   * REAL nesse ambiente e mesmo o estrito, mas afirmar que se leu o que nao se leu e o engano do
+   * M7 outra vez. Mesma distincao que `m7Legivel` e `r22Legivel` ja faziam.
+   */
+  nivelLegivel: boolean;
 }
 
 function mapear(
@@ -69,6 +107,7 @@ function mapear(
   temCorte: boolean,
   temM7: boolean,
   temR22: boolean,
+  temD70: boolean,
 ): Canal | null {
   const canalId = String(linha.canal_id ?? "").trim();
   if (!canalId) return null;
@@ -97,6 +136,12 @@ function mapear(
     // `null` = "coluna ausente" OU "nunca declarado" — nunca um departamento inventado. Quem
     // distingue os dois é o `r22Legivel`, e a tela tem texto diferente para cada um.
     departamento: temR22 && linha.departamento ? String(linha.departamento) : null,
+    // D70 · `null` = coluna ausente OU valor fora do dominio. Os dois valem `estrito` por
+    // `nivelDoCanal`, e NENHUM dos dois vira permissao: fail-closed em toda ignorancia.
+    nivel: temD70 && nivelValido(linha.nivel) ? linha.nivel : null,
+    // Valor gravado fora do dominio NAO conta como declaracao — e ruido, e ruido nao e escolha de
+    // ninguem. Por isso o `nivelValido` aparece nas duas linhas, e nao so na de cima.
+    nivel_declarado: temD70 && linha.nivel_declarado === true && nivelValido(linha.nivel),
   };
 }
 
@@ -125,7 +170,7 @@ export async function lerCanais(opcoes: { cliente?: Supabase } = {}): Promise<Ca
       const { data, error } = await consulta(degrau.colunas);
       if (error || !data) continue;
       const canais = (data as unknown as Record<string, unknown>[])
-        .map((l) => mapear(l, degrau.corte, degrau.m7, degrau.r22))
+        .map((l) => mapear(l, degrau.corte, degrau.m7, degrau.r22, degrau.d70))
         .filter((c): c is Canal => c !== null);
       return {
         canais,
@@ -133,12 +178,13 @@ export async function lerCanais(opcoes: { cliente?: Supabase } = {}): Promise<Ca
         corteLegivel: degrau.corte,
         m7Legivel: degrau.m7,
         r22Legivel: degrau.r22,
+        nivelLegivel: degrau.d70,
       };
     }
     // Nenhum degrau respondeu: a view não existe, ou a leitura falhou por outro motivo.
-    return { canais: [], indisponivel: true, corteLegivel: false, m7Legivel: false, r22Legivel: false };
+    return INDISPONIVEL;
   } catch {
-    return { canais: [], indisponivel: true, corteLegivel: false, m7Legivel: false, r22Legivel: false };
+    return INDISPONIVEL;
   }
 }
 
@@ -158,4 +204,98 @@ export async function lerCanal(canalId: string): Promise<Canal | null> {
  */
 export async function contarPendentesFilaSaida(_canalId: string): Promise<number | null> {
   return null;
+}
+
+// ═════════════════════ D71.c · a AUDITORIA do nível, medida e não prometida ═════════════════════
+
+/**
+ * O nível é CONFIG MUTÁVEL, e o evento no ledger é registro de INTENÇÃO — não é o estado.
+ *
+ * Isto não é filosofia, é medida: `porta.projecao_tabela` traz `core.canal_whatsapp` com
+ * `no_replay: false`, ou seja `porta.reconstruir_projecao` NUNCA reconstrói esta tabela a partir
+ * do ledger. Quem responde "qual é o nível agora" é `core.canal_whatsapp.config_jsonb`, e mais
+ * ninguém. Escrever em doc ou em comentário que "o nível fica no ledger com autor e data" seria
+ * dizer que o ledger manda no valor vigente, e ele não manda.
+ *
+ * O que o ledger tem de verdade — e que esta função entrega em vez da promessa — é a SÉRIE DE
+ * INTENÇÕES: quem pediu qual nível, e quando. É auditoria real, com o limite escrito junto: se
+ * alguém mudar `config_jsonb` por UPDATE direto, essa mudança NÃO aparece aqui, porque não passou
+ * por evento nenhum. Foi exatamente assim que o canal `producao` foi ligado em 28/07 sem uma linha
+ * no ledger.
+ */
+/*
+ * ⚠️ `TrocaDeNivel` e `HistoricoNivel` moram em `../regras/canais.ts`, que é PURO — e não aqui.
+ *
+ * Não é organização: o portão `cliente` (tests/portao-web-b.test.ts) reprova componente client que
+ * importe qualquer coisa de `dados/`, ainda que só o tipo, porque `import type` some na compilação
+ * mas a linha continua no arquivo — e a primeira edição que apagar a palavra `type` passa a puxar
+ * o cliente do Supabase e o segredo junto para o browser, sem erro nenhum. O painel precisa do
+ * tipo; ele o pega do módulo puro.
+ */
+
+const PREFIXO_ATOR_HUMANO = "humano:";
+
+export async function lerHistoricoNivel(
+  canalId: string,
+  opcoes: { cliente?: Supabase; limite?: number } = {},
+): Promise<HistoricoNivel> {
+  try {
+    const supabase = opcoes.cliente ?? criarClienteServidor();
+    const { data, error } = await supabase
+      .schema("core")
+      .from("evento")
+      .select("id,tipo,ator,payload,criado_em")
+      .eq("tipo", "canal_nivel_definido")
+      .eq("payload->>canal_id", canalId)
+      .order("criado_em", { ascending: false })
+      .limit(opcoes.limite ?? 20);
+    if (error || !data) return { trocas: [], indisponivel: true };
+
+    const linhas = data as unknown as Record<string, unknown>[];
+    const trocas: TrocaDeNivel[] = linhas.map((l) => {
+      const payload = (l.payload ?? {}) as Record<string, unknown>;
+      return {
+        evento_id: String(l.id ?? ""),
+        nivel: String(payload.nivel ?? ""),
+        motivo: payload.motivo ? String(payload.motivo) : null,
+        quando: String(l.criado_em ?? ""),
+        ator: String(l.ator ?? ""),
+        autor_nome: null,
+      };
+    });
+
+    // Os uids viram NOME numa consulta só. Falhar aqui não invalida a auditoria: sem o nome, a
+    // tela mostra o `ator` cru, que ainda diz quem foi — pior seria esconder a linha inteira
+    // porque o join não saiu.
+    const uids = [
+      ...new Set(
+        trocas
+          .map((t) => (t.ator.startsWith(PREFIXO_ATOR_HUMANO) ? t.ator.slice(PREFIXO_ATOR_HUMANO.length) : ""))
+          .filter((u) => u.length > 0),
+      ),
+    ];
+    if (uids.length > 0) {
+      const { data: membros } = await supabase
+        .schema("core")
+        .from("v_membro")
+        .select("id,nome")
+        .in("id", uids);
+      const porId = new Map(
+        ((membros ?? []) as unknown as Record<string, unknown>[]).map((m) => [
+          String(m.id ?? ""),
+          m.nome ? String(m.nome) : null,
+        ]),
+      );
+      for (const t of trocas) {
+        const uid = t.ator.startsWith(PREFIXO_ATOR_HUMANO)
+          ? t.ator.slice(PREFIXO_ATOR_HUMANO.length)
+          : "";
+        t.autor_nome = uid ? porId.get(uid) ?? null : null;
+      }
+    }
+
+    return { trocas, indisponivel: false };
+  } catch {
+    return { trocas: [], indisponivel: true };
+  }
 }

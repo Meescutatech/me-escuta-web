@@ -42,6 +42,7 @@ export default async function CanaisPage() {
       departamentos={dominio.departamentos}
       dominioIndisponivel={dominio.indisponivel}
       r22Legivel={lidos.r22Legivel}
+      nivelLegivel={lidos.nivelLegivel}
     />
   );
 }

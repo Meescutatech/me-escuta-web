@@ -129,6 +129,27 @@ export interface Canal {
    * Depois da migration a coluna é `NOT NULL`, então `null` volta a significar só "não legível".
    */
   finalidade: Finalidade | null;
+  /**
+   * D70 · O NIVEL do canal, que decide de quem o sistema aceita mensagem e para quem deixa enviar.
+   *
+   * `null` significa **"a coluna ainda nao existe nesta base OU o valor de la esta fora do
+   * dominio"** — os DOIS casos valem `estrito`, porque `nivelDoCanal` falha fechado. Nunca
+   * significa "aberto", e nunca se supoe nada a partir da ausencia: supor foi o engano do M7.
+   *
+   * Quem distingue "a coluna nao existe" de "existe e ninguem declarou" e o `nivelLegivel` da
+   * leitura (`dados/canais.ts`), e a tela tem texto diferente para cada um — sao TRES estados.
+   */
+  nivel: NivelCanal | null;
+  /**
+   * `true` = alguem DECLAROU o nivel deste canal, de proposito. `false` = nunca declarou (ou o
+   * valor gravado nao esta no dominio, o que nao e declaracao: e ruido, e ruido vale `estrito`).
+   *
+   * A distincao existe porque "nunca declarado" e "declarado como estrito" tem o MESMO
+   * comportamento e significados opostos para quem opera: o primeiro e um canal que ninguem
+   * configurou, o segundo e uma escolha. Colapsar os dois esconderia justamente a linha que ainda
+   * precisa de decisao.
+   */
+  nivel_declarado: boolean;
 }
 
 export const PROVEDORES: Provedor[] = ["waba", "nao_oficial"];
@@ -144,6 +165,183 @@ export function rotuloProvedor(p: Provedor): string {
 /** Gerir canais é ação de gestão. A defesa real é a guarda da porta; aqui é ergonomia. */
 export function podeGerirCanais(papel: Papel | null): boolean {
   return papel === "admin" || papel === "owner";
+}
+
+// ═════════════════════════════ D70 · O NIVEL DO CANAL ═════════════════════════════
+
+/**
+ * D70 · De quem este canal aceita mensagem, e para quem ele deixa enviar. **E config, nao deploy.**
+ *
+ * Ate 08/09/2026 isso era hardcode em tres camadas e nenhuma lia configuracao — o que contraria o
+ * Artigo IV da Constituicao ("configuracao, nao hardcode; mudar valor de negocio nunca exige
+ * deploy"). O nivel e o dado que faltava.
+ *
+ *   `estrito`               so entra e so sai para lead, paciente ou quem tem aceite registrado.
+ *                           E o comportamento que ja existia, e continua sendo o PADRAO.
+ *   `responde_qualquer_um`  entra de qualquer um; envia so para quem JA escreveu a este canal.
+ *   `aberto`                entra de qualquer um; envia para qualquer um.
+ *
+ * FAIL-CLOSED EM TODA IGNORANCIA, e a lista de ignorancias e literal: nivel ausente da view,
+ * nulo, string vazia, valor fora do dominio, coluna inexistente nesta base. Todos valem
+ * `estrito`. Nao ha caminho por onde a duvida vire permissao.
+ */
+export type NivelCanal = "estrito" | "responde_qualquer_um" | "aberto";
+
+/** Ordem de PERMISSAO CRESCENTE — a tela desenha os cartoes nesta ordem, do mais fechado ao mais aberto. */
+export const NIVEIS: NivelCanal[] = ["estrito", "responde_qualquer_um", "aberto"];
+
+/** O default, e ele e o fechado. Canal que nunca declarou nivel opera exatamente como antes da D70. */
+export const NIVEL_PADRAO: NivelCanal = "estrito";
+
+export function nivelValido(v: unknown): v is NivelCanal {
+  return typeof v === "string" && (NIVEIS as string[]).includes(v);
+}
+
+export function rotuloNivel(n: NivelCanal): string {
+  switch (n) {
+    case "responde_qualquer_um":
+      return "Responde quem escrever";
+    case "aberto":
+      return "Aberto";
+    default:
+      return "Estrito";
+  }
+}
+
+/**
+ * O que PASSA A ACONTECER ao escolher cada nivel — em portugues de gente, no tempo do efeito.
+ *
+ * Nao e descricao do nome: quem le isto e a gestora decidindo, e o que ela precisa saber e o que
+ * muda no mundo depois do clique. As tres frases nomeiam as duas direcoes (o que entra e o que
+ * sai), porque um nivel que so falasse de entrada esconderia metade da consequencia.
+ */
+export function consequenciaNivel(n: NivelCanal): string {
+  switch (n) {
+    case "responde_qualquer_um":
+      return (
+        "Passa a entrar no sistema a mensagem de QUALQUER pessoa que escrever para este numero — " +
+        "inclusive quem nao e paciente nem lead — e essa conversa fica guardada. O envio continua " +
+        "limitado a quem JA escreveu para este canal: o sistema nao comeca conversa com desconhecido."
+      );
+    case "aberto":
+      return (
+        "Entra mensagem de qualquer pessoa E o sistema pode escrever primeiro, para quem nunca " +
+        "falou com este numero. E o nivel de maior risco de bloqueio: mensagem para quem nao pediu " +
+        "contato e o que costuma fazer o WhatsApp banir — e o numero e pessoal, de uma pessoa."
+      );
+    default:
+      return (
+        "So entra mensagem de quem ja e lead, ja e paciente ou teve o aceite de contato registrado " +
+        "antes. Mensagem de qualquer outra pessoa e descartada na borda e nao fica guardada em " +
+        "lugar nenhum. O envio vale para essas mesmas pessoas, e para mais ninguem."
+      );
+  }
+}
+
+/**
+ * O nivel VIGENTE do canal, com o default fechado — e este e o unico lugar de onde a tela le nivel.
+ *
+ * Aceita `Canal` inteiro ou so o campo, porque quem chama nem sempre tem a linha completa (o
+ * dialogo de troca tem o alvo escolhido, nao o canal). O `nivelValido` no meio nao e paranoia:
+ * a coluna vem de `config_jsonb`, que aceita qualquer texto, e um valor estranho gravado la nao
+ * pode virar permissao por descuido de tipagem.
+ */
+export function nivelDoCanal(canal: { nivel?: unknown } | null | undefined): NivelCanal {
+  const bruto = canal?.nivel;
+  return nivelValido(bruto) ? bruto : NIVEL_PADRAO;
+}
+
+/** `true` para todo nivel que afrouxa o filtro — e e o que exige aceite do termo na versao vigente. */
+export function nivelAfrouxaOFiltro(n: NivelCanal): boolean {
+  return n !== "estrito";
+}
+
+/**
+ * Trocar o nivel: papel, provedor e dominio. A trava de VERSAO DO TERMO **nao mora aqui** — ela
+ * vive em `regras/lite-sessao.ts` (`exigeAceiteDoTermo`), junto do `TERMO_VERSAO` de que depende,
+ * para nao existir um segundo lugar que saiba qual e a versao vigente.
+ *
+ * D71.a · quem troca o nivel nesta volta e a GESTAO (admin/owner), e nao a titular do numero. Nao
+ * e opiniao de desenho: `api.registrar_evento` recusa TODO evento `canal_*` de quem nao e admin
+ * nem owner (`if v_tipo like 'canal\_%'`, medido no corpo vivo em 08/09), e nao existe um unico
+ * `membro` ativo em producao. Uma tela que oferecesse o botao a `membro` estaria prometendo uma
+ * escrita que o banco recusa — a recusa seria a primeira noticia, que e o que esta tela evita
+ * desde o F9.
+ */
+export interface PedidoNivel {
+  canal: Canal;
+  nivel: NivelCanal;
+  papel: Papel | null;
+}
+
+export function validarTrocaNivel(pedido: PedidoNivel): Problemas {
+  const p: Problemas = {};
+  const { canal, nivel, papel } = pedido;
+
+  if (!podeGerirCanais(papel)) {
+    p.papel = "trocar o nivel do canal exige admin ou Proprietario — a porta recusa evento de canal de quem nao e";
+  }
+  if (!nivelValido(nivel)) {
+    p.nivel = "nivel invalido: use estrito, responde_qualquer_um ou aberto";
+  }
+  // So o canal NAO OFICIAL tem filtro de borda por contraparte, e e esse filtro que o nivel
+  // afrouxa. Num canal oficial o nivel nao mudaria nada hoje — e gravar num ledger append-only um
+  // evento que nao muda nada e pior que recusar: fica parecendo configuracao vigente para sempre.
+  if (canal.provedor !== "nao_oficial") {
+    p.provedor =
+      "o nivel so existe no canal nao oficial: e la que a borda filtra por contraparte conhecida. " +
+      "No canal oficial este evento nao mudaria nada, e evento que nao muda nada fica no ledger " +
+      "parecendo configuracao";
+  }
+  if (nivelAfrouxaOFiltro(nivel) && !canal.consentimento_em) {
+    p.consentimento =
+      "sem o consentimento da titular registrado, este canal nao sai do estrito: afrouxar o filtro " +
+      "expoe o WhatsApp pessoal dela, e ninguem aqui pode consentir no lugar dela";
+  }
+
+  return p;
+}
+
+/**
+ * D71.c · A AUDITORIA do nivel — uma linha por INTENCAO registrada no ledger.
+ *
+ * O tipo mora AQUI, no modulo puro, e nao no modulo de leitura, porque o portao `cliente` reprova
+ * componente client que importe de `dados/` — mesmo so o tipo. `import type` some na compilacao,
+ * mas a linha fica no arquivo, e a primeira edicao que apagar a palavra `type` passa a arrastar o
+ * cliente do Supabase para o browser sem erro nenhum.
+ *
+ * ⚠️ O LIMITE, escrito junto com o tipo de proposito: isto NAO e o estado. O nivel vigente vive em
+ * `core.canal_whatsapp.config_jsonb`, e `porta.projecao_tabela` traz essa tabela com
+ * `no_replay: false` — `porta.reconstruir_projecao` nunca a reconstroi do ledger. Alteracao feita
+ * por UPDATE direto no banco nao gera evento e NAO aparece nesta lista.
+ */
+export interface TrocaDeNivel {
+  evento_id: string;
+  nivel: string;
+  motivo: string | null;
+  quando: string;
+  /** o `ator` cru do ledger (`humano:<uid>`). A tela mostra o NOME quando consegue resolver. */
+  ator: string;
+  /** nome do membro em `core.v_membro`, quando o ator e um humano conhecido. `null` = nao resolveu. */
+  autor_nome: string | null;
+}
+
+export interface HistoricoNivel {
+  trocas: TrocaDeNivel[];
+  /** true = nao deu para ler o ledger (ou o tipo ainda nao existe nesta base). A tela DIZ isso. */
+  indisponivel: boolean;
+}
+
+/** O payload do evento de nivel. Sem segredo, sem PII, e com o motivo quando houver. */
+export function payloadNivelCanal(
+  canalId: string,
+  nivel: NivelCanal,
+  motivo?: string,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = { canal_id: canalId, nivel };
+  const m = (motivo ?? "").trim();
+  if (m) payload.motivo = m;
+  return payload;
 }
 
 // ───────────────────────────────── id do canal não oficial ─────────────────────────────────
@@ -195,7 +393,7 @@ export interface FormCanal {
 
 /** Campo → motivo em PT-BR. Motivo NOMEIA o limite violado, nunca "valor inválido". */
 export type Problemas = Partial<
-  Record<keyof FormCanal | "inboxDesde" | "consentimento" | "papel" | "identidade", string>
+  Record<keyof FormCanal | "inboxDesde" | "consentimento" | "papel" | "identidade" | "nivel", string>
 >;
 
 /** E.164: '+' e 8 a 15 dígitos, o primeiro diferente de zero. */

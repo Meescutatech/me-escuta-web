@@ -164,6 +164,11 @@ export const TIPOS_ESCRITOS_WEB_B: string[] = [
   "canal_ativado",
   "canal_desativado",
   "canal_consentimento_registrado",
+  // D70 · o nivel do canal. Estreia com a linha em CONFERENCIA (conferencia por EFEITO: o `nivel`
+  // resultante na view), nao com excecao — o efeito e legivel, entao nao ha o que declarar como
+  // inconferivel. Foi o portao `tipos_declarados` que exigiu esta linha aqui: sem ela, o literal
+  // "canal_nivel_definido" na action reprova estaticamente antes de chegar a producao.
+  "canal_nivel_definido",
   "config_publicada",
   "suporte_ticket_aberto",
   "suporte_ticket_comentado",

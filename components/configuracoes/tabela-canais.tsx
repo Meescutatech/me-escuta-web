@@ -84,6 +84,7 @@ export function TabelaCanais({
   departamentos,
   dominioIndisponivel,
   r22Legivel,
+  nivelLegivel,
 }: {
   canais: CanalNaTela[];
   meuPapel: Papel | null;
@@ -95,6 +96,8 @@ export function TabelaCanais({
   dominioIndisponivel: boolean;
   /** `false` = a coluna `departamento` não existe nesta base (0130 não aplicada). */
   r22Legivel: boolean;
+  /** D70 · `false` = a coluna `nivel` não existe nesta base. O painel DIZ que não leu. */
+  nivelLegivel: boolean;
 }) {
   const router = useRouter();
   const gestor = podeGerirCanais(meuPapel);
@@ -259,6 +262,7 @@ export function TabelaCanais({
               cols={cols}
               departamentos={departamentos}
               r22Legivel={r22Legivel}
+              nivelLegivel={nivelLegivel}
               gestor={gestor}
               pendente={pendente}
               expandido={expandido === c.canal_id}
@@ -317,11 +321,13 @@ function LinhaCanal({
   f8Pronto,
   departamentos,
   r22Legivel,
+  nivelLegivel,
 }: {
   canal: CanalNaTela;
   grade: string;
   departamentos: Departamento[];
   r22Legivel: boolean;
+  nivelLegivel: boolean;
   cols: { provedor: boolean; departamento: boolean; finalidade: boolean; consentimento: boolean };
   gestor: boolean;
   pendente: boolean;
@@ -423,9 +429,24 @@ function LinhaCanal({
         ) : null}
         <div className="flex min-h-[30px] items-center gap-2 self-center">
           <span className={`text-[13px] ${rotulo.cls}`}>{rotulo.txt}</span>
-          {lite && canal.sessao?.status !== "conectado" && gestor ? (
+          {/* BUG CONSERTADO (D70/TAREFA 0). A condição era
+              `lite && canal.sessao?.status !== "conectado" && gestor` — ou seja, o botão SUMIA
+              exatamente no estado em que o painel é mais necessário: o canal conectado. Medido em
+              produção 08/09/2026: `lite:diogo` está pareado, e sem este botão não havia como abrir
+              o painel, encerrar a sessão nem — agora — trocar o nível. Sem ele a feature inteira
+              da D70 seria inalcançável pela tela.
+
+              O rótulo muda com o estado em vez de mentir um só: "Conectar" num canal já conectado
+              prometeria uma ação que não é a que acontece. */}
+          {lite && gestor ? (
             <button className={BTN.mini} type="button" onClick={aoExpandir}>
-              {expandido ? "Fechar" : "Conectar"}
+              {expandido
+                ? "Fechar"
+                : canal.sessao?.status === "conectado"
+                  ? "Gerenciar"
+                  : canal.sessao?.status === "aguardando_qr"
+                    ? "Ver código"
+                    : "Conectar"}
             </button>
           ) : null}
         </div>
@@ -479,7 +500,12 @@ function LinhaCanal({
       ) : null}
 
       {expandido && lite ? (
-        <PainelSessao canal={canal} meuPapel={meuPapel} f8Pronto={f8Pronto} />
+        <PainelSessao
+          canal={canal}
+          meuPapel={meuPapel}
+          f8Pronto={f8Pronto}
+          nivelLegivel={nivelLegivel}
+        />
       ) : null}
 
       {lite ? (

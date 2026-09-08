@@ -289,13 +289,14 @@ test("confirmarProjecao: exceção declarada sem evento_id passa sem tocar no ba
  * existem nesta branch: a lista dos 10 tipos é declarada aqui em vez de importada.
  */
 
-/** Os 10 tipos que a Web-B escreve (a lista viva mora em components/configuracoes/regras/porta.ts). */
+/** Os 11 tipos que a Web-B escreve (a lista viva mora em components/configuracoes/regras/porta.ts). */
 const TIPOS_ESCRITOS_WEB_B = [
   "canal_registrado",
   "canal_atualizado",
   "canal_ativado",
   "canal_desativado",
   "canal_consentimento_registrado",
+  "canal_nivel_definido",
   "config_publicada",
   "suporte_ticket_aberto",
   "suporte_ticket_comentado",
@@ -313,7 +314,7 @@ test("enxerto · todo tipo escrito pela Web-B tem conferência OU exceção decl
   for (const tipo of TIPOS_ESCRITOS_WEB_B) {
     assert.ok(temConferencia(tipo) || excecaoDe(tipo), tipo);
   }
-  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 10);
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 11);
 });
 
 test("enxerto · o fail-closed NÃO atinge as 10: com a linha na tabela, elas são conhecidas", () => {

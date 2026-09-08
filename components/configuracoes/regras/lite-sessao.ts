@@ -243,7 +243,21 @@ export function podeCriarSessao(ctx: ContextoCriacaoSessao): VereditoSessao {
 
 // ─────────────────────────────────── consentimento (portão) ───────────────────────────────────
 
-export const TERMO_VERSAO = "v1";
+/**
+ * D70 · v2. Subiu de `v1` em 08/09/2026 porque o texto passou a descrever o NIVEL do canal, e o
+ * `v1` prometia a titular uma coisa que deixa de ser verdade fora do estrito: *"Mensagem de quem
+ * nao e nosso conhecido e descartada na borda e nao e guardada em lugar nenhum"*.
+ *
+ * Consentimento dado sobre o `v1` NAO cobre o `v2` — e agora isso e regra executavel, nao aviso:
+ * `exigeAceiteDoTermo` (logo abaixo) faz do aceite na versao vigente uma pre-condicao para sair
+ * do estrito. Ate 08/09 esta constante tinha UM unico uso no repo inteiro (carimbar o valor no
+ * envio do formulario) e NADA comparava a versao gravada com a vigente.
+ *
+ * ⚠️ Subir esta versao NAO invalida o pareamento de quem ja consentiu no v1: o portao da sessao
+ * continua olhando `consentimento_em`, e derrubar canal em producao por troca de texto seria um
+ * dano maior que o que o texto novo evita. O que a versao velha bloqueia e o AFROUXAMENTO.
+ */
+export const TERMO_VERSAO = "v2";
 
 export type MeioConsentimento = "assinatura" | "whatsapp" | "presencial" | "video";
 export const MEIOS_CONSENTIMENTO: MeioConsentimento[] = ["assinatura", "whatsapp", "presencial", "video"];
@@ -264,9 +278,48 @@ export function meioConsentimentoValido(v: unknown): v is MeioConsentimento {
 export const TERMO_CANAL_PESSOAL = [
   "Este número é seu, pessoal. Conectá-lo ao sistema usa uma biblioteca NÃO OFICIAL do WhatsApp.",
   "O WhatsApp pode banir números conectados assim. Se isso acontecer, o bloqueio atinge o SEU WhatsApp pessoal — suas conversas, seus grupos, seus contatos, o seu histórico. Não é reversível, e não é um chip da empresa: é o seu.",
-  "Enquanto o número estiver conectado, a empresa passa a ler no sistema as mensagens que chegarem dele vindas de pessoas já cadastradas como lead ou paciente. Mensagem de quem não é nosso conhecido é descartada na borda e não é guardada em lugar nenhum.",
-  "Você pode pedir a desconexão a qualquer momento.",
+  "Quanto do que chega a este número a empresa passa a ler depende do NÍVEL configurado. O nível é escolhido por um admin ou pelo Proprietário — nunca pelo sistema, e nunca sozinho. São três, e todo canal começa no primeiro:",
+  "1) Estrito — é como todo canal nasce, e é o que vale enquanto ninguém escolher outro. A empresa lê apenas as mensagens de quem já é lead, de quem já é paciente, ou de quem teve o aceite de contato registrado antes. Mensagem de qualquer outra pessoa é descartada na borda: não entra, não é lida e não é guardada em lugar nenhum.",
+  "2) Responde quem escrever — passa a entrar no sistema, e a ficar guardada, a mensagem de QUALQUER pessoa que escrever para este número. Inclusive quem é seu conhecido e não tem nada a ver com a empresa. O sistema só responde a quem escreveu primeiro; ele não começa conversa.",
+  "3) Aberto — entra mensagem de qualquer pessoa E o sistema pode escrever primeiro, para quem nunca falou com você. É o nível de maior risco: mensagem para quem não pediu contato é o que costuma fazer o WhatsApp banir, e quem perde a conta é você, não a empresa.",
+  "Sair do Estrito só acontece com você aceitando este texto, nesta versão. Um aceite dado sobre uma versão anterior não vale para esta.",
+  "Você pode pedir a volta ao Estrito, ou a desconexão do número, a qualquer momento.",
 ].join("\n\n");
+
+/**
+ * D70.b · A TRAVA DE VERSAO — e ela nao existia.
+ *
+ * MEDIDO em 08/09/2026: `TERMO_VERSAO` tinha UM uso em todo o repositorio (`painel-sessao.tsx`,
+ * carimbando o valor no envio do formulario). Nada, em lugar nenhum, comparava o
+ * `consentimento_texto_versao` gravado com o vigente — ou seja, a frase "se o texto mudar, este
+ * aceite nao cobre o novo", que a propria tela mostrava a titular, nao era imposta por nada.
+ *
+ * A regra: **sair do estrito exige aceite na versao vigente**. Voltar PARA o estrito nunca exige
+ * nada — apertar o filtro e sempre seguro, e travar o caminho de volta seria prender a titular no
+ * nivel mais permissivo justamente quando ela quer sair dele.
+ *
+ * `versaoAceita` nulo, vazio ou diferente da vigente ⇒ exige. Fail-closed: nao saber qual versao
+ * ela aceitou e o mesmo que saber que nao foi esta.
+ */
+export function exigeAceiteDoTermo(
+  nivelAlvo: string,
+  versaoAceita: string | null | undefined,
+  versaoVigente: string = TERMO_VERSAO,
+): boolean {
+  if (nivelAlvo === "estrito") return false;
+  return (versaoAceita ?? "").trim() !== versaoVigente;
+}
+
+/** O que a tela diz quando a trava dispara. Nomeia a versao velha, para ninguem procurar no escuro. */
+export function motivoAceiteDesatualizado(versaoAceita: string | null | undefined): string {
+  const v = (versaoAceita ?? "").trim();
+  return (
+    `a titular aceitou o termo ${v ? `na versao ${v}` : "numa versao nao registrada pelo banco"}, e o ` +
+    `vigente e o ${TERMO_VERSAO}. Afrouxar o filtro muda o que ela aceitou: o texto novo descreve os ` +
+    "tres niveis e diz que fora do estrito a mensagem de desconhecido passa a ser guardada. " +
+    "Registre o aceite nesta versao antes de trocar o nivel."
+  );
+}
 
 /** As palavras que o termo TEM de conter para ser um consentimento informado, não um rodapé. */
 export const TERMO_EXIGE_DIZER = [

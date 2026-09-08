@@ -6,7 +6,7 @@ import {
   registrarEventoComReadback,
   type ResultadoAcao,
 } from "@/components/configuracoes/dados/porta";
-import { lerCanal } from "@/components/configuracoes/dados/canais";
+import { lerCanal, lerHistoricoNivel } from "@/components/configuracoes/dados/canais";
 import {
   canalIdDoForm,
   payloadCanalAtivado,
@@ -17,8 +17,17 @@ import {
   semProblemas,
   validarAtivacao,
   validarRegistroCanal,
+  validarTrocaNivel,
+  nivelValido,
+  payloadNivelCanal,
   type FormCanal,
+  type HistoricoNivel,
+  type NivelCanal,
 } from "@/components/configuracoes/regras/canais.ts";
+import {
+  exigeAceiteDoTermo,
+  motivoAceiteDesatualizado,
+} from "@/components/configuracoes/regras/lite-sessao.ts";
 
 /**
  * F9 · Ações da tela de canais de WhatsApp.
@@ -113,6 +122,85 @@ export async function desativarCanal(
     idExterno: randomUUID(),
     revalidar: [ROTA, "/conversas"],
   });
+}
+
+/**
+ * D70 · TROCAR O NÍVEL do canal — de quem ele aceita mensagem e para quem deixa enviar.
+ *
+ * Três portões, nesta ordem, e a ordem é deliberada:
+ *
+ *  1. DOMÍNIO. Nível fora de `estrito | responde_qualquer_um | aberto` nem chega ao banco. É o
+ *     mesmo fail-closed da leitura: ignorância nunca vira permissão.
+ *  2. PAPEL / PROVEDOR / CONSENTIMENTO (`validarTrocaNivel`).
+ *  3. D70.b · A VERSÃO DO TERMO. Sair do estrito exige aceite na versão VIGENTE — e este é o
+ *     portão que não existia: até 08/09/2026 `TERMO_VERSAO` tinha um único uso no repositório
+ *     (carimbar o valor no formulário), e nada comparava a versão gravada com a vigente.
+ *
+ *     Ele fica DEPOIS dos outros dois porque é o único que a tela sabe resolver sozinha: quando
+ *     este é o que barra, o caminho não é "erro", é abrir o termo e registrar o aceite novo. Um
+ *     papel insuficiente, ao contrário, não tem conserto nesta tela.
+ *
+ * ⚠️ A defesa REAL é a da porta e a do banco. `api.registrar_evento` recusa todo evento `canal_*`
+ * de quem não é admin nem owner (medido no corpo vivo, 08/09). O que esta função faz é não
+ * OFERECER o que seria recusado — a recusa não pode ser a primeira notícia.
+ */
+export async function definirNivelCanal(
+  canalId: string,
+  nivel: string,
+  opcoes: { motivo?: string } = {},
+): Promise<ResultadoAcao> {
+  if (!nivelValido(nivel)) {
+    return {
+      ok: false,
+      motivo: `nível "${nivel}" não existe: use estrito, responde_qualquer_um ou aberto`,
+      classe: "recusa",
+    };
+  }
+  const alvo: NivelCanal = nivel;
+
+  const [canal, papel] = await Promise.all([lerCanal(canalId), lerPapelAtual()]);
+  if (!canal) {
+    return { ok: false, motivo: "canal não encontrado (ou sem permissão para lê-lo)", classe: "recusa" };
+  }
+
+  const problemas = validarTrocaNivel({ canal, nivel: alvo, papel });
+  if (!semProblemas(problemas)) {
+    return { ok: false, motivo: Object.values(problemas)[0], classe: "recusa" };
+  }
+
+  // ⚠️ ESTE PORTÃO É LIDO DO BANCO, NUNCA DA TELA, e é o que salva uma fraqueza real do caminho
+  // do diálogo: o readback de `canal_consentimento_registrado` confere `consentimento_em not null`
+  // — e num RE-consentimento essa coluna JÁ era não nula, então aquele readback é vacuo ali e
+  // diria "ok" mesmo que a versão não tivesse sido atualizada. Aqui a versão é relida do banco
+  // (`lerCanal` acima) e comparada de novo: se o aceite novo não pegou, o nível não troca.
+  if (exigeAceiteDoTermo(alvo, canal.consentimento_texto_versao)) {
+    return {
+      ok: false,
+      motivo: motivoAceiteDesatualizado(canal.consentimento_texto_versao),
+      classe: "recusa",
+    };
+  }
+
+  // CONFERE O EFEITO, nunca o rc: `registrarEventoComReadback` relê `core.v_canal_whatsapp` e
+  // exige que o `nivel` de lá seja o que acabou de ser pedido (linha `canal_nivel_definido` em
+  // CONFERENCIA). Numa base sem a coluna, esta releitura FALHA — e falhar é o certo: o evento
+  // entrou no ledger, mas o nível não passou a valer, e dizer "salvo" ali seria a mentira mais
+  // cara possível nesta feature.
+  return registrarEventoComReadback({
+    tipo: "canal_nivel_definido",
+    payload: payloadNivelCanal(canalId, alvo, opcoes.motivo),
+    idExterno: randomUUID(),
+    revalidar: [ROTA, "/conversas"],
+  });
+}
+
+/**
+ * D71.c · A auditoria do nível — a série de INTENÇÕES no ledger, com o limite dito junto: o valor
+ * vigente vive em `core.canal_whatsapp.config_jsonb`, e uma alteração por UPDATE direto não passa
+ * por evento nenhum e por isso NÃO aparece aqui.
+ */
+export async function lerTrocasDeNivel(canalId: string): Promise<HistoricoNivel> {
+  return lerHistoricoNivel(canalId);
 }
 
 /** Só para a UI decidir o que mostrar. A defesa real é a guarda de papel na porta. */

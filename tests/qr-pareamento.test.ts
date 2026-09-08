@@ -263,6 +263,10 @@ function canalLite(p: Partial<Canal> = {}): Canal {
     desativado_em: null,
     criado_em: null,
     inbox_desde: "2026-07-20T00:00:00Z",
+    // D70 · o fixture nasce SEM nivel e SEM declaracao, que e o estado real de todo canal em
+    // producao hoje (medido 08/09/2026: a view nao tem a coluna). `nivelDoCanal` cai em `estrito`.
+    nivel: null,
+    nivel_declarado: false,
     ...p,
   };
 }

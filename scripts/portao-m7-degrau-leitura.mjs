@@ -150,7 +150,7 @@ exigir(
 console.log(`controle negativo OK — sem degrau a lista vem vazia (${semDegrau.conversas.length})`);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-// PARTE 2 · dados/canais.ts — TRÊS degraus, e o de baixo é o que roda HOJE
+// PARTE 2 · dados/canais.ts — CINCO degraus (D70 acrescentou o de cima), e o mundo de HOJE é o 2º
 //
 // Mesmo raciocínio da parte 1, com um degrau a mais. Aqui a queda tem DOIS eixos independentes:
 // `inbox_desde` (que já existia antes do M7) e as duas colunas novas. Um degrau que caia demais
@@ -162,21 +162,37 @@ const CANAIS = [
     numero: null, waba_id: null, area_efetiva: "comercial", pareado_em: null,
     consentimento_em: null, consentimento_titular: null, consentimento_texto_versao: null,
     risco_ban_aceito: false, desativado_em: null, criado_em: "2026-07-20T20:16:55Z",
-    inbox_desde: "2026-07-20T00:30:17Z", finalidade: "teste", consentimento_por: null },
+    inbox_desde: "2026-07-20T00:30:17Z", finalidade: "teste", consentimento_por: null,
+    departamento: "pre_venda", nivel: "aberto", nivel_declarado: true },
   { canal_id: "608866985643828", nome: "teste_meta", provedor: "waba", ativo: true,
     numero: "+15556418435", waba_id: "1063927472233881", area_efetiva: "comercial", pareado_em: null,
     consentimento_em: null, consentimento_titular: null, consentimento_texto_versao: null,
     risco_ban_aceito: false, desativado_em: null, criado_em: "2026-07-20T20:16:55Z",
-    inbox_desde: "2026-07-20T20:25:00Z", finalidade: "teste", consentimento_por: null },
+    inbox_desde: "2026-07-20T20:25:00Z", finalidade: "teste", consentimento_por: null,
+    departamento: "pre_venda", nivel: "estrito", nivel_declarado: false },
 ];
 
-/** @param {"m7"|"corte"|"base"|"nenhum"} ate  o degrau mais alto que o "banco" aceita. */
+/**
+ * @param {"d70"|"r22"|"m7"|"corte"|"base"|"nenhum"} ate  o degrau mais alto que o "banco" aceita.
+ *
+ * ⚠️ O NOME DA VARIÁVEL LOCAL É `altura`, e não `nivel`, desde a D70 — `nivel` agora é uma COLUNA
+ * do produto, e duas coisas diferentes com o mesmo nome dentro do mesmo fixture é exatamente como
+ * um portão passa a medir a si mesmo.
+ */
 function responderCanais(ate) {
-  const ordem = { m7: 3, corte: 2, base: 1, nenhum: 0 };
+  const ordem = { d70: 5, r22: 4, m7: 3, corte: 2, base: 1, nenhum: 0 };
   return (q) => {
     if (q.tabela !== "v_canal_whatsapp") return { data: [] };
     const cols = q.colunas ?? "";
-    const nivel = cols.includes("finalidade") ? 3 : cols.includes("inbox_desde") ? 2 : 1;
+    const nivel = cols.includes("nivel")
+      ? 5
+      : cols.includes("departamento")
+        ? 4
+        : cols.includes("finalidade")
+          ? 3
+          : cols.includes("inbox_desde")
+            ? 2
+            : 1;
     if (nivel > ordem[ate]) {
       return { data: null, error: { message: `column v_canal_whatsapp.x does not exist` } };
     }
@@ -185,12 +201,58 @@ function responderCanais(ate) {
   };
 }
 
+// ─────── DEGRAU D70 (o de cima): a view TEM `nivel`. É o mundo DEPOIS da migration ───────
+const cD70 = await lerCanais({ cliente: criarClienteFalso(responderCanais("d70")) });
+if (cD70.canais.length === 0) {
+  console.error("PORTÃO RECUSA POR VACUIDADE: o fixture do degrau D70 não devolveu linha nenhuma.");
+  process.exit(2);
+}
+exigir(cD70.nivelLegivel === true, "canais degrau D70: nivelLegivel devia estar ligado");
+exigir(cD70.canais.length === CANAIS.length, `canais degrau D70 PERDEU LINHA: veio ${cD70.canais.length}`);
+{
+  const aberto = cD70.canais.find((c) => c.canal_id === "627327023793464");
+  const naoDeclarado = cD70.canais.find((c) => c.canal_id === "608866985643828");
+  exigir(aberto?.nivel === "aberto", "canais degrau D70: o nível declarado não chegou");
+  exigir(aberto?.nivel_declarado === true, "canais degrau D70: a marca de declaração não chegou");
+  exigir(naoDeclarado?.nivel_declarado === false, "canais degrau D70: 'nunca declarado' virou declarado");
+}
+
+// ─────── DEGRAU D70 com valor PODRE: a coluna existe, o conteúdo não é do domínio ───────
+// É o caso que o fail-closed existe para pegar, e ele NÃO é hipotético: `nivel` sai de
+// `config_jsonb`, que aceita qualquer texto. Um `UPDATE` à mão pode gravar "livre" ali.
+const cPodre = await lerCanais({
+  cliente: criarClienteFalso((q) => {
+    const r = responderCanais("d70")(q);
+    if (!r.data) return r;
+    return { data: r.data.map((l) => ({ ...l, nivel: "livre_total", nivel_declarado: true })) };
+  }),
+});
+exigir(
+  cPodre.canais.every((c) => c.nivel === null),
+  "FAIL-CLOSED FALHOU: valor fora do domínio chegou à tela como nível — ignorância virou permissão",
+);
+exigir(
+  cPodre.canais.every((c) => c.nivel_declarado === false),
+  "FAIL-CLOSED FALHOU: ruído gravado no banco foi contado como DECLARAÇÃO de alguém",
+);
+console.log(
+  `fail-closed do nível medido — valor "livre_total" chegou como ` +
+    `nivel=${JSON.stringify(cPodre.canais[0]?.nivel ?? null)} declarado=${cPodre.canais[0]?.nivel_declarado}`,
+);
+
 const cM7 = await lerCanais({ cliente: criarClienteFalso(responderCanais("m7")) });
 if (cM7.canais.length === 0) {
   console.error("PORTÃO RECUSA POR VACUIDADE: o fixture de canais não devolveu linha nenhuma.");
   process.exit(2);
 }
 exigir(cM7.indisponivel === false && cM7.corteLegivel && cM7.m7Legivel, "canais degrau M7: os três sinais deviam estar ligados");
+// ⭐ ESTE É O MUNDO DE HOJE (medido em produção 08/09/2026: `select nivel from
+// core.v_canal_whatsapp` devolve 42703 — a coluna não existe). A tela TEM de dizer que não leu.
+exigir(cM7.nivelLegivel === false, "canais degrau M7: nivelLegivel devia ser FALSE — é o estado real de produção hoje");
+exigir(
+  cM7.canais.every((c) => c.nivel === null && c.nivel_declarado === false),
+  "canais degrau M7: sem a coluna, nível tem de vir nulo e NÃO declarado — supor 'estrito lido' é o engano do M7",
+);
 if (cM7.canais.length === CANAIS.length) {
   exigir(cM7.canais[0].finalidade === "teste", "canais degrau M7: finalidade não chegou");
   exigir(cM7.canais[0].inbox_desde !== null, "canais degrau M7: inbox_desde não chegou");
@@ -217,6 +279,7 @@ exigir(cBase.corteLegivel === false, "canais degrau base: corteLegivel devia ser
 // lista vazia. Sem esta parte, "a lista veio cheia" não prova que foram os degraus que a salvaram.
 const cNada = await lerCanais({ cliente: criarClienteFalso(responderCanais("nenhum")) });
 exigir(cNada.canais.length === 0, "canais controle negativo: com tudo recusado a lista devia vir vazia");
+exigir(cNada.nivelLegivel === false, "canais controle negativo: nivelLegivel devia ser false");
 exigir(cNada.indisponivel === true,
   "canais controle negativo: `indisponivel` devia ser TRUE. É o que faz a tela dizer 'indisponível' em vez de fingir 'não há canais'");
 console.log(`controle negativo de canais OK — tudo recusado -> indisponivel=${cNada.indisponivel}`);
@@ -230,7 +293,8 @@ if (falhas.length > 0) {
 console.log(`\nPORTÃO APROVA — degrau alto e degrau baixo medidos, controle negativo disparou.`);
 console.log(`  conversas · alto:  ${alto.conversas.length} · origemLegivel=${alto.origemLegivel}`);
 console.log(`  conversas · baixo: ${baixo.conversas.length} · origemLegivel=${baixo.origemLegivel}`);
-console.log(`  canais    · m7:    ${cM7.canais.length} · m7Legivel=${cM7.m7Legivel} corte=${cM7.corteLegivel}`);
+console.log(`  canais    · d70:   ${cD70.canais.length} · nivelLegivel=${cD70.nivelLegivel}
+  canais    · m7:    ${cM7.canais.length} · m7Legivel=${cM7.m7Legivel} corte=${cM7.corteLegivel}`);
 console.log(`  canais    · hoje:  ${cHoje.canais.length} · m7Legivel=${cHoje.m7Legivel} corte=${cHoje.corteLegivel}`);
 console.log(`  canais    · base:  ${cBase.canais.length} · m7Legivel=${cBase.m7Legivel} corte=${cBase.corteLegivel}`);
 process.exit(0);
