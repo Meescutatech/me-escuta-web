@@ -203,9 +203,37 @@ export function indexarVocabulario(fontes: FonteVocabulario[]): Map<string, Font
   return new Map(fontes.map((f) => [f.chave, f]));
 }
 
-/** Pago/organico vem da CONFIG (`canal_captacao`), nunca deduzido da plataforma. */
+/** Os identificadores de clique que so existem quando houve midia PAGA. */
+const CLIDS_PAGOS = ["gclid", "fbclid", "ctwa_clid"] as const;
+
+/**
+ * O toque carrega evidencia de clique pago? Trata vazio e espaco como ausencia: a coluna `clids`
+ * promete "chave ausente e ausente, nunca string vazia", mas a promessa e do ESCRITOR, e a tela
+ * nao pode depender de promessa de terceiro para nao mentir.
+ */
+function temClickPago(t: ToqueCru): boolean {
+  const c = t.clids;
+  if (!c) return false;
+  return CLIDS_PAGOS.some((k) => (c[k] ?? "").trim() !== "");
+}
+
+/**
+ * Pago/organico vem da CONFIG (`canal_captacao`) — e, quando a config diz `null`, do TOQUE.
+ *
+ * ⭐ `null` na config NAO e ausencia de decisao. A propria config declara isso:
+ *   "nulo_significa": "a FONTE nao determina este eixo; quem determina e o toque (gclid/fbclid)"
+ * `landing` e `tintim` recebem trafego pago E organico pela MESMA chave de fonte, entao so o
+ * toque desempata. O codigo lia apenas a primeira metade da regra, e por isso lead do Google via
+ * Tintim — COM `gclid` gravado — caia em "nao classificado". Medido em producao em 08/09/2026.
+ *
+ * 🔴 Ausencia de click id continua `nao_classificado`, e isso e DECISAO, nao preguica: nao ter
+ * `gclid` nao prova organico, prova que nao sabemos. Promover a "organico" faria a tela AFIRMAR
+ * uma origem que ninguem mediu — o defeito que este modulo existe para nao repetir.
+ */
 export function baldeDoToque(t: ToqueCru, vocab: Map<string, FonteVocabulario>): Balde {
-  return vocab.get(t.fonte)?.pago_organico ?? "nao_classificado";
+  const daFonte = vocab.get(t.fonte)?.pago_organico;
+  if (daFonte) return daFonte;
+  return temClickPago(t) ? "pago" : "nao_classificado";
 }
 
 /** A plataforma vem da coluna da captacao, com a config como rede. */

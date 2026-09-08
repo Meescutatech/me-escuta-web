@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   arvoreOrigem,
+  baldeDoToque,
   brl,
   estadoDoCusto,
   estadoDoPeriodo,
@@ -37,6 +38,7 @@ const VOCAB: FonteVocabulario[] = [
   { chave: "google_ads", rotulo: "Google Ads", ativo: true, pago_organico: "pago", plataforma: "google" },
   { chave: "indicacao", rotulo: "Indicacao", ativo: true, pago_organico: "organico", plataforma: null },
   { chave: "landing", rotulo: "Landing", ativo: true, pago_organico: null, plataforma: null },
+  { chave: "tintim", rotulo: "TinTim", ativo: true, pago_organico: null, plataforma: null },
 ];
 const vocab = indexarVocabulario(VOCAB);
 
@@ -460,4 +462,53 @@ test("marketing-leitura.ts NAO pode reintroduzir `etapasLeads ?? []` — guarda 
   );
   // e o campo tem que continuar sendo passado, senao a guarda acima passa por ausencia
   assert.ok(/etapasLeads[,:]/.test(semComentarios), "lerMarketing parou de passar etapasLeads");
+});
+
+// ─────────────── balde: config `null` significa "pergunte ao TOQUE" ───────────────
+/*
+ * A config `canal_captacao` declara o que o proprio null quer dizer:
+ *   "nulo_significa": "a FONTE nao determina este eixo; quem determina e o toque (gclid/fbclid)"
+ * O codigo lia so a primeira metade da regra, entao lead do Google via Tintim — COM gclid — caia
+ * em "nao classificado". Medido em producao 08/09/2026.
+ */
+
+test("balde: fonte que DECIDE continua mandando, e o click id nao atropela", () => {
+  assert.equal(baldeDoToque(toque({ fonte: "meta_leadads", clids: null }), vocab), "pago");
+  assert.equal(baldeDoToque(toque({ fonte: "indicacao", clids: null }), vocab), "organico");
+  // indicacao e organico por definicao; um gclid grudado nao pode promover a pago.
+  assert.equal(baldeDoToque(toque({ fonte: "indicacao", clids: { gclid: "X" } }), vocab), "organico");
+});
+
+test("balde: fonte que NAO decide + click id de midia paga = pago", () => {
+  assert.equal(baldeDoToque(toque({ fonte: "tintim", clids: { gclid: "TESTE" } }), vocab), "pago");
+  assert.equal(baldeDoToque(toque({ fonte: "tintim", clids: { fbclid: "TESTE" } }), vocab), "pago");
+  assert.equal(baldeDoToque(toque({ fonte: "tintim", clids: { ctwa_clid: "TESTE" } }), vocab), "pago");
+  assert.equal(baldeDoToque(toque({ fonte: "landing", clids: { gclid: "TESTE" } }), vocab), "pago");
+});
+
+test("balde: SEM click id continua 'nao classificado' — ausencia nao prova organico", () => {
+  /*
+   * 🔴 A asercao que define a regra. Nao ter gclid NAO quer dizer que o lead veio do organico:
+   * quer dizer que nao sabemos. Promover a "organico" faria a tela AFIRMAR uma origem que
+   * ninguem mediu — que e exatamente o defeito que este modulo existe para nao repetir.
+   * Medido: 39 dos 40 toques de tintim em producao estao neste caso.
+   */
+  assert.equal(baldeDoToque(toque({ fonte: "tintim", clids: null }), vocab), "nao_classificado");
+  assert.equal(baldeDoToque(toque({ fonte: "tintim", clids: {} }), vocab), "nao_classificado");
+  assert.equal(baldeDoToque(toque({ fonte: "landing", clids: null }), vocab), "nao_classificado");
+});
+
+test("balde: click id VAZIO ou nulo nao conta como clique", () => {
+  // A coluna `clids` promete "chave ausente e ausente, nunca string vazia" — mas a promessa e do
+  // escritor, e a tela nao pode depender de promessa de terceiro para nao mentir.
+  assert.equal(baldeDoToque(toque({ fonte: "tintim", clids: { gclid: "" } }), vocab), "nao_classificado");
+  assert.equal(baldeDoToque(toque({ fonte: "tintim", clids: { gclid: null } }), vocab), "nao_classificado");
+  assert.equal(baldeDoToque(toque({ fonte: "tintim", clids: { gclid: "  " } }), vocab), "nao_classificado");
+});
+
+test("balde: fonte DESCONHECIDA no vocabulario com gclid ainda e pago", () => {
+  // Vocabulario incompleto e o estado normal (fonte nova entra antes da config ser atualizada).
+  // Nesse caso o toque e a unica evidencia que existe — e ela vale.
+  assert.equal(baldeDoToque(toque({ fonte: "fonte_que_nao_existe", clids: { gclid: "X" } }), vocab), "pago");
+  assert.equal(baldeDoToque(toque({ fonte: "fonte_que_nao_existe", clids: null }), vocab), "nao_classificado");
 });

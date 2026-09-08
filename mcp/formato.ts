@@ -179,13 +179,24 @@ export function serie(v: VisaoMarketing): string {
  *
  * Aqui a leitura é feita sobre a árvore já montada, então usa exatamente a mesma classificação
  * da tela: um lead está "identificado" quando caiu num nó de campanha que não é `SEM_CAMPANHA`.
+ *
+ * ⚠️ ESTAS TRÊS LINHAS JÁ SE CONTRADISSERAM COM A ÁRVORE, e o defeito era daqui. A versão
+ * anterior rotulava os leads sem campanha como "em plataforma, sem campanha" — mas o nó
+ * `SEM_CAMPANHA` existe embaixo de QUALQUER plataforma, inclusive `sem_plataforma`, e a árvore
+ * mostrava os mesmos 34 leads como "Sem plataforma". Pior: a terceira linha era calculada por
+ * SUBTRAÇÃO das outras duas, então dava 0 sempre, por construção — uma linha que não media nada
+ * e parecia medir. Agora cada linha é lida do seu próprio nível da árvore, e a terceira é um
+ * RECORTE da segunda (por isso vem indentada, e não soma com ela).
  */
 export function cobertura(v: VisaoMarketing): string {
   const campanhasNos = nosDoNivel(v.arvore, "campanha");
   const comCampanha = campanhasNos.filter((n) => n.chave !== SEM_CAMPANHA).reduce((s, n) => s + n.leads, 0);
   const semCampanha = campanhasNos.filter((n) => n.chave === SEM_CAMPANHA).reduce((s, n) => s + n.leads, 0);
   const total = v.resumo.leads;
-  const semPlataforma = total - comCampanha - semCampanha;
+  // Lido do nível de PLATAFORMA, não por subtração — é um subconjunto de `semCampanha`.
+  const semPlataforma = nosDoNivel(v.arvore, "plataforma")
+    .filter((n) => n.chave === "sem_plataforma")
+    .reduce((s, n) => s + n.leads, 0);
 
   const porBalde = v.arvore
     .map((b) => `  ${ROTULO_BALDE[b.balde]}: ${inteiro(b.leads)} (${pct(b.fracao)})`)
@@ -194,8 +205,8 @@ export function cobertura(v: VisaoMarketing): string {
   return [
     linha("Leads no período", inteiro(total)),
     linha("Com campanha identificada", `${inteiro(comCampanha)} (${pct(total > 0 ? comCampanha / total : null)})`),
-    linha("Em plataforma, sem campanha", `${inteiro(semCampanha)} (${pct(total > 0 ? semCampanha / total : null)})`),
-    linha("Sem plataforma nenhuma", `${inteiro(semPlataforma)} (${pct(total > 0 ? semPlataforma / total : null)})`),
+    linha("Sem campanha identificada", `${inteiro(semCampanha)} (${pct(total > 0 ? semCampanha / total : null)})`),
+    linha("  destes, sem nem plataforma", `${inteiro(semPlataforma)} (${pct(total > 0 ? semPlataforma / total : null)})`),
     "",
     "Por balde:",
     porBalde || "  (nenhum)",
