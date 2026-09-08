@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   criarSessao,
@@ -25,6 +25,7 @@ import {
   type MeioConsentimento,
 } from "./regras/lite-sessao.ts";
 import type { Canal, Papel } from "./regras/canais.ts";
+import { AVISO_QR_SEM_PRAZO, decidirQuadro, type QuadroPareamento } from "./regras/qr-pareamento.ts";
 import { BTN, ENTRADA, Faixa, dataHora } from "./kit";
 
 /**
@@ -61,11 +62,25 @@ export function PainelSessao({
   // O intervalo vem da regra pura: `null` significa "não relê", e é isso que impede o polling
   // eterno contra o runtime quando a sessão já está de pé.
   useEffect(() => {
-    const ms = estado ? intervaloRelituraMs(estado.estado) : null;
+    const ms = estado ? intervaloRelituraMs(estado.estado, estado.provedorIndisponivel) : null;
     if (ms === null) return;
     const t = setInterval(() => void reler(), ms);
     return () => clearInterval(t);
   }, [estado, reler]);
+
+  // A decisão do quadro é regra pura e testada (`decidirQuadro`) — inclusive a de NÃO desenhar QR
+  // vencido. As dependências são primitivos de propósito: o relê monta um objeto de estado novo a
+  // cada 5 s, e depender do objeto recodificaria um QR idêntico a cada volta.
+  const qr = estado?.qr ?? null;
+  const qrImagem = estado?.qrImagem ?? null;
+  const qrFormato = estado?.qrFormato ?? null;
+  const qrValido = estado?.qrValido ?? false;
+  const qrSemPrazo = estado?.qrSemPrazo ?? false;
+  const conectado = estado?.estado === "conectado";
+  const quadro = useMemo(
+    () => decidirQuadro({ qr, qrImagem, formato: qrFormato, qrValido, semPrazo: qrSemPrazo, conectado }),
+    [qr, qrImagem, qrFormato, qrValido, qrSemPrazo, conectado],
+  );
 
   if (!canal.consentimento_em) {
     return <TermoConsentimento canal={canal} podePapel={meuPapel === "admin" || meuPapel === "owner"} />;
@@ -73,18 +88,8 @@ export function PainelSessao({
 
   return (
     <div className="border-t border-linha bg-board px-4 py-4">
-      <div className="grid grid-cols-[236px_1fr] gap-6 max-md:grid-cols-1">
-        <div className="flex h-[236px] w-[236px] items-center justify-center rounded-[10px] border border-linha bg-branco p-3.5 max-md:w-full">
-          {estado?.qr && estado.qrValido ? (
-            <CodigoPareamento codigo={estado.qr} />
-          ) : (
-            <span className="px-3 text-center text-[12.5px] text-mute">
-              {estado?.estado === "conectado"
-                ? "Sessão conectada. Nada a ler."
-                : "Nenhum código ativo. Peça uma sessão para gerar."}
-            </span>
-          )}
-        </div>
+      <div className="grid grid-cols-[288px_1fr] gap-6 max-md:grid-cols-1">
+        <QuadroDePareamento quadro={quadro} />
 
         <div>
           <p className="text-[14px] font-medium text-tinta">
@@ -147,7 +152,7 @@ export function PainelSessao({
             {[
               "No celular dela, abra o WhatsApp.",
               "Toque em Aparelhos conectados e depois em Conectar um aparelho.",
-              "Aponte a câmera para o código ao lado. Ele expira em segundos e é redesenhado sozinho.",
+              "Aponte a câmera para o código. Ele vale por segundos — se passar do tempo, use Gerar outro código.",
             ].map((t, i) => (
               <li key={t} className="flex items-baseline gap-3">
                 <span className="flex-none font-mono text-[12px] tabular-nums text-mute">{i + 1}</span>
@@ -164,24 +169,155 @@ export function PainelSessao({
 }
 
 /**
- * O QR do provedor chega como CÓDIGO CRU (padrão WuzAPI: quem desenha é o cliente). Este app não
- * tem gerador de QR e NÃO vou adicionar dependência no meio da rodada — decisão declarada no
- * relatório, com o pedido correspondente ao runtime: devolver também `qr_imagem` como data URI.
+ * O quadro branco onde o QR mora — 288px de lado, e o número não é solto.
  *
- * Enquanto isso a tela mostra o código legível e diz o que ele é. É pior que um QR desenhado e é
- * melhor que um quadrado vazio com cara de "carregando" — o que a tela não consegue fazer, ela diz.
+ * O que ele precisa aguentar é uma câmera de celular na mão, a meio metro da tela. São 268px úteis
+ * (288 menos o respiro de 10px de cada lado), e eles servem aos DOIS caminhos por razões
+ * diferentes:
+ *
+ *  · IMAGEM (o dialeto de produção): o PNG do provedor sai do `qrcode.Encode(evt.Code, …, 256)` do
+ *    `wmiau.go` — 256px. Em 268px úteis ele cabe INTEIRO, no tamanho natural, sem reamostragem
+ *    nenhuma. Isso é o ponto do número: reamostrar um QR raster estraga a beira do módulo tanto
+ *    para cima (nearest-neighbor duplica linhas em escala não inteira) quanto para baixo (o
+ *    navegador borra). O quadro antigo de 264px deixava 244 úteis e obrigava a encolher 256 → 244.
+ *
+ *  · DESENHO (quando só chega o código): o código real de 199 caracteres dá versão 9 em `L`, 53
+ *    módulos, 61 com a zona de silêncio — **4,39px por módulo** em 268px, contra 4,00px no quadro
+ *    de 264 e um piso de ~3px em que a câmera começa a errar. Os dois caminhos ganham.
+ *
+ * `aspect-square` em vez de altura fixa: no celular o quadro acompanha a largura da tela e continua
+ * quadrado. Com altura fixa ele virava retângulo no telefone, e QR esticado não é QR.
  */
-function CodigoPareamento({ codigo }: { codigo: string }) {
+function Quadro({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-2 overflow-hidden">
-      <span className="text-[11.5px] uppercase tracking-[0.06em] text-suave">código de pareamento</span>
-      <code className="max-h-[150px] w-full overflow-auto break-all px-1 text-center font-mono text-[10px] leading-tight text-tinta">
+    <div className="flex aspect-square w-[288px] items-center justify-center rounded-md border border-linha bg-branco p-2.5 max-md:w-full">
+      {children}
+    </div>
+  );
+}
+
+/** A coluna do quadro. Existe para os quatro modos terem a MESMA largura e o mesmo respiro. */
+function ColunaQuadro({ children }: { children: ReactNode }) {
+  return <div className="w-[288px] max-md:w-full">{children}</div>;
+}
+
+/**
+ * A linha do prazo. Fica embaixo do quadro, no peso do texto secundário, e NÃO é uma faixa âmbar:
+ * este provedor nunca declara expiração (medido no Go — não há campo de TTL em lugar nenhum do que
+ * ele devolve), então o aviso apareceria em 100% dos pareamentos. Faixa que aparece sempre deixa de
+ * ser lida, e queima o âmbar para quando algo estiver de fato errado.
+ */
+function LinhaSemPrazo() {
+  return <p className="mt-2.5 text-[12.5px] leading-snug text-suave">{AVISO_QR_SEM_PRAZO}</p>;
+}
+
+/**
+ * A saída de emergência em texto. Ninguém digita um `ref` do WhatsApp à mão, então no caminho feliz
+ * ela é ruído em cima do único objeto que a pessoa precisa enxergar — mas é o que resta quando o
+ * desenho não sai. Fica dobrada num `<details>` nativo: zero JS, teclado de graça.
+ *
+ * No dialeto de produção o código NÃO chega junto com a imagem (o WuzAPI manda um campo só), e por
+ * isso ela some por completo em vez de abrir um bloco vazio.
+ */
+function CodigoEmTexto({ codigo }: { codigo: string | null }) {
+  if (!codigo) return null;
+  return (
+    <details className="mt-2.5">
+      <summary className="cursor-pointer list-none text-[12.5px] text-suave hover:text-tinta">
+        Ver o código em texto
+      </summary>
+      <code className="mt-1.5 block max-h-[120px] overflow-auto break-all rounded-md border border-linha bg-branco px-2 py-1.5 font-mono text-[10.5px] leading-tight text-tinta">
         {codigo}
       </code>
-      <span className="px-2 text-center text-[11px] text-suave">
-        Esta tela ainda não desenha o QR — use o código no aparelho ou no painel do provedor.
-      </span>
-    </div>
+    </details>
+  );
+}
+
+/**
+ * O quadro, nos seus quatro modos. Quem decide o modo é `decidirQuadro`; aqui só existe desenho.
+ *
+ * A ordem dos modos é a ordem de fidelidade: a imagem do provedor passou por um codificador só (o
+ * dele), o nosso desenho passa por dois (o dele e o nosso). Quando as duas formas chegam, ganha a
+ * que tem menos passos entre o WhatsApp e a câmera.
+ *
+ * Falha aqui é DIREÇÃO, não humor: cada modo que não é o feliz diz o que aconteceu e o que fazer.
+ */
+function QuadroDePareamento({ quadro }: { quadro: QuadroPareamento }) {
+  if (quadro.modo === "vazio") {
+    return (
+      <Quadro>
+        <span className="px-4 text-center text-[12.5px] leading-snug text-mute">{quadro.texto}</span>
+      </Quadro>
+    );
+  }
+
+  if (quadro.modo === "imagem") {
+    return (
+      <ColunaQuadro>
+        <Quadro>
+          {/* `max-*` e não `h-full w-full`: a imagem NUNCA é ampliada. Um QR raster esticado perde
+              a beira do módulo, e um QR borrado é exatamente o defeito que esta tela existe para
+              não ter. Menor e nítido lê; maior e borrado não. */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- `data:` URI; o Image do Next
+              otimizaria uma imagem que já vem pronta e some em segundos. */}
+          <img
+            src={quadro.imagem}
+            alt="Código QR para conectar o WhatsApp deste número."
+            className="max-h-full max-w-full"
+            decoding="sync"
+            draggable={false}
+          />
+        </Quadro>
+        {quadro.semPrazo ? <LinhaSemPrazo /> : null}
+        <CodigoEmTexto codigo={quadro.codigo} />
+      </ColunaQuadro>
+    );
+  }
+
+  if (quadro.modo === "codigo_cru") {
+    return (
+      <ColunaQuadro>
+        <Quadro>
+          <code className="max-h-full w-full overflow-auto break-all px-1 text-center font-mono text-[10px] leading-tight text-tinta">
+            {quadro.codigo}
+          </code>
+        </Quadro>
+        <div className="mt-2.5">
+          <Faixa tom="ambar">
+            Não deu para desenhar o QR deste código. Leia o código acima pelo painel do provedor —
+            é o mesmo que iria para o desenho.
+          </Faixa>
+        </div>
+        {quadro.semPrazo ? <LinhaSemPrazo /> : null}
+      </ColunaQuadro>
+    );
+  }
+
+  const { desenho } = quadro;
+  return (
+    <ColunaQuadro>
+      <Quadro>
+        <svg
+          viewBox={`0 0 ${desenho.lado} ${desenho.lado}`}
+          className="h-full w-full"
+          // sem isto o navegador antisserrilha a beira de cada módulo e sobra uma costura cinza
+          // entre módulos vizinhos — borrão é o que faz a câmera errar.
+          shapeRendering="crispEdges"
+          role="img"
+          aria-label="Código QR para conectar o WhatsApp. Se não conseguir lê-lo, abra “Ver o código em texto” logo abaixo."
+        >
+          {/* a zona de silêncio já vem na matriz, mas em módulos brancos — que só são brancos se
+              houver branco embaixo. O fundo do SVG garante isso mesmo se o quadro mudar de cor. */}
+          <rect width={desenho.lado} height={desenho.lado} fill="#FFFFFF" />
+          {/* `tinta`, a tinta do app (#1F2328 no tailwind.config), e não preto puro: 15,8:1 contra
+              o branco, muito acima do que qualquer decodificador precisa, e o QR deixa de ser um
+              quadrado estrangeiro na tela. */}
+          <path d={desenho.caminho} fill="#1F2328" />
+        </svg>
+      </Quadro>
+      {quadro.semPrazo ? <LinhaSemPrazo /> : null}
+      <CodigoEmTexto codigo={quadro.codigo} />
+    </ColunaQuadro>
   );
 }
 

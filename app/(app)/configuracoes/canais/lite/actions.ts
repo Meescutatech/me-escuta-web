@@ -19,12 +19,13 @@ import {
 import {
   payloadConsentimento,
   podeCriarSessao,
-  qrExpirado,
   resumirDescartes,
   suspeitaFiltroCego,
+  validadeQr,
   validarConsentimento,
   type EstadoSessao,
   type FormConsentimento,
+  type RespostaSessaoRuntime,
   type ResumoDescartes,
   type SinalFiltro,
 } from "@/components/configuracoes/regras/lite-sessao.ts";
@@ -45,15 +46,34 @@ const ROTA = "/configuracoes/canais";
 
 export interface EstadoSessaoNaTela {
   estado: EstadoSessao;
-  /** código CRU do QR, quando houver. Nunca persistido — chega, desenha, morre. */
+  /** código CRU do QR, quando o provedor manda um. Nunca persistido — chega, desenha, morre. */
   qr: string | null;
+  /**
+   * o QR JÁ DESENHADO pelo provedor, em `data:` — é o que o dialeto de produção manda (o campo
+   * `qr_imagem` do contrato do runtime). Já veio filtrado por `imagemQrSegura`. Também não é
+   * persistido: é credencial viva igual ao código, só que em pixels.
+   */
+  qrImagem: string | null;
+  /** o que o runtime declarou ter mandado. A tela decide pelo que chegou; isto denuncia divergência. */
+  qrFormato: "codigo" | "imagem" | null;
   qrExpiraEm: string | null;
+  /** false SÓ quando um instante legível já passou. Ausência de instante não é morte — ver `validadeQr`. */
   qrValido: boolean;
+  /** true = o provedor não declarou prazo nenhum. A tela mostra o QR E diz que ninguém está contando. */
+  qrSemPrazo: boolean;
   detalhe: string | null;
   desde: string | null;
   motivo?: string;
   /** true = a leitura de status do banco falhou (0081 ainda não subiu neste ambiente). */
   statusIndisponivel: boolean;
+  /**
+   * true = o RUNTIME não conseguiu falar com o PROVEDOR nesta leitura. Não confundir com
+   * `statusIndisponivel`, que é o banco: aqui o `estado` acima é o último conhecido, e a tela
+   * PRECISA continuar relendo — parar congela a fono no meio do pareamento.
+   */
+  provedorIndisponivel: boolean;
+  /** quando indisponível, o que falhou na rede — para a tela dizer em vez de sumir. */
+  causaRede: string | null;
 }
 
 /**
@@ -71,12 +91,17 @@ export async function criarSessao(
     return {
       estado: "desconectado",
       qr: null,
+      qrImagem: null,
+      qrFormato: null,
       qrExpiraEm: null,
       qrValido: false,
+      qrSemPrazo: false,
       detalhe: null,
       desde: null,
       motivo: veredito.motivo,
       statusIndisponivel: false,
+      provedorIndisponivel: false,
+      causaRede: null,
     };
   }
 
@@ -98,14 +123,25 @@ export async function lerEstadoSessao(canalId: string): Promise<EstadoSessaoNaTe
   // runtime mudo: o status do banco ainda vale, e dizer isso é melhor que "desconectado" chutado.
   const s = doBanco.sessao;
   return {
+    // sem runtime não há QR NENHUM para mostrar: o banco guarda o INSTANTE, nunca a credencial
+    // (0081). `qrValido: false` aqui não é juízo sobre o código — é a ausência dele.
     estado: s?.status ?? "desconectado",
     qr: null,
+    qrImagem: null,
+    qrFormato: null,
     qrExpiraEm: s?.qr_expira_em ?? null,
     qrValido: false,
+    qrSemPrazo: false,
     detalhe: s?.detalhe ?? null,
     desde: s?.ultimo_batimento ?? null,
     motivo: doRuntime.motivo,
     statusIndisponivel: doBanco.indisponivel,
+    // Aqui quem não respondeu foi o RUNTIME (a web não o alcançou), não o provedor — mas para a
+    // tela a consequência é a mesma e a decisão certa também: o `estado` acima é o último conhecido
+    // (veio do banco) e o relê tem de continuar armado, senão a página fica parada num retrato
+    // velho até alguém dar F5. É por isso que a marca é ligada nos dois casos.
+    provedorIndisponivel: true,
+    causaRede: null,
   };
 }
 
@@ -116,7 +152,7 @@ export async function desconectarSessao(canalId: string): Promise<EstadoSessaoNa
 }
 
 function montarEstado(
-  resposta: { estado: EstadoSessao; qr?: string | null; qr_expira_em?: string | null; desde?: string | null; motivo?: string | null } | null,
+  resposta: RespostaSessaoRuntime | null,
   motivo: string | undefined,
   statusIndisponivel: boolean,
 ): EstadoSessaoNaTela {
@@ -124,24 +160,40 @@ function montarEstado(
     return {
       estado: "desconectado",
       qr: null,
+      qrImagem: null,
+      qrFormato: null,
       qrExpiraEm: null,
       qrValido: false,
+      qrSemPrazo: false,
       detalhe: null,
       desde: null,
       motivo,
       statusIndisponivel,
+      provedorIndisponivel: false,
+      causaRede: null,
     };
   }
   const qrExpiraEm = resposta.qr_expira_em ?? null;
+  const qr = resposta.qr ?? null;
+  const qrImagem = resposta.qr_imagem ?? null;
+  // A validade é do QR, não do formato: uma vez que existe ALGUMA coisa a mostrar, quem decide se
+  // ela pode aparecer é o instante. Sem nada a mostrar, `qrValido` é falso por ausência — e isso
+  // não muda a tela, porque o quadro vazio já é o destino de "não chegou nada".
+  const validade = qr || qrImagem ? validadeQr(qrExpiraEm, Date.now()) : "expirado";
   return {
     estado: resposta.estado,
-    qr: resposta.qr ?? null,
+    qr,
+    qrImagem,
+    qrFormato: resposta.qr_formato ?? null,
     qrExpiraEm,
-    qrValido: resposta.qr ? !qrExpirado(qrExpiraEm, Date.now()) : false,
+    qrValido: validade !== "expirado",
+    qrSemPrazo: validade === "sem_prazo",
     detalhe: resposta.motivo ?? null,
     desde: resposta.desde ?? null,
     motivo,
     statusIndisponivel,
+    provedorIndisponivel: resposta.provedor_indisponivel === true,
+    causaRede: resposta.causa_rede ?? null,
   };
 }
 
