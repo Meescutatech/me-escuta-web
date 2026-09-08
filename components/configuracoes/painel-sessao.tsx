@@ -628,8 +628,11 @@ function BlocoNivel({
             Esta tela <b>não conseguiu ler</b> o nível deste canal: a coluna{" "}
             <span className="font-mono">nivel</span> ainda não existe nesta base (a migration do
             nível não subiu aqui). O que está valendo é o <b>Estrito</b>, porque é o que o código
-            faz quando não há nível declarado — mas isso é dedução, não leitura, e trocar o nível
-            daqui vai falhar na conferência até a migration entrar.
+            faz quando não há nível declarado — mas isso é dedução, não leitura. O botão fica
+            desligado: enquanto a migration não entrar, a troca nem chega a ser gravada (o banco
+            não conhece o evento <span className="font-mono">canal_nivel_definido</span> e recusa
+            a transação inteira), então oferecer o botão seria prometer uma escrita que não
+            acontece.
           </Faixa>
         </div>
       ) : !declaracaoLegivel ? (
