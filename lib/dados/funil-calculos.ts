@@ -76,7 +76,28 @@ export const COLUNAS_CARD_BASE =
  */
 export const COLUNAS_ULTIMA_MENSAGEM = "ultima_mensagem_corpo,ultima_mensagem_em,ultima_mensagem_direcao";
 
-export const COLUNAS_CARD = `${COLUNAS_CARD_BASE},${COLUNAS_ULTIMA_MENSAGEM}`;
+/**
+ * H5 (10/09) · `cidade` — a cidade DECLARADA pelo paciente (ficha, slug `cidade`), exposta por
+ * `core.v_lead_card` na 0336. Não é a segmentação da campanha (`utm.cidade`, D22): é o que a
+ * pessoa digitou no formulário, o dado que a Sara usa para indicar clínica.
+ *
+ * Degrau PRÓPRIO, e não "mais uma coluna em COLUNAS_CARD", pelo mesmo motivo operacional acima:
+ * no dia em que a 0336 não tiver descido, pedir `cidade` derrubaria a consulta inteira e o
+ * fallback cairia direto na BASE — perdendo a linha de última mensagem, que hoje FUNCIONA. Coluna
+ * nova = degrau novo; o chamador desce um de cada vez (`DEGRAU_COLUNAS_CARD`).
+ */
+export const COLUNAS_CIDADE = "cidade";
+
+export const COLUNAS_CARD_SEM_CIDADE = `${COLUNAS_CARD_BASE},${COLUNAS_ULTIMA_MENSAGEM}`;
+
+export const COLUNAS_CARD = `${COLUNAS_CARD_SEM_CIDADE},${COLUNAS_CIDADE}`;
+
+/**
+ * A escada inteira, do shape mais novo ao mais antigo. Quem consulta `v_lead_card` desce um
+ * degrau por erro — e só desiste no fim. A ordem É o contrato: cada linha assume que a view tem
+ * TUDO da linha de baixo mais o que ela acrescenta.
+ */
+export const DEGRAU_COLUNAS_CARD: readonly string[] = [COLUNAS_CARD, COLUNAS_CARD_SEM_CIDADE, COLUNAS_CARD_BASE];
 
 /**
  * As três colunas de última mensagem do contrato → o objeto que o card desenha e que a ordem
@@ -173,4 +194,23 @@ export function segmentosReguaLead(
 /** Régua agregada (dashboard): etapa com lead = "ok"; vazia = "fraca"; contagem nula = "fraca". */
 export function segmentosReguaAgregada(faixas: Array<{ qtd: number | null }>): SegmentoRegua[] {
   return faixas.map((f) => ((f.qtd ?? 0) > 0 ? "ok" : "fraca"));
+}
+
+/**
+ * H5 · A LINHA DO SINAL do card (spec §4: "1 sinal significativo"). Pura, para ser testada sem
+ * montar o componente (client, dnd-kit). Regras, na ordem:
+ *   · a cidade DECLARADA entra na mesma linha da origem, depois dela: "Meta Ads · Contagem" — é
+ *     contexto da origem, não um elemento novo, e o card continua com um sinal só;
+ *   · nome ruim (telefone no lugar do nome) prefixa "Lead", como sempre: "Lead · Meta Ads · Contagem";
+ *   · sem origem e sem cidade: "Lead" quando o nome é ruim, `null` quando não é (linha não desenha).
+ * Sem rótulo, sem ícone, sem capitalizar: a cidade sai como a pessoa digitou.
+ */
+export function sinalDoCard(
+  origemLabel: string | null,
+  cidade: string | null | undefined,
+  nomeRuim: boolean,
+): string | null {
+  const contexto = [origemLabel, cidade].filter(Boolean).join(" · ") || null;
+  if (nomeRuim) return contexto ? `Lead · ${contexto}` : "Lead";
+  return contexto;
 }
