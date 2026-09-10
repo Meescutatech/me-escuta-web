@@ -32,7 +32,7 @@ export function BolhaBotao({ m }: { m: Mensagem }) {
     <span
       role="img"
       aria-label={`Botão tocado: ${rotulo}`}
-      className="inline-flex cursor-default select-none items-center gap-1.5 rounded-full bg-hover px-2.5 py-1 text-[0.82rem] font-medium leading-snug text-tinta"
+      className="inline-flex cursor-default select-none items-start gap-1.5 rounded-2xl bg-hover px-2.5 py-1 text-[0.82rem] font-medium leading-snug text-tinta"
     >
       {/* glifo de toque — decorativo, o sentido está no aria-label acima */}
       <svg
@@ -43,7 +43,7 @@ export function BolhaBotao({ m }: { m: Mensagem }) {
         strokeWidth={2}
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="h-3.5 w-3.5 shrink-0 stroke-suave"
+        className="mt-[0.15rem] h-3.5 w-3.5 shrink-0 stroke-suave"
       >
         <path d="M9 11.5V5.5a1.5 1.5 0 0 1 3 0v5" />
         <path d="M12 10.5V9a1.5 1.5 0 0 1 3 0v1.5" />
