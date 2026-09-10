@@ -47,6 +47,10 @@ import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import type { EtapaFunil } from "@/lib/dados/funil";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
+// M4 · os imports da aba Histórico. Estavam SÓ no drawer-card: a branch de 29/07 usava
+// <AbaHistorico> aqui sem importar, e por isso nunca passou no typecheck.
+import { AbaHistorico } from "@/components/lead/aba-historico";
+import { mapaDeAgentes, mapaDeEtapas, mapaDePessoas } from "@/components/lead/regras/historico.ts";
 import { RegistroInterno } from "@/components/conversas/registro-interno";
 import { itensDoDia, montarRegistros } from "@/lib/conversas/registro-timeline";
 import type { Mencionavel } from "@/lib/conversas/mencao";
