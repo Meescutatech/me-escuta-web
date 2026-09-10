@@ -47,6 +47,10 @@ import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import type { EtapaFunil } from "@/lib/dados/funil";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
+// M4 · os imports da aba Histórico. Estavam SÓ no drawer-card: a branch de 29/07 usava
+// <AbaHistorico> aqui sem importar, e por isso nunca passou no typecheck.
+import { AbaHistorico } from "@/components/lead/aba-historico";
+import { mapaDeAgentes, mapaDeEtapas, mapaDePessoas } from "@/components/lead/regras/historico.ts";
 import { RegistroInterno } from "@/components/conversas/registro-interno";
 import { itensDoDia, montarRegistros } from "@/lib/conversas/registro-timeline";
 import type { Mencionavel } from "@/lib/conversas/mencao";
@@ -1205,6 +1209,22 @@ export function Inbox({
                           meuId={autorId}
                           autorEmail={autorEmail}
                           aoAtualizar={() => router.refresh()}
+                        />
+                      ),
+                    },
+                    {
+                      // M4 · histórico. ÚLTIMA da régua e SEM contagem: o número seria 1, 2 ou 3
+                      // em 100% dos leads (73 com 1 linha, 588 com 2, 19 com 3), e badge de "2"
+                      // não informa nada — só ocupa a única coisa escassa da régua.
+                      chave: "aba-historico",
+                      rotulo: "Histórico",
+                      conteudo: (
+                        <AbaHistorico
+                          historico={painel.historico.eventos}
+                          donoLegado={painel.historico.donoLegado}
+                          pessoas={mapaDePessoas(mencionaveis)}
+                          agentes={mapaDeAgentes(mencionaveis)}
+                          etapas={mapaDeEtapas(etapas)}
                         />
                       ),
                     },

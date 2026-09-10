@@ -10,6 +10,8 @@ import { BotaoAudiometria, type EstadoAudiometria } from "@/components/lead/bota
 import { FichaKommo } from "@/components/lead/ficha-kommo";
 import { TarefasLead } from "@/components/lead/tarefas-lead";
 import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
+import { AbaHistorico } from "@/components/lead/aba-historico";
+import { mapaDeAgentes, mapaDeEtapas, mapaDePessoas } from "@/components/lead/regras/historico.ts";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { valorParaTexto } from "@/lib/dados/ficha-calculos";
@@ -69,11 +71,12 @@ function textoHoraAudiometria(valores: Record<string, unknown> | null): string |
   return t === "\u2014" ? undefined : `exame na ficha: ${t}`;
 }
 
-type Aba = "ficha" | "tarefas" | "notas";
+type Aba = "ficha" | "tarefas" | "notas" | "historico";
 
 export function DrawerCard({
   lead,
   etapa,
+  etapas,
   autorEmail,
   autorId,
   mencionaveis,
@@ -82,6 +85,14 @@ export function DrawerCard({
 }: {
   lead: CardLead | null;
   etapa: EtapaFunil | null;
+  /**
+   * M4 · a lista COMPLETA de etapas, não só a atual. O drawer só recebia `etapa` (a corrente), e
+   * o histórico precisa traduzir os slugs de TODAS as etapas por onde o lead passou. Com só a
+   * atual, toda etapa anterior seria marcada "fora da config" — uma marca FALSA, que é pior que
+   * mostrar o slug cru: ela afirma que a config está errada quando quem está incompleto é o dado
+   * que a tela recebeu.
+   */
+  etapas: EtapaFunil[];
   autorEmail: string | null;
   autorId: string | null;
   mencionaveis: Mencionavel[];
@@ -364,6 +375,15 @@ export function DrawerCard({
                   rotulo="Anotações"
                   cnt={painel?.anotacoes.length}
                 />
+                {/* M4 · ÚLTIMA da régua e SEM contagem: o número seria 1, 2 ou 3 em 100% dos
+                    leads, e badge de "2" não informa. Esta é a MESMA aba do painel do inbox —
+                    um componente só, porque entregar num lugar e não no outro deixa o histórico
+                    existindo em metade do produto, e passa em revisão porque quem revisa abre um. */}
+                <AbaBtn
+                  ativa={aba === "historico"}
+                  onClick={() => setAba("historico")}
+                  rotulo="Histórico"
+                />
               </div>
 
               {carregando && !painel ? (
@@ -395,6 +415,15 @@ export function DrawerCard({
                       meuId={autorId}
                       autorEmail={autorEmail}
                       aoAtualizar={recarregar}
+                    />
+                  )}
+                  {aba === "historico" && (
+                    <AbaHistorico
+                      historico={painel.historico.eventos}
+                      donoLegado={painel.historico.donoLegado}
+                      pessoas={mapaDePessoas(mencionaveis)}
+                      agentes={mapaDeAgentes(mencionaveis)}
+                      etapas={mapaDeEtapas(etapas)}
                     />
                   )}
                 </>
