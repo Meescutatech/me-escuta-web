@@ -148,6 +148,14 @@ export interface Mensagem {
   // Signed URL pré-assinada em LOTE no servidor (perf/rotas) — quando presente, a bolha usa
   // direto; ausente (falha de assinatura/linha antiga), a bolha cai no fetch lazy de antes.
   midia_url?: string | null;
+  /** wamid da Meta (0018). Necessário para a reação achar o alvo — é por wamid que ela aponta. */
+  wamid?: string | null;
+  /**
+   * E2 — wamid da mensagem que ESTA reação reagiu (`core.mensagem.reacao_alvo_wamid`, migration
+   * 0333). Ausente quando o ambiente ainda não tem a coluna: o degrade tira do select e a reação
+   * fica como bolha honesta ("não está nesta conversa"), nunca como selo inventado.
+   */
+  reacao_alvo_wamid?: string | null;
 }
 
 export interface SugestaoMensagem {
@@ -573,6 +581,8 @@ const COLUNAS_BASE = "id,direcao,tipo_conteudo,corpo,criado_em";
 const COLUNAS_COM_STATUS = `${COLUNAS_BASE},status_entrega,erro_codigo,autor,timestamp_origem`;
 /** + colunas da pipeline de mídia (contrato rodada 5, migration em paralelo). */
 const COLUNAS_COM_MIDIA = `${COLUNAS_COM_STATUS},midia_caminho,midia_mime`;
+/** E2 · + wamid e alvo da reação (0333). Camada de cima da cascata — some se a coluna não existir. */
+const COLUNAS_COM_REACAO = `${COLUNAS_COM_MIDIA},wamid,reacao_alvo_wamid`;
 
 export async function lerMensagens(
   conversaId: string,
@@ -600,7 +610,8 @@ export async function lerMensagens(
     // colunas de mídia ainda não existirem (migration do backend em paralelo), cai pro contrato
     // de status; se nem essas, pro base. Produção nunca quebra se o front sair antes da migration
     // — o select explícito com coluna inexistente ERRA, então o erro vira degrade, não tela morta.
-    let { data, error } = await buscar(COLUNAS_COM_MIDIA);
+    let { data, error } = await buscar(COLUNAS_COM_REACAO);
+    if (error) ({ data, error } = await buscar(COLUNAS_COM_MIDIA));
     if (error) ({ data, error } = await buscar(COLUNAS_COM_STATUS));
     if (error) ({ data, error } = await buscar(COLUNAS_BASE));
     if (error || !data) return [];
