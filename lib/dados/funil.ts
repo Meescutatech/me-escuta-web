@@ -1,7 +1,6 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import {
-  COLUNAS_CARD,
-  COLUNAS_CARD_BASE,
+  DEGRAU_COLUNAS_CARD,
   montarUltimaMensagem,
   MINIMO_BUSCA,
   TETO_BUSCA,
@@ -90,6 +89,8 @@ export interface CardLead {
    * mecânica está pronta e inerte, e é assim que ela deve ficar até haver compromisso de verdade.
    */
   compromisso_em?: string | null;
+  /** H5 · cidade DECLARADA pelo paciente (ficha) — `undefined` quando a view ainda não a expõe. */
+  cidade?: string | null;
 }
 
 export interface DadosFunil {
@@ -225,7 +226,7 @@ export async function lerSlaEtapas(cliente?: Supabase): Promise<SlaEtapas> {
 /**
  * ⚠️ EXPORTADA e com `cliente?` desde 22/08 — e o motivo não é simetria com as vizinhas.
  *
- * O DEGRAU desta função (COLUNAS_CARD → COLUNAS_CARD_BASE, logo abaixo) é a única coisa que
+ * O DEGRAU desta função (a escada `DEGRAU_COLUNAS_CARD`, logo abaixo) é a única coisa que
  * separa "board sem a linha de última mensagem" de "board VAZIO" no dia em que a migration da
  * `v_lead_card` não tiver descido: pedir coluna inexistente ao PostgREST derruba a consulta
  * INTEIRA, não só a coluna. Até aqui esse degrau era intestável — a função criava o cliente por
@@ -260,10 +261,14 @@ export async function lerCardsReais(
   // volta pro shape sem elas. O degrau é o que separa "board sem a linha de mensagem" de "board
   // VAZIO": pedir coluna inexistente ao PostgREST derruba a consulta inteira.
   let [{ data, error }, comTarefa] = await Promise.all([
-    consulta(COLUNAS_CARD),
+    consulta(DEGRAU_COLUNAS_CARD[0]),
     lerLeadsComTarefaPendente(supabase, agora),
   ]);
-  if (error) ({ data, error } = await consulta(COLUNAS_CARD_BASE));
+  // H5: a escada tem TRÊS degraus agora (com cidade → sem cidade → base). Desce um por erro;
+  // pular direto para a base perderia a linha de mensagem no dia em que só a 0336 faltar.
+  for (let i = 1; error && i < DEGRAU_COLUNAS_CARD.length; i++) {
+    ({ data, error } = await consulta(DEGRAU_COLUNAS_CARD[i]));
+  }
   if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
   const cards = (data as any[]).map((r: any) =>
     // `tem_tarefa_pendente` só é conhecido quando a leitura de tarefas voltou; a busca (que não a
@@ -310,6 +315,9 @@ function montarCard(
     tem_tarefa_pendente: temTarefaPendente,
     ultima_mensagem: montarUltimaMensagem(r),
     compromisso_em: compromissoEm,
+    // H5: só quando a view expõe (0336). Ausente ≠ vazio: `undefined` é "a view não tem a coluna",
+    // `null` é "tem, e este lead não declarou". O card não desenha nenhum dos dois.
+    cidade: "cidade" in r ? (r.cidade ? String(r.cidade) : null) : undefined,
   };
 }
 
@@ -392,7 +400,9 @@ export async function buscarLeads(termo: string, cliente?: Supabase): Promise<Re
   // mesmo degrau do board: sem as três colunas de última mensagem, a busca acha do mesmo jeito e
   // o resultado sai sem a linha — em vez de a busca inteira responder "erro".
   let { data, error } = await consulta(plano.colunas);
-  if (error) ({ data, error } = await consulta(planoBusca(termo, false)!.colunas));
+  for (let i = 1; error && i < DEGRAU_COLUNAS_CARD.length; i++) {
+    ({ data, error } = await consulta(DEGRAU_COLUNAS_CARD[i]));
+  }
 
   if (error || !data) return { termo, cards: [], truncado: false, erro: true };
   const { cards, truncado } = recortarBusca(data as any[]);

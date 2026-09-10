@@ -5,6 +5,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { CardLead, Origem } from "@/lib/dados/funil";
 import { textoTempoCurto } from "@/lib/tempo";
+import { sinalDoCard } from "@/lib/dados/funil-calculos";
 import {
   dataUltimaMensagem,
   prioridadeCard,
@@ -168,7 +169,9 @@ export function CartaoLead({
 
   // 1 sinal significativo (spec §4): quando o nome é lixo, o sinal é "Lead · <origem>";
   // com nome real, o sinal é a própria origem. Nada além disso no card.
-  const sinal = ruim ? (origemLabel ? `Lead · ${origemLabel}` : "Lead") : origemLabel;
+  // H5: a cidade DECLARADA entra na MESMA linha do sinal ("Meta Ads · Contagem") — é o que a
+  // Sara precisa para indicar clínica sem abrir o lead. Regra pura e testada em funil-calculos.
+  const sinal = sinalDoCard(origemLabel, card.cidade, ruim);
   const sinalAds = card.origem === "meta";
 
   const titulo = [
