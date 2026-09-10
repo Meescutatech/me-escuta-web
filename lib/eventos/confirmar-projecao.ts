@@ -402,6 +402,21 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
     ],
     // aqui o ticket_id é legítimo: ele APONTA para um ticket que já existe, não cria identidade.
   },
+
+  /*
+   * H7 (sprint 10/09) · templates de mensagem. Era a adoção que o comentário de `confirmarProjecao`
+   * pedia desde o F6 ("acrescente-a quando for adotar, para não declarar cobertura que ninguém
+   * exerce") — e a branch `feat/readback-projecao-templates`, de 26/07, fazia isso com um lib
+   * PRÓPRIO de 47 linhas, escrito no MESMO DIA que este arquivo nasceu com 564. Superada; o que
+   * sobrou dela é esta fiação, no framework da casa.
+   *
+   * Os três carimbam `ultima_posicao` — conferido no projetor VIVO (`porta.proj_template_mensagem`),
+   * não na migration: criado insere com a posição, atualizado e arquivado fazem
+   * `set ultima_posicao = e.posicao_global where e.posicao_global > t.ultima_posicao`.
+   */
+  template_criado: { tabela: "template_mensagem", por: "posicao", coluna: "ultima_posicao" },
+  template_atualizado: { tabela: "template_mensagem", por: "posicao", coluna: "ultima_posicao" },
+  template_arquivado: { tabela: "template_mensagem", por: "posicao", coluna: "ultima_posicao" },
 };
 
 export const EXCECOES: Readonly<Record<string, ExcecaoConferencia>> = {
