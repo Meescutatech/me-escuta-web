@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   frasePrograma,
+  foraDaJanela,
   opcoesProgramar,
   paraValorLocal,
   proximaHoraCheia,
@@ -42,11 +43,17 @@ export function BotaoEnvio({
   desabilitado,
   motivoDesabilitado,
   enviando,
+  janelaAteMs,
 }: {
   onEnviar: () => void;
   /** o pai grava (server action) e decide se esvazia o campo. */
   onProgramar: (quandoMs: number) => void;
   desabilitado: boolean;
+  /**
+   * E4 · fim da janela livre de 24h desta conversa (epoch ms), quando a projeção o trouxe.
+   * `null`/ausente = a tela não sabe e, por isso, não diz nada sobre janela.
+   */
+  janelaAteMs?: number | null;
   motivoDesabilitado?: string;
   enviando?: boolean;
 }) {
@@ -94,7 +101,7 @@ export function BotaoEnvio({
     fechar();
   }
 
-  const opcoes = opcoesProgramar(agora);
+  const opcoes = opcoesProgramar(agora, janelaAteMs);
   const veredito = escolhendo ? validarEscolha(valor, agora) : null;
 
   return (
@@ -151,10 +158,21 @@ export function BotaoEnvio({
                     key={o.chave}
                     role="menuitem"
                     onClick={() => programar(o.quando)}
-                    className="flex w-full items-baseline justify-between gap-3 px-3.5 py-2 text-left transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+                    className="flex w-full flex-col gap-0.5 px-3.5 py-2 text-left transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
                   >
-                    <span className="text-[0.84rem] text-tinta">{o.rotulo}</span>
-                    <span className="shrink-0 text-[0.74rem] tabular-nums text-mute">{o.detalhe}</span>
+                    <span className="flex w-full items-baseline justify-between gap-3">
+                      <span className="text-[0.84rem] text-tinta">{o.rotulo}</span>
+                      <span className="shrink-0 text-[0.74rem] tabular-nums text-mute">{o.detalhe}</span>
+                    </span>
+                    {/* E4 · a notícia chega na hora de ESCOLHER, não horas depois pelo banner de
+                        falha. "Segunda de manhã" nunca cabe numa janela de 24h — medido contra
+                        produção: zero conversas. Avisa, não bloqueia: a janela reabre se a pessoa
+                        escrever, e programar para segunda é aposta legítima de quem espera resposta. */}
+                    {o.foraDaJanela === true && (
+                      <span className="text-[0.72rem] leading-snug text-timer-velho">
+                        Fora da janela de 24h — só sai se ela escrever antes
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -188,6 +206,14 @@ export function BotaoEnvio({
               />
               {veredito && !veredito.ok && (
                 <p className="mt-1.5 text-[0.72rem] text-vermelho">{veredito.motivo}</p>
+              )}
+              {/* E4 · aqui o descompasso é maior que nos atalhos: `MAX_DIAS_PROGRAMACAO` deixa
+                  escolher até 90 DIAS, e a janela livre dura 24 HORAS. Sem este aviso a tela
+                  aceita, calada, uma data que ela já sabe que vai falhar. */}
+              {veredito?.ok && foraDaJanela(veredito.quando, janelaAteMs) === true && (
+                <p className="mt-1.5 text-[0.72rem] leading-snug text-timer-velho">
+                  Fora da janela de 24h — só sai se ela escrever antes
+                </p>
               )}
               <div className="mt-3 flex items-center gap-2">
                 <button

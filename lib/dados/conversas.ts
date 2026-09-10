@@ -64,6 +64,12 @@ export interface ConversaResumo {
    */
   ultima_entrada_em?: string | null;
   /**
+   * E4 — fim da janela livre de 24h (`core.conversa.janela_livre_ate`, já exposto na `v_conversa`).
+   * Ausente quando a view do ambiente ainda não traz a coluna: o degrade abaixo tira do select e a
+   * tela simplesmente não fala de janela, como antes do E4.
+   */
+  janela_livre_ate?: string | null;
+  /**
    * F21 — hora da última mensagem de QUALQUER direção, carimbada pela prévia (custo zero: o dado
    * já vinha). É por este campo que a lista EXIBE a data. Ausente quando a prévia não pôde ser
    * lida; a exibição então degrada por `dataDaLista`, nunca de volta pra `atualizado_em`.
@@ -382,7 +388,7 @@ const PAGINA_VAZIA: PaginaConversas = {
 // derrubaria a faixa "Sem departamento" toda vez que o chip do número caísse, que são coisas
 // diferentes falhando por motivos diferentes.
 const COLUNAS_LISTA_BASE = "id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em,area";
-const COLUNAS_LISTA_M7 = `${COLUNAS_LISTA_BASE},phone_number_id,numero_apelido,numero_e164,finalidade`;
+const COLUNAS_LISTA_M7 = `${COLUNAS_LISTA_BASE},phone_number_id,numero_apelido,numero_e164,finalidade,janela_livre_ate`;
 
 export async function lerConversas(
   opcoes: {

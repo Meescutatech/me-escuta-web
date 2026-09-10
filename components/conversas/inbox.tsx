@@ -1092,6 +1092,9 @@ export function Inbox({
               avisar={avisar}
               programadas={programadas}
               onProgramar={programar}
+              janelaAteMs={
+                selecionada.janela_livre_ate ? Date.parse(selecionada.janela_livre_ate) : null
+              }
               onCancelarProgramado={cancelarProgramado}
             />
           </>

@@ -66,6 +66,42 @@ export interface OpcaoProgramar {
   detalhe: string;
   /** epoch ms */
   quando: number;
+  /**
+   * E4 · a janela livre de 24h já terá fechado quando esta hora chegar?
+   *
+   * `null` = não sabemos (a conversa não trouxe `janela_livre_ate`), e aí a tela não diz nada —
+   * afirmar "vai falhar" sem o dado é pior que calar.
+   */
+  foraDaJanela: boolean | null;
+}
+
+/**
+ * E4 — a hora escolhida cai FORA da janela livre de 24h do WhatsApp?
+ *
+ * POR QUE ISTO EXISTE, medido contra produção em 10/09 (29 conversas com janela aberta):
+ *
+ *     amanhã 8h ................ funcionaria em 25
+ *     amanhã 13h ............... funcionaria em 13   ← menos da metade
+ *     segunda de manhã ......... ZERO
+ *     escolher data (até 90d) .. ZERO
+ *
+ * "Segunda de manhã" é um dos três atalhos que a cópia do Gmail trouxe, e ele **não pode funcionar
+ * para nenhuma conversa do sistema**: a janela do WhatsApp dura 24 horas e a próxima segunda nunca
+ * está a menos de 24 horas. O worker recusa com `fora_da_janela_24h`, e a tela só explica DEPOIS —
+ * horas depois, quando a mensagem já não saiu. Este predicado move a notícia para o momento da
+ * escolha, que é o único em que ela ainda serve para alguma coisa.
+ *
+ * ⚠️ AVISA, NÃO BLOQUEIA — e a diferença não é timidez. A janela REABRE quando a pessoa escreve de
+ * novo: programar para segunda é aposta legítima de quem espera resposta no fim de semana.
+ * Bloquear mataria o caso certo junto com o duvidoso. A tela diz o que sabe agora, e quem está
+ * conversando decide.
+ */
+export function foraDaJanela(
+  quandoMs: number,
+  janelaAteMs: number | null | undefined,
+): boolean | null {
+  if (janelaAteMs == null || !Number.isFinite(janelaAteMs)) return null;
+  return quandoMs > janelaAteMs;
 }
 
 /**
@@ -73,8 +109,11 @@ export interface OpcaoProgramar {
  * manhã"), e não repete o mesmo instante em duas linhas — quando amanhã JÁ É segunda, "segunda de
  * manhã" sairia idêntica a "amanhã de manhã". Aqui vale a mesma regra: opção que não muda nada
  * some, em vez de virar uma segunda linha que faz o mesmo.
+ *
+ * `janelaAteMs` é opcional: sem ele cada opção sai com `foraDaJanela: null` e a tela fica calada,
+ * que é o comportamento de antes do E4 — nada quebra em quem chamar sem o segundo argumento.
  */
-export function opcoesProgramar(agoraMs: number): OpcaoProgramar[] {
+export function opcoesProgramar(agoraMs: number, janelaAteMs?: number | null): OpcaoProgramar[] {
   const c = civil(agoraMs);
   const amanhaManha = noDia(c, 1, HORA_MANHA);
   const amanhaTarde = noDia(c, 1, HORA_TARDE);
@@ -83,9 +122,9 @@ export function opcoesProgramar(agoraMs: number): OpcaoProgramar[] {
   const segundaManha = noDia(c, ateSegunda, HORA_MANHA);
 
   const brutas: OpcaoProgramar[] = [
-    { chave: "amanha_manha", rotulo: "Amanhã de manhã", detalhe: detalhe(amanhaManha), quando: amanhaManha },
-    { chave: "amanha_tarde", rotulo: "Amanhã à tarde", detalhe: detalhe(amanhaTarde), quando: amanhaTarde },
-    { chave: "segunda_manha", rotulo: "Segunda de manhã", detalhe: detalhe(segundaManha), quando: segundaManha },
+    { chave: "amanha_manha", rotulo: "Amanhã de manhã", detalhe: detalhe(amanhaManha), quando: amanhaManha, foraDaJanela: foraDaJanela(amanhaManha, janelaAteMs) },
+    { chave: "amanha_tarde", rotulo: "Amanhã à tarde", detalhe: detalhe(amanhaTarde), quando: amanhaTarde, foraDaJanela: foraDaJanela(amanhaTarde, janelaAteMs) },
+    { chave: "segunda_manha", rotulo: "Segunda de manhã", detalhe: detalhe(segundaManha), quando: segundaManha, foraDaJanela: foraDaJanela(segundaManha, janelaAteMs) },
   ];
 
   const vistos = new Set<number>();

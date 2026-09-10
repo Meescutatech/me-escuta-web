@@ -91,6 +91,7 @@ export function Composer({
   origem,
   programadas,
   onProgramar,
+  janelaAteMs,
   onCancelarProgramado,
 }: {
   modoClara: boolean;
@@ -131,6 +132,8 @@ export function Composer({
   programadas: EnvioProgramadoLinha[];
   /** Grava `envio_programado`. Devolve true quando gravou — só então o campo esvazia. */
   onProgramar: (quandoMs: number, texto: string) => Promise<boolean>;
+  /** E4 · fim da janela livre de 24h da conversa (epoch ms); null = a tela não sabe. */
+  janelaAteMs?: number | null;
   onCancelarProgramado: (id: string) => void;
 }) {
   const [rascunho, setRascunho] = useState("");
@@ -794,6 +797,7 @@ export function Composer({
                   }
                 }}
                 enviando={subindo}
+                janelaAteMs={janelaAteMs}
                 desabilitado={
                   pending || subindo || gravando || (!anexo && !rascunho.trim()) ||
                   // M7 · o sender já devolveria `falha_permanente` (sender.ts:313-322) e a

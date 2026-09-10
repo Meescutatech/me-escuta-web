@@ -5,6 +5,7 @@ import {
   HORA_TARDE,
   MAX_DIAS_PROGRAMACAO,
   civil,
+  foraDaJanela,
   frasePrograma,
   instante,
   opcoesProgramar,
@@ -104,4 +105,69 @@ test("proximaHoraCheia nunca devolve um horário já passado", () => {
 
 test("paraValorLocal produz exatamente o formato do input datetime-local", () => {
   assert.equal(paraValorLocal(instante(2025, 8, 4, 9, 5)), "2025-08-04T09:05");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// E4 · A JANELA DE 24h NA HORA DE ESCOLHER
+//
+// O menu é cópia do Gmail, e o Gmail não tem janela de 24h. Medido contra produção em 10/09,
+// sobre as 29 conversas com janela aberta:
+//     amanhã 8h .......... funcionaria em 25
+//     amanhã 13h ......... funcionaria em 13
+//     segunda de manhã ... ZERO
+//     escolher data ...... ZERO (o teto é 90 DIAS; a janela é 24 HORAS)
+// Antes disto a tela aceitava calada e só explicava horas depois, pelo banner de falha.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+test("segunda de manhã cai SEMPRE fora de uma janela de 24h — em qualquer dia da semana", () => {
+  // é a asserção central do E4: não existe dia em que este atalho caiba na janela.
+  for (let dia = 1; dia <= 28; dia++) {
+    const agora = instante(2026, 9, dia, 10, 0);
+    const janelaAte = agora + 24 * 3_600_000; // o máximo que a janela pode valer
+    const segunda = opcoesProgramar(agora, janelaAte).find((o) => o.chave === "segunda_manha");
+    if (!segunda) continue; // o menu esconde a opção quando ela coincide com "amanhã"
+    assert.equal(segunda.foraDaJanela, true, `dia ${dia}`);
+  }
+});
+
+test("amanhã de manhã cabe quando a janela alcança, e não cabe quando não alcança", () => {
+  const agora = instante(2026, 9, 10, 18, 0); // quinta, 18h
+  const amanha8 = instante(2026, 9, 11, 8, 0);
+
+  const alcanca = opcoesProgramar(agora, amanha8 + 3_600_000).find((o) => o.chave === "amanha_manha");
+  assert.equal(alcanca?.foraDaJanela, false);
+
+  const naoAlcanca = opcoesProgramar(agora, amanha8 - 3_600_000).find((o) => o.chave === "amanha_manha");
+  assert.equal(naoAlcanca?.foraDaJanela, true);
+});
+
+test("sem o dado da janela a tela NÃO afirma nada — null, nunca false", () => {
+  // `false` diria "cabe na janela", que é uma afirmação. Sem o dado não há afirmação a fazer:
+  // é o mesmo degrade honesto do resto da casa (a view do ambiente pode não trazer a coluna).
+  const agora = instante(2026, 9, 10, 10, 0);
+  for (const janela of [undefined, null, NaN]) {
+    for (const o of opcoesProgramar(agora, janela as number | null)) {
+      assert.equal(o.foraDaJanela, null, `${String(janela)} / ${o.chave}`);
+    }
+  }
+});
+
+test("foraDaJanela: a fronteira é o instante exato — igual ainda cabe, 1ms depois não", () => {
+  const t = instante(2026, 9, 11, 8, 0);
+  assert.equal(foraDaJanela(t, t), false, "exatamente no limite ainda sai");
+  assert.equal(foraDaJanela(t + 1, t), true, "1ms depois, não");
+  assert.equal(foraDaJanela(t - 1, t), false);
+});
+
+test("a opção fora da janela continua ESCOLHÍVEL — avisa, não bloqueia", () => {
+  // A janela reabre quando a pessoa escreve. Programar para segunda é aposta legítima de quem
+  // espera resposta no fim de semana; bloquear mataria o caso certo junto com o duvidoso.
+  const agora = instante(2026, 9, 10, 10, 0);
+  const opcoes = opcoesProgramar(agora, agora + 3_600_000);
+  assert.ok(opcoes.length > 0, "o menu não some");
+  assert.ok(
+    opcoes.some((o) => o.foraDaJanela === true),
+    "há opção marcada como fora da janela — e ela continua na lista, com seu `quando` válido",
+  );
+  for (const o of opcoes) assert.equal(typeof o.quando, "number");
 });
