@@ -3,6 +3,7 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { confirmarProjecao, type RespostaRegistrarEvento } from "@/lib/eventos/confirmar-projecao";
 
 /**
  * Ações da aba Configurações > Templates (SPEC-TEMPLATES-MENSAGENS §7).
@@ -25,8 +26,15 @@ async function registrarEventoTemplates(
 ): Promise<ResultadoAcao> {
   const supabase = criarClienteServidor();
   const envelope = { tipo, id_externo: randomUUID(), versao_payload: 1, payload };
-  const { error } = await supabase.schema("api").rpc("registrar_evento", { p: envelope });
+  const { data, error } = await supabase.schema("api").rpc("registrar_evento", { p: envelope });
   if (error) return { ok: false, motivo: error.message };
+
+  // H7 · read-back (F6): o ledger aceitar não é sucesso — sucesso é a projeção existir. O corpo da
+  // resposta era JOGADO FORA aqui, e com ele a única prova de que a escrita virou linha em
+  // `core.template_mensagem`. Os três tipos estão declarados em CONFERENCIA por `ultima_posicao`.
+  const conferido = await confirmarProjecao(supabase, tipo, payload, (data ?? null) as RespostaRegistrarEvento | null);
+  if (!conferido.ok) return conferido;
+
   revalidatePath("/configuracoes/templates");
   revalidatePath("/conversas");
   return { ok: true };

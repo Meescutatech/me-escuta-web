@@ -539,3 +539,18 @@ test("D70 · a conferência é do canal PEDIDO — outro canal no mesmo nível n
   );
   assert.equal(r.ok, false);
 });
+
+test("H7 · os três eventos de template conferem core.template_mensagem.ultima_posicao", () => {
+  // Era a adoção que o comentário de `confirmarProjecao` pedia desde o F6. Sem estas três linhas,
+  // `configuracoes/templates` reprovava por "ação não declarada" no fail-closed — ou, antes do
+  // fail-closed, declarava sucesso sem conferir nada. Os três carimbam `ultima_posicao` no
+  // projetor VIVO (`porta.proj_template_mensagem`), conferido no banco em 10/09.
+  for (const acao of ["template_criado", "template_atualizado", "template_arquivado"]) {
+    const r = CONFERENCIA[acao];
+    assert.ok(r, `${acao} tem de estar na tabela`);
+    assert.equal(r.tabela, "template_mensagem", acao);
+    assert.equal(r.por, "posicao", acao);
+    assert.equal(r.por === "posicao" && r.coluna, "ultima_posicao", acao);
+    assert.equal(temConferencia(acao), true, acao);
+  }
+});
