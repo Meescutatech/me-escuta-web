@@ -25,9 +25,11 @@ import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 import { frasePrograma } from "@/lib/conversas/programar-envio";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
+import { BolhaBotao } from "@/components/conversas/bolha-botao";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
 import { ehAudio, ehImagem, temImagemVisivel } from "@/lib/conversas/midia";
+import { ehBotaoRecebido } from "@/lib/conversas/interativa";
 import { useConversaViva } from "@/components/conversas/tempo-real";
 import { criarClienteBrowser } from "@/lib/supabase/client";
 import { montarEnvelopeAtividade } from "@/lib/presenca";
@@ -1267,6 +1269,12 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
   if (temImagemVisivel(m)) {
     // foto (in e out) quando a mídia já está no bucket; sem caminho cai no rótulo de sempre
     return <BolhaImagem m={m} />;
+  }
+  if (ehBotaoRecebido(m)) {
+    // E3: resposta rápida TOCADA (190 em produção, a última de hoje). Antes disto caía no
+    // fallback de mídia abaixo e a tela escrevia `Mensagem (botao)` com ícone de FOTO.
+    // Sem corpo, `ehBotaoRecebido` devolve false de propósito e o rótulo honesto segue valendo.
+    return <BolhaBotao m={m} />;
   }
   // tipos em PT-BR = contrato do ingestor (parser TIPO_PT); os em EN cobrem linhas históricas
   const rotulo =
