@@ -28,7 +28,7 @@ import { carimboBuild } from "@/components/ui/marca-build";
 function BotaoEntrar() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending} className="mt-1 w-full">
+    <Button type="submit" size="lg" disabled={pending} className="mt-1 w-full font-semibold">
       {pending ? "Entrando..." : "Entrar"}
     </Button>
   );

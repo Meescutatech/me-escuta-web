@@ -27,6 +27,13 @@ export interface DepsMiddleware {
 
 const PREFIXOS_PUBLICOS = ["/login", "/auth", "/convite"];
 
+/**
+ * PRESET (10/09): a galeria de componentes `/design` e publica SO fora de producao — e uma
+ * pagina sem dado nenhum (so os componentes de components/ui com exemplo), serve para o print
+ * e para o Diogo olhar no `next dev`. Em producao ela continua atras do login como tudo o mais.
+ */
+if (process.env.NODE_ENV !== "production") PREFIXOS_PUBLICOS.push("/design");
+
 const ehRotaPublica = (pathname: string) => PREFIXOS_PUBLICOS.some((p) => pathname.startsWith(p));
 
 /**

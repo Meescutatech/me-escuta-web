@@ -2,6 +2,499 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =============================================================
+   PRESET DE DESIGN (10/09/2026) — tokens do LiderHub, marca da Me Escuta
+   -------------------------------------------------------------
+   Estrutura e nomes: shadcn "base-nova" do LiderHub
+   (~/Developer/liderhub-dev/apps/web/src/styles/tokens/*.css, OKLCH, Light + Dark).
+   Valores: onde a Me Escuta ja tinha token (r9: board, tinta, linha, laranja,
+   navy, verde/vermelho/amarelo/azul), entra o NOSSO valor, com o hex antigo
+   deles no comentario ("era #..."). O resto (chart, glass, note, call-bar,
+   avatar/tag/event/channel) vem deles intacto.
+
+   O Tailwind aqui e v3 — a ponte para `bg-primary`, `text-muted-foreground/70`
+   etc. esta em tailwind.config.ts (colors via color-mix). Tema escuro = classe
+   `.dark` no <html>; hoje o app e declarado claro (color-scheme abaixo), entao
+   o bloco .dark e inerte ate alguem ligar.
+   ============================================================= */
+
+/* =============================================================
+   Cores semânticas do produto
+   -------------------------------------------------------------
+   GERADO A PARTIR DO FIGMA — não edite valores à mão.
+   Fonte: "CRM — Design System" (N3oCYd35uftSxxhR5G4jvV)
+   Collection: Color (modes: Light · Dark)
+   Figma guarda sRGB; aqui vira OKLCH (o hex de origem fica no
+   comentário de cada linha para conferência).
+   ============================================================= */
+
+:root {
+
+  /* Superfícies */
+  /* Hierarquia de elevação: sidebar (recuo) < background (canvas) < card/popover (elevado). */
+  /* Nunca branco nem preto puro — off-white no claro, grafite no escuro. */
+  --background:                oklch(0.9753 0.004 106.5); /* #f7f7f4 · board (r9, neutro frio) — era #f9fafc */
+  --foreground:                oklch(0.2542 0.0111 254); /* #1f2328 · tinta — era #060809 */
+  --card:                      oklch(1 0 0); /* #ffffff · branco (superficie elevada) — era #fcfefe */
+  --card-foreground:           oklch(0.2542 0.0111 254); /* #1f2328 */
+  --popover:                   oklch(1 0 0); /* #ffffff */
+  --popover-foreground:        oklch(0.2542 0.0111 254); /* #1f2328 */
+
+  /* Ação (azul do produto) */
+  /* action/primary é #2563EB nos DOIS modos — decisão híbrida: */
+  /* superfícies neutras base-nova + ação azul do produto. */
+  /* NÃO confundir com --brand-blue (#3E78FF), que é o azul institucional. */
+  --primary:                   oklch(0.669 0.1792 41.1); /* #ec662e · LARANJA = unico acento de acao (r9) — era o azul #2563eb */
+  --primary-foreground:        oklch(1 0 0); /* #ffffff */
+
+  /* Neutros */
+  --secondary:                 oklch(0.9331 0.0081 98.9); /* #eae9e3 · hover (W4) — era #e8ecee */
+  --secondary-foreground:      oklch(0.2542 0.0111 254); /* #1f2328 */
+  --muted:                     oklch(0.9488 0.0054 95.1); /* #efeeea · entre board e hover — era #f0f2f4 */
+  --muted-foreground:          oklch(0.5135 0.0207 253.5); /* #5f6873 · mute (W4, 5,27:1 no board) — era #616466 */
+  --accent:                    oklch(0.9331 0.0081 98.9); /* #eae9e3 · hover — era #e2e5e7 */
+  --accent-foreground:         oklch(0.2542 0.0111 254); /* #1f2328 */
+
+  /* Semântico — cor cheia */
+  --destructive:               oklch(0.5188 0.1623 29.3); /* #b3372b · vermelho — era #c82d45 */
+  --success:                   oklch(0.5127 0.1177 155.2); /* #177a48 · verde — era #22c55e */
+  --warning:                   oklch(0.651 0.1366 76.3); /* #be8200 · amarelo.barra (3:1 como objeto grafico; texto usa warning-ink) — era #ea7d2e */
+  --info:                      oklch(0.3734 0.1553 264.3); /* #143691 · azul — era #3b82f6 */
+
+  /* Semântico — tríade de status (tint / ink / line / soft) */
+  /* Substitui os pares crus `bg-emerald-500/15 text-emerald-700 ring-emerald-500/30`. */
+  /* `ink` é a tinta legível sobre `tint`; `soft` é o realce mais discreto. */
+  /* O `ink` do modo claro é um passo mais escuro que a matiz -700 do Tailwind: */
+  /* sobre o próprio tint, -700 fica em ~4.0:1 e reprova AA em texto de 10-12px. */
+  --success-ink:               oklch(0.5127 0.1177 155.2); /* #177a48 · verde.DEFAULT */
+  --success-foreground:          oklch(1 0 0); /* #ffffff */
+  --success-tint:              oklch(0.9622 0.0157 160.6); /* #eaf6ef · verde.bg */
+  --success-line:              oklch(0.8865 0.0482 160.4); /* #bfe4cf · verde.bd */
+  --success-soft:                oklch(0.7227 0.192 149.6 / 5.1%); /* #22c55e a0.051 */
+  --warning-ink:               oklch(0.5159 0.1079 77); /* #8a5e00 · amarelo.DEFAULT (W4: 5,31:1) */
+  --warning-tint:              oklch(0.9651 0.0277 88.7); /* #fbf3df · amarelo.bg */
+  --warning-line:              oklch(0.8868 0.0689 91.8); /* #ead9a6 · amarelo.bd */
+  --warning-soft:                oklch(0.7686 0.1647 70.1 / 5.1%); /* #f59e0b a0.051 */
+  --danger-ink:                oklch(0.5188 0.1623 29.3); /* #b3372b · vermelho.DEFAULT */
+  --danger-tint:               oklch(0.9508 0.0198 45.3); /* #fbebe4 · vermelho.bg */
+  --danger-line:               oklch(0.8752 0.0451 42.4); /* #f1cdbf · vermelho.bd */
+  --danger-soft:                 oklch(0.6368 0.2078 25.3 / 5.1%); /* #ef4444 a0.051 */
+  --info-ink:                  oklch(0.3734 0.1553 264.3); /* #143691 · azul.DEFAULT */
+  --info-tint:                 oklch(0.9588 0.0138 272.7); /* #eef1fb · azul.bg */
+
+  /* Nota interna (amarelo do bloco de anotação do inbox) */
+  --note:                        oklch(0.9869 0.0214 95.3); /* #fffbeb */
+  --note-foreground:             oklch(0.2791 0.0742 45.6); /* #451a03 */
+  --note-line:                   oklch(0.9243 0.1151 95.7 / 80%); /* #fde68a a0.800 */
+  --note-kicker:                 oklch(0.5553 0.1455 49 / 90.2%); /* #b45309 a0.902 */
+  --note-tab-active:             oklch(0.9619 0.058 95.6); /* #fef3c7 */
+  --note-tab-active-foreground:  oklch(0.4137 0.1054 45.9); /* #78350f */
+
+  /* Interação */
+  --border:                    oklch(0.9273 0.0068 97.4); /* #e8e7e2 · linha: hairline universal (r9) — era #dcdee0 */
+  --input:                     oklch(0.8883 0.0084 91.5); /* #dcdad4 · linha.forte — era #dcdee0 */
+  --ring:                      oklch(0.669 0.1792 41.1); /* #ec662e · anel de foco no laranja (3,23:1 no branco) — era #2563eb */
+
+  /* Data viz */
+  --chart-1:                     oklch(0.6247 0.1336 163.7); /* #00a071 */
+  --chart-2:                     oklch(0.6008 0.1493 249.6); /* #2784d5 */
+  --chart-3:                     oklch(0.579 0.1803 290.1); /* #7c60db */
+  --chart-4:                     oklch(0.7199 0.1572 68.7); /* #e38f00 */
+  --chart-5:                     oklch(0.6201 0.1896 18.1); /* #e14759 */
+  --chart-1-bg:                  oklch(0.6247 0.1336 163.7 / 14%); /* #00a071 a0.140 */
+  --chart-2-bg:                  oklch(0.6008 0.1493 249.6 / 14%); /* #2784d5 a0.140 */
+  --chart-3-bg:                  oklch(0.579 0.1803 290.1 / 14%); /* #7c60db a0.140 */
+  --chart-4-bg:                  oklch(0.7199 0.1572 68.7 / 14%); /* #e38f00 a0.140 */
+  --chart-5-bg:                  oklch(0.6201 0.1896 18.1 / 14%); /* #e14759 a0.140 */
+
+  /* Tabela */
+  --table-header:              oklch(0.982 0.0041 91.4); /* #faf9f6 — era #fbfbfb */
+  --table-row-hover:             oklch(0.5542 0.0139 280.9 / 6%); /* #71727b a0.060 */
+
+  /* Diversos de produto */
+  --read-tick:                   oklch(0.5876 0.1389 242); /* #0284c7 · tique de lido (WhatsApp) */
+  --rating-star:                 oklch(0.8369 0.1644 84.4); /* #fbbf24 */
+  --rating-star-empty:           oklch(0.5517 0.0138 285.9 / 40%); /* #71717a a0.400 */
+  --today-tint:                  oklch(0.5461 0.2152 262.9 / 5%); /* #2563eb a0.050 · linha de hoje no calendário */
+  --wave-bar:                    oklch(0.132 0.0049 226.4 / 55%); /* #060809 a0.550 · onda do gravador de voz */
+
+  /* Barra de ligação em andamento */
+  /* INVARIANTES de modo: a pílula é verde escura nos dois temas. É um estado do */
+  /* sistema (existe uma chamada ativa agora), não uma superfície do documento — */
+  /* inverter no tema claro faria a chamada ativa parecer outro componente. */
+  --call-bar:                    oklch(0.3159 0.0581 166.2); /* #0b3b2b */
+  --call-bar-foreground:         oklch(1 0 0); /* #ffffff */
+  --call-bar-muted-foreground:   oklch(1 0 0 / 70%); /* #ffffff a0.700 */
+  --call-bar-control:            oklch(1 0 0 / 12%); /* #ffffff a0.120 */
+  --call-bar-control-hover:      oklch(1 0 0 / 20%); /* #ffffff a0.200 */
+
+  /* Vidro (superfícies translúcidas) */
+  --glass-panel:                 oklch(1 0 0 / 92%); /* #ffffff a0.920 */
+  --glass-surface:               oklch(1 0 0 / 62%); /* #ffffff a0.620 */
+  --glass-surface-strong:        oklch(1 0 0 / 82%); /* #ffffff a0.820 */
+  --glass-hairline:              oklch(0.1725 0.0165 284.5 / 8%); /* #0f0f17 a0.080 */
+  --glass-highlight:             oklch(1 0 0 / 90%); /* #ffffff a0.900 */
+
+  /* Sidebar (escopo próprio — o resto é alias) */
+  --sidebar:                   oklch(0.9578 0.0054 95.1); /* #f2f1ed · um degrau abaixo do board — era #f3f6f8 */
+
+  /* Sidebar — aliases (o Figma declara sidebar/* apontando para os tokens base) */
+  --sidebar-foreground:          var(--foreground);
+  --sidebar-primary:             var(--primary);
+  --sidebar-primary-foreground:  var(--primary-foreground);
+  --sidebar-accent:              var(--accent);
+  --sidebar-accent-foreground:   var(--accent-foreground);
+  --sidebar-border:              var(--border);
+  --sidebar-ring:                var(--ring);
+}
+
+.dark {
+
+  /* Superfícies */
+  /* Hierarquia de elevação: sidebar (recuo) < background (canvas) < card/popover (elevado). */
+  /* Nunca branco nem preto puro — off-white no claro, grafite no escuro. */
+  --background:                  oklch(0.1433 0.0057 246.4); /* #080a0c */
+  --foreground:                  oklch(0.9542 0.0034 247.9); /* #eef0f2 */
+  --card:                        oklch(0.1843 0.0063 236.9); /* #101315 */
+  --card-foreground:             oklch(0.9542 0.0034 247.9); /* #eef0f2 */
+  --popover:                     oklch(0.1843 0.0063 236.9); /* #101315 */
+  --popover-foreground:          oklch(0.9542 0.0034 247.9); /* #eef0f2 */
+
+  /* Ação (azul do produto) */
+  /* action/primary é #2563EB nos DOIS modos — decisão híbrida: */
+  /* superfícies neutras base-nova + ação azul do produto. */
+  /* NÃO confundir com --brand-blue (#3E78FF), que é o azul institucional. */
+  --primary:                     oklch(0.669 0.1792 41.1); /* #ec662e · laranja (mesmo nos dois modos) */
+  --primary-foreground:          oklch(1 0 0); /* #ffffff */
+
+  /* Neutros */
+  --secondary:                   oklch(0.2497 0.0058 236.8); /* #1f2224 */
+  --secondary-foreground:        oklch(0.9542 0.0034 247.9); /* #eef0f2 */
+  --muted:                       oklch(0.2204 0.0036 229); /* #191b1c */
+  --muted-foreground:            oklch(0.6811 0.0046 236.5); /* #96999b */
+  --accent:                      oklch(0.2591 0.0048 248); /* #222426 */
+  --accent-foreground:           oklch(0.9542 0.0034 247.9); /* #eef0f2 */
+
+  /* Semântico — cor cheia */
+  --destructive:                 oklch(0.6501 0.1901 17.9); /* #ec5162 */
+  --success:                     oklch(0.762 0.1752 154.3); /* #34d17d */
+  --warning:                     oklch(0.7767 0.1477 52.5); /* #ff9955 */
+  --info:                        oklch(0.6231 0.188 259.8); /* #3b82f6 */
+
+  /* Semântico — tríade de status (tint / ink / line / soft) */
+  /* Substitui os pares crus `bg-emerald-500/15 text-emerald-700 ring-emerald-500/30`. */
+  /* `ink` é a tinta legível sobre `tint`; `soft` é o realce mais discreto. */
+  /* O `ink` do modo claro é um passo mais escuro que a matiz -700 do Tailwind: */
+  /* sobre o próprio tint, -700 fica em ~4.0:1 e reprova AA em texto de 10-12px. */
+  --success-ink:                 oklch(0.7729 0.1535 163.2); /* #34d399 */
+  --success-foreground:          oklch(0.132 0.0049 226.4); /* #060809 */
+  --success-tint:                oklch(0.7227 0.192 149.6 / 14.9%); /* #22c55e a0.149 */
+  --success-line:                oklch(0.7227 0.192 149.6 / 30.2%); /* #22c55e a0.302 */
+  --success-soft:                oklch(0.7227 0.192 149.6 / 5.1%); /* #22c55e a0.051 */
+  --warning-ink:                 oklch(0.8369 0.1644 84.4); /* #fbbf24 */
+  --warning-tint:                oklch(0.7686 0.1647 70.1 / 14.9%); /* #f59e0b a0.149 */
+  --warning-line:                oklch(0.7686 0.1647 70.1 / 30.2%); /* #f59e0b a0.302 */
+  --warning-soft:                oklch(0.7686 0.1647 70.1 / 5.1%); /* #f59e0b a0.051 */
+  --danger-ink:                  oklch(0.7106 0.1661 22.2); /* #f87171 */
+  --danger-tint:                 oklch(0.6368 0.2078 25.3 / 14.9%); /* #ef4444 a0.149 */
+  --danger-line:                 oklch(0.6368 0.2078 25.3 / 30.2%); /* #ef4444 a0.302 */
+  --danger-soft:                 oklch(0.6368 0.2078 25.3 / 5.1%); /* #ef4444 a0.051 */
+  --info-ink:                    oklch(0.8091 0.0956 251.8); /* #93c5fd */
+  --info-tint:                   oklch(0.6231 0.188 259.8 / 16%); /* #3b82f6 a0.160 */
+
+  /* Nota interna (amarelo do bloco de anotação do inbox) */
+  --note:                        oklch(0.2791 0.0742 45.6 / 40%); /* #451a03 a0.400 */
+  --note-foreground:             oklch(0.9869 0.0214 95.3); /* #fffbeb */
+  --note-line:                   oklch(0.4732 0.1247 46.2 / 60%); /* #92400e a0.600 */
+  --note-kicker:                 oklch(0.879 0.1534 91.6 / 90.2%); /* #fcd34d a0.902 */
+  --note-tab-active:             oklch(0.4137 0.1054 45.9 / 60%); /* #78350f a0.600 */
+  --note-tab-active-foreground:  oklch(0.9619 0.058 95.6); /* #fef3c7 */
+
+  /* Interação */
+  --border:                      oklch(1 0 0 / 10%); /* #ffffff a0.100 */
+  --input:                       oklch(1 0 0 / 14%); /* #ffffff a0.140 */
+  --ring:                        oklch(0.669 0.1792 41.1); /* #ec662e */
+
+  /* Data viz */
+  --chart-1:                     oklch(0.7192 0.1494 165.2); /* #0bc18d */
+  --chart-2:                     oklch(0.6803 0.1493 249.7); /* #449df0 */
+  --chart-3:                     oklch(0.6803 0.1801 289.9); /* #9980fe */
+  --chart-4:                     oklch(0.78 0.1505 69.8); /* #f4a437 */
+  --chart-5:                     oklch(0.7 0.1898 18.2); /* #fe6270 */
+  --chart-1-bg:                  oklch(0.7192 0.1494 165.2 / 22%); /* #0bc18d a0.220 */
+  --chart-2-bg:                  oklch(0.6803 0.1493 249.7 / 22%); /* #449df0 a0.220 */
+  --chart-3-bg:                  oklch(0.6803 0.1801 289.9 / 22%); /* #9980fe a0.220 */
+  --chart-4-bg:                  oklch(0.78 0.1505 69.8 / 22%); /* #f4a437 a0.220 */
+  --chart-5-bg:                  oklch(0.7 0.1898 18.2 / 22%); /* #fe6270 a0.220 */
+
+  /* Tabela */
+  --table-header:                oklch(0.2273 0.0038 286.1); /* #1c1c1e */
+  --table-row-hover:             oklch(0.7823 0.0104 267.3 / 8%); /* #b5b8bf a0.080 */
+
+  /* Diversos de produto */
+  --read-tick:                   oklch(0.7535 0.139 232.7); /* #38bdf8 · tique de lido (WhatsApp) */
+  --rating-star:                 oklch(0.8369 0.1644 84.4); /* #fbbf24 */
+  --rating-star-empty:           oklch(0.7118 0.0129 286.1 / 40%); /* #a1a1aa a0.400 */
+  --today-tint:                  oklch(0.6104 0.2103 263.8 / 16%); /* #3e78ff a0.160 · linha de hoje no calendário */
+  --wave-bar:                    oklch(0.9542 0.0034 247.9 / 55%); /* #eef0f2 a0.550 · onda do gravador de voz */
+
+  /* Barra de ligação em andamento */
+  /* INVARIANTES de modo: a pílula é verde escura nos dois temas. É um estado do */
+  /* sistema (existe uma chamada ativa agora), não uma superfície do documento — */
+  /* inverter no tema claro faria a chamada ativa parecer outro componente. */
+  --call-bar:                    oklch(0.3159 0.0581 166.2); /* #0b3b2b */
+  --call-bar-foreground:         oklch(1 0 0); /* #ffffff */
+  --call-bar-muted-foreground:   oklch(1 0 0 / 70%); /* #ffffff a0.700 */
+  --call-bar-control:            oklch(1 0 0 / 12%); /* #ffffff a0.120 */
+  --call-bar-control-hover:      oklch(1 0 0 / 20%); /* #ffffff a0.200 */
+
+  /* Vidro (superfícies translúcidas) */
+  --glass-panel:                 oklch(0.2003 0.0105 268.2 / 88%); /* #14161b a0.880 */
+  --glass-surface:               oklch(1 0 0 / 5.5%); /* #ffffff a0.055 */
+  --glass-surface-strong:        oklch(1 0 0 / 9%); /* #ffffff a0.090 */
+  --glass-hairline:              oklch(1 0 0 / 14%); /* #ffffff a0.140 */
+  --glass-highlight:             oklch(1 0 0 / 22%); /* #ffffff a0.220 */
+
+  /* Sidebar (escopo próprio — o resto é alias) */
+  --sidebar:                     oklch(0.166 0.0064 237); /* #0c0f11 */
+}
+
+/* -------------------------------------------------------------
+   Marca (identidade — NAO muda com o tema). Estrutura do LiderHub
+   (tokens/brand.css), valores da Me Escuta (r9-tokens: navy = identidade,
+   laranja = unico acento de acao). `brand-blue*` fica como ALIAS do navy
+   para codigo portado do LiderHub continuar compilando.
+   ------------------------------------------------------------- */
+:root {
+  --brand-orange:                oklch(0.669 0.1792 41.1); /* #ec662e · laranja */
+  --brand-orange-pressed:        oklch(0.6072 0.1732 40.2); /* #d4541f · laranja.esc */
+  --brand-orange-soft:           oklch(0.961 0.0186 52); /* #fdefe7 · laranja.cl */
+  --brand-navy:                  oklch(0.3267 0.0921 272.2); /* #252f63 · navy */
+  --brand-navy-pressed:          oklch(0.2799 0.0807 272.4); /* #1c2450 · navy.esc */
+  --brand-navy-soft:             oklch(0.9588 0.0138 272.7); /* #eef1fb · azul.bg */
+  --brand-blue:                  var(--brand-navy);
+  --brand-blue-pressed:          var(--brand-navy-pressed);
+  --brand-blue-soft:             var(--brand-navy-soft);
+  --brand-ink:                   oklch(0.2542 0.0111 254); /* #1f2328 · tinta */
+  --brand-canvas-dark:           oklch(0.2799 0.0807 272.4); /* #1c2450 */
+
+  /* Raio — escala do LiderHub (Figma Radius): sm 6 · md 8 · lg 10 · xl 14 · 2xl 18 · 3xl 22.
+     ⚠️ Substitui a escala antiga do tailwind.config (sm 7 · md 10 · lg 16). Ver PR. */
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Paletas indexadas do LiderHub (avatar · tag · evento · canal) — tokens/palettes.css, intactos */
+:root {
+
+  /* Avatar — matiz escolhida por hash do nome */
+  /* bg é sempre a cor a 20%; ink escurece no claro e clareia no escuro. */
+  --avatar-blue:                 oklch(0.6231 0.188 259.8 / 20%); /* #3b82f6 a0.200 */
+  --avatar-blue-foreground:      oklch(0.4882 0.2172 264.4); /* #1d4ed8 */
+  --avatar-violet:               oklch(0.6056 0.2189 292.7 / 20%); /* #8b5cf6 a0.200 */
+  --avatar-violet-foreground:    oklch(0.4907 0.2412 292.6); /* #6d28d9 */
+  --avatar-sky:                  oklch(0.6847 0.1479 237.3 / 20%); /* #0ea5e9 a0.200 */
+  --avatar-sky-foreground:       oklch(0.5 0.1193 242.7); /* #0369a1 */
+  --avatar-emerald:              oklch(0.6959 0.1491 162.5 / 20%); /* #10b981 a0.200 */
+  --avatar-emerald-foreground:   oklch(0.5081 0.1049 165.6); /* #047857 */
+  --avatar-amber:                oklch(0.7686 0.1647 70.1 / 20%); /* #f59e0b a0.200 */
+  --avatar-amber-foreground:     oklch(0.5553 0.1455 49); /* #b45309 */
+  --avatar-rose:                 oklch(0.645 0.2154 16.4 / 20%); /* #f43f5e a0.200 */
+  --avatar-rose-foreground:      oklch(0.5143 0.1978 16.9); /* #be123c */
+  --avatar-indigo:               oklch(0.5854 0.2041 277.1 / 20%); /* #6366f1 a0.200 */
+  --avatar-indigo-foreground:    oklch(0.4568 0.2146 277); /* #4338ca */
+  --avatar-teal:                 oklch(0.7038 0.123 182.5 / 20%); /* #14b8a6 a0.200 */
+  --avatar-teal-foreground:      oklch(0.5109 0.0861 186.4); /* #0f766e */
+  --avatar-orange:               oklch(0.7049 0.1867 47.6 / 20%); /* #f97316 a0.200 */
+  --avatar-orange-foreground:    oklch(0.5534 0.1739 38.4); /* #c2410c */
+
+  /* Tag — matiz escolhida pelo usuário */
+  --tag-blue:                    oklch(0.6231 0.188 259.8 / 12%); /* #3b82f6 a0.120 */
+  --tag-blue-dot:                oklch(0.6231 0.188 259.8); /* #3b82f6 */
+  --tag-blue-foreground:         oklch(0.4882 0.2172 264.4); /* #1d4ed8 */
+  --tag-emerald:                 oklch(0.6959 0.1491 162.5 / 12%); /* #10b981 a0.120 */
+  --tag-emerald-dot:             oklch(0.6959 0.1491 162.5); /* #10b981 */
+  --tag-emerald-foreground:      oklch(0.5081 0.1049 165.6); /* #047857 */
+  --tag-amber:                   oklch(0.7686 0.1647 70.1 / 12%); /* #f59e0b a0.120 */
+  --tag-amber-dot:               oklch(0.7686 0.1647 70.1); /* #f59e0b */
+  --tag-amber-foreground:        oklch(0.5553 0.1455 49); /* #b45309 */
+  --tag-rose:                    oklch(0.645 0.2154 16.4 / 12%); /* #f43f5e a0.120 */
+  --tag-rose-dot:                oklch(0.645 0.2154 16.4); /* #f43f5e */
+  --tag-rose-foreground:         oklch(0.5143 0.1978 16.9); /* #be123c */
+  --tag-violet:                  oklch(0.6056 0.2189 292.7 / 12%); /* #8b5cf6 a0.120 */
+  --tag-violet-dot:              oklch(0.6056 0.2189 292.7); /* #8b5cf6 */
+  --tag-violet-foreground:       oklch(0.4907 0.2412 292.6); /* #6d28d9 */
+  --tag-sky:                     oklch(0.6847 0.1479 237.3 / 12%); /* #0ea5e9 a0.120 */
+  --tag-sky-dot:                 oklch(0.6847 0.1479 237.3); /* #0ea5e9 */
+  --tag-sky-foreground:          oklch(0.5 0.1193 242.7); /* #0369a1 */
+  --tag-orange:                  oklch(0.7049 0.1867 47.6 / 12%); /* #f97316 a0.120 */
+  --tag-orange-dot:              oklch(0.7049 0.1867 47.6); /* #f97316 */
+  --tag-orange-foreground:       oklch(0.5534 0.1739 38.4); /* #c2410c */
+  --tag-slate:                   oklch(0.5544 0.0407 257.4 / 12%); /* #64748b a0.120 */
+  --tag-slate-dot:               oklch(0.5544 0.0407 257.4); /* #64748b */
+  --tag-slate-foreground:        oklch(0.3717 0.0392 257.3); /* #334155 */
+
+  /* Evento de calendário — matiz pelo tipo */
+  --event-meeting:               oklch(0.9433 0.0284 294.6); /* #ede9fe */
+  --event-meeting-foreground:    oklch(0.432 0.2106 292.8); /* #5b21b6 */
+  --event-meeting-accent:        oklch(0.6056 0.2189 292.7); /* #8b5cf6 */
+  --event-call:                  oklch(0.9505 0.0507 163.1); /* #d1fae5 */
+  --event-call-foreground:       oklch(0.4318 0.0865 166.9); /* #065f46 */
+  --event-call-accent:           oklch(0.6959 0.1491 162.5); /* #10b981 */
+  --event-email:                 oklch(0.9514 0.025 236.8); /* #e0f2fe */
+  --event-email-foreground:      oklch(0.4434 0.1 240.8); /* #075985 */
+  --event-email-accent:          oklch(0.6847 0.1479 237.3); /* #0ea5e9 */
+  --event-note:                  oklch(0.9619 0.058 95.6); /* #fef3c7 */
+  --event-note-foreground:       oklch(0.4732 0.1247 46.2); /* #92400e */
+  --event-note-accent:           oklch(0.7686 0.1647 70.1); /* #f59e0b */
+  --event-task:                  oklch(0.9683 0.0069 247.9); /* #f1f5f9 */
+  --event-task-foreground:       oklch(0.3717 0.0392 257.3); /* #334155 */
+  --event-task-accent:           oklch(0.7107 0.0351 256.8); /* #94a3b8 */
+  --event-avatar:                oklch(1 0 0 / 75%); /* #ffffff a0.750 */
+
+  /* Canal — cor de marca de terceiro (NÃO muda com o tema) */
+  /* Cor institucional das plataformas; só existe como token para não ficar cravada no JSX. */
+  --channel-whatsapp:            oklch(0.761 0.2015 149.7); /* #25d366 */
+  --channel-instagram:           oklch(0.6559 0.2118 354.3); /* #ec4899 */
+  --channel-messenger:           oklch(0.6231 0.188 259.8); /* #3b82f6 */
+  --channel-telegram:            oklch(0.6847 0.1479 237.3); /* #0ea5e9 */
+}
+
+.dark {
+
+  /* Avatar — matiz escolhida por hash do nome */
+  /* bg é sempre a cor a 20%; ink escurece no claro e clareia no escuro. */
+  --avatar-blue:                 oklch(0.6231 0.188 259.8 / 20%); /* #3b82f6 a0.200 */
+  --avatar-blue-foreground:      oklch(0.8091 0.0956 251.8); /* #93c5fd */
+  --avatar-violet:               oklch(0.6056 0.2189 292.7 / 20%); /* #8b5cf6 a0.200 */
+  --avatar-violet-foreground:    oklch(0.8112 0.1013 293.6); /* #c4b5fd */
+  --avatar-sky:                  oklch(0.6847 0.1479 237.3 / 20%); /* #0ea5e9 a0.200 */
+  --avatar-sky-foreground:       oklch(0.8276 0.1013 230.3); /* #7dd3fc */
+  --avatar-emerald:              oklch(0.6959 0.1491 162.5 / 20%); /* #10b981 a0.200 */
+  --avatar-emerald-foreground:   oklch(0.8452 0.1299 165); /* #6ee7b7 */
+  --avatar-amber:                oklch(0.7686 0.1647 70.1 / 20%); /* #f59e0b a0.200 */
+  --avatar-amber-foreground:     oklch(0.879 0.1534 91.6); /* #fcd34d */
+  --avatar-rose:                 oklch(0.645 0.2154 16.4 / 20%); /* #f43f5e a0.200 */
+  --avatar-rose-foreground:      oklch(0.8097 0.1061 11.6); /* #fda4af */
+  --avatar-indigo:               oklch(0.5854 0.2041 277.1 / 20%); /* #6366f1 a0.200 */
+  --avatar-indigo-foreground:    oklch(0.7853 0.1041 274.7); /* #a5b4fc */
+  --avatar-teal:                 oklch(0.7038 0.123 182.5 / 20%); /* #14b8a6 a0.200 */
+  --avatar-teal-foreground:      oklch(0.8549 0.1251 181.1); /* #5eead4 */
+  --avatar-orange:               oklch(0.7049 0.1867 47.6 / 20%); /* #f97316 a0.200 */
+  --avatar-orange-foreground:    oklch(0.8366 0.1165 66.3); /* #fdba74 */
+
+  /* Tag — matiz escolhida pelo usuário */
+  --tag-blue:                    oklch(0.6231 0.188 259.8 / 12%); /* #3b82f6 a0.120 */
+  --tag-blue-dot:                oklch(0.6231 0.188 259.8); /* #3b82f6 */
+  --tag-blue-foreground:         oklch(0.8091 0.0956 251.8); /* #93c5fd */
+  --tag-emerald:                 oklch(0.6959 0.1491 162.5 / 12%); /* #10b981 a0.120 */
+  --tag-emerald-dot:             oklch(0.6959 0.1491 162.5); /* #10b981 */
+  --tag-emerald-foreground:      oklch(0.8452 0.1299 165); /* #6ee7b7 */
+  --tag-amber:                   oklch(0.7686 0.1647 70.1 / 12%); /* #f59e0b a0.120 */
+  --tag-amber-dot:               oklch(0.7686 0.1647 70.1); /* #f59e0b */
+  --tag-amber-foreground:        oklch(0.879 0.1534 91.6); /* #fcd34d */
+  --tag-rose:                    oklch(0.645 0.2154 16.4 / 12%); /* #f43f5e a0.120 */
+  --tag-rose-dot:                oklch(0.645 0.2154 16.4); /* #f43f5e */
+  --tag-rose-foreground:         oklch(0.8097 0.1061 11.6); /* #fda4af */
+  --tag-violet:                  oklch(0.6056 0.2189 292.7 / 12%); /* #8b5cf6 a0.120 */
+  --tag-violet-dot:              oklch(0.6056 0.2189 292.7); /* #8b5cf6 */
+  --tag-violet-foreground:       oklch(0.8112 0.1013 293.6); /* #c4b5fd */
+  --tag-sky:                     oklch(0.6847 0.1479 237.3 / 12%); /* #0ea5e9 a0.120 */
+  --tag-sky-dot:                 oklch(0.6847 0.1479 237.3); /* #0ea5e9 */
+  --tag-sky-foreground:          oklch(0.8276 0.1013 230.3); /* #7dd3fc */
+  --tag-orange:                  oklch(0.7049 0.1867 47.6 / 12%); /* #f97316 a0.120 */
+  --tag-orange-dot:              oklch(0.7049 0.1867 47.6); /* #f97316 */
+  --tag-orange-foreground:       oklch(0.8366 0.1165 66.3); /* #fdba74 */
+  --tag-slate:                   oklch(0.5544 0.0407 257.4 / 12%); /* #64748b a0.120 */
+  --tag-slate-dot:               oklch(0.5544 0.0407 257.4); /* #64748b */
+  --tag-slate-foreground:        oklch(0.869 0.0198 252.9); /* #cbd5e1 */
+
+  /* Evento de calendário — matiz pelo tipo */
+  --event-meeting:               oklch(0.2827 0.1351 291.1); /* #2e1065 */
+  --event-meeting-foreground:    oklch(0.8943 0.0549 293.3); /* #ddd6fe */
+  --event-meeting-accent:        oklch(0.6056 0.2189 292.7); /* #8b5cf6 */
+  --event-call:                  oklch(0.2621 0.0487 172.6); /* #022c22 */
+  --event-call-foreground:       oklch(0.9049 0.0895 164.2); /* #a7f3d0 */
+  --event-call-accent:           oklch(0.6959 0.1491 162.5); /* #10b981 */
+  --event-email:                 oklch(0.2935 0.0632 243.2); /* #082f49 */
+  --event-email-foreground:      oklch(0.9014 0.0555 230.9); /* #bae6fd */
+  --event-email-accent:          oklch(0.6847 0.1479 237.3); /* #0ea5e9 */
+  --event-note:                  oklch(0.2791 0.0742 45.6); /* #451a03 */
+  --event-note-foreground:       oklch(0.9243 0.1151 95.7); /* #fde68a */
+  --event-note-accent:           oklch(0.7686 0.1647 70.1); /* #f59e0b */
+  --event-task:                  oklch(0.2795 0.0368 260); /* #1e293b */
+  --event-task-foreground:       oklch(0.9288 0.0126 255.5); /* #e2e8f0 */
+  --event-task-accent:           oklch(0.7107 0.0351 256.8); /* #94a3b8 */
+  --event-avatar:                oklch(0 0 0 / 42%); /* #000000 a0.420 */
+
+  /* Canal — cor de marca de terceiro (NÃO muda com o tema) */
+  /* Cor institucional das plataformas; só existe como token para não ficar cravada no JSX. */
+  --channel-whatsapp:            oklch(0.761 0.2015 149.7); /* #25d366 */
+  --channel-instagram:           oklch(0.6559 0.2118 354.3); /* #ec4899 */
+  --channel-messenger:           oklch(0.6231 0.188 259.8); /* #3b82f6 */
+  --channel-telegram:            oklch(0.6847 0.1479 237.3); /* #0ea5e9 */
+}
+
+/* -------------------------------------------------------------
+   Camada base do LiderHub (styles/base.css), reduzida ao que os componentes
+   portados consomem. `border-border` como cor de borda padrao troca o
+   gray-200 do Tailwind (#e5e7eb) pela nossa hairline (#e8e7e2).
+   ------------------------------------------------------------- */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  [data-numeric],
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  ::selection {
+    @apply bg-primary/15 text-foreground;
+  }
+}
+html:has([data-slot="dialog-overlay"][data-open]) {
+  overflow: hidden;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-sidebar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sidebar-border) transparent;
+}
+.scrollbar-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-sidebar::-webkit-scrollbar-thumb {
+  background: var(--sidebar-border);
+  border-radius: 9999px;
+}
+.brand-clearspace {
+  padding: 16px;
+}
+
+/* ============================================================= */
+/* O QUE JA EXISTIA ABAIXO FICA INTACTO (altura-topo, faixas, ancora, scrollbar) */
+/* ============================================================= */
+
+
 /*
  * Base visual da Me Escuta — light mode, identidade aprovada 16/07.
  * As cores/fontes vivem no tailwind.config.ts; aqui só o essencial de base + scrollbar.
@@ -44,8 +537,8 @@ html {
 }
 
 body {
-  background: #f7f7f4; /* --fundo (r9: neutro frio) */
-  color: #1f2328; /* --tinta */
+  background: var(--background); /* #f7f7f4 · --fundo (r9) — agora via token, para o .dark funcionar */
+  color: var(--foreground); /* #1f2328 · --tinta */
   font-family: var(--fonte-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "rlig" 1, "calt" 1;

@@ -1,4 +1,48 @@
 import type { Config } from "tailwindcss";
+import animate from "tailwindcss-animate";
+
+/**
+ * PRESET DE DESIGN (10/09/2026) — ponte Tailwind v3 <- tokens OKLCH do LiderHub.
+ *
+ * Os tokens em app/globals.css sao valores COMPLETOS (`oklch(l c h / a)`), nao canais — e o
+ * Tailwind v3 so aplica `bg-primary/50` quando a cor e canal + <alpha-value>. A ponte e a forma
+ * de FUNCAO que o v3 aceita: para `bg-primary` ele chama com `opacityValue = var(--tw-bg-opacity, 1)`,
+ * para `bg-primary/50` chama com `0.5`; nos dois casos devolvemos um `color-mix()` — que aceita
+ * qualquer cor CSS, inclusive as que ja carregam alpha (`--success-tint`). Suporte: Chrome 111+,
+ * Safari 16.2+, Firefox 113+ (o app e interno e roda em Chrome).
+ */
+const token = (nome: string) => ({ opacityValue }: { opacityValue?: string | number }) => {
+  // Sem modificador o v3 passa `var(--tw-bg-opacity, 1)`; o gradiente passa o NUMERO 0 (transparentTo).
+  const alpha = opacityValue === undefined ? undefined : String(opacityValue);
+  if (alpha === undefined || alpha === "1" || alpha.startsWith("var(")) return `var(--${nome})`;
+  return `color-mix(in oklab, var(--${nome}) calc(${alpha} * 100%), transparent)`;
+};
+
+const TOKENS = [
+  "background", "foreground", "card", "card-foreground", "popover", "popover-foreground",
+  "primary", "primary-foreground", "secondary", "secondary-foreground", "muted", "muted-foreground",
+  "accent", "accent-foreground", "destructive", "success", "warning", "info", "border", "input", "ring",
+  "success-ink", "success-foreground", "success-tint", "success-line", "success-soft",
+  "warning-ink", "warning-tint", "warning-line", "warning-soft",
+  "danger-ink", "danger-tint", "danger-line", "danger-soft", "info-ink", "info-tint",
+  "note", "note-foreground", "note-line", "note-kicker", "note-tab-active", "note-tab-active-foreground",
+  "chart-1", "chart-2", "chart-3", "chart-4", "chart-5",
+  "chart-1-bg", "chart-2-bg", "chart-3-bg", "chart-4-bg", "chart-5-bg",
+  "table-header", "table-row-hover", "read-tick", "rating-star", "rating-star-empty", "today-tint", "wave-bar",
+  "call-bar", "call-bar-foreground", "call-bar-muted-foreground", "call-bar-control", "call-bar-control-hover",
+  "glass-panel", "glass-surface", "glass-surface-strong", "glass-hairline", "glass-highlight",
+  "sidebar", "sidebar-foreground", "sidebar-primary", "sidebar-primary-foreground", "sidebar-accent",
+  "sidebar-accent-foreground", "sidebar-border", "sidebar-ring",
+  "brand-orange", "brand-orange-pressed", "brand-orange-soft", "brand-navy", "brand-navy-pressed", "brand-navy-soft",
+  "brand-blue", "brand-blue-pressed", "brand-blue-soft", "brand-ink", "brand-canvas-dark",
+  ...["blue", "violet", "sky", "emerald", "amber", "rose", "indigo", "teal", "orange"].flatMap((c) => [`avatar-${c}`, `avatar-${c}-foreground`]),
+  ...["blue", "emerald", "amber", "rose", "violet", "sky", "orange", "slate"].flatMap((c) => [`tag-${c}`, `tag-${c}-dot`, `tag-${c}-foreground`]),
+  ...["meeting", "call", "email", "note", "task"].flatMap((c) => [`event-${c}`, `event-${c}-foreground`, `event-${c}-accent`]),
+  "event-avatar", "channel-whatsapp", "channel-instagram", "channel-messenger", "channel-telegram",
+] as const;
+
+const coresDoPreset = Object.fromEntries(TOKENS.map((t) => [t, token(t)]));
+
 
 /**
  * Tokens R9 (Product_Management/Design/r9-tokens.md, 22/07): UMA família de UI (Inter) + mono
@@ -9,6 +53,7 @@ import type { Config } from "tailwindcss";
  * A Fraunces morreu (reprovada 22/07): font-serif resolve pra própria Inter.
  */
 const config: Config = {
+  darkMode: "class",
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -17,6 +62,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // ── PRESET (10/09): tokens semanticos do LiderHub via ponte color-mix (ver `token` acima).
+        ...coresDoPreset,
         laranja: { DEFAULT: "#EC662E", esc: "#D4541F", cl: "#FDEFE7" },
         pessego: "#FCE7DB",
         navy: { DEFAULT: "#252F63", esc: "#1C2450" }, // navy-esc = hover do enviar (conversa-v2)
@@ -127,6 +174,7 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--fonte-inter)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
         serif: ["var(--fonte-inter)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"], // Fraunces morta (r9) — resolve pra UI
+        heading: ["var(--fonte-inter)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
         mono: ["ui-monospace", "SF Mono", "SFMono-Regular", "Menlo", "Consolas", "monospace"], // --fonte-dados
       },
       boxShadow: {
@@ -136,9 +184,28 @@ const config: Config = {
         laranja: "none",
       },
       borderRadius: {
-        lg: "16px",
-        md: "10px",
-        sm: "7px",
+        // PRESET (10/09): escala do LiderHub (Figma Radius) via app/globals.css `--radius-*`.
+        // Era sm 7 · md 10 · lg 16 — cravado aqui. Reverter = trocar estas 7 linhas.
+        sm: "var(--radius-sm)",
+        md: "var(--radius-md)",
+        lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
+        "2xl": "var(--radius-2xl)",
+        "3xl": "var(--radius-3xl)",
+        "4xl": "var(--radius-4xl)",
+      },
+      fontSize: {
+        // PRESET (10/09): escala de UI do LiderHub (tokens/typography.css) — tamanho + entrelinha +
+        // tracking juntos. `text-ui-13` no lugar de `text-[13px] leading-[18px]`.
+        "ui-10": ["0.625rem", { lineHeight: "0.875rem" }],
+        "ui-11": ["0.6875rem", { lineHeight: "0.9375rem" }],
+        "ui-12": ["0.75rem", { lineHeight: "1rem" }],
+        "ui-13": ["0.8125rem", { lineHeight: "1.125rem" }],
+        "ui-14": ["0.875rem", { lineHeight: "1.25rem", letterSpacing: "-0.01em" }],
+        h3: ["1.1875rem", { lineHeight: "1.3", letterSpacing: "-0.015em" }],
+        h2: ["1.5rem", { lineHeight: "1.15", letterSpacing: "-0.02em" }],
+        h1: ["2rem", { lineHeight: "1.08", letterSpacing: "-0.03em" }],
+        display: ["2.75rem", { lineHeight: "1.05", letterSpacing: "-0.035em" }],
       },
       keyframes: {
         rise: {
@@ -162,7 +229,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [animate],
 };
 
 export default config;
