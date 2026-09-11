@@ -11,6 +11,7 @@ import {
   atencaoSemResposta,
   atencaoTarefasVencidas,
   heatmapVazio,
+  MINUTOS_SLA_CANAL,
   ordenarAtencao,
   primeiraRespostaPorCanal,
   PERGUNTAS_PADRAO,
@@ -50,11 +51,12 @@ export function canaisDeEnsaio(en: EnsaioDashboard, j: Janela, agora: Date): Lin
   const { conversas } = gerarConversasEnsaio(agora);
   const medianas = primeiraRespostaPorCanal(en.primeira, en.conversaCanal, j);
 
-  const conta = (canal: string, pred: (d: string) => boolean, soRespondidas: boolean) => {
+  const conta = (canal: string, pred: (d: string) => boolean, soRespondidas: boolean, ateMin?: number) => {
     let n = 0;
     for (const p of en.primeira) {
       if (en.conversaCanal.get(p.conversa_id) !== canal || !pred(p.dia)) continue;
       if (soRespondidas && p.minutos == null) continue;
+      if (ateMin != null && (p.minutos == null || Number(p.minutos) > ateMin)) continue;
       n++;
     }
     return n;
@@ -72,6 +74,7 @@ export function canaisDeEnsaio(en: EnsaioDashboard, j: Janela, agora: Date): Lin
       conectado: c.provedor === "waba" ? c.ativo : c.pareamento === "pareado",
       recebidas: { atual: conta(c.canal_id, (d) => noAtual(d, j), false), anterior: conta(c.canal_id, (d) => noAnterior(d, j), false) },
       respondidas: { atual: conta(c.canal_id, (d) => noAtual(d, j), true), anterior: conta(c.canal_id, (d) => noAnterior(d, j), true) },
+      dentroDeSla: { atual: conta(c.canal_id, (d) => noAtual(d, j), true, MINUTOS_SLA_CANAL), anterior: conta(c.canal_id, (d) => noAnterior(d, j), true, MINUTOS_SLA_CANAL) },
       semResposta: abertas.filter((x) => x.nao_lida).length,
       primeiraRespostaMin: medianas.get(c.canal_id) ?? null,
       conversasAbertas: abertas.length,

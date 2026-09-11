@@ -30,6 +30,23 @@ export function interpretarAba(v: unknown): Aba {
   return (ABAS.some((a) => a.chave === s) ? s : "geral") as Aba;
 }
 
+/** Tabela | Dashboard — a mesma leitura, duas densidades. */
+export type Vista = "dashboard" | "tabela";
+export function interpretarVista(v: unknown): Vista {
+  return String(Array.isArray(v) ? v[0] : (v ?? "")).trim() === "tabela" ? "tabela" : "dashboard";
+}
+
+/** Busca livre (`?q=`) — recorta as tabelas por nome de pessoa, número ou etapa. */
+export function interpretarBusca(v: unknown): string {
+  return String(Array.isArray(v) ? v[0] : (v ?? "")).trim().slice(0, 80);
+}
+
+export function casaBusca(texto: string, q: string): boolean {
+  if (!q) return true;
+  const norm = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return norm(texto).includes(norm(q));
+}
+
 /** Recorte de departamento do segmented control. `null` = todos. */
 export type DepartamentoFiltro = "pre_venda" | "pos_venda" | null;
 export const DEPARTAMENTOS_FILTRO: Array<{ chave: DepartamentoFiltro; rotulo: string }> = [
@@ -44,12 +61,14 @@ export function interpretarDepartamento(v: unknown): DepartamentoFiltro {
 }
 
 /** A URL do dashboard com os quatro recortes — a mesma para controles, abas e links internos. */
-export function montarHref(p: { periodo: 7 | 30 | 90; ator: string | null; aba: Aba; departamento: DepartamentoFiltro }): string {
+export function montarHref(p: { periodo: 7 | 30 | 90; ator: string | null; aba: Aba; departamento: DepartamentoFiltro; vista?: Vista; q?: string }): string {
   const q = new URLSearchParams();
   if (p.aba !== "geral") q.set("aba", p.aba);
   q.set("periodo", String(p.periodo));
   if (p.departamento) q.set("dep", p.departamento);
   if (p.ator) q.set("ator", p.ator);
+  if (p.vista === "tabela") q.set("vista", "tabela");
+  if (p.q) q.set("q", p.q);
   return `/?${q.toString()}`;
 }
 
@@ -266,6 +285,8 @@ export interface LinhaCanal {
   conectado: boolean;
   recebidas: Comparado;
   respondidas: Comparado;
+  /** das respondidas, quantas em até MINUTOS_SLA_CANAL */
+  dentroDeSla: Comparado;
   /** conversas com entrada do cliente e nenhuma resposta nossa depois (agora) */
   semResposta: number;
   /** mediana de minutos da 1ª resposta no período; null sem amostra */
@@ -356,9 +377,13 @@ export function primeiraRespostaPorCanal(primeira: LinhaPrimeiraResposta[], conv
 export interface LinhaEquipe extends ResumoAtor {
   /** conversas respondidas (1ª resposta dada por este ator) na janela */
   respondidas: Comparado;
+  /** das respondidas, quantas em até MINUTOS_SLA_CANAL */
+  dentroDeSla: Comparado;
   /** conversas abertas com este ator como dono AGORA; null = sem leitura */
   cargaAgora: number | null;
   departamento: string | null;
+  /** vendas ganhas no período com este ator como dono; null = sem leitura */
+  ganhos: { vendas: number; valor: number } | null;
 }
 
 /** Média das medianas de 1ª resposta, ponderada pela amostra — a régua das barras da tabela. */
@@ -375,15 +400,53 @@ export function mediaEquipeMin(linhas: Array<Pick<ResumoAtor, "primeiraResposta"
   return n === 0 ? null : soma / n;
 }
 
-export function respondidasPorAtor(primeira: LinhaPrimeiraResposta[], ator: string, j: Janela): Comparado {
+export function respondidasPorAtor(primeira: LinhaPrimeiraResposta[], ator: string, j: Janela, ateMin?: number): Comparado {
   let atual = 0;
   let anterior = 0;
   for (const p of primeira) {
     if (p.respondida_por !== ator || p.minutos == null) continue;
+    if (ateMin != null && Number(p.minutos) > ateMin) continue;
     if (noAtual(p.dia, j)) atual++;
     else if (noAnterior(p.dia, j)) anterior++;
   }
   return { atual, anterior };
+}
+
+// ─────────────── séries dos gráficos ───────────────
+
+export interface PontoAcumulado {
+  dia: string;
+  rotulo: string;
+  leads: number;
+  conversas: number;
+  leadsAcumulado: number;
+  conversasAcumulado: number;
+}
+
+/** Série acumulada da janela; `agrupar` soma dias vizinhos (1 = dia a dia, 7 = semana). */
+export function serieAcumulada(serie: PontoDia[], agrupar = 1): PontoAcumulado[] {
+  const out: PontoAcumulado[] = [];
+  let l = 0;
+  let c = 0;
+  for (let i = 0; i < serie.length; i += agrupar) {
+    const grupo = serie.slice(i, i + agrupar);
+    const leads = grupo.reduce((s, p) => s + p.leadsNovos, 0);
+    const conversas = grupo.reduce((s, p) => s + p.conversas, 0);
+    l += leads;
+    c += conversas;
+    out.push({ dia: grupo[0].dia, rotulo: grupo[0].rotulo, leads, conversas, leadsAcumulado: l, conversasAcumulado: c });
+  }
+  return out;
+}
+
+/** Soma do heatmap por hora (0–23), para o gráfico de barras "por hora". */
+export function serieHoraria(h: Heatmap | null): Array<{ hora: number; rotulo: string; total: number }> {
+  if (!h) return [];
+  return Array.from({ length: 24 }, (_, hora) => ({
+    hora,
+    rotulo: `${hora}h`,
+    total: h.reduce((s, linha) => s + (linha[hora] ?? 0), 0),
+  }));
 }
 
 // ─────────────── heatmap hora × dia ───────────────

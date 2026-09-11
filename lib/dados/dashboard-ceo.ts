@@ -84,8 +84,10 @@ export async function lerDashboardCeo(
   atorFiltro: string | null,
   agora = new Date(),
   cliente?: Supabase,
+  /** W-D4: janela livre (`?de=&ate=`) no lugar do preset; a conta e a mesma */
+  janelaLivre: Janela | null = null,
 ): Promise<DadosDashboardCeo> {
-  const janelaEnsaio = janelaDoPeriodo(periodo, agora);
+  const janelaEnsaio = janelaLivre ?? janelaDoPeriodo(periodo, agora);
   if (ensaioDashboardLigado()) {
     const en = gerarEnsaioDashboard(agora);
     const atorDiaF = atorFiltro ? en.atorDia.filter((l) => l.ator === atorFiltro) : en.atorDia;

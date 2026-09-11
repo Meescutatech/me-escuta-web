@@ -1,6 +1,6 @@
 import { lerDashboardCeo, type DadosDashboardCeo } from "./dashboard-ceo";
 import { ensaioDashboardLigado, gerarEnsaioDashboard } from "./dashboard-ensaio";
-import { diasDaJanela, type EtapaResumo, type PeriodoDias } from "./dashboard-ceo-calculos";
+import { diasDaJanela, type Comparado, type EtapaResumo, type Janela, type PeriodoDias } from "./dashboard-ceo-calculos";
 import {
   atencaoLeadsParados,
   atencaoPropostasJarvis,
@@ -9,6 +9,7 @@ import {
   ordenarAtencao,
   respondidasPorAtor,
   serieRespondidas,
+  MINUTOS_SLA_CANAL,
   PERGUNTAS_PADRAO,
   type Aba,
   type Atencao,
@@ -19,6 +20,7 @@ import {
   type LinhaEquipe,
   type MetaMes,
   type TipoAtencao,
+  type Vista,
 } from "./dashboard-dono-calculos";
 import {
   atencaoDeEnsaio,
@@ -55,6 +57,8 @@ import { lerFila } from "@/app/(app)/fila/dados";
 
 export interface DadosDashboardDono extends DadosDashboardCeo {
   aba: Aba;
+  vista: Vista;
+  busca: string;
   departamento: DepartamentoFiltro;
   /**
    * true = o recorte de departamento foi aplicado aos blocos que TÊM departamento (atenção, equipe,
@@ -72,6 +76,8 @@ export interface DadosDashboardDono extends DadosDashboardCeo {
   /** trajetórias diárias já na ordem da janela — as mini-barras dos KPIs */
   trajetorias: { leads: number[]; recebidas: number[]; respondidas: number[]; enviadas: number[]; ganhos: number[] };
   ganhos: EtapaResumo | null;
+  /** vendas ganhas NO PERÍODO (entradas na etapa de ganho) e o valor delas; valor null = sem leitura */
+  ganhosPeriodo: { vendas: Comparado; valor: number | null };
 }
 
 /** Sem departamento na fixture, o filtro recorta pela LOTAÇÃO da pessoa e pelo departamento do canal. */
@@ -89,8 +95,11 @@ export async function lerDashboardDono(
   aba: Aba,
   departamento: DepartamentoFiltro,
   agora = new Date(),
+  vista: Vista = "dashboard",
+  busca = "",
+  janelaLivre: Janela | null = null,
 ): Promise<DadosDashboardDono> {
-  const base = await lerDashboardCeo(periodo, atorFiltro, agora);
+  const base = await lerDashboardCeo(periodo, atorFiltro, agora, undefined, janelaLivre);
   const dias = diasDaJanela(base.janela);
   const ganhos = base.funil.find((e) => e.tipo === "ganho") ?? null;
 
@@ -103,16 +112,23 @@ export async function lerDashboardDono(
     const carga = cargaAgoraDeEnsaio(agora);
     const equipe: LinhaEquipe[] = base.porAtor
       .filter((r) => !departamento || DEPARTAMENTO_DO_ATOR[r.ator] === departamento || DEPARTAMENTO_DO_ATOR[r.ator] === null)
-      .map((r) => ({
-        ...r,
-        respondidas: respondidasPorAtor(en.primeira, r.ator, base.janela),
-        cargaAgora: carga.get(r.ator) ?? 0,
-        departamento: DEPARTAMENTO_DO_ATOR[r.ator] ?? null,
-      }));
+      .map((r) => {
+        const vendas = en.etapaDia.filter((l) => l.etapa === "ganho" && l.ator === r.ator && l.dia >= base.janela.inicio && l.dia <= base.janela.fim).reduce((s, l) => s + l.entradas, 0);
+        return {
+          ...r,
+          respondidas: respondidasPorAtor(en.primeira, r.ator, base.janela),
+          dentroDeSla: respondidasPorAtor(en.primeira, r.ator, base.janela, MINUTOS_SLA_CANAL),
+          cargaAgora: carga.get(r.ator) ?? 0,
+          departamento: DEPARTAMENTO_DO_ATOR[r.ator] ?? null,
+          ganhos: { vendas, valor: vendas * 11_600 },
+        };
+      });
     const ganhosDia = dias.map((d) => en.etapaDia.filter((l) => l.dia === d && l.etapa === "ganho").reduce((s, l) => s + l.entradas, 0));
     return {
       ...base,
       aba,
+      vista,
+      busca,
       departamento,
       departamentoAplicado: true,
       atencao,
@@ -130,6 +146,7 @@ export async function lerDashboardDono(
         ganhos: ganhosDia,
       },
       ganhos,
+      ganhosPeriodo: { vendas: ganhos?.entradas ?? { atual: 0, anterior: 0 }, valor: equipe.reduce((s, r) => s + (r.ganhos?.valor ?? 0), 0) },
     };
   }
 
@@ -161,6 +178,8 @@ export async function lerDashboardDono(
   return {
     ...base,
     aba,
+    vista,
+    busca,
     departamento,
     departamentoAplicado: false,
     atencao,
@@ -168,7 +187,7 @@ export async function lerDashboardDono(
     canais: null,
     heatmap: null,
     meta: null,
-    equipe: base.porAtor.map((r) => ({ ...r, respondidas: r.conversas, cargaAgora: null, departamento: null })),
+    equipe: base.porAtor.map((r) => ({ ...r, respondidas: r.conversas, dentroDeSla: { atual: null, anterior: null }, cargaAgora: null, departamento: null, ganhos: null })),
     funilComTempo: base.funil.map((e) => ({ ...e, tempoMedioDias: null })),
     trajetorias: {
       leads: base.serie.map((p) => p.leadsNovos),
@@ -178,5 +197,6 @@ export async function lerDashboardDono(
       ganhos: [],
     },
     ganhos,
+    ganhosPeriodo: { vendas: ganhos?.entradas ?? { atual: null, anterior: null }, valor: null },
   };
 }

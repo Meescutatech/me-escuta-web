@@ -48,7 +48,8 @@ export interface Janela {
   fim: string;
   inicioAnterior: string;
   fimAnterior: string;
-  dias: PeriodoDias;
+  /** 7 | 30 | 90 nos presets; qualquer inteiro >= 1 numa janela livre (`?de=&ate=`) */
+  dias: number;
 }
 
 function somarDias(ymd: string, n: number): string {
@@ -68,6 +69,23 @@ export function janelaDoPeriodo(dias: PeriodoDias, agora: Date): Janela {
     inicioAnterior: somarDias(inicio, -dias),
     fimAnterior: somarDias(inicio, -1),
   };
+}
+
+/**
+ * Janela LIVRE (`?de=YYYY-MM-DD&ate=YYYY-MM-DD`, inclusivos). Anterior = o mesmo numero de dias
+ * imediatamente antes. Devolve null se as datas nao formam um intervalo (a UI cai no preset).
+ */
+export function janelaCustom(de: unknown, ate: unknown, agora: Date, maxDias = 190): Janela | null {
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  const a = String(Array.isArray(de) ? de[0] : (de ?? "")).trim();
+  const b = String(Array.isArray(ate) ? ate[0] : (ate ?? "")).trim();
+  if (!re.test(a) || !re.test(b) || a > b) return null;
+  const hoje = ymdEmSaoPaulo(agora);
+  const fim = b > hoje ? hoje : b;
+  if (a > fim) return null;
+  const dias = Math.round((Date.UTC(+fim.slice(0, 4), +fim.slice(5, 7) - 1, +fim.slice(8, 10)) - Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10))) / 86400_000) + 1;
+  if (dias < 1 || dias > maxDias) return null;
+  return { dias, inicio: a, fim, inicioAnterior: somarDias(a, -dias), fimAnterior: somarDias(a, -1) };
 }
 
 export function noAtual(dia: string, j: Janela): boolean {
@@ -313,11 +331,16 @@ export function resumirPorAtor(
 
 // ─────────────── agente × humano ───────────────
 
+/** Limiar de "respondida a tempo", em minutos — o mesmo SLA de 1a resposta da aba Canais. */
+export const MINUTOS_SLA_RESPOSTA = 5;
+
 export interface Atendimento {
   /** conversas com pelo menos uma resposta no periodo, por tipo de quem respondeu (1a resposta) */
   conversasAgente: Comparado;
   conversasHumano: Comparado;
   semResposta: Comparado;
+  /** conversas cuja 1a resposta veio em ate MINUTOS_SLA_RESPOSTA (W-D4) */
+  dentroDeSla: Comparado;
   /** fracao das conversas respondidas cuja 1a resposta foi de agente. null sem amostra */
   fracaoAgente: number | null;
   transbordos: Comparado;
@@ -331,7 +354,7 @@ export interface Atendimento {
 
 export function resumirAtendimento(primeira: LinhaPrimeiraResposta[], atorDia: LinhaAtorDia[], j: Janela): Atendimento {
   const conta = (pred: (d: string) => boolean) => {
-    let agente = 0, humano = 0, sem = 0;
+    let agente = 0, humano = 0, sem = 0, noSla = 0;
     const tempos: number[] = [];
     const tAg: number[] = [];
     const tHu: number[] = [];
@@ -341,10 +364,11 @@ export function resumirAtendimento(primeira: LinhaPrimeiraResposta[], atorDia: L
       const t = tipoDoAtor(p.respondida_por);
       const m = Number(p.minutos);
       tempos.push(m);
+      if (m <= MINUTOS_SLA_RESPOSTA) noSla++;
       if (t === "agente") { agente++; tAg.push(m); }
       else if (t === "humano") { humano++; tHu.push(m); }
     }
-    return { agente, humano, sem, med: mediana(tempos), medAg: mediana(tAg), medHu: mediana(tHu), n: tempos.length };
+    return { agente, humano, sem, noSla, med: mediana(tempos), medAg: mediana(tAg), medHu: mediana(tHu), n: tempos.length };
   };
   const a = conta((d) => noAtual(d, j));
   const b = conta((d) => noAnterior(d, j));
@@ -353,6 +377,7 @@ export function resumirAtendimento(primeira: LinhaPrimeiraResposta[], atorDia: L
     conversasAgente: { atual: a.agente, anterior: b.agente },
     conversasHumano: { atual: a.humano, anterior: b.humano },
     semResposta: { atual: a.sem, anterior: b.sem },
+    dentroDeSla: { atual: a.noSla, anterior: b.noSla },
     fracaoAgente: respondidas === 0 ? null : a.agente / respondidas,
     transbordos: {
       atual: somar(atorDia, "transbordos_recebidos", (d) => noAtual(d, j)),
@@ -369,7 +394,10 @@ export interface PontoDia {
   /** "27/08" */
   rotulo: string;
   leadsNovos: number;
+  /** mensagens recebidas no dia */
   recebidas: number;
+  /** conversas com pelo menos uma entrada no dia (W-D4) */
+  conversas: number;
   enviadasAgente: number;
   enviadasHumano: number;
 }
@@ -397,6 +425,7 @@ export function serieDiaria(dias: LinhaDia[], atorDia: LinhaAtorDia[], j: Janela
       rotulo: rotuloCurto(dia),
       leadsNovos: d?.leads_novos ?? 0,
       recebidas: d?.mensagens_recebidas ?? 0,
+      conversas: d?.conversas_com_entrada ?? 0,
       enviadasAgente: ag,
       enviadasHumano: hu,
     };

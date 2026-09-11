@@ -1,8 +1,8 @@
 import { lerPapelAtual, podeVerMarketing } from "@/components/configuracoes/dados/porta";
 import { PainelDashboard } from "@/components/dashboard/painel";
-import { interpretarAtor, interpretarPeriodo } from "@/lib/dados/dashboard-ceo-calculos";
+import { interpretarAtor, interpretarPeriodo, janelaCustom } from "@/lib/dados/dashboard-ceo-calculos";
 import { lerDashboardDono } from "@/lib/dados/dashboard-dono";
-import { interpretarAba, interpretarDepartamento } from "@/lib/dados/dashboard-dono-calculos";
+import { interpretarAba, interpretarBusca, interpretarDepartamento, interpretarVista } from "@/lib/dados/dashboard-dono-calculos";
 import { lerFlagModuloMarketing, lerMarketing, periodoDaUrl } from "@/lib/dados/marketing";
 import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
 
@@ -16,6 +16,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const ator = interpretarAtor(searchParams.ator);
   const aba = interpretarAba(searchParams.aba);
   const departamento = interpretarDepartamento(searchParams.dep);
+  const vista = interpretarVista(searchParams.vista);
+  const busca = interpretarBusca(searchParams.q);
+  const agora = new Date();
+  const janelaLivre = janelaCustom(searchParams.de, searchParams.ate, agora);
 
   // Papel: em ensaio vem da fixture (zero consulta); fora dele, do banco.
   const ensaio = lerSessaoEnsaio();
@@ -24,18 +28,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const mostrarDepartamento = papel === "admin" || papel === "owner";
 
   const [dados, marketing] = await Promise.all([
-    lerDashboardDono(periodo, ator, aba, departamento),
-    aba === "marketing" && verMarketing ? lerMarketingSeLiberado(periodo, Boolean(ensaio)) : Promise.resolve(null),
+    lerDashboardDono(periodo, ator, aba, departamento, agora, vista, busca, janelaLivre),
+    aba === "marketing" && verMarketing ? lerMarketingSeLiberado(periodo, Boolean(ensaio), janelaLivre) : Promise.resolve(null),
   ]);
 
-  return <PainelDashboard dados={dados} marketing={marketing} mostrarDepartamento={mostrarDepartamento} verMarketing={verMarketing} />;
+  return <PainelDashboard dados={dados} marketing={marketing} mostrarDepartamento={mostrarDepartamento} verMarketing={verMarketing} janelaLivre={janelaLivre != null} />;
 }
 
 /** A flag de release `flag.modulo_marketing`: `false` recusa; ausente NÃO desliga. Em ensaio nem consulta. */
-async function lerMarketingSeLiberado(periodo: 7 | 30 | 90, ensaio: boolean) {
+async function lerMarketingSeLiberado(periodo: 7 | 30 | 90, ensaio: boolean, janelaLivre: { inicio: string; fim: string } | null) {
   if (!ensaio) {
     const flag = await lerFlagModuloMarketing();
     if (flag === false) return null;
   }
-  return lerMarketing(periodoDaUrl({ p: `${periodo}d` }));
+  return lerMarketing(janelaLivre ? periodoDaUrl({ de: janelaLivre.inicio, ate: janelaLivre.fim }) : periodoDaUrl({ p: `${periodo}d` }));
 }
