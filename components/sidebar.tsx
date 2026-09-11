@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { SettingsIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IconeJarvis } from "@/components/header/icone-jarvis";
 import { itensSidebar, ROTA_SIGNOUT, type ItemSidebar } from "@/lib/header/navegacao";
@@ -200,10 +201,7 @@ export function Sidebar({
               emConfig ? "bg-[#EAECF5] font-semibold text-navy" : "font-medium text-suave hover:bg-hover hover:text-tinta",
             )}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="ml-0.5 h-5 w-5 flex-none">
-              <path d="M12.2 3.5h-.4a1.6 1.6 0 0 0-1.6 1.6v.2a1.6 1.6 0 0 1-1 1.5l-.3.1a1.6 1.6 0 0 1-1.8-.3l-.1-.1a1.6 1.6 0 0 0-2.3 0l-.3.3a1.6 1.6 0 0 0 0 2.3l.1.1a1.6 1.6 0 0 1 .3 1.8l-.1.3a1.6 1.6 0 0 1-1.5 1H3.1a1.6 1.6 0 0 0-1.6 1.6v.4a1.6 1.6 0 0 0 1.6 1.6h.2a1.6 1.6 0 0 1 1.5 1l.1.3a1.6 1.6 0 0 1-.3 1.8l-.1.1a1.6 1.6 0 0 0 0 2.3l.3.3a1.6 1.6 0 0 0 2.3 0l.1-.1a1.6 1.6 0 0 1 1.8-.3l.3.1a1.6 1.6 0 0 1 1 1.5v.2a1.6 1.6 0 0 0 1.6 1.6h.4a1.6 1.6 0 0 0 1.6-1.6v-.2a1.6 1.6 0 0 1 1-1.5l.3-.1a1.6 1.6 0 0 1 1.8.3l.1.1a1.6 1.6 0 0 0 2.3 0l.3-.3a1.6 1.6 0 0 0 0-2.3l-.1-.1a1.6 1.6 0 0 1-.3-1.8l.1-.3a1.6 1.6 0 0 1 1.5-1h.2a1.6 1.6 0 0 0 1.6-1.6v-.4a1.6 1.6 0 0 0-1.6-1.6h-.2a1.6 1.6 0 0 1-1.5-1l-.1-.3a1.6 1.6 0 0 1 .3-1.8l.1-.1a1.6 1.6 0 0 0 0-2.3l-.3-.3a1.6 1.6 0 0 0-2.3 0l-.1.1a1.6 1.6 0 0 1-1.8.3l-.3-.1a1.6 1.6 0 0 1-1-1.5v-.2a1.6 1.6 0 0 0-1.6-1.6z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
+            <SettingsIcon strokeWidth={1.8} aria-hidden className="ml-0.5 h-5 w-5 flex-none" />
             <span className="opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
               Configurações
             </span>
