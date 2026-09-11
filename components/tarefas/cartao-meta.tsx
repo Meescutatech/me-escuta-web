@@ -12,30 +12,24 @@ import { cn } from "@/lib/utils";
  * quadro precisava deles e importar de volta criaria ciclo (visao → quadro → visao).
  *
  * W-D5 (10/09) acrescentou dois sinais, os dois com canal escrito além da cor (WCAG 1.4.1):
- *  · ORIGEM — o Jarvis. `BadgeOrigem` é a MARCA do Jarvis (components/jarvis/marca.tsx, o
- *    monograma J com o ponto laranja — uma cara só para ele no app) + "Jarvis". Antes era um
- *    selo `JARVIS` em caixa alta dentro do POR QUE; agora é um só desenho, reutilizado onde a
- *    origem precisa aparecer mesmo sem o POR QUE (linha compacta da fila do dia).
+ *  · ORIGEM — o Jarvis. `BadgeOrigem` é a MARCA do Jarvis (components/jarvis/marca.tsx, o ARCO
+ *    escolhido pelo Diogo às 22:40), em muted, sem o nome ao lado — a marca É a assinatura.
+ *    Antes era um selo `JARVIS` em caixa alta dentro do POR QUE.
  *  · PRIORIDADE — `alta / média / baixa`. A cor fica no TRILHO ESQUERDO do card (`RailPrioridade`)
  *    e num chip pequeno na linha de meta. Só `alta` carrega cor (navy); média é o silêncio (é a
  *    maioria); baixa é um chip apagado. Vermelho segue reservado a VENCIDA — prioridade é
  *    importância, prazo é urgência, e os dois não podem disputar o mesmo tom.
  */
 
+/** v2 (22:40): só o ARCO, em muted — a marca é a assinatura; o nome não se repete. */
 export function BadgeOrigem({ t, apagada, className }: { t: Pick<TarefaVisao, "origem">; apagada?: boolean; className?: string }) {
   if (t.origem !== "jarvis_conversa") return null;
   return (
-    <span
-      title="Criada pelo Jarvis a partir da conversa"
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full border py-px pl-1 pr-1.5 text-[10.5px] font-semibold leading-[14px]",
-        apagada ? "border-linha text-mute opacity-70" : "border-[#D5DDF3] bg-[#EEF1FB] text-navy",
-        className,
-      )}
-    >
-      <MarcaJarvis tamanho={16} className="-ml-0.5" />
-      Jarvis
-    </span>
+    <MarcaJarvis
+      tamanho={16}
+      rotulo="Criada pelo Jarvis a partir da conversa"
+      className={cn("inline-block align-[-3px]", apagada ? "text-mute/60" : "text-mute", className)}
+    />
   );
 }
 

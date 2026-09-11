@@ -1,6 +1,9 @@
 import {
+  bucketPrazo,
   diffDiasSP,
   diasAteDomingoSP,
+  ROTULO_BUCKET,
+  type BucketPrazo,
   type FiltrosTarefas,
   type TarefaVisao,
 } from "@/lib/dados/tarefas-visao-calculos";
@@ -132,7 +135,8 @@ export const ROTULO_ABA: Record<Aba, string> = {
  */
 export function abaAtiva(f: FiltrosTarefas): Aba | null {
   if (f.exibicao === "hoje") return "hoje";
-  if (f.status !== "abertas" || f.vencidas || f.responsavelId) return null;
+  // status (abertas/concluídas) NÃO tira a aba: "Todas · Concluídas" continua sendo Todas
+  if (f.vencidas || f.responsavelId) return null;
   if (f.minhas && f.prazo === "semana") return "semana";
   if (f.minhas && f.prazo === "todos") return "todas";
   if (!f.minhas && f.prazo === "todos") return "time";
@@ -181,4 +185,63 @@ export function contagemAbas(
     todas: minhas.length,
     time: abertas.length,
   };
+}
+
+// ─────────────── a lista agrupada por dia (v2, 10/09 22:40 — depois da reprovação) ───────────────
+
+export interface GrupoDia {
+  chave: BucketPrazo | "concluidas" | "arquivadas";
+  rotulo: string;
+  tarefas: TarefaVisao[];
+  /** só Vencidas — o único grupo com cor, e só no texto do cabeçalho */
+  vermelho: boolean;
+}
+
+const ORDEM_DIA: BucketPrazo[] = ["vencidas", "hoje", "amanha", "semana", "depois", "sem_prazo"];
+
+/**
+ * Uma lista só, cortada por dia: Vencidas · Hoje · Amanhã · Esta semana · Depois · Sem prazo.
+ * Grupo vazio não aparece (o vazio informa numa coluna; numa lista só ocupa). Dentro de
+ * Vencidas e Hoje a PRIORIDADE manda e o prazo desempata — é a fila de "agora"; nos demais o
+ * prazo manda, senão uma "baixa" de amanhã ficaria depois de uma "alta" do mês que vem.
+ */
+export function agruparPorDia(pendentes: TarefaVisao[], agoraMs: number): GrupoDia[] {
+  const porBucket = new Map<BucketPrazo, TarefaVisao[]>(ORDEM_DIA.map((b) => [b, []]));
+  for (const t of pendentes) porBucket.get(bucketPrazo(t, agoraMs))!.push(t);
+  const grupos: GrupoDia[] = [];
+  for (const b of ORDEM_DIA) {
+    const ts = porBucket.get(b)!;
+    if (ts.length === 0) continue;
+    const ordenadas =
+      b === "vencidas" || b === "hoje"
+        ? ordenarDia(ts)
+        : [...ts].sort((x, y) => prazoMs(x) - prazoMs(y) || pesoPrioridade(x.prioridade) - pesoPrioridade(y.prioridade) || x.criado_em.localeCompare(y.criado_em));
+    grupos.push({ chave: b, rotulo: ROTULO_BUCKET[b], tarefas: ordenadas, vermelho: b === "vencidas" });
+  }
+  return grupos;
+}
+
+const FMT_HORA_SP = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+const FMT_DIA_CURTO_SP = new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" });
+
+/**
+ * O prazo como se fala: "venceu ontem · 16:23", "vence hoje · 22:53", "vence amanhã · 09:00",
+ * "vence sex 12/09 · 09:00", "sem prazo". Sem data crua para o que é perto — a Sara não
+ * converte "10/09" em "hoje" de cabeça o dia inteiro.
+ */
+export function textoPrazoHumano(t: Pick<TarefaVisao, "prazo" | "vencida" | "status" | "concluida_em">, agoraMs: number): string {
+  if (t.status === "concluida") return t.concluida_em ? `concluída ${quandoHumano(t.concluida_em, agoraMs)}` : "concluída";
+  if (!t.prazo) return "sem prazo";
+  return `${t.vencida ? "venceu" : "vence"} ${quandoHumano(t.prazo, agoraMs)}`;
+}
+
+export function quandoHumano(iso: string, agoraMs: number): string {
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return "";
+  const d = diffDiasSP(iso, agoraMs);
+  const hora = FMT_HORA_SP.format(new Date(ms));
+  if (d === 0) return `hoje · ${hora}`;
+  if (d === -1) return `ontem · ${hora}`;
+  if (d === 1) return `amanhã · ${hora}`;
+  return `${FMT_DIA_CURTO_SP.format(new Date(ms)).replace(".", "")} · ${hora}`;
 }

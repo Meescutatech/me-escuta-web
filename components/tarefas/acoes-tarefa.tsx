@@ -8,6 +8,7 @@ import {
 } from "@/app/(app)/lead/actions";
 import { paraDatetimeLocal } from "@/lib/dados/tarefa-calculos";
 import { presetsAdiar } from "@/lib/tarefas/adiar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { AcoesDaTarefa } from "./executor";
 
@@ -47,6 +48,8 @@ export function AcoesTarefa({
   onFechar,
   executor,
   agora,
+  modoInicial = null,
+  semPresets = false,
 }: {
   leadId: string | null;
   tarefaId: string;
@@ -60,8 +63,12 @@ export function AcoesTarefa({
   executor?: AcoesDaTarefa;
   /** W-D5 · relógio para os presets de adiar; ausente = `Date.now()` */
   agora?: number;
+  /** v2 · abre já num modo (a lista chega por menu, não por "escolha a ação") */
+  modoInicial?: Modo | null;
+  /** v2 · a lista já oferece os presets no menu Adiar — aqui só o formulário pedido */
+  semPresets?: boolean;
 }) {
-  const [modo, setModo] = useState<Modo | null>(null);
+  const [modo, setModo] = useState<Modo | null>(modoInicial);
   const [responsavelId, setResponsavelId] = useState("");
   const [prazo, setPrazo] = useState(prazoAtual ? paraDatetimeLocal(prazoAtual) : "");
   const [motivo, setMotivo] = useState("");
@@ -139,6 +146,7 @@ export function AcoesTarefa({
     >
       {/* ADIAR EM UM CLIQUE — a primeira linha do painel são os presets, porque adiar é a ação
           mais frequente da fila (Close: snooze em lote; Kommo: "In an hour, Today, Tomorrow"). */}
+      {!semPresets && (
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-[11.5px] text-mute">Adiar para</span>
         {presets.map((p) => (
@@ -174,8 +182,10 @@ export function AcoesTarefa({
           Fechar
         </button>
       </div>
+      )}
 
       {/* as outras duas ações de ciclo de vida */}
+      {!semPresets && (
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {(
           [
@@ -199,27 +209,40 @@ export function AcoesTarefa({
           </button>
         ))}
       </div>
+      )}
+      {semPresets && (
+        <div className="flex items-center gap-1.5 text-[12.5px] text-suave">
+          <span className="font-medium text-tinta">
+            {modo === "reatribuir" ? "Passar a tarefa para outra pessoa" : modo === "repactuar" ? "Adiar para outra data" : "Tirar da fila"}
+          </span>
+          <button
+            type="button"
+            onClick={onFechar}
+            className="ml-auto rounded-md px-2 py-1 text-[12px] font-medium text-suave transition-colors hover:bg-hover hover:text-tinta"
+          >
+            Fechar
+          </button>
+        </div>
+      )}
 
       {modo === "reatribuir" && (
         <div className="mt-2 flex items-center gap-1.5">
-          <select
-            autoFocus
-            value={responsavelId}
-            onChange={(e) => setResponsavelId(e.target.value)}
-            onKeyDown={teclas}
-            aria-label="Novo responsável"
-            className={cn(
-              "min-w-0 flex-1 cursor-pointer rounded-md border border-linha bg-branco px-1.5 py-1 text-[12.5px] outline-none focus:border-laranja",
-              responsavelId ? "text-tinta" : "text-mute",
-            )}
+          <Select
+            items={Object.fromEntries(outros.map((p) => [p.id, p.nome]))}
+            value={responsavelId || null}
+            onValueChange={(v) => setResponsavelId((v as string | null) ?? "")}
           >
-            <option value="">Passar a tarefa para…</option>
-            {outros.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nome}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label="Novo responsável">
+              <SelectValue placeholder="Passar a tarefa para…" />
+            </SelectTrigger>
+            <SelectContent>
+              {outros.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <BotaoConfirmar rotulo="Reatribuir" habilitado={podeExecutar && !ocupado} onClick={executar} />
         </div>
       )}

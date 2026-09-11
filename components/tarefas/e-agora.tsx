@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CheckIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,6 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import type { TarefaVisao } from "@/lib/dados/tarefas-visao-calculos";
 import { paraDatetimeLocal } from "@/lib/dados/tarefa-calculos";
@@ -133,7 +136,11 @@ function Formulario({
     onFechar(true);
   }
 
-  const tipoNaLista = tiposTarefa.some((x) => x.chave === tipo);
+  const SEM_TIPO = "__sem__";
+  const itensPessoas: Record<string, string> = Object.fromEntries(pessoas.map((p) => [p.id, p.nome]));
+  if (responsavelId && !itensPessoas[responsavelId]) itensPessoas[responsavelId] = "outro membro";
+  const itensTipos: Record<string, string> = { [SEM_TIPO]: "Sem tipo", ...Object.fromEntries(tiposTarefa.map((x) => [x.chave, x.rotulo])) };
+  if (tipo && !itensTipos[tipo]) itensTipos[tipo] = tipo;
 
   return (
     <DialogContent className="sm:max-w-[440px]" showCloseButton={false}>
@@ -151,7 +158,7 @@ function Formulario({
       </DialogHeader>
 
       <div className="flex flex-col gap-2.5">
-        <input
+        <Input
           autoFocus
           value={titulo}
           onChange={(e) => setTitulo(e.target.value)}
@@ -161,7 +168,7 @@ function Formulario({
           }}
           placeholder="Próxima tarefa — o que fazer?"
           aria-label="Título da próxima tarefa"
-          className="w-full rounded-md border border-linha-forte bg-branco px-2.5 py-1.5 text-[13.5px] text-tinta outline-none focus:border-laranja"
+          className="text-[13.5px]"
         />
 
         <div className="flex flex-wrap items-center gap-1.5">
@@ -187,36 +194,30 @@ function Formulario({
         )}
 
         <div className="grid grid-cols-2 gap-1.5">
-          <select
-            value={responsavelId}
-            onChange={(e) => setResponsavelId(e.target.value)}
-            aria-label="Responsável"
-            className="min-w-0 cursor-pointer rounded-md border border-linha bg-branco px-2 py-1.5 text-[12.5px] text-tinta outline-none focus:border-laranja"
-          >
-            {pessoas.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nome}
-              </option>
-            ))}
-            {!pessoas.some((p) => p.id === responsavelId) && <option value={responsavelId}>{responsavelId ? "outro membro" : "sem responsável"}</option>}
-          </select>
-          <select
-            value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
-            aria-label="Tipo da tarefa"
-            className={cn(
-              "min-w-0 cursor-pointer rounded-md border border-linha bg-branco px-2 py-1.5 text-[12.5px] outline-none focus:border-laranja",
-              tipo ? "text-tinta" : "text-mute",
-            )}
-          >
-            <option value="">Tipo: nenhum</option>
-            {!tipoNaLista && tipo && <option value={tipo}>{tipo}</option>}
-            {tiposTarefa.map((x) => (
-              <option key={x.chave} value={x.chave}>
-                {x.rotulo}
-              </option>
-            ))}
-          </select>
+          <Select items={itensPessoas} value={responsavelId || null} onValueChange={(v) => setResponsavelId((v as string | null) ?? "")}>
+            <SelectTrigger size="sm" className="w-full text-[13px]" aria-label="Responsável">
+              <SelectValue placeholder="Responsável" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(itensPessoas).map(([id, nome]) => (
+                <SelectItem key={id} value={id}>
+                  {nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select items={itensTipos} value={tipo || SEM_TIPO} onValueChange={(v) => setTipo(v === SEM_TIPO || v == null ? "" : (v as string))}>
+            <SelectTrigger size="sm" className="w-full text-[13px]" aria-label="Tipo da tarefa">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(itensTipos).map(([chave, rotulo]) => (
+                <SelectItem key={chave} value={chave}>
+                  {rotulo}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
@@ -232,21 +233,12 @@ function Formulario({
       </div>
 
       <div className="mt-1 flex items-center gap-2 border-t border-linha pt-3">
-        <button
-          type="button"
-          onClick={() => void confirmar()}
-          disabled={!pode}
-          className="rounded-md bg-laranja px-3.5 py-1.5 text-[13px] font-semibold text-branco transition-colors hover:bg-laranja-esc disabled:opacity-50"
-        >
+        <Button size="sm" onClick={() => void confirmar()} disabled={!pode}>
           {ocupado ? "Criando…" : "Criar tarefa"}
-        </button>
-        <button
-          type="button"
-          onClick={() => onFechar(false)}
-          className="ml-auto rounded-md px-3 py-1.5 text-[13px] text-suave transition-colors hover:bg-hover hover:text-tinta"
-        >
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onFechar(false)} className="ml-auto text-suave">
           Sem próxima ação por agora
-        </button>
+        </Button>
       </div>
     </DialogContent>
   );

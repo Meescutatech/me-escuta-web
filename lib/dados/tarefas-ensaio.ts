@@ -19,7 +19,7 @@ export function ensaioTarefasLigado(env: NodeJS.ProcessEnv = process.env): boole
 
 const RESPONSAVEIS = [
   { id: "e0000000-0000-4000-8000-000000000001", nome: "sarah@meescuta.com" },
-  { id: "e0000000-0000-4000-8000-000000000002", nome: "diogo@meescuta.com" },
+  { id: "e0000000-0000-4000-8000-000000000002", nome: "rodolfo@meescuta.com" },
   // W-D5: a fono da fixture de ensaio (lib/ensaio/modo.ts) — tarefas de pós-venda e ajuste
   { id: "e0000000-0000-4000-8000-000000000004", nome: "anapaula@meescuta.com" },
 ] as const;
@@ -33,7 +33,8 @@ export interface Molde {
    */
   leadReal?: string;
   ancora?: string;
-  tipo: string;
+  /** chave de `TIPOS_TAREFA_SEMENTE` (lib/tarefa-tipos.ts) — a tela mostra o rótulo; null = sem tipo */
+  tipo: string | null;
   lead: string | null;
   prazoHoras: number | null; // relativo a agora; negativo = vencida
   status?: "concluida" | "arquivada";
@@ -55,7 +56,7 @@ export interface Molde {
 const MOLDES: Molde[] = [
   {
     titulo: "Ligar para agendar a audiometria",
-    tipo: "ligar",
+    tipo: "acompanhar_follow_up",
     lead: "Maria Aparecida Souza",
     leadReal: "3594fd74-1fbf-55e0-ab03-affedf0f55ef",
     leadIdx: 0,
@@ -69,10 +70,10 @@ const MOLDES: Molde[] = [
       trecho: "vou ver certinho depois do exame aí te falo",
     },
   },
-  { titulo: "Cobrar retorno da simulação da Caixa", tipo: "cobranca", lead: "José Carlos Menezes", leadReal: "70ba301b-eeb6-5bdf-b44e-b10d82829a7c", leadIdx: 1, ancora: "2026-07-17T10:53:21.620Z", prazoHoras: -4, resp: 0, andamento: true },
+  { titulo: "Cobrar retorno da simulação da Caixa", tipo: "confirmar_pagamento", lead: "José Carlos Menezes", leadReal: "70ba301b-eeb6-5bdf-b44e-b10d82829a7c", leadIdx: 1, ancora: "2026-07-17T10:53:21.620Z", prazoHoras: -4, resp: 0, andamento: true },
   {
     titulo: "Responder dúvida sobre o teste em casa",
-    tipo: "followup",
+    tipo: "acompanhar_follow_up",
     lead: "Antônia Ribeiro Prado",
     leadReal: "6317dc62-35ef-5fcd-be41-dfae57425a74",
     leadIdx: 2,
@@ -85,14 +86,14 @@ const MOLDES: Molde[] = [
       trecho: "e se eu não me adaptar com o aparelho?",
     },
   },
-  { titulo: "Confirmar presença na teleconsulta de amanhã", tipo: "confirmar", lead: "Waldemar Costa Filho", leadIdx: 3, prazoHoras: 26, resp: 1, prioridade: "media" },
-  { titulo: "Enviar orientação de uso por áudio", tipo: "followup", lead: "Neusa Maria Braga", leadIdx: 4, prazoHoras: 30, resp: 0, andamento: true, prioridade: "baixa" },
+  { titulo: "Confirmar presença na teleconsulta de amanhã", tipo: "confirmar_consulta", lead: "Waldemar Costa Filho", leadIdx: 3, prazoHoras: 26, resp: 1, prioridade: "media" },
+  { titulo: "Enviar orientação de uso por áudio", tipo: "pos_venda", lead: "Neusa Maria Braga", leadIdx: 4, prazoHoras: 30, resp: 0, andamento: true, prioridade: "baixa" },
   { titulo: "Verificar rastreio do aparelho enviado", tipo: "logistica_expedicao", lead: "Geraldo Nunes", leadIdx: 5, prazoHoras: 75, resp: 1, prioridade: "media" },
-  { titulo: "Retomar lead que pediu contato em setembro", tipo: "followup", lead: "Irene Salgado", leadIdx: 6, prazoHoras: 120, resp: 0, prioridade: "baixa" },
-  { titulo: "Organizar lista de leads sem dono do funil", tipo: "interno", lead: null, prazoHoras: null, resp: 1, prioridade: "baixa" },
+  { titulo: "Retomar lead que pediu contato em setembro", tipo: "acompanhar_follow_up", lead: "Irene Salgado", leadIdx: 6, prazoHoras: 120, resp: 0, prioridade: "baixa" },
+  { titulo: "Organizar lista de leads sem dono do funil", tipo: null, lead: null, prazoHoras: null, resp: 1, prioridade: "baixa" },
   {
     titulo: "Agendar audiometria na clínica parceira",
-    tipo: "agendar",
+    tipo: "confirmar_exame",
     lead: "Sebastião Moreira Lima",
     prazoHoras: -50,
     status: "concluida",
@@ -101,7 +102,7 @@ const MOLDES: Molde[] = [
   },
   {
     titulo: "Ligar no segundo número do cadastro",
-    tipo: "ligar",
+    tipo: "acompanhar_follow_up",
     lead: "Marlene Santos Furtado",
     prazoHoras: -80,
     status: "concluida",
@@ -110,7 +111,7 @@ const MOLDES: Molde[] = [
   },
   {
     titulo: "Cobrar boleto vencido da entrada",
-    tipo: "cobranca",
+    tipo: "confirmar_pagamento",
     lead: "Osvaldo Pinto",
     prazoHoras: -200,
     status: "arquivada",
