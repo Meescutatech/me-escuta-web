@@ -9,7 +9,8 @@ import { PrecisaDeAtencao } from "./atencao";
 import { ChipsAtivos } from "./chips";
 import { EvolucaoAcumulada } from "./graficos";
 import { HeatmapHoraDia } from "./heatmap";
-import { JarvisLinha } from "./jarvis-linha";
+import { LinhaJarvisDiz } from "@/components/jarvis/linha-diz";
+import { ContextoJarvisDashboard } from "./contexto-jarvis";
 import { Kpis } from "./kpis";
 import { MetaCompacta } from "./meta-compacta";
 import { Bloco, CabecalhoBloco, ddmm } from "./pecas";
@@ -46,9 +47,17 @@ export function PainelDashboard({
   const estado: EstadoUrl = { aba, vista, periodo: dados.periodo, de: janelaLivre?.inicio ?? null, ate: janelaLivre?.fim ?? null, filtros };
   const tudoIndisponivel = dados.indisponiveis.length >= 7;
   const abas = ABAS.filter((a) => a.chave !== "marketing" || verMarketing);
+  // o item mais grave da atenção vira o que a pílula do Jarvis fala ("no painel · 4 conversas sem resposta")
+  const pior = dados.atencao.itens[0] ?? null;
+  const rotuloAba = ABAS.find((a) => a.chave === aba)?.rotulo ?? "Painel";
 
   return (
     <main className="w-full px-6 pb-10 pt-3 2xl:px-8">
+      <ContextoJarvisDashboard
+        aba={`Painel · ${rotuloAba}`}
+        aviso={pior ? { texto: pior.titulo.replace(/^\d+\s/, ""), quantidade: pior.quantidade, previa: pior.detalhe ?? dados.jarvis.frase, pergunta: dados.jarvis.perguntas[0] ?? null } : null}
+        sugestoes={dados.jarvis.perguntas}
+      />
       <Toolbar estado={estado} janela={janela} livre={janelaLivre != null} agoraIso={dados.geradoEm} atores={dados.atores} opcoes={dados.opcoes} mostrarDepartamento={mostrarDepartamento} />
       <div className="mt-1.5">
         <ChipsAtivos estado={estado} atores={dados.atores} opcoes={dados.opcoes} />
@@ -75,7 +84,7 @@ export function PainelDashboard({
         </span>
       </div>
 
-      <JarvisLinha jarvis={dados.jarvis} />
+      <LinhaJarvisDiz {...dados.jarvis} />
 
       {filtros.departamento && (
         <p className="mt-2 text-[11px] text-muted-foreground">
