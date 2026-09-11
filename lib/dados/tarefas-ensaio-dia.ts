@@ -26,6 +26,7 @@ export const MOLDES_DIA: Molde[] = [
     prazoHoras: -9,
     prioridade: "alta",
     resp: 0,
+    historico: [{ ha: 26, tipo: "adiada", texto: "adiada para hoje — ela não atendeu ontem à tarde" }],
     jarvis: {
       por_que: "Avaliação amanhã às 9h e ela perguntou “onde fica?” ontem à noite — a pergunta está sem resposta.",
       fazer: "Enviar o endereço e o mapa da AudioBH e confirmar o horário",
@@ -40,6 +41,7 @@ export const MOLDES_DIA: Molde[] = [
     prazoHoras: 0.5,
     prioridade: "alta",
     resp: 0,
+    historico: [{ ha: 30, tipo: "reatribuida", texto: "passada de Rodolfo para Sara" }],
   },
   {
     titulo: "Responder ao Expedito sobre o recarregável",

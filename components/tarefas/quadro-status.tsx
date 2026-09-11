@@ -17,7 +17,9 @@ import {
   type ColunaStatus,
 } from "@/lib/tarefas/quadro";
 import { iniciarTarefa, reabrirTarefa } from "@/app/(app)/tarefas/actions";
+import type { ResultadoEvento } from "@/app/(app)/funil/actions";
 import { PainelConcluir } from "@/components/tarefas/concluir-tarefa";
+import type { AcoesDaTarefa } from "@/components/tarefas/executor";
 import { MetaTarefa, PorQueJarvis } from "@/components/tarefas/cartao-meta";
 import { cn } from "@/lib/utils";
 import { destinoDaTarefa } from "@/lib/tarefas/destino";
@@ -45,6 +47,13 @@ import { destinoDaTarefa } from "@/lib/tarefas/destino";
 
 type Nomes = { membros: Map<string, string>; tipos: Map<string, string> };
 
+export interface ExecutorQuadro {
+  iniciar(t: TarefaVisao): Promise<ResultadoEvento>;
+  reabrir(t: TarefaVisao): Promise<ResultadoEvento>;
+  /** o painel de concluir do card — ausente = as ações de sempre */
+  acoesDe?: (t: TarefaVisao) => AcoesDaTarefa;
+}
+
 export function QuadroStatus({
   tarefas,
   emAndamento,
@@ -52,6 +61,7 @@ export function QuadroStatus({
   agora,
   nomes,
   aoMudar,
+  executor,
 }: {
   /** pendentes + concluídas já filtradas pela barra (arquivadas não entram no quadro) */
   tarefas: TarefaVisao[];
@@ -62,6 +72,8 @@ export function QuadroStatus({
   agora: number;
   nomes: Nomes;
   aoMudar: () => void;
+  /** v3 · quem escreve (ensaio = estado local). Ausente = `iniciarTarefa` / `reabrirTarefa` reais. */
+  executor?: ExecutorQuadro;
 }) {
   const router = useRouter();
   const [overrides, setOverrides] = useState<Map<string, ColunaStatus>>(() => new Map());
@@ -115,8 +127,8 @@ export function QuadroStatus({
       for (const ev of tr.eventos) {
         const r =
           ev === "tarefa_iniciada"
-            ? await iniciarTarefa(t.id, t.lead_id)
-            : await reabrirTarefa(t.id, t.lead_id);
+            ? await (executor ? executor.iniciar(t) : iniciarTarefa(t.id, t.lead_id))
+            : await (executor ? executor.reabrir(t) : reabrirTarefa(t.id, t.lead_id));
         if (!r.ok) {
           tirarOverride(t.id);
           setErro(`${t.titulo}: ${r.motivo ?? "a porta recusou"}`);
@@ -125,7 +137,7 @@ export function QuadroStatus({
       }
       aoMudar();
     },
-    [overrides, emAndamento, aoMudar],
+    [overrides, emAndamento, aoMudar, executor],
   );
 
   // ── concluir dentro do quadro (reaproveita PainelConcluir) ──
@@ -212,7 +224,7 @@ export function QuadroStatus({
       tabIndex={0}
       onKeyDown={aoTeclar}
       aria-label="Quadro de tarefas por status"
-      className="flex min-h-0 flex-1 flex-col outline-none"
+      className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col outline-none"
     >
       {/* linha de instrumentos do quadro: erro da porta, agrupar por lead, atalhos */}
       <div className="flex flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-2 text-[12px]">
@@ -265,7 +277,7 @@ export function QuadroStatus({
           </p>
         </div>
       ) : (
-        <div className="flex flex-1 items-stretch gap-3 overflow-x-auto px-5 pb-5">
+        <div className="flex flex-1 items-stretch gap-4 overflow-x-auto px-6 pb-6">
           {COLUNAS.map((c) => {
             const lista = colunas[c.chave];
             const alvo = sobre === c.chave && arrastandoId != null;
@@ -282,27 +294,13 @@ export function QuadroStatus({
                   if (!e.currentTarget.contains(e.relatedTarget as Node)) setSobre((s) => (s === c.chave ? null : s));
                 }}
                 onDrop={(e) => aoSoltar(c.chave, e)}
-                className="flex h-full w-coluna shrink-0 flex-col"
+                className="flex h-full min-w-[300px] flex-1 flex-col"
               >
-                <div className="flex items-center gap-2 px-1 pb-2.5 pt-1.5">
-                  <span
-                    className={cn(
-                      "truncate text-[12.5px] font-semibold uppercase tracking-[0.05em]",
-                      c.chave === "em_andamento" ? "text-navy" : "text-suave",
-                    )}
-                  >
+                <div className="flex items-baseline gap-2 px-1 pb-2 pt-1">
+                  <span className={cn("truncate text-[13px] font-medium", c.chave === "em_andamento" ? "text-tinta" : "text-suave")}>
                     {c.rotulo}
                   </span>
-                  <span
-                    className={cn(
-                      "ml-auto rounded-full border px-2 py-px font-mono text-[11.5px] tabular-nums",
-                      c.chave === "em_andamento" && lista.length > 0
-                        ? "border-navy bg-bolha-out font-semibold text-navy"
-                        : "border-linha bg-branco text-suave",
-                    )}
-                  >
-                    {lista.length}
-                  </span>
+                  <span className="font-mono text-[12px] tabular-nums text-mute">{lista.length}</span>
                 </div>
                 <div
                   className={cn(
@@ -355,6 +353,7 @@ export function QuadroStatus({
       onMover: (para: ColunaStatus) => void mover(t, para),
       onFecharConcluir: () => fecharConcluir(t.id),
       onConcluiu: () => concluiu(t.id),
+      acoes: executor?.acoesDe?.(t),
     };
   }
 }
@@ -393,6 +392,7 @@ function Cartao({
   onMover,
   onFecharConcluir,
   onConcluiu,
+  acoes,
 }: {
   t: TarefaVisao;
   coluna: ColunaStatus;
@@ -408,6 +408,7 @@ function Cartao({
   onMover: (para: ColunaStatus) => void;
   onFecharConcluir: () => void;
   onConcluiu: () => void;
+  acoes?: AcoesDaTarefa;
 }) {
   const router = useRouter();
   const fechada = coluna === "concluida";
@@ -422,25 +423,26 @@ function Cartao({
       onDoubleClick={() => { const d = destinoDaTarefa(t); if (d) router.push(d); }}
       aria-current={focado ? "true" : undefined}
       className={cn(
-        "rounded-[10px] border bg-branco px-3 py-2.5 transition-[opacity,box-shadow,border-color] cursor-grab active:cursor-grabbing",
-        t.vencida && !fechada ? "border-vermelho-bd" : "border-linha",
-        coluna === "em_andamento" && "border-l-[3px] border-l-navy",
-        focado && "ring-2 ring-navy",
+        "rounded-lg border border-linha bg-branco px-3.5 py-3 transition-[opacity,box-shadow,border-color] cursor-grab active:cursor-grabbing hover:bg-[#FBFAF7]",
+        focado && "ring-1 ring-inset ring-navy",
         arrastando && "opacity-40",
         pendenteNaPorta && "opacity-70",
       )}
     >
-      <div className="flex items-start gap-1.5">
+      <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className={cn("text-[13.5px] leading-snug", fechada ? "text-suave line-through decoration-mute" : "text-tinta")}>
-            {t.titulo}
+          <div className="flex items-baseline gap-2">
+            {!fechada && t.prioridade === "alta" && <span className="size-1.5 shrink-0 self-center rounded-full bg-primary" title="prioridade alta" aria-label="prioridade alta" />}
+            <span className={cn("min-w-0 flex-1 text-[14px] font-medium leading-snug", fechada ? "text-mute line-through decoration-mute/60" : "text-tinta")}>
+              {t.titulo}
+            </span>
           </div>
+          {t.lead_nome && <div className="mt-0.5 truncate text-[12.5px] text-mute">{t.lead_nome}</div>}
           {t.descricao && !fechada && (
-            <div className="mt-0.5 whitespace-pre-line text-[12px] leading-snug text-suave">{t.descricao}</div>
+            <div className="mt-0.5 whitespace-pre-line text-[12.5px] leading-snug text-mute">{t.descricao}</div>
           )}
           <PorQueJarvis t={t} apagada={fechada} />
-          {t.lead_nome && <div className="mt-0.5 truncate text-[12px] text-suave">{t.lead_nome}</div>}
-          {fechada && t.resultado && <div className="mt-0.5 text-[12px] leading-snug text-suave">→ {t.resultado}</div>}
+          {fechada && t.resultado && <div className="mt-0.5 text-[12.5px] leading-snug text-mute">{t.resultado}</div>}
         </div>
         {/* ação inline por coluna — o mesmo que o arrastar faz, para quem não arrasta */}
         {coluna === "a_fazer" && <BotaoMover rotulo="Pegar" titulo="Mover para Em andamento (E)" onClick={() => onMover("em_andamento")} />}
@@ -451,7 +453,7 @@ function Cartao({
         <MetaTarefa t={t} agora={agora} nomes={nomes} apagada={fechada} />
       </div>
       {concluindo && (
-        <PainelConcluir leadId={t.lead_id} tarefaId={t.id} aoSucesso={onConcluiu} onFechar={onFecharConcluir} />
+        <PainelConcluir leadId={t.lead_id} tarefaId={t.id} executor={acoes} aoSucesso={onConcluiu} onFechar={onFecharConcluir} />
       )}
     </div>
   );
@@ -466,7 +468,7 @@ function BotaoMover({ rotulo, titulo, onClick }: { rotulo: string; titulo: strin
         e.stopPropagation();
         onClick();
       }}
-      className="shrink-0 rounded-[6px] border border-linha bg-branco px-2 py-0.5 text-[11.5px] font-semibold text-suave hover:bg-hover hover:text-tinta"
+      className="shrink-0 rounded-md px-2 py-0.5 text-[12px] font-medium text-mute hover:bg-hover hover:text-tinta"
     >
       {rotulo}
     </button>

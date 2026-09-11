@@ -2,8 +2,8 @@
 
 import { MarcaJarvis } from "@/components/jarvis/marca";
 import type { TarefaVisao } from "@/lib/dados/tarefas-visao-calculos";
-import { iniciaisDe, nomeResponsavel, textoPrazo } from "@/lib/dados/tarefa-calculos";
-import { ROTULO_PRIORIDADE, type Prioridade } from "@/lib/tarefas/dia";
+import { iniciaisDe, nomeResponsavel } from "@/lib/dados/tarefa-calculos";
+import { ROTULO_PRIORIDADE, textoPrazoHumano, type Prioridade } from "@/lib/tarefas/dia";
 import { cn } from "@/lib/utils";
 
 /*
@@ -28,7 +28,7 @@ export function BadgeOrigem({ t, apagada, className }: { t: Pick<TarefaVisao, "o
     <MarcaJarvis
       tamanho={16}
       rotulo="Criada pelo Jarvis a partir da conversa"
-      className={cn("inline-block align-[-3px]", apagada ? "text-mute/60" : "text-mute", className)}
+      className={cn("inline-block", apagada ? "text-mute/60" : "text-mute", className)}
     />
   );
 }
@@ -72,20 +72,22 @@ export function ChipPrioridade({ prioridade, apagada }: { prioridade: Prioridade
 export function PorQueJarvis({ t, apagada }: { t: TarefaVisao; apagada?: boolean }) {
   if (!t.por_que && !t.trecho) return null;
   return (
-    <div className={cn("mt-1 text-[12px] leading-snug", apagada ? "text-mute" : "text-suave")}>
+    <div className={cn("mt-0.5 text-[12.5px] leading-snug", apagada ? "text-mute/80" : "text-mute")}>
       {t.por_que && (
-        <p>
-          <BadgeOrigem t={t} apagada={apagada} className="mr-1.5 align-[1px]" />
-          {t.por_que}
+        <p className="flex items-start gap-1.5">
+          <BadgeOrigem t={t} apagada={apagada} className="mt-px shrink-0" />
+          <span className="min-w-0">{t.por_que}</span>
         </p>
       )}
-      {t.trecho && (
-        <blockquote className="mt-0.5 border-l-2 border-linha-forte pl-2 italic">“{t.trecho}”</blockquote>
-      )}
+      {t.trecho && <p className="mt-0.5 pl-[22px] italic">“{t.trecho}”</p>}
     </div>
   );
 }
 
+/**
+ * v3 (23:20) · a MESMA segunda linha da lista (linha.tsx), para o card do quadro: prazo (vermelho
+ * só se venceu) · avatar 18px + primeiro nome · tipo em texto. Sem chip — a dieta do Diogo.
+ */
 export function MetaTarefa({
   t,
   agora,
@@ -99,29 +101,24 @@ export function MetaTarefa({
 }) {
   const quem = nomeResponsavel(t, nomes.membros);
   return (
-    <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]", apagada ? "text-mute" : "text-suave")}>
+    <div className={cn("flex flex-wrap items-center gap-x-2 text-[12.5px]", apagada ? "text-mute/80" : "text-mute")}>
+      <span className={cn(t.vencida && !apagada && "font-medium text-vermelho")}>{textoPrazoHumano(t, agora)}</span>
       {quem && (
-        <span className="inline-flex items-center gap-1.5">
-          <span
-            className={cn(
-              "grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[8.5px] font-semibold text-branco",
-              apagada ? "bg-mute" : "bg-navy",
-            )}
-          >
-            {iniciaisDe(quem)}
+        <>
+          <span aria-hidden className="text-linha-forte">·</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className={cn("grid size-[18px] place-items-center rounded-full text-[8px] font-semibold text-branco", apagada ? "bg-mute" : "bg-navy")} aria-hidden>
+              {iniciaisDe(quem)}
+            </span>
+            {quem.split(/\s+/)[0]}
           </span>
-          {quem}
-        </span>
+        </>
       )}
-      {quem && <span className="text-linha">·</span>}
-      <span className={cn("font-mono tabular-nums", t.vencida && "font-semibold text-vermelho")}>
-        {textoPrazo(t, agora)}
-      </span>
-      <ChipPrioridade prioridade={t.prioridade} apagada={apagada} />
       {t.tipo && (
-        <span className="rounded-full border border-linha bg-board px-2 py-px text-[10.5px]">
-          {nomes.tipos.get(t.tipo) ?? t.tipo}
-        </span>
+        <>
+          <span aria-hidden className="text-linha-forte">·</span>
+          <span>{nomes.tipos.get(t.tipo) ?? t.tipo}</span>
+        </>
       )}
     </div>
   );

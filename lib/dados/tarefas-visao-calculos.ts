@@ -39,6 +39,23 @@ export interface TarefaVisao {
    * fica `undefined`; a fixture de ensaio preenche. Sem ela a ordem é só prazo, e basta.
    */
   prioridade?: "alta" | "media" | "baixa" | null;
+  /**
+   * v3 (23:20) · `core.tarefa.conversa_id` (0037 §1, a ancoragem). Quando vem, o clique na linha
+   * abre `/conversas?c=<id>`; sem ele cai em `?lead=`. A leitura real ainda não o seleciona.
+   */
+  conversa_id?: string | null;
+  /**
+   * v3 · o que aconteceu com a tarefa, em ordem (criada por · adiada · reatribuída · iniciada …).
+   * É o ledger dela lido de trás para a frente; a leitura real ainda não monta — a fixture e as
+   * escritas do ensaio montam. Ausente = a tela mostra só "criada em".
+   */
+  historico?: EventoTarefa[];
+}
+
+export interface EventoTarefa {
+  quando: string;
+  tipo: "criada" | "adiada" | "reatribuida" | "iniciada" | "reaberta" | "concluida" | "arquivada";
+  texto: string;
 }
 
 export type StatusFiltro = "abertas" | "concluidas" | "arquivadas";

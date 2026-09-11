@@ -1,4 +1,4 @@
-import type { TarefaVisao } from "./tarefas-visao-calculos";
+import type { EventoTarefa, TarefaVisao } from "./tarefas-visao-calculos";
 import type { DadosVisaoTarefas } from "./tarefas-visao";
 import { MOLDES_DIA } from "./tarefas-ensaio-dia";
 
@@ -51,6 +51,8 @@ export interface Molde {
    * 4-7. Com ele, o card do funil e a fila da SDR falam do mesmo paciente.
    */
   leadIdx?: number;
+  /** v3 · o que já aconteceu com ela (além de "criada", que é automático): `ha` = horas atrás */
+  historico?: { ha: number; tipo: EventoTarefa["tipo"]; texto: string }[];
 }
 
 const MOLDES: Molde[] = [
@@ -70,7 +72,7 @@ const MOLDES: Molde[] = [
       trecho: "vou ver certinho depois do exame aí te falo",
     },
   },
-  { titulo: "Cobrar retorno da simulação da Caixa", tipo: "confirmar_pagamento", lead: "José Carlos Menezes", leadReal: "70ba301b-eeb6-5bdf-b44e-b10d82829a7c", leadIdx: 1, ancora: "2026-07-17T10:53:21.620Z", prazoHoras: -4, resp: 0, andamento: true },
+  { titulo: "Cobrar retorno da simulação da Caixa", tipo: "confirmar_pagamento", lead: "José Carlos Menezes", leadReal: "70ba301b-eeb6-5bdf-b44e-b10d82829a7c", leadIdx: 1, ancora: "2026-07-17T10:53:21.620Z", prazoHoras: -4, resp: 0, andamento: true, historico: [{ ha: 52, tipo: "adiada", texto: "adiada em 3 dias — esperando a simulação da Caixa" }, { ha: 28, tipo: "adiada", texto: "adiada para hoje — gerente da Caixa só responde na quinta" }] },
   {
     titulo: "Responder dúvida sobre o teste em casa",
     tipo: "acompanhar_follow_up",
@@ -125,6 +127,11 @@ export function leadIdDeEnsaio(idx: number): string {
   return `1ead0000-0000-4000-8000-${String(idx + 1).padStart(12, "0")}`;
 }
 
+/** as 15 primeiras leads da fixture do funil têm conversa (`c0nv0000-…-<idx+1>`, lib/ensaio/fixtures/conversas.ts) */
+export function conversaIdDeEnsaio(idx: number): string | null {
+  return idx <= 14 ? `c0nv0000-0000-4000-8000-${String(idx + 1).padStart(12, "0")}` : null;
+}
+
 function leadIdDoMolde(m: Molde, i: number, leadsDoFunil: boolean): string | null {
   if (!m.lead) return null;
   if (leadsDoFunil && m.leadIdx != null) return leadIdDeEnsaio(m.leadIdx);
@@ -152,9 +159,20 @@ export function visaoTarefasDeEnsaio(
     const r = RESPONSAVEIS[m.resp ?? 0];
     const status = m.status ?? "pendente";
     if (m.andamento && status === "pendente") emAndamento.push(id);
+    const criadoEm = m.ancora ?? iso((m.prazoHoras ?? 0) - 48);
+    const quem = r.nome.split("@")[0];
+    const historico: EventoTarefa[] = [
+      { quando: criadoEm, tipo: "criada", texto: m.jarvis ? "criada pelo Jarvis a partir da conversa" : `criada por ${quem}` },
+      ...(m.historico ?? []).map((h) => ({ quando: iso(-h.ha), tipo: h.tipo, texto: h.texto })),
+      ...(m.andamento && status === "pendente" ? [{ quando: iso(-1.5), tipo: "iniciada" as const, texto: `${quem} pegou a tarefa` }] : []),
+      ...(status === "concluida" ? [{ quando: iso((m.prazoHoras ?? 0) + 1), tipo: "concluida" as const, texto: `concluída por ${quem}` }] : []),
+      ...(status === "arquivada" ? [{ quando: iso((m.prazoHoras ?? 0) + 1), tipo: "arquivada" as const, texto: `arquivada por ${quem}` }] : []),
+    ];
     return {
       id,
       lead_id: leadIdDoMolde(m, i, leadsDoFunil),
+      conversa_id: leadsDoFunil && m.leadIdx != null ? conversaIdDeEnsaio(m.leadIdx) : null,
+      historico,
       lead_nome: m.lead,
       titulo: m.titulo,
       descricao: null,
@@ -165,7 +183,7 @@ export function visaoTarefasDeEnsaio(
       status,
       resultado: m.resultado ?? null,
       motivo_arquivo: m.motivo_arquivo ?? null,
-      criado_em: m.ancora ?? iso((m.prazoHoras ?? 0) - 48),
+      criado_em: criadoEm,
       concluida_em: status === "pendente" ? null : iso((m.prazoHoras ?? 0) + 1),
       vencida: status === "pendente" && m.prazoHoras != null && m.prazoHoras < 0,
       por_que: m.jarvis?.por_que ?? null,

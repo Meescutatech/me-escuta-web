@@ -17,12 +17,16 @@ export interface TarefaComDestino {
   lead_id: string | null;
   /** ISO. Quando a tarefa nasceu — é o que vira âncora no fio. */
   criado_em?: string | null;
+  /** v3 · a conversa em que a tarefa nasceu (0037 `conversa_id`): quando vem, o link é `?c=` direto */
+  conversa_id?: string | null;
 }
 
-/** `null` = tarefa sem lead (interna): não há conversa para abrir, e o card não vira link. */
+/** `null` = tarefa sem lead nem conversa (interna): não há conversa para abrir, e o card não vira link. */
 export function destinoDaTarefa(t: TarefaComDestino): string | null {
-  if (!t.lead_id) return null;
-  const p = new URLSearchParams({ lead: t.lead_id });
+  const p = new URLSearchParams();
+  if (t.conversa_id) p.set("c", t.conversa_id);
+  else if (t.lead_id) p.set("lead", t.lead_id);
+  else return null;
   if (t.criado_em) p.set("em", t.criado_em);
   return `/conversas?${p.toString()}`;
 }

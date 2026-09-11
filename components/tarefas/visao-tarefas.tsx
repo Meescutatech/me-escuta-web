@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, PlayIcon } from "lucide-react";
+import { CheckIcon, LayoutListIcon, PlayIcon, SquareKanbanIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import type { DadosVisaoTarefas } from "@/lib/dados/tarefas-visao";
@@ -28,7 +29,15 @@ import {
   type Aba,
   type GrupoDia,
 } from "@/lib/tarefas/dia";
-import { aplicarEscritas, escritasVazias, idNovoEnsaio, propostasPendentes, type EscritasEnsaio } from "@/lib/tarefas/ensaio-local";
+import {
+  aplicarEscritas,
+  comEvento,
+  emAndamentoComEscritas,
+  escritasVazias,
+  idNovoEnsaio,
+  propostasPendentes,
+  type EscritasEnsaio,
+} from "@/lib/tarefas/ensaio-local";
 import { payloadDaProposta, tarefaDaProposta, type PropostaTarefaPendente } from "@/lib/tarefas/propostas";
 import { destinoDaTarefa } from "@/lib/tarefas/destino";
 import {
@@ -40,7 +49,10 @@ import {
 } from "@/app/(app)/lead/actions";
 import { concluirTarefaNotificacao } from "@/app/(app)/notificacoes/actions";
 import { validarPropostaTarefa } from "@/app/(app)/tarefas/actions";
-import { QuadroStatus } from "@/components/tarefas/quadro-status";
+import { QuadroStatus, type ExecutorQuadro } from "@/components/tarefas/quadro-status";
+import { ListaDeAcoes, type ItemAcao } from "@/components/jarvis/lista-de-acoes";
+import { iniciarTarefa, reabrirTarefa } from "@/app/(app)/tarefas/actions";
+import { dataHoraCurta } from "@/lib/dados/tarefa-calculos";
 import type { PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
 import { AbasTarefas } from "@/components/tarefas/abas";
 import { FiltrosTarefas as BarraFiltros } from "@/components/tarefas/filtros";
@@ -71,6 +83,13 @@ import { cn } from "@/lib/utils";
  *  · HOJE segue sendo a entrada da SDR: cabeçalho com o dia, "N para hoje · M vencidas",
  *    "Começar as tarefas" e o foco que anda (`?foco=<id>`; ⏎ conclui · A adia · J abre a
  *    conversa · P pula · ↑/↓ · Esc).
+ *
+ * v3 (23:20, "melhorou bastante" + 4 ajustes): (1) LARGURA — o `max-w-[960px]` saiu; a lista
+ * ocupa a largura útil com gutter de 24px e teto de 1600px ("qual a sua tara de padding a 20
+ * quarteirões do lado?"); (2) cada linha tem um CHEVRON que expande detalhes (descrição,
+ * porquê + trecho, histórico, ações completas — linha.tsx); (3) TRÊS ALVOS por linha: checkbox
+ * conclui, título abre o chat com o lead, chevron expande; (4) o QUADRO por estado voltou a ser
+ * visível — toggle Lista | Quadro ao lado dos filtros (`?ver=quadro`), com o card na mesma dieta.
  */
 
 export function VisaoTarefas({
@@ -103,9 +122,11 @@ export function VisaoTarefas({
 }) {
   const router = useRouter();
   const [filtros, setFiltros] = useState<FiltrosTarefas>(filtrosIniciais);
-  const [quadro] = useState<boolean>(quadroInicial);
+  const [quadro, setQuadro] = useState<boolean>(quadroInicial);
+  /** v3 · linhas com os detalhes abertos (chevron) */
+  const [abertas, setAbertas] = useState<Set<string>>(() => new Set());
   const [foco, setFoco] = useState<string | null>(focoInicial);
-  const idsEmAndamento = useMemo(() => new Set(emAndamento.ids), [emAndamento.ids]);
+
   const [agora, setAgora] = useState<number>(() => Date.now());
 
   useEffect(() => {
@@ -148,9 +169,15 @@ export function VisaoTarefas({
 
   // ── ESCRITAS: o executor (produção = server actions; ensaio = estado local) ──
   const [escritas, setEscritas] = useState<EscritasEnsaio>(escritasVazias);
+  const idsEmAndamento = useMemo(
+    () => new Set(ensaio ? emAndamentoComEscritas(emAndamento.ids, escritas) : emAndamento.ids),
+    [ensaio, emAndamento.ids, escritas],
+  );
   const contadorNovo = useRef(0);
   const [eAgora, setEAgora] = useState<ConcluidaAgora | null>(null);
   const [progresso, setProgresso] = useState({ concluidas: 0, adiadas: 0 });
+  /** v3 · o que já passou pelo percurso, na ordem — vira a `ListaDeAcoes` do W-J no topo de Hoje */
+  const [percursoLog, setPercursoLog] = useState<{ id: string; titulo: string; estado: "feito" | "adiada"; quando: string; badge: string }[]>([]);
   const refrescar = useCallback(() => router.refresh(), [router]);
 
   const tarefas = useMemo(
@@ -173,11 +200,24 @@ export function VisaoTarefas({
         async adiar(t, prazoIso, motivo) {
           if (!prazoIso) return { ok: false, motivo: "escolha uma data" };
           if (!motivo.trim()) return { ok: false, motivo: "motivo obrigatório" };
-          setEscritas((e) => ({ ...e, prazos: new Map(e.prazos).set(t.id, prazoIso) }));
+          setEscritas((e) =>
+            comEvento({ ...e, prazos: new Map(e.prazos).set(t.id, prazoIso) }, t.id, {
+              quando: new Date().toISOString(),
+              tipo: "adiada",
+              texto: `${motivo} · novo prazo ${dataHoraCurta(prazoIso)}`,
+            }),
+          );
           return ok;
         },
         async reatribuir(t, responsavelId) {
-          setEscritas((e) => ({ ...e, responsaveis: new Map(e.responsaveis).set(t.id, responsavelId) }));
+          const nome = pessoasAtivas.find((p) => p.id === responsavelId)?.nome.split(/\s+/)[0] ?? "outro membro";
+          setEscritas((e) =>
+            comEvento({ ...e, responsaveis: new Map(e.responsaveis).set(t.id, responsavelId) }, t.id, {
+              quando: new Date().toISOString(),
+              tipo: "reatribuida",
+              texto: `passada para ${nome}`,
+            }),
+          );
           return ok;
         },
         async arquivar(t, motivo) {
@@ -255,7 +295,49 @@ export function VisaoTarefas({
         return r;
       },
     };
-  }, [ensaio, refrescar]);
+  }, [ensaio, refrescar, pessoasAtivas]);
+
+  // v3 · o quadro por status escreve por aqui (ensaio = local; produção = iniciar/reabrir reais)
+  const executorQuadro = useMemo<ExecutorQuadro>(() => {
+    if (ensaio) {
+      const ok = { ok: true } as const;
+      return {
+        async iniciar(t) {
+          setEscritas((e) => {
+            const iniciadas = new Set(e.iniciadas).add(t.id);
+            const reabertas = new Set(e.reabertas);
+            reabertas.delete(t.id);
+            return comEvento({ ...e, iniciadas, reabertas }, t.id, { quando: new Date().toISOString(), tipo: "iniciada", texto: "tarefa pega no quadro" });
+          });
+          return ok;
+        },
+        async reabrir(t) {
+          setEscritas((e) => {
+            const reabertas = new Set(e.reabertas).add(t.id);
+            const iniciadas = new Set(e.iniciadas);
+            iniciadas.delete(t.id);
+            const concluidas = new Map(e.concluidas);
+            concluidas.delete(t.id);
+            return comEvento({ ...e, reabertas, iniciadas, concluidas }, t.id, { quando: new Date().toISOString(), tipo: "reaberta", texto: "voltou para A fazer" });
+          });
+          return ok;
+        },
+        acoesDe: (t) => ({ concluir: (r) => executor.concluir(t, r) }),
+      };
+    }
+    return {
+      async iniciar(t) {
+        const r = await iniciarTarefa(t.id, t.lead_id);
+        if (r.ok) refrescar();
+        return r;
+      },
+      async reabrir(t) {
+        const r = await reabrirTarefa(t.id, t.lead_id);
+        if (r.ok) refrescar();
+        return r;
+      },
+    };
+  }, [ensaio, refrescar, executor]);
 
   const acoesDe = useCallback(
     (t: TarefaVisao): AcoesDaTarefa => ({
@@ -311,6 +393,7 @@ export function VisaoTarefas({
   function escolherAba(a: Aba) {
     setFiltros(filtrosDaAba(a, filtros));
     if (a !== "hoje") setFoco(null);
+    else setQuadro(false);
   }
 
   // ── painel aberto por linha (um por vez) ──
@@ -341,6 +424,7 @@ export function VisaoTarefas({
   }
   function aoConcluida(t: TarefaVisao, resultado: string) {
     setProgresso((p) => ({ ...p, concluidas: p.concluidas + 1 }));
+    setPercursoLog((l) => [...l, { id: t.id, titulo: t.titulo, estado: "feito", quando: new Date().toISOString(), badge: horaAgora() }]);
     setPainelDe(null);
     proximoRef.current = proximoDepoisDe(t.id);
     if (t.lead_id) setEAgora({ tarefa: t, resultado });
@@ -353,6 +437,7 @@ export function VisaoTarefas({
   }
   function aoAdiada(t: TarefaVisao) {
     setProgresso((p) => ({ ...p, adiadas: p.adiadas + 1 }));
+    setPercursoLog((l) => [...l, { id: t.id, titulo: t.titulo, estado: "adiada", quando: new Date().toISOString(), badge: "adiada" }]);
     setPainelDe(null);
     andarFoco(t.id, proximoDepoisDe(t.id));
   }
@@ -416,6 +501,31 @@ export function VisaoTarefas({
   }, [emFoco, posicao, idsFila, painelDe]);
 
   const feitas = progresso.concluidas + progresso.adiadas;
+
+  // v3 · o percurso como lista de ações (componente do W-J): o que já foi (riscado, com a hora),
+  // a atual (anel pontilhado, com o porquê como subitem), as próximas (vazio) e as vencidas (!).
+  const itensPercurso = useMemo<ItemAcao[]>(() => {
+    if (!modoHoje || !emFoco) return [];
+    const passadas: ItemAcao[] = percursoLog.map((p) => ({
+      id: `log-${p.id}`,
+      titulo: p.titulo,
+      estado: p.estado === "feito" ? "feito" : "pendente",
+      badge: p.badge,
+    }));
+    const restantes: ItemAcao[] = fila.map((t, i) => {
+      const atual = i === posicao;
+      const item: ItemAcao = {
+        id: t.id,
+        titulo: t.titulo,
+        estado: atual ? "andamento" : t.vencida ? "atencao" : "pendente",
+        badge: atual ? `${i + 1} de ${fila.length}` : t.vencida ? "vencida" : null,
+        href: atual ? null : `/tarefas?ver=hoje&minhas=1&foco=${t.id}`,
+      };
+      if (atual && t.por_que) item.filhos = [{ id: `${t.id}-porque`, titulo: t.por_que, estado: "andamento", badge: "por quê" }];
+      return item;
+    });
+    return [...passadas, ...restantes];
+  }, [modoHoje, emFoco, percursoLog, fila, posicao]);
   const nadaNoWorkspace = tarefas.length === 0;
   const nadaComFiltro = !nadaNoWorkspace && (quadro ? tarefasQuadro.length === 0 : grupos.length === 0);
   const filtroTexto = filtros.busca.trim() !== "" || filtros.tipo != null || (filtros.responsavelId != null && !filtros.minhas);
@@ -424,7 +534,7 @@ export function VisaoTarefas({
     <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
       {/* ── abas + filtros ── */}
       <div className="flex-shrink-0 px-6 pt-3">
-        <div className="mx-auto flex max-w-[960px] flex-col gap-3">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-3">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-linha">
             <AbasTarefas ativa={aba} contagem={contagem} onEscolher={escolherAba} semMeuId={!meuId} />
             <span className="ml-auto pb-1.5 text-[12px] text-mute">
@@ -442,14 +552,39 @@ export function VisaoTarefas({
               )}
             </span>
           </div>
-          <BarraFiltros
-            filtros={filtros}
-            onMudar={mudar}
-            pessoas={pessoasAtivas}
-            tiposTarefa={tiposTarefa}
-            mostrarResponsavel={!modoHoje && !filtros.minhas}
-            mostrarStatus={!modoHoje}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <BarraFiltros
+              filtros={filtros}
+              onMudar={mudar}
+              pessoas={pessoasAtivas}
+              tiposTarefa={tiposTarefa}
+              mostrarResponsavel={!modoHoje && !filtros.minhas}
+              mostrarStatus={!modoHoje && !quadro}
+            />
+            {/* v3 · Lista | Quadro — o quadro por estado (F8) de volta à vista */}
+            {!modoHoje && (
+              <ToggleGroup
+                value={[quadro ? "quadro" : "lista"]}
+                onValueChange={(v) => {
+                  const esc = (v as string[])[0];
+                  if (esc === "quadro" || esc === "lista") setQuadro(esc === "quadro");
+                }}
+                variant="outline"
+                size="sm"
+                aria-label="Forma de ver"
+                className="ml-auto"
+              >
+                <ToggleGroupItem value="lista" aria-label="Lista" className="px-2.5 text-[13px]">
+                  <LayoutListIcon aria-hidden />
+                  Lista
+                </ToggleGroupItem>
+                <ToggleGroupItem value="quadro" aria-label="Quadro" className="px-2.5 text-[13px]">
+                  <SquareKanbanIcon aria-hidden />
+                  Quadro
+                </ToggleGroupItem>
+              </ToggleGroup>
+            )}
+          </div>
         </div>
       </div>
 
@@ -462,10 +597,11 @@ export function VisaoTarefas({
           agora={agora}
           nomes={nomes}
           aoMudar={refrescar}
+          executor={executorQuadro}
         />
       ) : (
         <div className="flex-1 overflow-y-auto px-6 pb-16 pt-4">
-          <div className="mx-auto max-w-[960px]">
+          <div className="mx-auto max-w-[1600px]">
             {/* cabeçalho do dia — só em Hoje */}
             {modoHoje && (
               <header className="mb-4 flex flex-wrap items-end gap-x-4 gap-y-2">
@@ -524,6 +660,13 @@ export function VisaoTarefas({
                   )}
                 </div>
               </header>
+            )}
+
+            {/* v3 · o percurso em andamento — a lista de ações do W-J, no topo, enquanto o foco anda */}
+            {modoHoje && itensPercurso.length > 0 && (
+              <div className="mb-4 rounded-lg border border-linha bg-branco px-4 py-3">
+                <ListaDeAcoes itens={itensPercurso} rotulo="Percurso do dia" />
+              </div>
             )}
 
             {/* o que o Jarvis ainda não criou (tipos em modo "propõe") */}
@@ -592,6 +735,15 @@ export function VisaoTarefas({
                           pessoas={pessoasAtivas}
                           acoes={acoesDe(t)}
                           emFoco={t.id === foco}
+                          aberta={abertas.has(t.id)}
+                          onAbrir={(ab) =>
+                            setAbertas((s) => {
+                              const n = new Set(s);
+                              if (ab) n.add(t.id);
+                              else n.delete(t.id);
+                              return n;
+                            })
+                          }
                           painel={painelDa(t.id)}
                           onPainel={(p) => abrirPainel(t.id, p)}
                           aoConcluida={(resultado) => aoConcluida(t, resultado)}
@@ -621,6 +773,10 @@ export function VisaoTarefas({
       />
     </div>
   );
+}
+
+function horaAgora(): string {
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date());
 }
 
 /** `?ver=quadro` e `?foco=<id>` entram na URL por fora de `serializarFiltros`. */

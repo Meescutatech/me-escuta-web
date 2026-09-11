@@ -1,4 +1,4 @@
-import type { TarefaVisao } from "@/lib/dados/tarefas-visao-calculos";
+import type { EventoTarefa, TarefaVisao } from "@/lib/dados/tarefas-visao-calculos";
 import type { PropostaTarefaPendente } from "./propostas";
 
 /**
@@ -26,6 +26,11 @@ export interface EscritasEnsaio {
   criadas: TarefaVisao[];
   /** propostas já decididas (aceitas ou descartadas) */
   propostasResolvidas: Set<string>;
+  /** v3 · o histórico que a sessão acrescentou (adiada · reatribuída · iniciada · reaberta) */
+  eventos: Map<string, EventoTarefa[]>;
+  /** v3 · quadro por status: `tarefa_iniciada` / `tarefa_reaberta` locais */
+  iniciadas: Set<string>;
+  reabertas: Set<string>;
 }
 
 export function escritasVazias(): EscritasEnsaio {
@@ -36,13 +41,29 @@ export function escritasVazias(): EscritasEnsaio {
     arquivadas: new Map(),
     criadas: [],
     propostasResolvidas: new Set(),
+    eventos: new Map(),
+    iniciadas: new Set(),
+    reabertas: new Set(),
   };
+}
+
+/** acrescenta um evento ao histórico local de uma tarefa (imutável) */
+export function comEvento(e: EscritasEnsaio, id: string, ev: EventoTarefa): EscritasEnsaio {
+  const eventos = new Map(e.eventos);
+  eventos.set(id, [...(eventos.get(id) ?? []), ev]);
+  return { ...e, eventos };
 }
 
 export function aplicarEscritas(tarefas: TarefaVisao[], e: EscritasEnsaio, agoraMs: number): TarefaVisao[] {
   const agoraIso = new Date(agoraMs).toISOString();
   const base = tarefas.map((t) => {
     let s = t;
+    const extra = e.eventos.get(t.id);
+    if (extra?.length) s = { ...s, historico: [...(s.historico ?? []), ...extra] };
+    // reaberta no quadro: uma concluída da fixture volta para pendente
+    if (e.reabertas.has(t.id) && t.status === "concluida" && !e.concluidas.has(t.id)) {
+      s = { ...s, status: "pendente", resultado: null, concluida_em: null, vencida: !!t.prazo && new Date(t.prazo).getTime() < agoraMs };
+    }
     const prazo = e.prazos.get(t.id);
     if (prazo) s = { ...s, prazo, vencida: new Date(prazo).getTime() < agoraMs };
     const resp = e.responsaveis.get(t.id);
@@ -56,6 +77,8 @@ export function aplicarEscritas(tarefas: TarefaVisao[], e: EscritasEnsaio, agora
   // as criadas também podem ter sido concluídas/adiadas na mesma sessão
   const criadas = e.criadas.map((t) => {
     let s = t;
+    const extra = e.eventos.get(t.id);
+    if (extra?.length) s = { ...s, historico: [...(s.historico ?? []), ...extra] };
     const prazo = e.prazos.get(t.id);
     if (prazo) s = { ...s, prazo, vencida: new Date(prazo).getTime() < agoraMs };
     const resultado = e.concluidas.get(t.id);
@@ -63,6 +86,15 @@ export function aplicarEscritas(tarefas: TarefaVisao[], e: EscritasEnsaio, agora
     return s;
   });
   return [...base, ...criadas];
+}
+
+/** ids em andamento depois das escritas locais: base ∪ iniciadas − (reabertas ∪ concluídas) */
+export function emAndamentoComEscritas(base: readonly string[], e: EscritasEnsaio): string[] {
+  const s = new Set(base);
+  for (const id of e.iniciadas) s.add(id);
+  for (const id of e.reabertas) s.delete(id);
+  for (const id of e.concluidas.keys()) s.delete(id);
+  return [...s];
 }
 
 export function propostasPendentes(propostas: PropostaTarefaPendente[], e: EscritasEnsaio): PropostaTarefaPendente[] {
