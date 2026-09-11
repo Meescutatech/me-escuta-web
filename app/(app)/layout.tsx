@@ -97,18 +97,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         verMarketing={podeVerMarketing(papel)}
         perfil={{ nome, email: user.email ?? "usuario", papel }}
       />
-      <Header
-        departamentos={escopoEstado.visiveis}
-        ativo={escopoEstado.ativo}
-        comPendencia={comPendencia}
-        escopoIndisponivel={escopoEstado.indisponivel}
-        notificacoes={notificacoes.itens}
-        notificacoesDisponiveis={notificacoes.disponivel}
-        email={user.email ?? "usuario"}
-        usuarioId={user.id}
-        nome={nome}
-        meuPapel={papel}
-      />
+
       {/*
         O SHELL COMPENSA A ALTURA DO HEADER — e é isto que o C5 prova.
         O header é `fixed`, então não ocupa espaço no fluxo: sem este `padding-top`, as telas de
@@ -125,7 +114,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         acrescenta é o que precisa existir em TODA tela — ⌘K global (⇧⌘K dentro de campo de
         texto, `/` como secundário), o overlay ancorado, o dock no canto e o gesto de seleção.
       */}
+      {/*
+        11/09 · O PROVEDOR PASSOU A ENVOLVER O HEADER TAMBÉM.
+        Antes ele envolvia só o `<main>`, e isso bastava enquanto o Jarvis vivia no canto. Agora o
+        arco mora no CENTRO DO HEADER e precisa do mesmo contexto — sem isto ele renderiza, não
+        acha o provedor e cai no valor inerte (`abrir` que não faz nada), que é o pior defeito
+        possível: um botão bonito e mudo.
+      */}
       <PresencaJarvis usuarioId={user.id} papel={papel} ensaio={false}>
+        <Header
+          departamentos={escopoEstado.visiveis}
+          ativo={escopoEstado.ativo}
+          comPendencia={comPendencia}
+          escopoIndisponivel={escopoEstado.indisponivel}
+          notificacoes={notificacoes.itens}
+          notificacoesDisponiveis={notificacoes.disponivel}
+          email={user.email ?? "usuario"}
+          usuarioId={user.id}
+          nome={nome}
+          meuPapel={papel}
+        />
         <main className="pt-[var(--altura-topo)]">{children}</main>
       </PresencaJarvis>
       <PresencaBatimento />
@@ -176,19 +184,20 @@ async function AppLayoutEnsaio({
         verMarketing={podeVerMarketing(pessoa.papel)}
         perfil={{ nome: pessoa.nome, email: pessoa.email, papel: pessoa.papel }}
       />
-      <Header
-        departamentos={escopoEstado.visiveis}
-        ativo={escopoEstado.ativo}
-        comPendencia={comPendencia}
-        escopoIndisponivel={false}
-        notificacoes={[]}
-        notificacoesDisponiveis={false}
-        email={pessoa.email}
-        usuarioId={pessoa.id}
-        nome={pessoa.nome}
-        meuPapel={pessoa.papel}
-      />
+
       <PresencaJarvis usuarioId={pessoa.id} papel={pessoa.papel} ensaio>
+        <Header
+          departamentos={escopoEstado.visiveis}
+          ativo={escopoEstado.ativo}
+          comPendencia={comPendencia}
+          escopoIndisponivel={false}
+          notificacoes={[]}
+          notificacoesDisponiveis={false}
+          email={pessoa.email}
+          usuarioId={pessoa.id}
+          nome={pessoa.nome}
+          meuPapel={pessoa.papel}
+        />
         <main className="pt-[var(--altura-topo)]">{children}</main>
       </PresencaJarvis>
       <VerComo atual={pessoa} pessoas={PESSOAS} />

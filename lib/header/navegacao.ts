@@ -43,15 +43,10 @@ export function itensSidebar({
 }): ItemSidebar[] {
   const fmt = (n: number) => n.toLocaleString("pt-BR");
   const itens: ItemSidebar[] = [
-    {
-      href: "/jarvis",
-      rotulo: "Jarvis",
-      icone: "jarvis",
-      ativa: pathname.startsWith("/jarvis"),
-      cont: null,
-      tom: "neutro",
-      ponto: false,
-    },
+    // 11/09 · A ABA JARVIS SAIU. Ele deixou de ser um lugar para onde se vai: mora no centro do
+    // header, em toda tela, e responde ali mesmo (`ArcoHeader` + `⌘K`). A ROTA `/jarvis` continua
+    // existindo — quem tem o link chega, e a tela de melhoria de prompt da Clara vive lá — mas
+    // navegação que oferece um destino para quem já está com ele na tela é ruído.
     { href: "/", rotulo: "Dashboard", icone: "dashboard", ativa: pathname === "/", cont: null, tom: "neutro", ponto: false },
     {
       href: "/funil",

@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { ProvedorJarvis, useJarvis } from "@/lib/jarvis/contexto";
 import type { PapelUsuario } from "@/lib/jarvis/contrato";
-import { DockJarvis } from "./dock";
 import { OverlayJarvis } from "./overlay";
 import { SelecaoJarvis } from "./selecao";
 
@@ -118,7 +117,14 @@ export function PresencaJarvis({
       <AtalhoJarvis />
       <OverlayJarvis />
       <SelecaoJarvis />
-      <DockJarvis ensaio={ensaio} />
+      {/*
+        11/09 · O DOCK MORREU. Ele vivia em `fixed right-6`, no canto inferior — o "dongozinho"
+        do Wispr Flow. Agora o Jarvis mora no CENTRO DO HEADER (`ArcoHeader`), e o Diogo cravou
+        que o canto morre: dois lugares para a mesma coisa ensinam que nenhum é O lugar, e o do
+        canto era o que tinha de brigar por espaço com o carimbo de build e com qualquer toast.
+        `dock.tsx` continua no repo — a medição de canto por hit-testing que ele carrega é boa e
+        pode servir de novo; o que saiu foi a montagem.
+      */}
     </ProvedorJarvis>
   );
 }

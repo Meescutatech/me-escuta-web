@@ -682,3 +682,14 @@ body {
   box-shadow: 0 0 0 2px var(--laranja-anel);
   border-radius: 13px;
 }
+
+/* O ANEL DO JARVIS (11/09) — "tem algo a dizer", uma vez por aviso.
+   Abre e some; o que PERSISTE é o ponto laranja, até alguém abrir. Insistir seria o sino de novo,
+   e o sino é justamente o que o arco substitui. */
+@keyframes anel-jarvis {
+  0%   { opacity: .55; transform: scale(.55); }
+  70%  { opacity: 0;   transform: scale(1.45); }
+  100% { opacity: 0;   transform: scale(1.45); }
+}
+.anel-jarvis { animation: anel-jarvis 1.6s ease-out 1 both; }
+@media (prefers-reduced-motion: reduce) { .anel-jarvis { animation: none; opacity: .5; } }

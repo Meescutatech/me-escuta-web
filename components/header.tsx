@@ -1,10 +1,7 @@
 "use client";
 
-import { Suspense } from "react";
+import { ArcoHeader } from "@/components/jarvis/arco-header";
 import { usePathname } from "next/navigation";
-import { Sino } from "@/components/notificacoes/sino";
-import { RelatarDestaTela } from "@/components/header/relatar-desta-tela";
-import { JarvisGatilho } from "@/components/header/jarvis-gatilho";
 import { lerTituloDaRota } from "@/lib/header/titulos";
 import type { Departamento } from "@/lib/departamentos/escopo";
 import type { Notificacao } from "@/lib/notificacoes";
@@ -105,26 +102,21 @@ export function Header({
         {escopoIndisponivel && <span className="sr-only">Departamento indisponível</span>}
       </div>
 
-      <div className="ml-auto flex flex-none items-center gap-2">
-        {/*
-          JARVIS SOBRE ESTA TELA (F4, 27/08) — o slot de 32×32 que ficou vazio desde o M6 agora tem
-          dono. É o único href do header, e é exceção DECLARADA à regra "zero destino no topo": o
-          que vive aqui é o ATO do Jarvis sobre a tela atual (leva `?contexto=<rota>`), não o
-          destino — o destino é o item `Jarvis` da sidebar. `useSearchParams` exige Suspense; o
-          fallback ocupa a mesma caixa para o header não pular.
-        */}
-        <Suspense fallback={<span aria-hidden className="h-8 w-8" />}>
-          <JarvisGatilho usuarioId={usuarioId} papel={meuPapel} />
-        </Suspense>
+      {/*
+        O ARCO, NO CENTRO — a presença do Jarvis (Diogo, 11/09 16:45). `absolute` + `-translate-x-1/2`
+        porque o centro tem de ser o da TELA, não o do espaço que sobra: com `justify-center` num
+        flex, o título à esquerda empurraria o arco e ele mudaria de lugar a cada rota. O ponto
+        estável é o valor inteiro dele.
 
-        <RelatarDestaTela meuPapel={meuPapel} />
-
-        {/* O SINO É O COMPONENTE EXISTENTE, MOVIDO — não reescrito. É o modo de falha mais provável
-            desta entrega (alguém redesenha o sino aqui dentro e deixa o antigo morrendo no layout),
-            e o C3 vigia isso pelo path do SVG: ele tem de casar com UM arquivo só. */}
-        <Sino inicial={notificacoes} disponivel={notificacoesDisponiveis} />
-        {/* W-D2 (10/09): o avatar/perfil SAIU daqui — mora no rodapé da sidebar (`PerfilRodape`),
-            com a engrenagem de Configurações logo acima. O header fica só com o que é da tela. */}
+        Aqui havia TRÊS botões, e os três saíram: o gatilho que levava para `/jarvis` (ele não é
+        mais um destino), o "relatar desta tela" e o SINO. O arco não os esconde — ele os substitui:
+        quem nota que algo precisa de atenção é o Jarvis, então o aviso é dele. Sino ao lado seriam
+        duas fontes para o mesmo fato, e a segunda envelhece.
+      */}
+      <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        <div className="pointer-events-auto">
+          <ArcoHeader />
+        </div>
       </div>
     </header>
   );
