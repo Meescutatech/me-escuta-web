@@ -1,114 +1,189 @@
 import type { TarefaVisao } from "@/lib/dados/tarefas-visao-calculos";
-import { ehDoDia, ordenarDia } from "@/lib/tarefas/dia";
-import type { SessaoFocoCookie } from "@/lib/tarefas/sessao-foco";
+import { conversaIdDeEnsaio, visaoTarefasDeEnsaio } from "@/lib/dados/tarefas-ensaio";
+import { tarefasAceitasComoVisao } from "@/lib/ensaio/conversas-extra";
+import { comResumosDeEnsaio } from "@/lib/ensaio/tarefas-foco";
+import type { ResumoJarvis } from "@/lib/tarefas/resumo";
 
 /**
- * O MODO FOCO — a fila de uma tarefa por vez (W-T, 10/09/2026 noite).
+ * O MODO FOCO — decidido pelo Diogo em 11/09, 00:20:
  *
- * Pedido literal do workshop (12/08, R8): *"Não quero que você abra múltiplas telas."* E o número
- * que o justifica é do Rodolfo, na mesma sala: *"Ela tá gastando metade do tempo dela pra poder
- * priorizar e a outra metade pra poder escrever a tarefa."* O modo foco tira as duas metades da
- * frente: a ordem é decidida antes (a fila do dia), e a conversa fica AO LADO — não noutra aba.
+ *   *"Fechei o modo foco. Será a TELA DE CONVERSAS, onde cada conversa será uma tarefa."*
  *
- * Benchmark de hoje §4.8: é o "Start [x] tasks" do HubSpot (abre a 1ª e navega uma a uma) sobre a
- * view do §4.7 (o Inbox Today do Close: vencidas ∪ hoje, juntas, porque a pergunta é "o que faço
- * agora").
+ * Não é tela nova nem rota própria: é `/conversas` num estado que mostra **só as conversas cujo
+ * lead tem tarefa pendente minha**, com a tarefa (o que fazer + prazo) na frente da prévia da
+ * mensagem. O dono da tela é o W-D3; este arquivo é o que /tarefas entrega para ele — e é a
+ * fronteira: daqui sai DADO e ORDEM, não JSX.
  *
- * ── A REGRA QUE MOLDA ESTE ARQUIVO ────────────────────────────────────────────────────────────
- * A ORDEM CONGELA quando a sessão começa. Se a fila fosse recalculada a cada ação, concluir uma
- * tarefa reordenaria as outras debaixo da pessoa — e o "3 de 12" mentiria a cada passo (o
- * denominador encolhendo é o pior: parece progresso e é só a régua mudando). Então `ordem` é
- * gravada uma vez, e daí em diante só se REMOVE (concluída, arquivada, adiada para fora do dia) e
- * se REORDENA o que foi PULADO — que vai para o fim, nunca para fora.
+ * A versão anterior (rota `/tarefas/foco`, tela própria com a tarefa à esquerda e a conversa à
+ * direita) está no commit `69054a9` e foi substituída inteira por esta decisão. A rota agora
+ * redireciona para `/conversas?foco=1`.
  *
- * Pular ≠ adiar. Adiar muda o prazo e é um evento (`tarefa_prazo_repactuado`, com motivo). Pular é
- * "agora não, hoje sim": não toca no prazo, não vira evento hoje, e a tarefa volta no fim da fila.
- * Está em `pesquisa/TAREFAS-MODO-FOCO-E-RESUMO-DO-JARVIS-2026-09-10.md` §5 como candidato a
- * `tarefa_pulada` — enquanto não existir, vive no cookie do ensaio e na memória da sessão.
+ * ── Por que a ordem é urgência e não prazo puro ───────────────────────────────────────────────
+ * Vencida → hoje → futura, e só dentro de cada faixa é que o prazo desempata. É o Inbox Today do
+ * Close (benchmark §4.7): vencido e de hoje na mesma cesta, porque a pergunta é "o que faço
+ * agora" — mas dentro dela o que já venceu vem primeiro, senão uma tarefa de ontem às 18h fica
+ * atrás de uma de hoje às 9h só por causa do relógio.
  *
- * Tudo aqui é puro: recebe as tarefas já com as escritas aplicadas e devolve recortes.
+ * Uma conversa entra UMA vez, com a tarefa mais urgente dela; as outras viram `outras`. Duas
+ * linhas para o mesmo paciente é a lista mentindo sobre quantas pessoas esperam por você.
  */
 
-/** a tarefa ainda merece um lugar na fila desta sessão? */
-export function segueNaFila(t: TarefaVisao, agoraMs: number): boolean {
-  return t.status === "pendente" && ehDoDia(t, agoraMs);
+export type EstadoPrazo = "vencida" | "hoje" | "futura";
+
+export interface TarefaDoFoco {
+  id: string;
+  titulo: string;
+  /** ISO, ou `null` para tarefa sem prazo */
+  prazo: string | null;
+  estado: EstadoPrazo;
+  /** chave do tipo (`core.config 'tipo_tarefa'`) — quem desenha resolve o rótulo */
+  tipo: string | null;
+  /** nome de quem responde por ela (em `incluirTime` pode não ser você) */
+  responsavel: string | null;
+  /** criada pelo Jarvis (`origem = 'jarvis_conversa'`) — é o arco no item da lista */
+  doJarvis: boolean;
+}
+
+export interface ConversaEmFoco {
+  conversa_id: string;
+  lead_id: string | null;
+  lead_nome: string | null;
+  tarefa: TarefaDoFoco;
+  /** a frase do Jarvis para a lista: o que fazer e por que agora (uma linha) */
+  resumoJarvis?: string;
+  /** o resumo inteiro, para a faixa dentro da conversa (situação · o que viu · o que fazer) */
+  resumo?: ResumoJarvis | null;
+  /** quantas outras tarefas pendentes o mesmo lead tem além desta */
+  outras: number;
+}
+
+export interface OpcoesFoco {
+  /** `true` = as tarefas de todo mundo, não só as minhas (o "Do time" dentro do foco) */
+  incluirTime?: boolean;
+}
+
+/** hoje/vencida/futura em dias de calendário de São Paulo — prazo é compromisso local, não UTC */
+const FMT_DIA_SP = new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/Sao_Paulo" });
+
+export function estadoDoPrazo(t: Pick<TarefaVisao, "prazo" | "vencida">, agoraMs: number): EstadoPrazo {
+  if (t.vencida) return "vencida";
+  if (!t.prazo) return "futura";
+  const ms = new Date(t.prazo).getTime();
+  if (!Number.isFinite(ms)) return "futura";
+  if (ms < agoraMs) return "vencida";
+  return FMT_DIA_SP.format(new Date(ms)) === FMT_DIA_SP.format(new Date(agoraMs)) ? "hoje" : "futura";
+}
+
+const PESO: Record<EstadoPrazo, number> = { vencida: 0, hoje: 1, futura: 2 };
+const SEM_PRAZO = Number.MAX_SAFE_INTEGER;
+
+function prazoMs(t: TarefaVisao): number {
+  const ms = t.prazo ? new Date(t.prazo).getTime() : NaN;
+  return Number.isFinite(ms) ? ms : SEM_PRAZO;
 }
 
 /**
- * A ordem em que a sessão vai percorrer — congelada no começo. É a mesma ordenação da view Hoje
- * (`ordenarDia`: vencida primeiro, depois prazo, depois prioridade), para o modo foco não
- * discordar da lista de onde a pessoa veio.
+ * A PARTE PURA — recebe as tarefas já lidas (fixture ou banco) e devolve as conversas em foco.
+ * É esta que se testa e é esta que serve quando a leitura real existir; `conversasComTarefaPendente`
+ * é a casca que hoje busca na fixture do ensaio.
  */
-export function ordemInicial(tarefas: TarefaVisao[], agoraMs: number): string[] {
-  return ordenarDia(tarefas.filter((t) => segueNaFila(t, agoraMs))).map((t) => t.id);
-}
+export function focoDasTarefas(
+  tarefas: TarefaVisao[],
+  usuarioId: string | null,
+  opcoes: OpcoesFoco = {},
+  agora: Date = new Date(),
+): ConversaEmFoco[] {
+  const agoraMs = agora.getTime();
+  const minhas = tarefas.filter(
+    (t) => t.status === "pendente" && (opcoes.incluirTime || (usuarioId != null && t.responsavel_id === usuarioId)),
+  );
 
-export interface FilaDoFoco {
-  /** o que ainda falta, na ordem: as não puladas primeiro, as puladas no fim */
-  pendentes: TarefaVisao[];
-  /** puladas que continuam pendentes — voltam no fim, e aparecem no "zero por hoje" */
-  puladas: TarefaVisao[];
-  /** saíram da fila nesta sessão (concluída, arquivada ou adiada para fora do dia) */
-  resolvidas: TarefaVisao[];
-  /** quantas a sessão tinha quando começou — o denominador do "3 de 12", que nunca muda */
-  total: number;
-}
-
-/**
- * Recorta a fila viva a partir da ordem congelada. Tarefa que entrou DEPOIS (a criada no "e
- * agora?", por exemplo) não invade a sessão: ela é do dia, mas a ordem desta sessão já foi dada —
- * entra no fim, e por isso o total cresce junto (senão o contador passaria de 12 de 12).
- */
-export function filaDoFoco(tarefas: TarefaVisao[], sessao: SessaoFocoCookie | null, agoraMs: number): FilaDoFoco {
-  const porId = new Map(tarefas.map((t) => [t.id, t]));
-  const ordem = sessao?.ordem ?? ordemInicial(tarefas, agoraMs);
-  const puladasSet = new Set(sessao?.puladas ?? []);
-  const vistos = new Set(ordem);
-  // as que nasceram depois da sessão começar entram no fim da ordem
-  const novas = ordenarDia(tarefas.filter((t) => !vistos.has(t.id) && segueNaFila(t, agoraMs))).map((t) => t.id);
-  const ordemViva = [...ordem, ...novas];
-
-  const pendentes: TarefaVisao[] = [];
-  const puladas: TarefaVisao[] = [];
-  const resolvidas: TarefaVisao[] = [];
-  for (const id of ordemViva) {
-    const t = porId.get(id);
-    if (!t) continue;
-    if (!segueNaFila(t, agoraMs)) {
-      resolvidas.push(t);
-      continue;
-    }
-    if (puladasSet.has(id)) puladas.push(t);
-    else pendentes.push(t);
+  const porConversa = new Map<string, TarefaVisao[]>();
+  for (const t of minhas) {
+    const conversaId = t.conversa_id ?? null;
+    // sem conversa ancorada a tarefa não tem lugar nesta tela — ela continua em /tarefas, e é
+    // por isso que o botão do foco mostra um número menor que o da fila do dia.
+    if (!conversaId) continue;
+    porConversa.set(conversaId, [...(porConversa.get(conversaId) ?? []), t]);
   }
-  return { pendentes: [...pendentes, ...puladas], puladas, resolvidas, total: ordemViva.length };
+
+  const linhas: ConversaEmFoco[] = [];
+  for (const [conversa_id, lista] of porConversa) {
+    const ordenadas = [...lista].sort(
+      (a, b) =>
+        PESO[estadoDoPrazo(a, agoraMs)] - PESO[estadoDoPrazo(b, agoraMs)] ||
+        prazoMs(a) - prazoMs(b) ||
+        a.criado_em.localeCompare(b.criado_em),
+    );
+    const t = ordenadas[0];
+    linhas.push({
+      conversa_id,
+      lead_id: t.lead_id,
+      lead_nome: t.lead_nome,
+      tarefa: {
+        id: t.id,
+        titulo: t.titulo,
+        prazo: t.prazo,
+        estado: estadoDoPrazo(t, agoraMs),
+        tipo: t.tipo,
+        responsavel: t.responsavel,
+        doJarvis: t.origem === "jarvis_conversa",
+      },
+      resumoJarvis: t.resumo?.sugestao ?? t.fazer ?? t.por_que ?? undefined,
+      resumo: t.resumo ?? null,
+      outras: ordenadas.length - 1,
+    });
+  }
+
+  return linhas.sort(
+    (a, b) =>
+      PESO[a.tarefa.estado] - PESO[b.tarefa.estado] ||
+      (a.tarefa.prazo ? new Date(a.tarefa.prazo).getTime() : SEM_PRAZO) - (b.tarefa.prazo ? new Date(b.tarefa.prazo).getTime() : SEM_PRAZO) ||
+      (a.lead_nome ?? "").localeCompare(b.lead_nome ?? "", "pt-BR"),
+  );
 }
 
 /**
- * Onde a pessoa está e qual é a atual. `atual` só some quando a fila zera — nunca há um instante
- * de tela vazia no meio do percurso: se a atual saiu, a próxima já ocupa o mesmo lugar.
+ * As conversas que têm tarefa pendente desta pessoa, na ordem em que ela deve atacá-las.
+ *
+ * Hoje lê a fixture de ensaio — as MESMAS tarefas que `/tarefas` mostra (`visaoTarefasDeEnsaio` +
+ * as aceitas do fio), com o resumo do Jarvis já preenchido. Quando a leitura real existir, é só
+ * trocar a origem: `focoDasTarefas` é que decide quem entra e em que ordem.
+ *
+ * Puro e chamável do cliente: nada aqui importa `next/headers` nem cliente de banco.
  */
-export function posicaoNoFoco(fila: FilaDoFoco, atualId: string | null): { atual: TarefaVisao | null; indice: number; feitas: number } {
-  const feitas = fila.resolvidas.length;
-  if (fila.pendentes.length === 0) return { atual: null, indice: -1, feitas };
-  const i = atualId ? fila.pendentes.findIndex((t) => t.id === atualId) : -1;
-  const indice = i >= 0 ? i : 0;
-  return { atual: fila.pendentes[indice], indice, feitas };
+export function conversasComTarefaPendente(
+  usuarioId: string | null,
+  opcoes: OpcoesFoco = {},
+  agora: Date = new Date(),
+): ConversaEmFoco[] {
+  return focoDasTarefas(tarefasDoEnsaioComConversa(agora), usuarioId, opcoes, agora);
 }
 
-/** quem entra no lugar de `id` — a próxima da fila, ou a anterior se ele era o último */
-export function depoisDe(fila: TarefaVisao[], id: string): string | null {
-  const i = fila.findIndex((t) => t.id === id);
-  if (i < 0) return fila[0]?.id ?? null;
-  return fila[i + 1]?.id ?? fila[i - 1]?.id ?? null;
+/** o número do selo do botão — a mesma regra da lista, sem montar a lista */
+export function contarFocoPendentes(usuarioId: string | null, opcoes: OpcoesFoco = {}, agora: Date = new Date()): number {
+  return conversasComTarefaPendente(usuarioId, opcoes, agora).length;
 }
 
-/** "3 de 12" — 1-based, e o denominador é o total congelado */
-export function rotuloProgresso(indice: number, feitas: number, total: number): string {
-  return `${Math.min(feitas + indice + 1, total)} de ${total}`;
+/**
+ * A fixture, com `conversa_id` garantido: a fixture de /tarefas ancora só os moldes que têm lead
+ * real, e sem `conversa_id` a tarefa não aparece no foco. Aqui o id da conversa de ensaio é
+ * derivado do índice do lead (`conversaIdDeEnsaio`), a mesma função que a linha da lista usa para
+ * mandar o clique ao fio certo — as duas telas têm de falar do mesmo fio.
+ */
+function tarefasDoEnsaioComConversa(agora: Date): TarefaVisao[] {
+  const { tarefas } = visaoTarefasDeEnsaio(agora, { leadsDoFunil: true });
+  const aceitas = tarefasAceitasComoVisao(undefined, agora);
+  const idsAceitas = new Set(aceitas.map((t) => t.id));
+  const todas = [...aceitas, ...tarefas.filter((t) => !idsAceitas.has(t.id))];
+  return comResumosDeEnsaio(
+    todas.map((t) => (t.conversa_id ? t : { ...t, conversa_id: conversaDoLead(t.lead_id) })),
+    agora,
+  );
 }
 
-/** fração 0..1 do que já saiu da fila — a barra do cabeçalho */
-export function fracaoFeita(feitas: number, total: number): number {
-  return total > 0 ? Math.min(1, feitas / total) : 0;
+function conversaDoLead(leadId: string | null): string | null {
+  if (!leadId) return null;
+  const m = /^1ead0000-0000-4000-8000-(\d{12})$/.exec(leadId);
+  return m ? conversaIdDeEnsaio(Number(m[1]) - 1) : null;
 }
