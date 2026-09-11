@@ -4,6 +4,18 @@ import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { Switch } from "@/components/ui/switch";
+import { DialogoLigarClara } from "@/components/inteligencia/dialogo-ligar-clara";
+import type { CanalEscolhivel } from "@/components/clara/canais-da-clara";
+
+/**
+ * A marca de "ainda não opera" chega como PENDÊNCIA (`lib/dados/agentes.ts`), porque a pendência
+ * já é o que bloqueia o botão de ligar. Mas pendência só vivia no tooltip — invisível até alguém
+ * passar o mouse. Aqui ela vira selo, porque a informação "este agente não funciona" tem de ser
+ * lida de relance, não descoberta.
+ */
+const MARCA_DESENVOLVIMENTO = "Em desenvolvimento";
+const emDesenvolvimento = (pendencias: string[]) =>
+  pendencias.some((p) => p.startsWith(MARCA_DESENVOLVIMENTO));
 import { HintTooltip } from "@/components/ui/hint-tooltip";
 import { cn } from "@/lib/utils";
 import { CapaAgente } from "./glifos";
@@ -22,9 +34,14 @@ import type { AgenteInteligencia } from "@/lib/ensaio/inteligencia";
 export function CartoesAgentes({
   agentes,
   gestao,
+  canaisClara = [],
+  canaisEscolhidosClara = [],
 }: {
   agentes: AgenteInteligencia[];
   gestao: boolean;
+  /** os números que a Clara pode assumir — só ela responde a paciente, só ela precisa disto. */
+  canaisClara?: CanalEscolhivel[];
+  canaisEscolhidosClara?: string[];
 }) {
   return (
     <div className="w-full px-6 py-7 2xl:px-8">
@@ -38,14 +55,32 @@ export function CartoesAgentes({
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {agentes.map((a) => (
-          <CartaoAgente key={a.chave} agente={a} gestao={gestao} />
+          <CartaoAgente
+            key={a.chave}
+            agente={a}
+            gestao={gestao}
+            canaisClara={canaisClara}
+            canaisEscolhidosClara={canaisEscolhidosClara}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function CartaoAgente({ agente: a, gestao }: { agente: AgenteInteligencia; gestao: boolean }) {
+function CartaoAgente({
+  agente: a,
+  gestao,
+  canaisClara,
+  canaisEscolhidosClara,
+}: {
+  agente: AgenteInteligencia;
+  gestao: boolean;
+  canaisClara: CanalEscolhivel[];
+  canaisEscolhidosClara: string[];
+}) {
+  const [dialogoClara, setDialogoClara] = React.useState(false);
+  const emDev = emDesenvolvimento(a.pendencias);
   const reduzido = useReducedMotion();
   const [ligado, setLigado] = React.useState(a.ativo);
   const impedido = a.pendencias.length > 0;
@@ -63,6 +98,11 @@ function CartaoAgente({ agente: a, gestao }: { agente: AgenteInteligencia; gesta
       <div className="flex flex-1 flex-col gap-2 px-4 pb-3 pt-3">
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
           <PontoEstado situacao={ligado ? "ligado" : a.situacao} />
+          {emDev && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-[0.04em] text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+              em desenvolvimento
+            </span>
+          )}
           {a.ultima_acao && ligado && <span className="truncate">· {relativo(a.ultima_acao.em)}</span>}
         </div>
 
@@ -119,13 +159,31 @@ function CartaoAgente({ agente: a, gestao }: { agente: AgenteInteligencia; gesta
           <span className="shrink-0">
             <Switch
               checked={ligado}
-              onCheckedChange={(v) => setLigado(v)}
-              disabled={!gestao || (impedido && !ligado)}
+              onCheckedChange={(v) => {
+                // Só a Clara fala com paciente em tempo real: ligar exige escolher o número antes,
+                // e é o diálogo que grava. Desligar segue direto — parar nunca precisa de cerimônia.
+                if (a.chave === "clara" && v) {
+                  setDialogoClara(true);
+                  return;
+                }
+                setLigado(v);
+              }}
+              disabled={!gestao || emDev || (impedido && !ligado)}
               aria-label={`${ligado ? "Desligar" : "Ligar"} ${a.nome}`}
             />
           </span>
         </HintTooltip>
       </footer>
+
+      {a.chave === "clara" && (
+        <DialogoLigarClara
+          aberto={dialogoClara}
+          onFechar={() => setDialogoClara(false)}
+          canais={canaisClara}
+          escolhidosIniciais={canaisEscolhidosClara}
+          onLigou={() => setLigado(true)}
+        />
+      )}
     </motion.article>
   );
 }

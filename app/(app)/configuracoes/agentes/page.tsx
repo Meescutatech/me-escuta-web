@@ -3,6 +3,9 @@ import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
 import { agentesInteligencia } from "@/lib/ensaio/inteligencia";
 import { lerAgentesReais } from "@/lib/dados/agentes";
 import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
+import { lerCanais } from "@/components/configuracoes/dados/canais";
+import { criarClienteServidor } from "@/lib/supabase/server";
+import type { CanalEscolhivel } from "@/components/clara/canais-da-clara";
 import { CartoesAgentes } from "@/components/inteligencia/cartoes-agentes";
 
 export const dynamic = "force-dynamic";
