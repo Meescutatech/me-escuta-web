@@ -10,6 +10,7 @@ import { mencionaveisEnsaio } from "@/lib/ensaio/fixtures/mencionaveis";
 import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 import { visaoTarefasDeEnsaio } from "@/lib/dados/tarefas-ensaio";
 import { propostasDeEnsaio } from "@/lib/dados/tarefas-ensaio-dia";
+import { tarefasAceitasComoVisao } from "@/lib/ensaio/conversas-extra";
 
 // Sempre lê o estado atual — projeção do ledger, nunca cache.
 export const dynamic = "force-dynamic";
@@ -25,7 +26,13 @@ export default async function TarefasPage({
   if (ensaio) {
     const agora = new Date();
     // W-D5: `leadsDoFunil` — no ensaio sem banco a conversa que existe é a da fixture do funil
-    const { emAndamento, ...dados } = visaoTarefasDeEnsaio(agora, { leadsDoFunil: true });
+    const { emAndamento, ...fixture } = visaoTarefasDeEnsaio(agora, { leadsDoFunil: true });
+    // W-D3: a tarefa que a Sara ACEITOU da nota do Jarvis no fio (/conversas) entra na fila —
+    // vem do cookie do ensaio, com o id que o toast "ver em /tarefas" já linka (#tarefa-<id>).
+    // Sem duplicar: se um id já veio do fio, a fixture não o repete.
+    const aceitas = tarefasAceitasComoVisao(undefined, agora);
+    const idsAceitas = new Set(aceitas.map((t) => t.id));
+    const dados = { ...fixture, tarefas: [...aceitas, ...fixture.tarefas.filter((t) => !idsAceitas.has(t.id))] };
     const ver = Array.isArray(searchParams.ver) ? searchParams.ver[0] : searchParams.ver;
     const foco = Array.isArray(searchParams.foco) ? searchParams.foco[0] : searchParams.foco;
     // W-D5 · a SDR entra pela view do dia (benchmark §4 item 7: "redirect pós-login para SDR").
