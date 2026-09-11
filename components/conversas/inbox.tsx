@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
+
+/** largura do menu de filtros — usada no cálculo de posição e no estilo, para não divergirem */
+const LARGURA_FILTRO = 236;
 import { useRouter } from "next/navigation";
 import type { ConversaResumo, Mensagem, ModoConversa, SugestaoMensagem } from "@/lib/dados/conversas";
 import {
@@ -1844,8 +1848,42 @@ function PilhaFiltros({
   const numeroAtivo = numeros.find((n) => n.id === numeroFiltro) ?? null;
   const pilha = atendenteFiltro ? atendentes.filter((a) => a.nome === atendenteFiltro) : atendentes.slice(0, 3);
 
+  /**
+   * 11/09 · POR QUE ESTE MENU SAI DO FLUXO.
+   *
+   * Ele era `absolute` dentro da coluna da lista, que rola e RECORTA — então metade dele sumia
+   * ("m atende" no lugar de "Quem atende") e o resto vazava por cima da conversa. Soltar o
+   * `overflow` da coluna conserta o recorte e quebra a rolagem da lista, que é a razão de o
+   * `overflow` existir.
+   *
+   * A saída é tirá-lo do fluxo: portal no `body`, posição medida do botão. O cálculo alinha pela
+   * direita do botão e trava a 8px da borda da janela, para não nascer fora da tela em telas
+   * estreitas.
+   */
+  const ancora = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!aberto) return;
+    const medir = () => {
+      const r = ancora.current?.getBoundingClientRect();
+      if (!r) return;
+      const left = Math.max(8, Math.min(r.right - LARGURA_FILTRO, window.innerWidth - LARGURA_FILTRO - 8));
+      setPos({ top: r.bottom + 4, left });
+    };
+    medir();
+    window.addEventListener("resize", medir);
+    // `true` = fase de captura: a coluna que rola não emite scroll no window, e sem isto o menu
+    // ficaria parado enquanto a lista anda por baixo dele.
+    window.addEventListener("scroll", medir, true);
+    return () => {
+      window.removeEventListener("resize", medir);
+      window.removeEventListener("scroll", medir, true);
+    };
+  }, [aberto]);
+
   return (
-    <div className="relative shrink-0">
+    <div ref={ancora} className="relative shrink-0">
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
@@ -1883,10 +1921,15 @@ function PilhaFiltros({
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
-      {aberto && (
+      {aberto && typeof document !== "undefined" && createPortal(
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setAberto(false)} aria-hidden />
-          <div role="dialog" aria-label="Filtros" className="absolute right-0 top-full z-30 mt-1 w-[236px] overflow-hidden rounded-lg border border-linha-forte bg-branco py-1 shadow-forte animate-rise">
+          <div className="fixed inset-0 z-[60]" onClick={() => setAberto(false)} aria-hidden />
+          <div
+            role="dialog"
+            aria-label="Filtros"
+            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: LARGURA_FILTRO }}
+            className="fixed z-[61] overflow-hidden rounded-lg border border-linha-forte bg-branco py-1 shadow-forte animate-rise"
+          >
             <div className="flex items-center px-3 pb-1 pt-1.5">
               <span className="text-[11px] text-mute">Quem atende</span>
               {filtrando && (
@@ -1929,7 +1972,8 @@ function PilhaFiltros({
               );
             })}
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );
