@@ -6,6 +6,7 @@ import {
   MAX_AGE_DEPARTAMENTO,
   PARAM_DEPARTAMENTO,
 } from "@/lib/departamentos/cookie";
+import { COOKIE_COMO, MAX_AGE_COMO, PARAM_COMO, ehChavePessoa, ensaioLigado } from "@/lib/ensaio/modo";
 
 /**
  * M6 · A PORTA DE ENTRADA DO CONTEXTO POR URL — e ela é porta, não sede.
@@ -25,6 +26,34 @@ import {
  * preferência, e não credencial.
  */
 export async function middleware(request: NextRequest) {
+  // W-D2 · MODO ENSAIO: `?como=sara` vira cookie (mesmo desenho do departamento) e a sessão
+  // NÃO passa pelo Supabase — a guarda dupla está em `ensaioLigado` (env + NODE_ENV).
+  if (ensaioLigado()) {
+    const como = request.nextUrl.searchParams.get(PARAM_COMO);
+    if (como && ehChavePessoa(como)) {
+      const url = request.nextUrl.clone();
+      url.searchParams.delete(PARAM_COMO);
+      const resposta = NextResponse.redirect(url);
+      resposta.cookies.set(COOKIE_COMO, como, { path: "/", sameSite: "lax", maxAge: MAX_AGE_COMO });
+      return resposta;
+    }
+    const pedidoDep = request.nextUrl.searchParams.get(PARAM_DEPARTAMENTO);
+    if (pedidoDep && FORMA_CHAVE.test(pedidoDep)) {
+      const url = request.nextUrl.clone();
+      url.searchParams.delete(PARAM_DEPARTAMENTO);
+      const resposta = NextResponse.redirect(url);
+      resposta.cookies.set(COOKIE_DEPARTAMENTO, pedidoDep, { path: "/", sameSite: "lax", maxAge: MAX_AGE_DEPARTAMENTO });
+      return resposta;
+    }
+    if (request.nextUrl.pathname.startsWith("/login")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next({ request });
+  }
+
   const pedido = request.nextUrl.searchParams.get(PARAM_DEPARTAMENTO);
   if (pedido && FORMA_CHAVE.test(pedido)) {
     const url = request.nextUrl.clone();

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480">
+  <defs><radialGradient id="g" cx="50%" cy="40%"><stop offset="0" stop-color="#fbf7f0"/><stop offset="1" stop-color="#e6e0d3"/></radialGradient></defs>
+  <rect width="480" height="480" fill="url(#g)"/>
+  <ellipse cx="240" cy="400" rx="150" ry="18" fill="#000" opacity=".08"/>
+  <path d="M190 120c-40 10-70 60-60 110 8 40 40 60 70 62l30 2c26 2 46-14 52-40 8-36-8-70-40-84-20-9-36-8-52-50z" fill="#c9b8a1" stroke="#9c8a70" stroke-width="3"/>
+  <path d="M252 90c30-30 80-30 110 0 26 26 30 66 8 96" fill="none" stroke="#9c8a70" stroke-width="10" stroke-linecap="round"/>
+  <path d="M370 186c-6 10-18 14-30 12" fill="none" stroke="#9c8a70" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="340" cy="200" r="22" fill="#e8dfd0" stroke="#9c8a70" stroke-width="3"/>
+  <circle cx="215" cy="210" r="8" fill="#6b5a44"/>
+  <rect x="150" y="248" width="34" height="12" rx="6" fill="#6b5a44"/>
+  <text x="240" y="452" text-anchor="middle" font-family="Inter, Arial" font-size="13" fill="#5f6873">retroauricular · recarregável</text>
+</svg>

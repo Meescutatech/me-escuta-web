@@ -11,6 +11,11 @@ import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { PresencaBatimento } from "@/components/presenca-batimento";
 import { MarcaBuild } from "@/components/ui/marca-build";
+import { lerSessaoEnsaio, estadoEscopoEnsaio } from "@/lib/ensaio/sessao";
+import { PESSOAS } from "@/lib/ensaio/modo";
+import { gerarConversasEnsaio, conversasVisiveisPara, gerarLeadsEnsaio } from "@/lib/ensaio/fixtures/conversas";
+import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
+import { VerComo } from "@/components/ensaio/ver-como";
 
 /**
  * Shell autenticado (r9): SIDEBAR de ícones retrátil — colapsada (60px) por padrão, expande no
@@ -33,6 +38,12 @@ import { MarcaBuild } from "@/components/ui/marca-build";
  * está no cabeçalho de `contarNaoLidasPorArea`.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  // W-D2 · MODO ENSAIO: sessão da fixture, ZERO consulta ao Supabase. `lerSessaoEnsaio` só devolve
+  // pessoa com `NEXT_PUBLIC_ENSAIO=1` E `NODE_ENV !== "production"` — fora disso é `null` e o
+  // caminho real abaixo segue inalterado.
+  const ensaio = lerSessaoEnsaio();
+  if (ensaio) return <AppLayoutEnsaio pessoa={ensaio}>{children}</AppLayoutEnsaio>;
+
   const supabase = criarClienteServidor();
   const {
     data: { user },
@@ -97,6 +108,59 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         usando, e a primeira pergunta que se faz e "que versao voce esta vendo?". `pointer-events-
         none` no componente garante que ele nunca intercepte clique de nada que esteja embaixo.
       */}
+      <MarcaBuild />
+    </div>
+  );
+}
+
+/**
+ * O shell autenticado em MODO ENSAIO — os mesmos `Sidebar` e `Header`, alimentados pela fixture
+ * com as MESMAS funções puras de escopo (`visiveisPara`, `chavesComPendencia`). O que muda é só a
+ * origem do dado; o que a pessoa vê por papel é o que ela veria em produção.
+ */
+async function AppLayoutEnsaio({
+  pessoa,
+  children,
+}: {
+  pessoa: NonNullable<ReturnType<typeof lerSessaoEnsaio>>;
+  children: React.ReactNode;
+}) {
+  const escopoEstado = estadoEscopoEnsaio(pessoa);
+  const agora = new Date();
+  const { conversas } = gerarConversasEnsaio(agora);
+  const canais = gerarCanaisEnsaio(agora);
+  const visiveis = conversasVisiveisPara(pessoa, conversas, escopoEstado.escopo, canais);
+  const naoLidas = visiveis.filter((c) => c.nao_lida).length;
+  const porArea = new Map<string | null, number>();
+  for (const c of conversasVisiveisPara(pessoa, conversas, null, canais)) {
+    if (c.nao_lida) porArea.set(c.area ?? null, (porArea.get(c.area ?? null) ?? 0) + 1);
+  }
+  const comPendencia = chavesComPendencia(escopoEstado.visiveis, escopoEstado.arvore, escopoEstado.sinonimos, porArea);
+  const leads = gerarLeadsEnsaio(agora);
+  const abertos = leads.filter((l) => !["ganho", "perdido"].includes(l.etapa)).length;
+
+  return (
+    <div className="min-h-screen pl-[60px]">
+      <Sidebar
+        contFunil={abertos}
+        contNaoLidas={naoLidas}
+        contVencidas={3}
+        verMarketing={podeVerMarketing(pessoa.papel)}
+      />
+      <Header
+        departamentos={escopoEstado.visiveis}
+        ativo={escopoEstado.ativo}
+        comPendencia={comPendencia}
+        escopoIndisponivel={false}
+        notificacoes={[]}
+        notificacoesDisponiveis={false}
+        email={pessoa.email}
+        usuarioId={pessoa.id}
+        nome={pessoa.nome}
+        meuPapel={pessoa.papel}
+      />
+      <main className="pt-[var(--altura-topo)]">{children}</main>
+      <VerComo atual={pessoa} pessoas={PESSOAS} />
       <MarcaBuild />
     </div>
   );

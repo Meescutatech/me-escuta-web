@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs><linearGradient id="v" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2b3a67"/><stop offset="1" stop-color="#151c38"/></linearGradient></defs>
+  <rect width="640" height="360" fill="url(#v)"/>
+  <circle cx="320" cy="150" r="54" fill="#f2e8d8"/>
+  <path d="M230 320c10-70 60-100 90-100s80 30 90 100z" fill="#e2c8a8"/>
+  <path d="M275 128c0-40 90-40 90 0v20c0 30-90 30-90 0z" fill="#d9d2c6"/>
+  <text x="320" y="345" text-anchor="middle" font-family="Inter, Arial" font-size="13" fill="#ffffff" opacity=".85">Depoimento · dona Lourdes · 0:41</text>
+</svg>

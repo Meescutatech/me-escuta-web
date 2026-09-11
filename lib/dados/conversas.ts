@@ -148,6 +148,31 @@ export interface Mensagem {
   // Signed URL pré-assinada em LOTE no servidor (perf/rotas) — quando presente, a bolha usa
   // direto; ausente (falha de assinatura/linha antiga), a bolha cai no fetch lazy de antes.
   midia_url?: string | null;
+  /**
+   * W-D2 (10/09) · CAMPOS TIPADOS DAS BOLHAS QUE A PROJEÇÃO AINDA NÃO EXPÕE. Hoje só a fixture de
+   * ensaio os preenche; a leitura real deixa todos `undefined` e a tela cai no rótulo de sempre
+   * ("Documento recebido" etc.). Quando `core.v_mensagem` passar a projetar o `payload` tipado, o
+   * leitor preenche aqui e a bolha já sabe desenhar. Aditivo por construção — nada em produção
+   * lê estes campos.
+   */
+  /** Reações coladas na bolha (WhatsApp `reaction`): emoji + quem reagiu. */
+  reacoes?: Array<{ emoji: string; de: "cliente" | "nos" }>;
+  /** Resposta citada (`context.id` da Meta): bloco no topo da bolha que salta para a original. */
+  citada?: { id: string | null; autor: string; corpo: string } | null;
+  /** Documento: nome, tamanho legível e MIME — para o cartão com ícone por família. */
+  documento?: { nome: string; tamanho: string; mime: string } | null;
+  /** Localização compartilhada. */
+  localizacao?: { nome: string | null; endereco: string; lat: number; lng: number } | null;
+  /** Cartão de contato (`contacts`). */
+  contato?: { nome: string; telefone: string } | null;
+  /** Botões/lista (`interactive`): as opções oferecidas e, na resposta, a escolhida. */
+  interativo?: { pergunta: string | null; opcoes: string[]; escolhida: string | null } | null;
+  /** Mensagem programada e ainda não enviada — bolha em espera, com o instante. */
+  programada_para?: string | null;
+  /** Duração do áudio em segundos (o player mostra sem precisar carregar o arquivo). */
+  duracao_s?: number | null;
+  /** Nome de quem escreveu a bolha de saída, quando é humano (Sara, Ana Paula…). */
+  autor_nome?: string | null;
 }
 
 export interface SugestaoMensagem {
