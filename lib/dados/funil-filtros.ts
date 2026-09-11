@@ -57,6 +57,20 @@ export interface FiltrosFunil {
    * falha silenciosa que este filtro não pode cometer.
    */
   departamento: string | null;
+  /**
+   * W-D6 v3 (10/09 23:40) · os filtros que saíram do popover e foram para a BARRA:
+   *  - `comTarefa`: só leads com tarefa pendente (o inverso de `semProximaAcao`; os dois juntos
+   *    são um radio de três posições na barra — "Tarefas ▾");
+   *  - `minhasTarefas`: só leads cuja PRÓXIMA tarefa é minha (`proxima_tarefa.responsavel_id`).
+   *    É a próxima, não "qualquer tarefa minha" — o card só carrega a próxima, e é ela que a pessoa
+   *    vai fazer;
+   *  - `origens`: chaves de `Origem` (wa/ig/meta/ind), OR entre elas;
+   *  - `cidades`: cidade DECLARADA (H5), OR, comparação sem caixa/acentos.
+   */
+  comTarefa: boolean;
+  minhasTarefas: boolean;
+  origens: string[];
+  cidades: string[];
 }
 
 export const FILTROS_VAZIOS: FiltrosFunil = {
@@ -70,7 +84,20 @@ export const FILTROS_VAZIOS: FiltrosFunil = {
   semProximaAcao: false,
   soAgora: false,
   departamento: null,
+  comTarefa: false,
+  minhasTarefas: false,
+  origens: [],
+  cidades: [],
 };
+
+/** "Belo Horizonte" ≡ "belo horizonte" ≡ "Belo Horizonte " — cidade é o que a pessoa digitou. */
+export function chaveCidade(c: string | null | undefined): string {
+  return (c ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
 
 /**
  * Busca por nome OU telefone. Telefone ignora máscara: se a query tiver 3+ dígitos,
@@ -128,6 +155,12 @@ export function filtrarCards(
     if (f.soAgora && faixaDe && faixaDe(c) !== "agora") return false;
     // departamento: só corta quando o card SABE de qual é (`undefined` passa, ver o campo)
     if (f.departamento && c.departamento !== undefined && c.departamento !== f.departamento) return false;
+    // com tarefa: o simétrico do "sem próxima ação", com a mesma honestidade — `null` passa
+    if (f.comTarefa && c.tem_tarefa_pendente === false) return false;
+    // minhas tarefas: a próxima é minha. Sem usuário, não casa nada (não inventar carteira).
+    if (f.minhasTarefas && (meuId == null || c.proxima_tarefa?.responsavel_id !== meuId)) return false;
+    if (f.origens.length > 0 && !f.origens.includes(c.origem ?? "")) return false;
+    if (f.cidades.length > 0 && !f.cidades.map(chaveCidade).includes(chaveCidade(c.cidade))) return false;
     return true;
   });
 }
@@ -150,8 +183,61 @@ export function haFiltro(f: FiltrosFunil): boolean {
     f.semProximaAcao ||
     f.soAgora ||
     f.departamento != null ||
+    f.comTarefa ||
+    f.minhasTarefas ||
+    f.origens.length > 0 ||
+    f.cidades.length > 0 ||
     contarFiltrosAtivos(f) > 0
   );
+}
+
+/**
+ * W-D6 v3 · os CHIPS da linha de ativos, um por valor, cada um com o filtro que o remove. O rótulo
+ * do responsável e da etapa chega resolvido por quem chama (o filtro guarda chave, a tela mostra
+ * nome). A busca e o departamento NÃO viram chip: têm controle próprio sempre visível na barra.
+ */
+export interface ChipAtivo {
+  chave: string;
+  rotulo: string;
+  remover: (f: FiltrosFunil) => FiltrosFunil;
+}
+
+export function chipsAtivos(
+  f: FiltrosFunil,
+  rotulos: { etapa: (chave: string) => string; origem: (chave: string) => string },
+): ChipAtivo[] {
+  const chips: ChipAtivo[] = [];
+  if (f.meus) chips.push({ chave: "meus", rotulo: "Meus leads", remover: (x) => ({ ...x, meus: false }) });
+  for (const r of f.responsaveis)
+    chips.push({
+      chave: `resp:${r}`,
+      rotulo: r === SEM_RESPONSAVEL ? "Sem responsável" : r,
+      remover: (x) => ({ ...x, responsaveis: x.responsaveis.filter((v) => v !== r) }),
+    });
+  for (const e of f.etapas)
+    chips.push({ chave: `etapa:${e}`, rotulo: rotulos.etapa(e), remover: (x) => ({ ...x, etapas: x.etapas.filter((v) => v !== e) }) });
+  for (const t of f.tags)
+    chips.push({ chave: `tag:${t}`, rotulo: `#${t}`, remover: (x) => ({ ...x, tags: x.tags.filter((v) => v !== t) }) });
+  if (f.comTarefa) chips.push({ chave: "comTarefa", rotulo: "Com tarefa", remover: (x) => ({ ...x, comTarefa: false }) });
+  if (f.minhasTarefas) chips.push({ chave: "minhasTarefas", rotulo: "Minhas tarefas", remover: (x) => ({ ...x, minhasTarefas: false }) });
+  if (f.semProximaAcao) chips.push({ chave: "semProximaAcao", rotulo: "Sem próxima ação", remover: (x) => ({ ...x, semProximaAcao: false }) });
+  if (f.soAgora) chips.push({ chave: "soAgora", rotulo: "Só os estourados", remover: (x) => ({ ...x, soAgora: false }) });
+  if (f.de || f.ate)
+    chips.push({
+      chave: "periodo",
+      rotulo: `Entrou ${f.de ? `de ${f.de.slice(8, 10)}/${f.de.slice(5, 7)}` : ""}${f.ate ? ` até ${f.ate.slice(8, 10)}/${f.ate.slice(5, 7)}` : ""}`.trim(),
+      remover: (x) => ({ ...x, de: null, ate: null }),
+    });
+  for (const o of f.origens)
+    chips.push({ chave: `origem:${o}`, rotulo: rotulos.origem(o), remover: (x) => ({ ...x, origens: x.origens.filter((v) => v !== o) }) });
+  for (const c of f.cidades)
+    chips.push({ chave: `cidade:${c}`, rotulo: c, remover: (x) => ({ ...x, cidades: x.cidades.filter((v) => v !== c) }) });
+  return chips;
+}
+
+/** Tudo limpo, MENOS a busca e o departamento (controles próprios; "Limpar" é dos chips). */
+export function limparChips(f: FiltrosFunil): FiltrosFunil {
+  return { ...FILTROS_VAZIOS, busca: f.busca, departamento: f.departamento };
 }
 
 /**
@@ -195,6 +281,28 @@ export function opcoesTags(cards: CardLead[]): OpcaoFiltro[] {
   for (const c of cards) for (const t of c.tags) contagem.set(t, (contagem.get(t) ?? 0) + 1);
   return [...contagem.entries()]
     .map(([valor, qtd]) => ({ valor, rotulo: valor, qtd }))
+    .sort((a, b) => b.qtd - a.qtd || a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+}
+
+/** Facetas de origem (wa/ig/meta/ind) dos cards carregados. Mais leads primeiro. */
+export function opcoesOrigem(cards: CardLead[]): OpcaoFiltro[] {
+  const contagem = new Map<string, number>();
+  for (const c of cards) if (c.origem) contagem.set(c.origem, (contagem.get(c.origem) ?? 0) + 1);
+  return [...contagem.entries()].map(([valor, qtd]) => ({ valor, rotulo: valor, qtd })).sort((a, b) => b.qtd - a.qtd);
+}
+
+/** Facetas de cidade DECLARADA. Agrupa por `chaveCidade`, mostra a grafia mais frequente. */
+export function opcoesCidade(cards: CardLead[]): OpcaoFiltro[] {
+  const contagem = new Map<string, { rotulo: string; qtd: number }>();
+  for (const c of cards) {
+    const k = chaveCidade(c.cidade);
+    if (!k) continue;
+    const atual = contagem.get(k);
+    if (atual) atual.qtd += 1;
+    else contagem.set(k, { rotulo: (c.cidade ?? "").trim(), qtd: 1 });
+  }
+  return [...contagem.values()]
+    .map((o) => ({ valor: o.rotulo, rotulo: o.rotulo, qtd: o.qtd }))
     .sort((a, b) => b.qtd - a.qtd || a.rotulo.localeCompare(b.rotulo, "pt-BR"));
 }
 

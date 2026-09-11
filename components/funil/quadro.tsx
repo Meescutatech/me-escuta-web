@@ -17,7 +17,7 @@ import { moverCardEtapa } from "@/app/(app)/funil/actions";
 import { CartaoLead } from "./card-lead";
 import { DrawerCard } from "./drawer-card";
 import { FaixaBuscaServidor, useBuscaServidor } from "./busca-servidor";
-import { FiltrosBoard } from "./filtros";
+import { BarraFiltros, ChipsFiltros } from "./barra-filtros";
 import { SeletorOrdem } from "./seletor-ordem";
 import {
   ordenarCards,
@@ -29,7 +29,6 @@ import {
 } from "@/lib/dados/funil-ordenacao";
 import { ChipSemResponsavel } from "./faixa-sem-responsavel";
 import type { LeadsSemResponsavel } from "@/lib/dados/identidades";
-import { NovoLead } from "./novo-lead";
 import { DialogoMotivoPerda } from "./motivo-perda";
 import type { MotivoPerda } from "@/lib/dados/motivo-perda";
 import {
@@ -377,6 +376,16 @@ export function Quadro({
     [cards, chavesAbertas],
   );
 
+  // W-D6 v3 · facetas do radio "Tarefas" (sobre os ativos, como o chip antigo)
+  const contagensTarefa = useMemo(() => {
+    const ativos = cards.filter((c) => chavesAbertas.has(c.etapa));
+    return {
+      com: ativos.filter((c) => c.tem_tarefa_pendente === true).length,
+      minhas: autorId ? ativos.filter((c) => c.proxima_tarefa?.responsavel_id === autorId).length : 0,
+      sem: semAcao,
+    };
+  }, [cards, chavesAbertas, autorId, semAcao]);
+
   const cardArrastado = cards.find((c) => c.lead_id === arrastando) ?? null;
 
   function abrirCard(id: string) {
@@ -480,90 +489,55 @@ export function Quadro({
 
   return (
     <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
-      {/* ── cab do board (r9): título + total mono + busca + ao vivo ── */}
-      <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-6 pb-3 pt-4">
-        {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
-            A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
-        <span
-          className="font-mono text-[12px] text-suave"
-          title={
-            dados.sla.daConfig
-              ? "Cor do card = prioridade: AGORA, HOJE, NA SEMANA, SEM PRESSA (razão entre o tempo parado e o prazo da etapa)"
-              : "Cor do card = prioridade. Os prazos por etapa são o PADRÃO DECLARADO — a config sla_etapas ainda não existe no banco."
-          }
-        >
-          {filtroAtivo
-            ? `${leadsAtivosFiltrados.toLocaleString("pt-BR")} de ${leadsAtivos.toLocaleString("pt-BR")} leads ativos`
-            : `${leadsAtivos.toLocaleString("pt-BR")} leads ativos`}
-        </span>
-        {/* F5 · órfãos + aguardando de-para: um chip, não dois parágrafos acima do board */}
-        {semResponsavel && <ChipSemResponsavel dados={semResponsavel} />}
-        {!dados.sla.daConfig && (
+      {/* ── cabeçalho do board, v3 (10/09 23:40) ──────────────────────────────────────────────
+          Linha 1: o estado ("31 leads ativos", órfãos, corte, aviso) e, no canto, o carimbo de
+          frescor em 11px. Linha 2: a BARRA — busca + um seletor por dimensão + segmented + ordem.
+          Linha 3 (só com filtro ativo): os chips. O que SAIU e por quê: "Novo lead" (quem cria lead
+          pelo kanban? o lead nasce de conversa; o manual continua existindo em /conversas), a pílula
+          "prazos no padrão declarado" (virou o `title` do contador — é aviso de gestão, não de fila)
+          e o popover "Filtros" com quatro dimensões escondidas (agora estão na barra). */}
+      <div className="flex flex-shrink-0 flex-col gap-2 px-6 pb-3 pt-3.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <span
-            className="rounded-full border border-linha bg-branco px-2.5 py-0.5 text-[11px] text-suave"
-            title="A config core.config nome='sla_etapas' ainda não existe. Os prazos por etapa são o padrão declarado em lib/dados/funil-ordenacao.ts (SLA_PADRAO_DECLARADO) — não um valor que alguém definiu para esta operação."
+            className="font-mono text-[12px] text-suave"
+            title={
+              dados.sla.daConfig
+                ? "Cor do card = prioridade: AGORA, HOJE, NA SEMANA, SEM PRESSA (razão entre o tempo parado e o prazo da etapa)"
+                : "Cor do card = prioridade. Os prazos por etapa são o PADRÃO DECLARADO — a config sla_etapas ainda não existe no banco."
+            }
           >
-            prazos no padrão declarado
+            {filtroAtivo
+              ? `${leadsAtivosFiltrados.toLocaleString("pt-BR")} de ${leadsAtivos.toLocaleString("pt-BR")} leads ativos`
+              : `${leadsAtivos.toLocaleString("pt-BR")} leads ativos`}
           </span>
-        )}
-        {dados.corte && (
-          <span
-            className="rounded-full bg-laranja-cl px-2.5 py-0.5 text-[11.5px] font-medium text-laranja-esc"
-            title="O board bateu no teto de leitura — paginação vem em rodada futura."
-          >
-            mostrando os {dados.cards.length} mais recentes
-          </span>
-        )}
-        {aviso && (
-          <span className="rounded-full bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-semibold text-vermelho">{aviso}</span>
-        )}
-        <div className="ml-auto flex items-center gap-3.5 self-center">
-          {/* W-D6 · o recorte do admin: Pré-venda · Pós-venda · Todos. Membro não vê (escopo já o põe
-              dentro do departamento dele). */}
-          {podeRecortarDepartamento && (
-            <SegmentoDepartamento
-              valor={filtros.departamento}
-              onChange={(chave) => setFiltros((f) => ({ ...f, departamento: chave }))}
+          {semResponsavel && <ChipSemResponsavel dados={semResponsavel} />}
+          {dados.corte && (
+            <span
+              className="rounded-full bg-laranja-cl px-2.5 py-0.5 text-[11.5px] font-medium text-laranja-esc"
+              title="O board bateu no teto de leitura — paginação vem em rodada futura."
+            >
+              mostrando os {dados.cards.length} mais recentes
+            </span>
+          )}
+          {aviso && (
+            <span className="rounded-full bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-semibold text-vermelho">{aviso}</span>
+          )}
+          {/* o carimbo vira TEXTO de 11px no canto — é rodapé de página, não controle */}
+          <span className="ml-auto text-[11px] text-mute [&_span]:text-[11px] [&_span]:text-mute">
+            <CarimboVivo
+              geradoEm={geradoEm}
+              revalidar={false}
+              intervaloMs={INTERVALOS.funil}
+              aoVivo={tempoRealBoard.aoVivo}
+              conectando={tempoRealBoard.conectando}
+              falhas={tempoRealBoard.falhas}
             />
-          )}
-          {/* R20 · sem próxima ação — o chip que responde "quem está largado". Só aparece quando
-              HÁ lead nessa situação: zero é silêncio, não um "0" para alguém ignorar todo dia
-              (mesma regra do contador de vencidas na sidebar). "—" = leitura de tarefas falhou. */}
-          {(semAcao == null || semAcao > 0) && (
-            <button
-              type="button"
-              onClick={() => setFiltros((f) => ({ ...f, semProximaAcao: !f.semProximaAcao }))}
-              aria-pressed={filtros.semProximaAcao}
-              title="Leads ativos sem nenhuma tarefa pendente — ninguém tem próximo passo marcado"
-              className={cn(
-                "rounded-full border px-3 py-1 text-[12.5px] transition-colors",
-                filtros.semProximaAcao
-                  ? "border-amarelo bg-amarelo-bg font-medium text-amarelo"
-                  : "border-linha bg-branco text-suave hover:border-linha-forte",
-              )}
-            >
-              Sem próxima ação
-              <span className="ml-1.5 font-mono tabular-nums">{semAcao == null ? "—" : semAcao}</span>
-            </button>
-          )}
-          {/* meus leads (0060): corte por dono_id === auth.uid — o gesto diário do vendedor no Kommo */}
-          {autorId && (
-            <button
-              type="button"
-              onClick={() => setFiltros((f) => ({ ...f, meus: !f.meus }))}
-              aria-pressed={filtros.meus}
-              className={cn(
-                "rounded-full border px-3 py-1 text-[12.5px] transition-colors",
-                filtros.meus
-                  ? "border-laranja bg-laranja-cl font-medium text-laranja-esc"
-                  : "border-linha bg-branco text-suave hover:border-linha-forte",
-              )}
-            >
-              Meus leads
-            </button>
-          )}
-          <label className="flex w-52 items-center gap-2 rounded-[6px] border border-linha bg-branco px-2.5 py-1.5 transition-colors focus-within:border-linha-forte">
-            <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5 shrink-0 stroke-mute" fill="none">
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex h-8 w-56 items-center gap-2 rounded-[6px] border border-linha bg-branco px-2.5 transition-colors focus-within:border-linha-forte">
+            <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5 shrink-0 stroke-mute" fill="none" aria-hidden>
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
             </svg>
@@ -571,32 +545,38 @@ export function Quadro({
               value={filtros.busca}
               onChange={(e) => setFiltros((f) => ({ ...f, busca: e.target.value }))}
               placeholder="Buscar lead, telefone"
+              aria-label="Buscar lead por nome ou telefone"
               className="w-full bg-transparent text-[13px] text-tinta outline-none placeholder:text-mute"
             />
           </label>
-          <SeletorOrdem ordem={ordem} onChange={setOrdem} />
-          <FiltrosBoard
+          <BarraFiltros
             cards={cards}
             etapas={dados.etapas}
             filtros={filtros}
             onChange={setFiltros}
-            qtdFiltrada={cardsFiltrados.length}
+            meuId={autorId}
+            contagens={contagensTarefa}
           />
-          {/* R20 · o lead que não nasce de WhatsApp: ligação, indicação, a fono que anotou */}
-          <NovoLead
-            etapas={dados.etapas}
-            etapaPadrao={dados.etapas.find((e) => e.tipo === "aberto")?.chave ?? "novo"}
-            autorId={autorId}
-          />
-          <CarimboVivo
-            geradoEm={geradoEm}
-            revalidar={false}
-            intervaloMs={INTERVALOS.funil}
-            aoVivo={tempoRealBoard.aoVivo}
-            conectando={tempoRealBoard.conectando}
-            falhas={tempoRealBoard.falhas}
-          />
+          <div className="ml-auto flex items-center gap-2">
+            {/* W-D6 · o recorte do admin: Pré-venda · Pós-venda · Todos. Membro não vê (escopo já o põe
+                dentro do departamento dele). */}
+            {podeRecortarDepartamento && (
+              <SegmentoDepartamento
+                valor={filtros.departamento}
+                onChange={(chave) => setFiltros((f) => ({ ...f, departamento: chave }))}
+              />
+            )}
+            <SeletorOrdem ordem={ordem} onChange={setOrdem} />
+          </div>
         </div>
+
+        <ChipsFiltros
+          filtros={filtros}
+          etapas={dados.etapas}
+          onChange={setFiltros}
+          qtdFiltrada={cardsFiltrados.length}
+          qtdTotal={cards.length}
+        />
       </div>
 
       {/* R23 · o que a busca achou FORA do board — logo abaixo do cabeçalho, antes das colunas,
