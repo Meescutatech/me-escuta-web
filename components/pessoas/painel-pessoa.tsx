@@ -93,6 +93,7 @@ export function PainelPessoa({
   canais,
   fotos,
   agora,
+  ensaio = false,
   onFechar,
   onRevogar,
   onMudarCargo,
@@ -104,15 +105,25 @@ export function PainelPessoa({
   canais: CanalEnsaio[];
   fotos: Record<string, string>;
   agora: Date;
+  /**
+   * `true` = modo ensaio, e só aí este painel PODE gerar fixture. O default é `false` porque o
+   * default tem de ser o caminho real: quem esquecer de passar a prop vê de menos, nunca de mais.
+   * Sem isto, o painel afirmava fato sobre pessoa de verdade — atividade, aparelho e IP que
+   * ninguém mediu (Diogo, 11/09: "de onde saíram esses dados? se não tiver dados não mostra").
+   */
+  ensaio?: boolean;
   onFechar: () => void;
   onRevogar: (m: MembroEnsaio) => void;
   onMudarCargo?: (m: MembroEnsaio, chaveCargo: string) => void;
 }) {
   const [aba, setAba] = useState("perfil");
-  const atividade = useMemo(() => (membro ? gerarAtividadeMembro(membro, agora) : null), [membro, agora]);
-  const sessoes = useMemo(() => (membro ? gerarSessoesMembro(membro, agora, membro.id === eu) : []), [membro, agora, eu]);
+  const atividade = useMemo(() => (membro && ensaio ? gerarAtividadeMembro(membro, agora) : null), [membro, agora, ensaio]);
+  const sessoes = useMemo(
+    () => (membro && ensaio ? gerarSessoesMembro(membro, agora, membro.id === eu) : []),
+    [membro, agora, eu, ensaio],
+  );
 
-  if (!membro || !atividade) {
+  if (!membro) {
     return (
       <Sheet open={false} onOpenChange={() => onFechar()}>
         <SheetContent className="sm:max-w-[680px]" />
@@ -136,11 +147,16 @@ export function PainelPessoa({
   };
   const efetivas = permissoesEfetivas(membro, { rotuloDepartamento, numeros: meus.length });
   const cargoAtual = CARGOS_ATIVOS.find((c) => c.papeis.includes(membro.papel) && (c.departamento === null || membro.departamentos.some((v) => v.departamento === c.departamento)));
-  const metricas = [
-    { rotulo: "mensagens", valor: atividade.resumo7d[0].valor },
-    { rotulo: "tarefas", valor: atividade.resumo7d[1].valor },
-    { rotulo: "com IA", valor: atividade.resumo7d[2].valor },
-  ];
+  // a fita de números do topo some quando não há de onde tirá-la — `CartaoPessoa` já trata
+  // `undefined`. Zero aqui não seria honesto: zero afirma "não fez nada", e o que temos é
+  // "não medimos". O último acesso continua, porque esse é real e vem de `core.v_membro`.
+  const metricas = atividade
+    ? [
+        { rotulo: "mensagens", valor: atividade.resumo7d[0].valor },
+        { rotulo: "tarefas", valor: atividade.resumo7d[1].valor },
+        { rotulo: "com IA", valor: atividade.resumo7d[2].valor },
+      ]
+    : undefined;
   const nuncaEntrou = !membro.ultimo_acesso_em;
 
   return (
@@ -168,12 +184,17 @@ export function PainelPessoa({
 
         <SheetBody className="pt-0">
           <Tabs value={aba} onValueChange={(v) => setAba(String(v))}>
-            <TabsList className="mb-4">
-              <TabsTrigger value="perfil">Perfil</TabsTrigger>
-              <TabsTrigger value="atividade">Atividade · {atividade.atividades.length}</TabsTrigger>
-              <TabsTrigger value="ia">Com IA · {atividade.comIa.length}</TabsTrigger>
-              <TabsTrigger value="acessos">Acessos</TabsTrigger>
-            </TabsList>
+            {/* sem fonte para Atividade, Com IA e Acessos não há aba: uma lista vazia sem
+                explicação mente tanto quanto uma lista inventada. Fica o Perfil, que é o que o
+                banco entrega de verdade — cargo, permissões, números, lotação e entrada. */}
+            {atividade && (
+              <TabsList className="mb-4">
+                <TabsTrigger value="perfil">Perfil</TabsTrigger>
+                <TabsTrigger value="atividade">Atividade · {atividade.atividades.length}</TabsTrigger>
+                <TabsTrigger value="ia">Com IA · {atividade.comIa.length}</TabsTrigger>
+                <TabsTrigger value="acessos">Acessos</TabsTrigger>
+              </TabsList>
+            )}
 
             <TabsContent value="perfil" className="flex flex-col gap-6">
               <Bloco rotulo="O que ela vê" itens={efetivas.ve} />
@@ -212,6 +233,8 @@ export function PainelPessoa({
               </section>
             </TabsContent>
 
+            {atividade && (
+              <>
             <TabsContent value="atividade">
               {atividade.atividades.length === 0 ? (
                 <Vazio texto="Nada registrado ainda. Quando ela responder uma conversa, mover um lead ou concluir uma tarefa, aparece aqui." />
@@ -280,6 +303,8 @@ export function PainelPessoa({
                 )}
               </section>
             </TabsContent>
+              </>
+            )}
           </Tabs>
         </SheetBody>
 

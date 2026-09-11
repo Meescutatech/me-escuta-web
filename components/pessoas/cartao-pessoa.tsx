@@ -296,7 +296,7 @@ export function CartaoPessoa({
 }
 
 /** Cabeçalho da lista em `linha` — as mesmas proporções, para as colunas ficarem alinhadas. */
-export function CabecalhoCartaoPessoa({ className }: { className?: string }) {
+export function CabecalhoCartaoPessoa({ className, metricas = true }: { className?: string; metricas?: boolean }) {
   return (
     <div
       className={cn(
@@ -307,7 +307,9 @@ export function CabecalhoCartaoPessoa({ className }: { className?: string }) {
       <span className="min-w-0 flex-[1.6]">Pessoa e cargo</span>
       <span className="hidden min-w-0 flex-1 md:block">Departamentos</span>
       <span className="hidden min-w-0 flex-1 xl:block">Números de que é dona</span>
-      <span className="hidden w-[198px] shrink-0 lg:block">Últimos 7 dias</span>
+      {/* sem número nas linhas a coluna não existe — senão o cabeçalho promete uma medida que
+          nenhuma linha entrega, e ainda desalinha "Último acesso". */}
+      {metricas && <span className="hidden w-[198px] shrink-0 lg:block">Últimos 7 dias</span>}
       <span className="w-[104px] shrink-0 text-right">Último acesso</span>
       <span className="w-8 shrink-0" />
     </div>

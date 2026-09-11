@@ -45,6 +45,7 @@ export function MembrosEnsaio({
   departamentos,
   canais,
   agoraIso,
+  ensaio = false,
 }: {
   meuId: string;
   meuPapel: "owner" | "admin" | "membro" | "marketing";
@@ -53,6 +54,12 @@ export function MembrosEnsaio({
   departamentos: Departamento[];
   canais: CanalEnsaio[];
   agoraIso: string;
+  /**
+   * `true` só no modo ensaio. Esta tela serve os DOIS caminhos desde 11/09, e a atividade por
+   * pessoa (mensagens · tarefas · com IA) é gerada por molde — no caminho real ela afirmaria
+   * número que ninguém mediu, sobre gente de verdade. Default `false`: quem esquecer vê de menos.
+   */
+  ensaio?: boolean;
 }) {
   const agora = useMemo(() => new Date(agoraIso), [agoraIso]);
   const [membros, setMembros] = useState(membrosIniciais);
@@ -80,6 +87,7 @@ export function MembrosEnsaio({
       .map((c) => ({ canal_id: c.canal_id, apelido: c.apelido, numero: formatarE164(c.numero_e164), ativo: c.ativo }));
 
   const metricasDe = (m: MembroEnsaio) => {
+    if (!ensaio) return undefined;
     const r = gerarAtividadeMembro(m, agora).resumo7d;
     return [
       { rotulo: "mensagens", valor: r[0].valor },
@@ -190,7 +198,7 @@ export function MembrosEnsaio({
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <CabecalhoCartaoPessoa />
+        <CabecalhoCartaoPessoa metricas={ensaio} />
         {visiveis.length === 0 ? (
           <p className="px-4 py-10 text-center text-[13.5px] text-muted-foreground">
             {termo || cargoFiltro !== "todos" ? "Ninguém com esse nome ou nesse cargo." : "Ninguém tem acesso ainda. Comece convidando alguém."}
@@ -287,6 +295,7 @@ export function MembrosEnsaio({
           canais={canais}
           fotos={fotos}
           agora={agora}
+          ensaio={ensaio}
           onFechar={() => setAbertoId(null)}
           onRevogar={revogarAcesso}
           onMudarCargo={mudarCargo}

@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { CapaAgente, GlifoAgente } from "./glifos";
 import { NumeroGrande, PontoEstado, Secao, TagAgente, VazioHonesto } from "./pecas";
 import type { AgenteInteligencia, FerramentaAgente } from "@/lib/ensaio/inteligencia";
+import type { TarefaCriadaPeloAgente } from "@/lib/dados/execucoes-jarvis";
 
 /**
  * A TELA DE UM AGENTE — a tela inteira, não uma gaveta.
@@ -67,7 +68,33 @@ const ICONES: Record<string, React.ComponentType<{ className?: string }>> = {
   avisar_gestora: UserRoundCheck,
 };
 
-export function TelaAgente({ agente: a, gestao }: { agente: AgenteInteligencia; gestao: boolean }) {
+/** "hoje 14:32" / "ontem 09:10" / "08/09 16:44" — hora sempre, porque é o que prova a passada. */
+function quando(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const hoje = new Date();
+  const dia = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+  const ontem = new Date(hoje.getTime() - 86_400_000);
+  if (dia(d) === dia(hoje)) return `hoje ${hora}`;
+  if (dia(d) === dia(ontem)) return `ontem ${hora}`;
+  return `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hora}`;
+}
+
+export function TelaAgente({
+  agente: a,
+  gestao,
+  criadas,
+}: {
+  agente: AgenteInteligencia;
+  gestao: boolean;
+  /**
+   * O que ele criou de verdade (`core.v_tarefa`, `origem = 'jarvis_conversa'`). `null` = não deu
+   * para ler. Nos dois casos sem conteúdo a seção some — ordem do Diogo em 11/09: "preciso do
+   * histórico do que ele cria; se isso não é documentado, remova a seção do front".
+   */
+  criadas?: TarefaCriadaPeloAgente[] | null;
+}) {
   const [ligado, setLigado] = React.useState(a.ativo);
   const [autonomia, setAutonomia] = React.useState(a.autonomia);
   const impedido = a.pendencias.length > 0;
@@ -177,28 +204,78 @@ export function TelaAgente({ agente: a, gestao }: { agente: AgenteInteligencia; 
         />
       </Secao>
 
-      <Secao
-        titulo="Últimas execuções"
-        descricao="Cada passo que ele deu, na ordem, com o que voltou e quanto durou. Arraste o marcador para varrer a execução."
-        acao={
-          a.execucoes.length > 0 ? (
-            <span className="text-[12px] text-muted-foreground">{a.execucoes.length} de hoje</span>
-          ) : undefined
-        }
-      >
-        {a.execucoes.length === 0 ? (
+      {/* O passo a passo de cada passada (o trace) NÃO é gravado em lugar nenhum — só existe como
+          fixture, no ensaio. O que É gravado é a consequência: a tarefa que o agente abriu, com
+          hora e com o motivo escrito por ele (`core.v_tarefa`, `origem`). Então fora do ensaio a
+          seção mostra ISSO, e o vazio diz a verdade sobre o estado do agente em vez de afirmar
+          "ainda não executou · está desligado" sobre um que está ligado e executando. */}
+      {a.execucoes.length > 0 ? (
+        <Secao
+          titulo="Últimas execuções"
+          descricao="Cada passo que ele deu, na ordem, com o que voltou e quanto durou. Arraste o marcador para varrer a execução."
+          acao={<span className="text-[12px] text-muted-foreground">{a.execucoes.length} de hoje</span>}
+        >
+          <Execucoes execucoes={a.execucoes} />
+        </Secao>
+      ) : criadas && criadas.length > 0 ? (
+        <Secao
+          titulo="O que ele criou"
+          descricao="Cada tarefa que ele abriu sozinho, da mais recente para a mais antiga, com o motivo que ele mesmo escreveu."
+          acao={
+            <span className="text-[12px] text-muted-foreground">
+              {criadas.length} {criadas.length === 1 ? "tarefa" : "tarefas"}
+            </span>
+          }
+        >
+          <ol className="divide-y divide-border/60 overflow-hidden rounded-md border border-border/60">
+            {criadas.map((t) => (
+              <li key={t.id} className="px-3.5 py-3">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="text-[12px] tabular-nums text-muted-foreground">{quando(t.criado_em)}</span>
+                  <span className="text-[13.5px] font-medium text-foreground">{t.titulo}</span>
+                  {t.lead_nome && (
+                    <Link
+                      href={t.lead_id ? `/funil?lead=${t.lead_id}` : "/tarefas"}
+                      className="text-[12.5px] text-muted-foreground underline-offset-4 hover:underline"
+                    >
+                      · {t.lead_nome}
+                    </Link>
+                  )}
+                  <span className="text-[12px] text-muted-foreground">
+                    · {t.status === "concluida" ? "concluída" : t.status === "pendente" ? "aberta" : t.status}
+                    {t.responsavel ? ` · ${t.responsavel}` : ""}
+                  </span>
+                </div>
+                {(t.por_que || t.fazer) && (
+                  <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">
+                    {t.por_que}
+                    {t.por_que && t.fazer ? " — " : ""}
+                    {t.fazer}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+        </Secao>
+      ) : (
+        <Secao
+          titulo="O que ele criou"
+          descricao="Cada tarefa que ele abre sozinho aparece aqui, com o motivo que ele mesmo escreveu."
+        >
           <VazioHonesto
-            titulo="Ainda não executou"
+            titulo={criadas === null ? "Não deu para ler agora" : "Nada criado ainda"}
             linha={
-              a.situacao === "esperando_credencial"
-                ? `${a.nome} está pronto, mas falta a credencial: ${a.pendencias.join(" · ")}.`
-                : `${a.nome} está desligado. Quando ligar, cada passada aparece aqui.`
+              criadas === null
+                ? `O histórico de ${a.nome} existe no banco, mas esta leitura falhou. Recarregue a página.`
+                : a.situacao === "esperando_credencial"
+                  ? `${a.nome} está pronto, mas falta a credencial: ${a.pendencias.join(" · ")}.`
+                  : ligado
+                    ? `${a.nome} está ligado e ainda não criou nada. Quando criar, a tarefa aparece aqui com hora e motivo.`
+                    : `${a.nome} está desligado. Quando ligar, cada tarefa que ele criar aparece aqui.`
             }
           />
-        ) : (
-          <Execucoes execucoes={a.execucoes} />
-        )}
-      </Secao>
+        </Secao>
+      )}
 
       <Secao
         titulo="Instrução"

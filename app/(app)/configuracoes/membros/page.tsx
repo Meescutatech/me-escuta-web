@@ -29,6 +29,7 @@ export default async function MembrosPage() {
         departamentos={DEPARTAMENTOS_ENSAIO}
         canais={gerarCanaisEnsaio(agora)}
         agoraIso={agora.toISOString()}
+        ensaio
       />
     );
   }

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
 import { agenteInteligencia } from "@/lib/ensaio/inteligencia";
 import { lerAgenteReal } from "@/lib/dados/agentes";
+import { lerTarefasCriadasPeloAgente } from "@/lib/dados/execucoes-jarvis";
 import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
 import { TelaAgente } from "@/components/inteligencia/tela-agente";
 
@@ -25,7 +26,15 @@ export default async function AgentePage({ params }: { params: { id: string } })
     return <TelaAgente agente={agente} gestao={ensaio.papel === "owner" || ensaio.papel === "admin"} />;
   }
 
-  const [agente, papel] = await Promise.all([lerAgenteReal(params.id, new Date()), lerPapelAtual()]);
+  // o histórico só existe para quem grava `origem` na tarefa — hoje, o Jarvis. Para os outros a
+  // seção simplesmente não aparece (11/09: "se isso não é documentado, remova a seção do front").
+  const [agente, papel, criadas] = await Promise.all([
+    lerAgenteReal(params.id, new Date()),
+    lerPapelAtual(),
+    // `[]` (e não `null`) para quem não tem origem própria: lista vazia é um fato lido, `null`
+    // seria "não consegui ler" — e a tela diz coisas diferentes nos dois casos.
+    params.id === "jarvis" ? lerTarefasCriadasPeloAgente(undefined, 10) : Promise.resolve([]),
+  ]);
   if (!agente) notFound();
-  return <TelaAgente agente={agente} gestao={papel === "owner" || papel === "admin"} />;
+  return <TelaAgente agente={agente} gestao={papel === "owner" || papel === "admin"} criadas={criadas} />;
 }
