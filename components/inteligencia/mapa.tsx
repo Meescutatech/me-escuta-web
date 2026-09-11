@@ -98,7 +98,7 @@ export function MapaInteligenciaTela({ mapa }: { mapa: MapaInteligencia }) {
             <span className="text-muted-foreground/70">arraste para reposicionar</span>
             <span className="ml-auto inline-flex items-center gap-2">
               <svg width="34" height="6" aria-hidden className="overflow-visible">
-                <line x1="0" y1="3" x2="34" y2="3" stroke="var(--border)" strokeWidth="1.5" strokeDasharray="2 5" />
+                <line x1="0" y1="3" x2="34" y2="3" stroke="currentColor" strokeWidth="1.25" strokeDasharray="2 5" className="text-foreground/35" />
               </svg>
               linha pontilhada = o agente faz sozinho, sem ninguém no caminho
             </span>

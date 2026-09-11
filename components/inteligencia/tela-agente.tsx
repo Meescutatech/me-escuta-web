@@ -398,7 +398,7 @@ function BlocoPrompt({ agente: a, podeEditar }: { agente: AgenteInteligencia; po
           className="min-h-[280px] resize-y rounded-none border-0 text-[13px] leading-relaxed focus-visible:ring-0"
         />
       ) : (
-        <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap px-4 py-3.5 font-sans text-[13px] leading-relaxed text-foreground">
+        <pre className="max-h-[340px] max-w-[86ch] overflow-auto whitespace-pre-wrap px-4 py-3.5 font-sans text-[13px] leading-relaxed text-foreground">
           {texto}
         </pre>
       )}
