@@ -83,9 +83,15 @@ export interface EstadoConversasEnsaio {
   /** ids de mensagens programadas (da fixture) que a pessoa cancelou. */
   canceladas: string[];
   propostas: DecisaoPropostaEnsaio[];
+  /** W-D3 v3 · painel do lead: campos da ficha editados (lead_id → slug → valor). */
+  ficha: Record<string, Record<string, string | number | boolean | null>>;
+  /** W-D3 v3 · etapa movida pelo painel (lead_id → etapa + instante). */
+  etapas: Record<string, { etapa: string; em: string }>;
+  /** W-D3 v3 · tarefas concluídas pelo painel. */
+  concluidas: string[];
 }
 
-const VAZIO: EstadoConversasEnsaio = { conversas: [], tarefas: [], canceladas: [], propostas: [] };
+const VAZIO: EstadoConversasEnsaio = { conversas: [], tarefas: [], canceladas: [], propostas: [], ficha: {}, etapas: {}, concluidas: [] };
 
 export function lerEstadoConversasEnsaio(): EstadoConversasEnsaio {
   try {
@@ -97,6 +103,9 @@ export function lerEstadoConversasEnsaio(): EstadoConversasEnsaio {
       tarefas: Array.isArray(j.tarefas) ? j.tarefas : [],
       canceladas: Array.isArray(j.canceladas) ? j.canceladas : [],
       propostas: Array.isArray(j.propostas) ? j.propostas : [],
+      ficha: j.ficha && typeof j.ficha === "object" ? j.ficha : {},
+      etapas: j.etapas && typeof j.etapas === "object" ? j.etapas : {},
+      concluidas: Array.isArray(j.concluidas) ? j.concluidas : [],
     };
   } catch {
     return VAZIO;
@@ -110,6 +119,9 @@ export function gravarEstadoConversasEnsaio(estado: EstadoConversasEnsaio): void
     tarefas: estado.tarefas.slice(-LIMITE_POR_LISTA),
     canceladas: estado.canceladas.slice(-LIMITE_POR_LISTA * 2),
     propostas: estado.propostas.slice(-LIMITE_POR_LISTA),
+    ficha: estado.ficha,
+    etapas: estado.etapas,
+    concluidas: estado.concluidas.slice(-LIMITE_POR_LISTA * 2),
   };
   cookies().set(COOKIE_ESTADO_CONVERSAS, JSON.stringify(enxuto), {
     path: "/",

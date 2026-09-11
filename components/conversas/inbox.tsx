@@ -41,7 +41,7 @@ import { PropostaJarvisInline } from "@/components/jarvis/proposta-inline";
 import { MarcaJarvis } from "@/components/jarvis/marca";
 import type { AjusteProposta, MotivoDescarte } from "@/components/jarvis/tipos";
 import { BotaoNovaConversa } from "@/components/conversas/nova-conversa";
-import { marcaDoCanal } from "@/lib/conversas/cor-canal";
+import { marcaDoCanal, nomeCurtoDoNumero } from "@/lib/conversas/cor-canal";
 import {
   aceitarPropostaJarvisEnsaio,
   cancelarProgramadaEnsaio,
@@ -62,18 +62,9 @@ import {
   pendentesVivas,
   podeTentarDeNovo,
 } from "@/lib/conversas/thread";
-import { diasNaEtapa } from "@/lib/tempo";
 import type { PainelLead } from "@/lib/dados/lead-painel";
-import { FichaKommo } from "@/components/lead/ficha-kommo";
-import { ReguaFunil } from "@/components/regua-funil";
-import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import type { EtapaFunil } from "@/lib/dados/funil";
-import { TarefasLead } from "@/components/lead/tarefas-lead";
-import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
-// M4 · os imports da aba Histórico. Estavam SÓ no drawer-card: a branch de 29/07 usava
-// <AbaHistorico> aqui sem importar, e por isso nunca passou no typecheck.
-import { AbaHistorico } from "@/components/lead/aba-historico";
-import { mapaDeAgentes, mapaDeEtapas, mapaDePessoas } from "@/components/lead/regras/historico.ts";
+import { PainelLead as PainelDoLead } from "@/components/conversas/painel-lead";
 import { RegistroInterno } from "@/components/conversas/registro-interno";
 import { itensDoDia, montarRegistros, propostasForaDosDias } from "@/lib/conversas/registro-timeline";
 import type { Mencionavel } from "@/lib/conversas/mencao";
@@ -137,11 +128,6 @@ function tempoLista(iso: string | null): string {
   if (difDias < 7) return DIAS[d.getDay()];
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
-function textoNaEtapa(iso: string | null | undefined): string {
-  const dd = diasNaEtapa(iso ?? null, Date.now());
-  if (dd == null) return "—";
-  return dd === 0 ? "hoje" : dd === 1 ? "1 dia" : `${dd} dias`;
-}
 
 /**
  * W-D3 (10/09, aprovado pelo Diogo às 22:15) · as abas viram ATALHOS: Todas · Minhas · Não lidas ·
@@ -177,6 +163,7 @@ export function Inbox({
   propostas = [],
   tarefasPorProposta = null,
   ensaio = false,
+  pessoasPorEmail = null,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -234,6 +221,8 @@ export function Inbox({
   tarefasPorProposta?: Record<string, string> | null;
   /** W-D3 · modo ensaio: aceitar/descartar/cancelar vão para o cookie de estado, não para a porta. */
   ensaio?: boolean;
+  /** W-D3 v3 · e-mail (dono_atual legado) → primeiro nome, para dizer QUEM atende no card. */
+  pessoasPorEmail?: Record<string, string> | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -554,6 +543,20 @@ export function Inbox({
   const ehMinha = (c: ConversaResumo) =>
     !!c.dono_atual && (c.dono_atual === autorEmail || c.dono_atual === autorId || c.dono_atual === `humano:${autorId}`);
   const semResponsavel = (c: ConversaResumo) => !c.dono_atual;
+  /** W-D3 v3 · quem atende a conversa agora: "Clara" ou o primeiro nome de quem assumiu. */
+  const nomeDoAtendente = (c: ConversaResumo): string => {
+    if (c.mode === "IA") return "Clara";
+    const d = c.dono_atual ?? "";
+    const id = d.replace(/^humano:/, "");
+    const m = mencionaveis.find((x) => x.id === id);
+    if (m) return m.nome.split(" ")[0];
+    if (pessoasPorEmail?.[d]) return pessoasPorEmail[d];
+    if (d.includes("@")) {
+      const u = d.split("@")[0];
+      return u.charAt(0).toUpperCase() + u.slice(1);
+    }
+    return "Humano";
+  };
 
   // filtros da lista (RF-31): Todas · Minhas · Não lidas · Sem responsável
   const contagens = useMemo(
@@ -860,10 +863,18 @@ export function Inbox({
                   >
                     {ia ? "C" : c.nome ? iniciais(c.nome) : "S"}
                   </span>
-                  {/* W-D3 · por qual NÚMERO ela entrou: a inicial do apelido, na cor do canal,
-                      no canto do avatar (LiderHub: glifo da plataforma no avatar). O rótulo
-                      inteiro fica no title — e nunca é o phone_number_id (M7/CA-9). */}
-                  {origemLegivel && c.phone_number_id ? <BolinhaNumero c={c} /> : null}
+                  {/* W-D3 v3 · QUEM ATENDE no canto do avatar (C = Clara, S = Sara, A = Ana Paula);
+                      o número por onde entrou virou o ponto no fim da linha de prévia. */}
+                  <span
+                    title={`atendida por ${nomeDoAtendente(c)}`}
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 grid size-[15px] place-items-center rounded-full text-[8.5px] font-bold leading-none ring-2 ring-branco",
+                      ia ? "bg-laranja text-branco" : "bg-navy text-branco",
+                    )}
+                  >
+                    {nomeDoAtendente(c).charAt(0).toUpperCase()}
+                    <span className="sr-only">atendida por {nomeDoAtendente(c)}</span>
+                  </span>
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
@@ -876,8 +887,9 @@ export function Inbox({
                       {dataDaLista(c) ? tempoLista(dataDaLista(c)) : "sem data"}
                     </span>
                   </div>
-                  <div className={cn("mt-0.5 truncate text-[0.78rem]", c.previa ? "text-suave" : "text-mute")}>
-                    {prev}
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span className={cn("min-w-0 flex-1 truncate text-[0.78rem]", c.previa ? "text-suave" : "text-mute")}>{prev}</span>
+                    {origemLegivel && c.phone_number_id ? <PontoNumero c={c} /> : null}
                   </div>
                   {/* M7 · os SELOS do número (teste / sem identidade / sem finalidade) continuam
                       na linha — o selo TESTE não se esconde por valor único (ARB-R18-05). O
@@ -946,6 +958,7 @@ export function Inbox({
         {/* W-D3 · os recortes (Diogo, 22:40): uma linha de chips discretos abaixo das abas — ponto de
             6px, nome, contagem muted; sem caixa, sem fundo, sem rótulo. Clicar filtra; de novo, limpa. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2 pt-1.5">
+          <span className="text-[11px] text-mute">atende:</span>
           {(["IA", "HUMANO"] as QuemAtende[]).map((k) => (
             <ChipRecorte
               key={k}
@@ -957,13 +970,14 @@ export function Inbox({
             />
           ))}
           {railNumeros.length > 0 && <span aria-hidden className="h-3 w-px bg-linha-forte" />}
+          {railNumeros.length > 0 && <span className="text-[11px] text-mute">número:</span>}
           {railNumeros.map((n) => (
             <ChipRecorte
               key={n.id}
               ativo={numeroFiltro === n.id}
               onClick={() => setNumeroFiltro((v) => (v === n.id ? null : n.id))}
               cor={marcaDoCanal({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade }).ponto}
-              rotulo={n.apelido.split(" · ")[0]}
+              rotulo={nomeCurtoDoNumero({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade })}
               titulo={n.numero ? `${n.apelido} · ${n.numero}` : n.apelido}
               qtd={n.qtd}
             />
@@ -1418,120 +1432,21 @@ export function Inbox({
           </button>
         </div>
 
+        {/* W-D3 v3 · o painel inteiro (identidade · destaques · Ficha/Funil/Tarefas/Agendadas/Histórico/Mídias) */}
         {!ctxColapsado && selecionada && (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {/* header do lead (r9): nome + #id mono + link pro card + tags + funil-linha + régua */}
-            <div className="px-[18px] pt-3.5">
-              <div className="flex items-baseline gap-2">
-                <h2 className="min-w-0 truncate text-[17px] font-[650] leading-[1.2] text-tinta">{titulo}</h2>
-                {selecionada.kommo_lead_id && (
-                  <span className="shrink-0 font-mono text-[11.5px] text-suave">#{selecionada.kommo_lead_id}</span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => router.push(`/funil${selecionada.lead_id ? `?lead=${selecionada.lead_id}` : ""}`)}
-                  title="Abrir card no funil"
-                  aria-label="Abrir card no funil"
-                  className="ml-auto grid h-6 w-6 shrink-0 place-items-center rounded text-mute hover:bg-hover hover:text-navy"
-                >
-                  <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 stroke-current" fill="none">
-                    <path d="M7 17 17 7M9 7h8v8" />
-                  </svg>
-                </button>
-              </div>
-              <div className="mt-0.5 font-mono text-[11.5px] text-suave">{fmtTelefone(selecionada.telefone)}</div>
-              {(selecionada.tags ?? []).length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {(selecionada.tags ?? []).map((t) => (
-                    <span key={t} className="rounded-full bg-laranja-cl px-2 py-0.5 text-[11.5px] font-medium text-laranja-esc">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="mt-3 text-[12.5px] text-suave">
-                Funil de vendas ·{" "}
-                <b className="font-semibold text-tinta">{selecionada.etapa_nome ?? "sem etapa"}</b>{" "}
-                {selecionada.entrou_etapa_em && (
-                  <span className="font-mono text-[11px]">({textoNaEtapa(selecionada.entrou_etapa_em)} na etapa)</span>
-                )}
-              </div>
-              <div className="mt-2">
-                <ReguaFunil
-                  segmentos={segmentosReguaLead(
-                    etapas.filter((e) => e.tipo === "aberto"),
-                    selecionada.etapa ?? null,
-                  )}
-                  rotulo={`Progresso no funil: ${selecionada.etapa_nome ?? "sem etapa"}`}
-                />
-              </div>
-            </div>
-
-            {/* ficha réplica Kommo + Tarefas/Anotações como abas (R8 por baixo — mesma porta) */}
-            {selecionada.lead_id && painel ? (
-              <div className="mt-3 flex min-h-0 flex-1 flex-col">
-                <FichaKommo
-                  leadId={selecionada.lead_id}
-                  ficha={painel.ficha}
-                  aoAtualizar={() => router.refresh()}
-                  abasExtras={[
-                    {
-                      chave: "aba-tarefas",
-                      rotulo: "Tarefas",
-                      contagem: painel.tarefas.filter((t) => t.status !== "concluida").length,
-                      conteudo: (
-                        <TarefasLead
-                          leadId={selecionada.lead_id}
-                          tarefas={painel.tarefas}
-                          mencionaveis={mencionaveis}
-                          tiposTarefa={tiposTarefa}
-                          autorId={autorId}
-                          autorEmail={autorEmail}
-                          aoAtualizar={() => router.refresh()}
-                        />
-                      ),
-                    },
-                    {
-                      chave: "aba-notas",
-                      rotulo: "Anotações",
-                      contagem: painel.anotacoes.length,
-                      conteudo: (
-                        <AnotacoesLead
-                          leadId={selecionada.lead_id}
-                          anotacoes={painel.anotacoes}
-                          mencoes={painel.mencoes}
-                          mencionaveis={mencionaveis}
-                          meuId={autorId}
-                          autorEmail={autorEmail}
-                          aoAtualizar={() => router.refresh()}
-                        />
-                      ),
-                    },
-                    {
-                      // M4 · histórico. ÚLTIMA da régua e SEM contagem: o número seria 1, 2 ou 3
-                      // em 100% dos leads (73 com 1 linha, 588 com 2, 19 com 3), e badge de "2"
-                      // não informa nada — só ocupa a única coisa escassa da régua.
-                      chave: "aba-historico",
-                      rotulo: "Histórico",
-                      conteudo: (
-                        <AbaHistorico
-                          historico={painel.historico.eventos}
-                          donoLegado={painel.historico.donoLegado}
-                          pessoas={mapaDePessoas(mencionaveis)}
-                          agentes={mapaDeAgentes(mencionaveis)}
-                          etapas={mapaDeEtapas(etapas)}
-                        />
-                      ),
-                    },
-                  ]}
-                />
-              </div>
-            ) : (
-              <p className="mt-4 border-t border-linha px-[18px] pt-3 text-[12.5px] leading-relaxed text-mute">
-                Conversa ainda sem lead vinculado — a ficha aparece quando o lead existir no funil.
-              </p>
-            )}
-          </div>
+          <PainelDoLead
+            key={selecionada.id}
+            conversa={selecionada}
+            painel={painel}
+            etapas={etapas}
+            mensagens={mensagens}
+            programadas={programadas}
+            mencionaveis={mencionaveis}
+            quemAtende={nomeDoAtendente(selecionada)}
+            ensaio={ensaio}
+            onCancelarProgramado={cancelarProgramado}
+            avisar={avisar}
+          />
         )}
       </aside>
 
@@ -1657,25 +1572,13 @@ function Selos({ selos }: { selos: SeloChip[] }) {
   );
 }
 
-/** W-D3 · a bolinha no canto do avatar: inicial do apelido na cor do canal. */
-function BolinhaNumero({ c }: { c: ConversaResumo }) {
-  const chip = chipDoNumero({
-    phone_number_id: c.phone_number_id ?? null,
-    numero_apelido: c.numero_apelido ?? null,
-    numero_e164: c.numero_e164 ?? null,
-    finalidade: c.finalidade ?? null,
-  });
+/** W-D3 v3 · o número por onde a conversa entrou: ponto de 6px no fim da prévia, nome no title. */
+function PontoNumero({ c }: { c: ConversaResumo }) {
   const marca = marcaDoCanal({ phone_number_id: c.phone_number_id, numero_apelido: c.numero_apelido, finalidade: c.finalidade ?? null });
+  const nome = nomeCurtoDoNumero({ phone_number_id: c.phone_number_id, numero_apelido: c.numero_apelido, finalidade: c.finalidade ?? null });
   return (
-    <span
-      title={chip.titulo}
-      className={cn(
-        "absolute -bottom-0.5 -right-0.5 grid size-[15px] place-items-center rounded-full text-[8.5px] font-bold leading-none ring-2 ring-branco",
-        marca.cheia,
-      )}
-    >
-      {marca.inicial}
-      <span className="sr-only">{chip.rotulo}</span>
+    <span title={`pelo número ${nome}`} className={cn("size-1.5 shrink-0 rounded-full", marca.ponto)}>
+      <span className="sr-only">pelo número {nome}</span>
     </span>
   );
 }
@@ -1758,7 +1661,8 @@ function ChipNumeroCabecalho({ c }: { c: ConversaResumo }) {
           chip.atencao ? "bg-amarelo/10 text-amarelo" : "bg-hover text-suave",
         )}
       >
-        {chip.rotulo}
+        {/* W-D3 v3 · o WABA de produção é "Oficial" nas conversas; o apelido completo fica em Configurações */}
+        {chip.caso === "cadastrado" ? nomeCurtoDoNumero({ phone_number_id: c.phone_number_id, numero_apelido: c.numero_apelido, finalidade: c.finalidade ?? null }) : chip.rotulo}
       </span>
       {numero ? <span className="font-mono text-[0.7rem] text-mute">{numero}</span> : null}
       <Selos selos={chip.selos} />

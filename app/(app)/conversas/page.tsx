@@ -36,6 +36,8 @@ import {
 } from "@/lib/ensaio/conversas-extra";
 import { CONVERSA_JOSE_CARLOS, TAREFA_JOSE_CARLOS, propostasJarvisEnsaio, tarefaDaPropostaAceitaEnsaio } from "@/lib/ensaio/jarvis-propostas";
 import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
+import { PESSOAS } from "@/lib/ensaio/modo";
+import { visaoTarefasDeEnsaio } from "@/lib/dados/tarefas-ensaio";
 import type { CanalEnvioComposer } from "@/components/conversas/composer";
 
 export const dynamic = "force-dynamic";
@@ -98,14 +100,48 @@ export default async function ConversasPage({
     // proposta decidida → tarefa que nasceu dela ("Ver tarefa" na nota; e o registro não duplica)
     const tarefasPorProposta: Record<string, string> = { "prop-ensaio-jose-carlos": TAREFA_JOSE_CARLOS };
     for (const d of estado.propostas) if (d.tarefa_id) tarefasPorProposta[d.id] = d.tarefa_id;
+    // W-D3 v3 · etapa movida pelo painel sobrescreve a fixture (na conversa e no lead)
+    const movida = selecionada?.lead_id ? estado.etapas[selecionada.lead_id] : undefined;
+    if (movida && selecionada) {
+      selecionada.etapa = movida.etapa;
+      selecionada.etapa_nome = etapasEnsaio().find((e) => e.chave === movida.etapa)?.nome ?? movida.etapa;
+      selecionada.entrou_etapa_em = movida.em;
+      if (lead) {
+        lead.etapa = movida.etapa;
+        lead.entrou_etapa_em = movida.em;
+      }
+    }
     // painel do lead + as tarefas que nasceram de propostas aceitas (a da fixture e as do cookie)
+    // + as tarefas do lead na fixture de /tarefas (W-D5), para o painel e a fila contarem a mesma coisa
     const painel = lead ? painelLeadEnsaio(lead, agora) : null;
     if (painel && selecionada) {
       const aceitas = [
         ...(selecionada.id === CONVERSA_JOSE_CARLOS ? [tarefaDaPropostaAceitaEnsaio(agora)] : []),
         ...estado.tarefas.filter((t) => t.conversa_id === selecionada.id || (t.lead_id && t.lead_id === selecionada.lead_id)).map(tarefaAceitaComoLead),
       ];
-      painel.tarefas = [...aceitas, ...painel.tarefas];
+      const daFila = visaoTarefasDeEnsaio(agora, { leadsDoFunil: true }).tarefas.filter((t) => t.lead_id === selecionada.lead_id);
+      const vistos = new Set<string>();
+      painel.tarefas = [...aceitas, ...painel.tarefas, ...daFila]
+        .filter((t) => (vistos.has(t.id) ? false : (vistos.add(t.id), true)))
+        .map((t) => (estado.concluidas.includes(t.id) ? { ...t, status: "concluida", concluida_em: t.concluida_em ?? agora.toISOString() } : t));
+      // ficha: os campos do paciente que o Diogo pediu (quem é o paciente, é de BH…) + o que a pessoa editou
+      const grupo = painel.ficha.grupos?.[0];
+      if (grupo) {
+        grupo.campos.push(
+          { slug: "quem_e_paciente", nome: "Quem é o paciente", tipo: "selecao", opcoes: ["A própria pessoa", "Mãe", "Pai", "Cônjuge", "Outro familiar"], editavel: true },
+          { slug: "e_de_bh", nome: "É de BH ou região", tipo: "booleano", opcoes: [], editavel: true },
+          { slug: "idade_paciente", nome: "Idade do paciente", tipo: "numero", opcoes: [], editavel: true },
+          { slug: "indicado_por", nome: "Indicado por", tipo: "texto", opcoes: [], editavel: true },
+        );
+      }
+      painel.ficha.valores = {
+        ...(painel.ficha.valores ?? {}),
+        quem_e_paciente: lead?.tags?.includes("familiar decide") ? "Mãe" : "A própria pessoa",
+        e_de_bh: true,
+        idade_paciente: lead?.idade ?? null,
+        indicado_por: lead?.origem === "ind" ? "Geraldo Nunes" : null,
+        ...(selecionada.lead_id ? estado.ficha[selecionada.lead_id] ?? {} : {}),
+      };
     }
     const envio = canaisDeEnvio(ensaio, canais);
     const canaisEnvio: CanalEnvioComposer[] = envio.canais.map((c) => ({
@@ -144,6 +180,7 @@ export default async function ConversasPage({
         propostas={propostas}
         tarefasPorProposta={tarefasPorProposta}
         ensaio
+        pessoasPorEmail={Object.fromEntries(PESSOAS.map((p) => [p.email, p.nome.split(" ")[0]]))}
       />
     );
   }

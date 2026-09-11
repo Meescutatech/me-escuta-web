@@ -57,3 +57,19 @@ export function marcaDoCanal(c: {
   // +4: só desloca o hash para os dois Lite da fixture caírem em laranja (Sara) e verde (fono)
   return { inicial, ...PALETA[(hash(c.phone_number_id) + 4) % PALETA.length] };
 }
+
+/**
+ * O NOME CURTO do número, como as telas de conversa o chamam (Diogo, 23:10): o WABA oficial de
+ * produção é "Oficial" — o apelido completo ("Kommo · Oficial") fica só em Configurações; os
+ * outros usam o primeiro segmento do apelido ("Sara · comercial" → "Sara").
+ */
+export function nomeCurtoDoNumero(c: {
+  phone_number_id: string | null | undefined;
+  numero_apelido: string | null | undefined;
+  finalidade?: "producao" | "teste" | null;
+}): string {
+  if (!c.numero_apelido) return "número desconhecido";
+  const oficial = !!c.phone_number_id?.startsWith("waba:") && c.finalidade === "producao";
+  if (oficial) return "Oficial";
+  return c.numero_apelido.split(" · ")[0].trim() || c.numero_apelido;
+}

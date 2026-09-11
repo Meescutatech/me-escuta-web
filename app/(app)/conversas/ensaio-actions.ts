@@ -192,3 +192,40 @@ export async function cancelarProgramadaEnsaio(mensagemId: string): Promise<{ ok
   revalidatePath("/conversas");
   return { ok: true };
 }
+
+// ───────────────────────── painel do lead (W-D3 v3) ─────────────────────────
+
+export async function salvarCampoFichaEnsaio(
+  leadId: string,
+  slug: string,
+  valor: string | number | boolean | null,
+): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  const pessoa = lerSessaoEnsaio();
+  if (!pessoa) return { ok: false, motivo: "fora do modo ensaio" };
+  if (!leadId || !slug.trim()) return { ok: false, motivo: "campo sem slug" };
+  const estado = lerEstadoConversasEnsaio();
+  gravarEstadoConversasEnsaio({ ...estado, ficha: { ...estado.ficha, [leadId]: { ...(estado.ficha[leadId] ?? {}), [slug]: valor } } });
+  revalidatePath("/conversas");
+  return { ok: true };
+}
+
+export async function moverEtapaEnsaio(leadId: string, etapa: string): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  const pessoa = lerSessaoEnsaio();
+  if (!pessoa) return { ok: false, motivo: "fora do modo ensaio" };
+  if (!leadId || !etapa) return { ok: false, motivo: "escolha uma etapa" };
+  const estado = lerEstadoConversasEnsaio();
+  gravarEstadoConversasEnsaio({ ...estado, etapas: { ...estado.etapas, [leadId]: { etapa, em: new Date().toISOString() } } });
+  revalidatePath("/conversas");
+  revalidatePath("/funil");
+  return { ok: true };
+}
+
+export async function concluirTarefaEnsaio(tarefaId: string): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  const pessoa = lerSessaoEnsaio();
+  if (!pessoa) return { ok: false, motivo: "fora do modo ensaio" };
+  const estado = lerEstadoConversasEnsaio();
+  if (!estado.concluidas.includes(tarefaId)) gravarEstadoConversasEnsaio({ ...estado, concluidas: [...estado.concluidas, tarefaId] });
+  revalidatePath("/conversas");
+  revalidatePath("/tarefas");
+  return { ok: true };
+}

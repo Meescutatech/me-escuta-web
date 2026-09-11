@@ -916,7 +916,7 @@ export function Composer({
             <div className="flex items-center gap-2 border-t border-nota-linha bg-nota-faixa px-3.5 py-[7px] text-[12px] text-amarelo">
               <span className="font-[650]">Fio novo neste número:</span>
               <span className="min-w-0 flex-1 truncate">
-                a conversa com {nomeLead ?? "este cliente"} por {canalEscolhido.apelido} abre separada — esta continua como está.
+                a conversa com {nomeLead ?? "este cliente"} por {nomeCurtoCanal(canalEscolhido)} abre separada — esta continua como está.
               </span>
               <button
                 type="button"
@@ -945,7 +945,7 @@ export function Composer({
                   )}
                 >
                   <span>Enviando por</span>
-                  <span className={cn("truncate font-medium", fioNovo ? "text-amarelo" : "text-suave")}>{canalEscolhido.apelido.split(" · ")[0]}</span>
+                  <span className={cn("truncate font-medium", fioNovo ? "text-amarelo" : "text-suave")}>{nomeCurtoCanal(canalEscolhido)}</span>
                   <svg viewBox="0 0 24 24" className="size-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <path d="m6 9 6 6 6-6" />
                   </svg>
@@ -1042,6 +1042,11 @@ export function Composer({
   );
 }
 
+/** "Oficial" para o WABA de produção; o primeiro segmento do apelido para os outros (Diogo, 23:10). */
+function nomeCurtoCanal(c: CanalEnvioComposer): string {
+  return c.producao ? "Oficial" : c.apelido.split(" · ")[0].trim() || c.apelido;
+}
+
 function OpcaoCanal({ c, marcado, onEscolher, novo = false }: { c: CanalEnvioComposer; marcado: boolean; onEscolher: () => void; novo?: boolean }) {
   return (
     <li
@@ -1052,7 +1057,7 @@ function OpcaoCanal({ c, marcado, onEscolher, novo = false }: { c: CanalEnvioCom
     >
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-1.5">
-          <span className="truncate font-medium text-tinta">{c.apelido}</span>
+          <span className="truncate font-medium text-tinta">{nomeCurtoCanal(c)}</span>
           {c.producao && <span className="text-[11px] text-mute">produção</span>}
           {c.proprio && <span className="text-[11px] text-mute">seu</span>}
         </span>

@@ -43,6 +43,12 @@ import type { CanalEnvioComposer } from "@/components/conversas/composer";
  * pessoa pode usar, produção primeiro.
  */
 
+/** "Oficial" para o WABA de produção; o primeiro segmento do apelido para os outros (Diogo, 23:10). */
+function nomeCurto(c: CanalEnvioComposer | undefined): string | null {
+  if (!c) return null;
+  return c.producao ? "Oficial" : c.apelido.split(" · ")[0].trim() || c.apelido;
+}
+
 export function BotaoNovaConversa({ canais }: { canais: CanalEnvioComposer[] }) {
   const [aberto, setAberto] = useState(false);
   return (
@@ -141,7 +147,7 @@ export function DialogoNovaConversa({
               : existente
                 ? `Já existe conversa com ${lead!.nome.split(" ")[0]} por este número — é ela que abre.`
                 : lead
-                  ? `Abre um fio novo com ${lead.nome.split(" ")[0]} por ${canais.find((c) => c.id === canalId)?.apelido ?? "este número"}.`
+                  ? `Abre um fio novo com ${lead.nome.split(" ")[0]} por ${nomeCurto(canais.find((c) => c.id === canalId)) ?? "este número"}.`
                   : "O lead entra no funil como Novo lead, e a conversa abre sem mensagem — quem escreve é você.";
 
   function abrir() {
@@ -218,7 +224,7 @@ export function DialogoNovaConversa({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
-                        <span className="truncate text-ui-13 font-medium text-foreground">{c.apelido}</span>
+                        <span className="truncate text-ui-13 font-medium text-foreground">{nomeCurto(c)}</span>
                         {c.producao && <span className="rounded-full bg-verde-bg px-1.5 py-px text-[10px] font-semibold text-verde">produção</span>}
                         {c.proprio && <span className="rounded-full bg-azul-bg px-1.5 py-px text-[10px] font-semibold text-azul">seu</span>}
                       </span>
