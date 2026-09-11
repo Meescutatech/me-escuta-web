@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useDraggable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import type { CardLead, Origem } from "@/lib/dados/funil";
 import { classificarPrazo, textoPrazoCurto, type EstadoPrazo } from "@/lib/dados/funil-calculos";
 import { textoTempoCurto } from "@/lib/tempo";
@@ -179,6 +177,7 @@ export function CartaoLead({
   onAbrir,
   onResolverSugestao,
   nomePorId,
+  pego = false,
 }: {
   card: CardLead;
   agora: number;
@@ -189,11 +188,9 @@ export function CartaoLead({
   onResolverSugestao?: (leadId: string, decisao: "aprovada" | "descartada") => void;
   /** uuid → primeiro nome, para o dono da próxima tarefa (o board monta dos mencionáveis) */
   nomePorId?: ReadonlyMap<string, string>;
+  /** v5 · pego pelo TECLADO (Espaço): o card fica no lugar, marcado, enquanto as setas escolhem */
+  pego?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `card:${card.lead_id}`,
-    data: { leadId: card.lead_id, etapa: card.etapa },
-  });
   const [sugestaoResolvida, setSugestaoResolvida] = useState<null | "aprovada" | "descartada">(null);
 
   const ruim = nomeRuim(card.nome);
@@ -260,18 +257,24 @@ export function CartaoLead({
   const nomeAgente = card.proposta?.agente === "lev" ? "Levindo" : "Clara";
 
   return (
+    /*
+     * v5 · o card deixou de ser `useDraggable` do dnd-kit: quem escuta o ponteiro é o contêiner
+     * (`propsCard` em `arraste.tsx`), e aqui fica só o desenho + o gesto de ABRIR. O `tabIndex` e o
+     * `role` vivem neste botão interno (`data-foco-card`) porque é ele que recebe o foco de volta
+     * quando o card remonta em outra coluna.
+     */
     <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform) }}
-      {...attributes}
-      {...listeners}
+      data-foco-card
+      role="button"
+      tabIndex={0}
       onClick={() => onAbrir(card.lead_id)}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (e.key === "Enter") {
           e.preventDefault();
           onAbrir(card.lead_id);
         }
       }}
+      aria-label={`${card.nome ?? "Lead"} — abrir. Espaço pega o card para mover entre etapas.`}
       title={titulo || undefined}
       className={cn(
         "relative cursor-grab touch-none select-none overflow-hidden rounded-[10px] border py-[10px] pl-[13px] pr-3 transition-all",
@@ -281,8 +284,9 @@ export function CartaoLead({
         // seleção saiu da barra esquerda (agora é o prazo) e virou anel — mesma leitura, sem disputa
         selecionado
           ? "!border-laranja ring-[1.5px] ring-laranja/45"
-          : "hover:shadow-[0_1px_6px_rgba(37,47,99,.08)]",
-        isDragging && "opacity-40",
+          : "hover:-translate-y-px hover:shadow-[0_2px_10px_rgba(37,47,99,.10)]",
+        // v5 · pego pelo teclado: anel tracejado, para a pessoa ver O QUE está movendo
+        pego && "!border-dashed !border-laranja ring-[1.5px] ring-laranja/35",
       )}
     >
       {/* TRILHO DE PRIORIDADE — o sinal de 3 segundos. A cor sozinha NÃO basta (WCAG 1.4.1): o

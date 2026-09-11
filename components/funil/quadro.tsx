@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  closestCorners,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
+  AnuncioArraste,
+  ContadorColuna,
+  OverlayArraste,
+  PlaceholderArraste,
+  TrilhoRolagem,
+  useArrasteFunil,
+  useFadeTrilho,
+  type AlvoArraste,
+  type EstadoArraste,
+} from "./arraste";
 import type { DadosFunil, CardLead, EtapaFunil } from "@/lib/dados/funil";
 import { moverCardEtapa } from "@/app/(app)/funil/actions";
 import { CartaoLead } from "./card-lead";
@@ -76,26 +76,35 @@ function Coluna({
   agora,
   sla,
   selecionadoId,
-  arrastando,
   pulsando,
   onAbrir,
   onResolverSugestao,
   faixaDe,
   nomePorId,
+  arraste,
+  alvo,
+  propsCard,
 }: {
   etapa: EtapaFunil;
   cards: CardLead[];
   agora: number;
   sla: SlaEtapas;
   selecionadoId: string | null;
-  arrastando: boolean;
   pulsando: ReadonlySet<string>;
   onAbrir: (id: string) => void;
   onResolverSugestao: (leadId: string, decisao: "aprovada" | "descartada") => void;
   faixaDe: (c: CardLead) => FaixaPrioridade;
   nomePorId: ReadonlyMap<string, string>;
+  arraste: EstadoArraste | null;
+  alvo: AlvoArraste | null;
+  propsCard: (leadId: string, etapa: string, indice: number) => Record<string, unknown>;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `col:${etapa.chave}` });
+  // W-D6 v5 · a lista SEM o card que está no ar: o buraco fecha, e o placeholder abre no destino.
+  const visiveis = arraste ? cards.filter((c) => c.lead_id !== arraste.leadId) : cards;
+  const alvoAqui = arraste && alvo?.etapa === etapa.chave ? alvo.indice : null;
+  // o contador conta o DESTINO durante o arraste: −1 na origem, +1 no alvo
+  const contagem =
+    cards.length - (arraste?.etapaOrigem === etapa.chave ? 1 : 0) + (alvo?.etapa === etapa.chave && arraste ? 1 : 0);
   // W-D6 · o cabeçalho diz o que a coluna PESA: quantos, quanto vale, quantos estouraram o prazo
   // da etapa. A conta da faixa é a do board (`faixaDe`), nunca uma segunda (D55).
   const resumo = resumoColuna(cards, faixaDe);
@@ -116,9 +125,7 @@ function Coluna({
         >
           {etapa.nome}
         </span>
-        <span className="ml-auto rounded-full border border-linha bg-branco px-2 py-px font-mono text-[11.5px] tabular-nums text-suave">
-          {cards.length}
-        </span>
+        <ContadorColuna valor={contagem} />
       </div>
       {/* segunda linha: valor somado e os que passaram do prazo. Some inteira quando não há o que
           dizer (coluna vazia, sem valor e sem estourado) — "R$ 0 · 0 além do prazo" é ruído. */}
@@ -135,29 +142,31 @@ function Coluna({
       )}
       {soma === 0 && resumo.alemDoPrazo === 0 && <div className="pb-1.5" aria-hidden />}
       <div
-        ref={setNodeRef}
+        data-coluna={etapa.chave}
         className={cn(
           "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[10px] px-0.5 pb-8 pt-px transition-colors",
-          isOver && "bg-hover",
+          alvoAqui != null && "bg-hover/60",
         )}
       >
-        {cards.map((c) => (
-          <div key={c.lead_id} className={cn(pulsando.has(c.lead_id) && "pulso-novo")}>
-            <CartaoLead
-              card={c}
-              agora={agora}
-              sla={sla}
-              selecionado={c.lead_id === selecionadoId}
-              onAbrir={onAbrir}
-              onResolverSugestao={onResolverSugestao}
-              nomePorId={nomePorId}
-            />
-          </div>
+        {visiveis.map((c, i) => (
+          <Fragment key={c.lead_id}>
+            {alvoAqui === i && <PlaceholderArraste altura={arraste!.altura} />}
+            <div {...propsCard(c.lead_id, etapa.chave, i)} className={cn("shrink-0 touch-none", pulsando.has(c.lead_id) && "pulso-novo")}>
+              <CartaoLead
+                card={c}
+                agora={agora}
+                sla={sla}
+                selecionado={c.lead_id === selecionadoId}
+                onAbrir={onAbrir}
+                onResolverSugestao={onResolverSugestao}
+                nomePorId={nomePorId}
+                pego={arraste?.porTeclado && arraste.leadId === c.lead_id}
+              />
+            </div>
+          </Fragment>
         ))}
-        {isOver && arrastando && (
-          <div className="h-16 shrink-0 rounded-[10px] border border-dashed border-linha-forte" aria-hidden />
-        )}
-        {cards.length === 0 && !isOver && (
+        {alvoAqui != null && alvoAqui >= visiveis.length && <PlaceholderArraste altura={arraste!.altura} />}
+        {visiveis.length === 0 && alvoAqui == null && (
           <p className="rounded-lg border border-dashed border-linha px-1.5 py-3.5 text-center text-[12px] text-mute">
             Nenhum lead nesta etapa
           </p>
@@ -169,15 +178,14 @@ function Coluna({
 
 // ─────────────── terminal compacto (ganho/perdido) ───────────────
 
-function Terminal({ etapa, quantidade }: { etapa: EtapaFunil; quantidade: number }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `col:${etapa.chave}` });
+function Terminal({ etapa, quantidade, alvo }: { etapa: EtapaFunil; quantidade: number; alvo: boolean }) {
   const ganho = etapa.tipo === "ganho";
   return (
     <div
-      ref={setNodeRef}
+      data-coluna={etapa.chave}
       className={cn(
         "rounded-[10px] border bg-branco px-3.5 py-3 transition-colors",
-        isOver ? "border-laranja bg-laranja-cl" : "border-linha",
+        alvo ? "border-laranja bg-laranja-cl" : "border-linha",
       )}
       title={`${etapa.nome} — arraste um card aqui pra fechar`}
     >
@@ -257,7 +265,6 @@ export function Quadro({
   fotos?: Record<string, string>;
 }) {
   const [cards, setCards] = useState<CardLead[]>(dados.cards);
-  const [arrastando, setArrastando] = useState<string | null>(null);
   const [cardAberto, setCardAberto] = useState<string | null>(
     abrirLead && dados.cards.some((c) => c.lead_id === abrirLead) ? abrirLead : null,
   );
@@ -335,7 +342,6 @@ export function Quadro({
     }
   }, [dados.cards]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   /**
    * A faixa de cada card, calculada UMA vez por passada e reusada pelo filtro, pela legenda e
@@ -419,7 +425,59 @@ export function Quadro({
     return (nome: string) => m.get(nome.split(" ")[0]);
   }, [mencionaveis]);
 
-  const cardArrastado = cards.find((c) => c.lead_id === arrastando) ?? null;
+  /**
+   * W-D6 v5 · o motor de arraste entrega só o par (lead, etapa destino). Tudo o que vem depois —
+   * o diálogo de motivo da perda, o movimento otimista, o rollback — é o MESMO caminho de antes:
+   * a mecânica do gesto mudou, a escrita pela porta não.
+   */
+  const aoMover = useCallback((leadId: string, _origem: string, etapaAlvo: string) => {
+
+    const atual = cards.find((c) => c.lead_id === leadId);
+    if (!atual || atual.etapa === etapaAlvo) return;
+
+    // R20 — perder um lead exige dizer por quê. O card NÃO se move enquanto o diálogo estiver
+    // aberto: o estado "perdido sem motivo" não chega a existir, nem por um instante de UI.
+    // Cancelar deixa o card exatamente onde estava.
+    const alvo = dados.etapas.find((e) => e.chave === etapaAlvo);
+    if (alvo?.tipo === "perdido" && motivosPerda.length > 0) {
+      setPerdaPendente({
+        leadId,
+        etapaDe: atual.etapa,
+        etapaAlvo,
+        entrouAntes: atual.entrou_etapa_em,
+        nomeLead: atual.nome ?? "Este lead",
+        etapaNome: alvo.nome,
+      });
+      return;
+    }
+
+    void aplicarMovimento(leadId, atual.etapa, etapaAlvo, atual.entrou_etapa_em);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `aplicarMovimento` é estável por escopo
+  }, [cards, dados.etapas, motivosPerda.length]);
+
+  // ── W-D6 v5 · o motor de arraste (pointer events + teclado). Ver `components/funil/arraste.tsx`.
+  const ordemDaColuna = useCallback(
+    (etapa: string) => (porEtapa.get(etapa) ?? []).map((c) => c.lead_id),
+    [porEtapa],
+  );
+  const nomeDoLead = useCallback(
+    (id: string) => cards.find((c) => c.lead_id === id)?.nome ?? "Lead",
+    [cards],
+  );
+  const nomeDaEtapa = useCallback(
+    (chave: string) => dados.etapas.find((e) => e.chave === chave)?.nome ?? chave,
+    [dados.etapas],
+  );
+  const etapasDestino = useMemo(() => etapasVisiveis.map((e) => e.chave), [etapasVisiveis]);
+  const { arraste, alvo, trilhoRef, propsCard, anuncio, x, y } = useArrasteFunil({
+    onMover: aoMover,
+    nomeDoLead,
+    nomeDaEtapa,
+    ordemDaColuna,
+    etapasDestino,
+  });
+  const fade = useFadeTrilho(trilhoRef);
+  const cardNoAr = arraste ? (cards.find((c) => c.lead_id === arraste.leadId) ?? null) : null;
 
   function abrirCard(id: string) {
     setSelecionadoId(id);
@@ -433,10 +491,6 @@ export function Quadro({
         : "Sugestão descartada.",
     );
     setTimeout(() => setToast(null), 3500);
-  }
-
-  function onDragStart(ev: DragStartEvent) {
-    setArrastando(String(ev.active.id).replace(/^card:/, ""));
   }
 
   /**
@@ -472,39 +526,7 @@ export function Quadro({
     }
   }
 
-  async function onDragEnd(ev: DragEndEvent) {
-    setArrastando(null);
-    const { active, over } = ev;
-    if (!over) return;
 
-    const leadId = String(active.id).replace(/^card:/, "");
-    const overId = String(over.id);
-    const etapaAlvo = overId.startsWith("col:")
-      ? overId.slice(4)
-      : cards.find((c) => c.lead_id === overId.replace(/^card:/, ""))?.etapa;
-    if (!etapaAlvo) return;
-
-    const atual = cards.find((c) => c.lead_id === leadId);
-    if (!atual || atual.etapa === etapaAlvo) return;
-
-    // R20 — perder um lead exige dizer por quê. O card NÃO se move enquanto o diálogo estiver
-    // aberto: o estado "perdido sem motivo" não chega a existir, nem por um instante de UI.
-    // Cancelar deixa o card exatamente onde estava.
-    const alvo = dados.etapas.find((e) => e.chave === etapaAlvo);
-    if (alvo?.tipo === "perdido" && motivosPerda.length > 0) {
-      setPerdaPendente({
-        leadId,
-        etapaDe: atual.etapa,
-        etapaAlvo,
-        entrouAntes: atual.entrou_etapa_em,
-        nomeLead: atual.nome ?? "Este lead",
-        etapaNome: alvo.nome,
-      });
-      return;
-    }
-
-    await aplicarMovimento(leadId, atual.etapa, etapaAlvo, atual.entrou_etapa_em);
-  }
 
   // R23 · busca no servidor: enxerga o banco inteiro (todas as etapas, sem o teto do board) e
   // devolve só o que NÃO está carregado aqui. O filtro do cliente segue recortando o board.
@@ -646,13 +668,17 @@ export function Quadro({
         }}
       />
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-      >
-        <div className="flex flex-1 items-stretch gap-3 overflow-x-auto px-6 pb-5">
+      {/* ── O TRILHO — v5 (11/09): arraste próprio (pointer events), fade só do lado que esconde
+          coluna, e barra de rolagem própria logo abaixo (a do macOS só aparece depois que a pessoa
+          já está rolando — quem não sabe que há coluna à direita não descobre). */}
+      <div className="relative min-h-0 flex-1">
+        {fade.esquerda && (
+          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-board to-transparent" aria-hidden />
+        )}
+        {fade.direita && (
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-board to-transparent" aria-hidden />
+        )}
+        <div id="trilho-funil" ref={trilhoRef} className="flex h-full items-stretch gap-3 overflow-x-auto px-6 pb-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {abertas.map((etapa) => (
             <Coluna
               key={etapa.chave}
@@ -661,32 +687,40 @@ export function Quadro({
               agora={agora}
               sla={dados.sla}
               selecionadoId={selecionadoId}
-              arrastando={arrastando != null}
               pulsando={pulsando}
               onAbrir={abrirCard}
               onResolverSugestao={resolverSugestao}
               faixaDe={faixaDe}
               nomePorId={nomePorId}
+              arraste={arraste}
+              alvo={alvo}
+              propsCard={propsCard}
             />
           ))}
-          {/* terminais: fora do fluxo operacional; seguem droppáveis (fechar = arrastar) */}
+          {/* terminais: fora do fluxo operacional; seguem recebendo card (fechar = arrastar até lá) */}
           {terminais.length > 0 && (
             <div className="flex w-[200px] min-w-[200px] shrink-0 flex-col gap-2 pt-9">
               {terminais.map((etapa) => (
-                <Terminal key={etapa.chave} etapa={etapa} quantidade={(porEtapa.get(etapa.chave) ?? []).length} />
+                <Terminal
+                  key={etapa.chave}
+                  etapa={etapa}
+                  quantidade={(porEtapa.get(etapa.chave) ?? []).length}
+                  alvo={alvo?.etapa === etapa.chave && arraste != null}
+                />
               ))}
             </div>
           )}
         </div>
-        {/* card fantasma no arraste */}
-        <DragOverlay>
-          {cardArrastado ? (
-            <div className="w-coluna rotate-[1.5deg] opacity-50 shadow-[0_14px_40px_rgba(31,35,40,.18)]">
-              <CartaoLead card={cardArrastado} agora={agora} sla={dados.sla} selecionado={false} onAbrir={() => {}} nomePorId={nomePorId} />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+      </div>
+      <TrilhoRolagem alvoRef={trilhoRef} />
+
+      {/* o card NO AR: sai da lista, segue o cursor, e o buraco fecha atrás dele */}
+      {arraste && !arraste.porTeclado && cardNoAr && (
+        <OverlayArraste x={x} y={y} largura={arraste.largura}>
+          <CartaoLead card={cardNoAr} agora={agora} sla={dados.sla} selecionado onAbrir={() => {}} nomePorId={nomePorId} />
+        </OverlayArraste>
+      )}
+      <AnuncioArraste texto={anuncio} />
 
       <DrawerCard
         lead={leadAberto}
