@@ -8,9 +8,27 @@ import { cn } from "@/lib/utils";
 
 /**
  * Nota ou tarefa publicada, dentro da timeline da conversa (C2 · mockup estado f).
- * Ocupa a largura toda e não tem bolha: bolha é só do que trafega com o cliente. Nota = âmbar,
- * tarefa = navy, com uma barra na lateral esquerda que dá o estado a um relance na varredura.
+ * Ocupa a largura toda e não tem bolha: bolha é só do que trafega com o cliente.
+ *
+ * W-D3 (Diogo, 22:40) · a MESMA dieta da nota do Jarvis (`components/jarvis/proposta-inline.tsx`):
+ * fundo `muted/30`, borda fina, cabeçalho de 12px muted — "Nota interna · Sara · 02:32" — e o
+ * texto em peso normal. Saíram o âmbar, a barra lateral e o rótulo em caixa alta: o que diz
+ * "isto fica entre nós" é a forma (largura toda, sem bolha), não a cor gritando.
  */
+
+const CAIXA = "self-stretch rounded-md border border-border/60 bg-muted/30 px-3 py-2";
+const CABECALHO = "mb-1 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground";
+
+function hora(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function primeiroNome(nome: string | null): string | null {
+  if (!nome) return null;
+  return nome.includes("@") ? nome.split("@")[0] : nome.trim().split(/\s+/)[0];
+}
+
 export function RegistroInterno({ registro }: { registro: Registro }) {
   const nota = registro.tipo === "nota";
   const segmentos = segmentosComMencao(registro.texto, registro.mencoes);
@@ -21,42 +39,33 @@ export function RegistroInterno({ registro }: { registro: Registro }) {
   if (!nota && registro.jarvis) {
     const j = registro.jarvis;
     return (
-      <article className="self-stretch rounded-lg border border-l-2 border-tarefa-linha border-l-navy bg-tarefa-fundo px-3.5 py-2.5">
-        <header className="mb-1 flex items-center gap-2">
-          <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-navy text-[0.6rem] font-bold text-branco" aria-hidden>
-            J
-          </span>
-          <span className="text-[11px] font-[650] uppercase tracking-[0.05em] text-navy">Jarvis criou tarefa</span>
-          <span className="min-w-0 truncate text-[11.5px] text-suave">
-            {registro.responsavel ? `para ${registro.responsavel}` : "sem responsável"}
-          </span>
-          <time dateTime={registro.criado_em} className="ml-auto shrink-0 font-mono text-[10.5px] tabular-nums text-suave">
-            {dataHoraCurta(registro.criado_em)}
-          </time>
+      <article className={CAIXA}>
+        <header className={CABECALHO}>
+          <span>Jarvis criou uma tarefa</span>
+          <span aria-hidden>·</span>
+          <span>{registro.responsavel ? `para ${primeiroNome(registro.responsavel)}` : "sem responsável"}</span>
+          <span aria-hidden>·</span>
+          <time dateTime={registro.criado_em}>{hora(registro.criado_em)}</time>
         </header>
-
-        <p className="break-words text-[13.5px] leading-normal text-tinta">
-          <b className="font-semibold">{j.fazer}</b>
-          {j.por_que && <span className="text-suave"> — {j.por_que}</span>}
+        <p className="text-[13.5px] leading-snug text-foreground">
+          <span className="font-medium">{j.fazer}</span>
         </p>
-
-        {j.trecho && (
-          <blockquote className="mt-1.5 border-l-2 border-linha-forte pl-2.5 text-[12.5px] italic leading-snug text-suave">
-            “{j.trecho}”
-          </blockquote>
-        )}
-
-        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-suave">
+        <p className="mt-0.5 text-[12.5px] leading-normal text-muted-foreground">
+          {j.por_que}
+          {j.trecho && <em> “{j.trecho}”</em>}
+        </p>
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
           {registro.prazo && (
             <span>
-              Vence <b className="font-mono font-medium tabular-nums text-tinta">{dataHoraCurta(registro.prazo)}</b>
+              vence <span className="tabular-nums text-foreground">{dataHoraCurta(registro.prazo)}</span>
             </span>
           )}
+          {registro.prazo && <span aria-hidden>·</span>}
           <Link
             href={`/tarefas?status=abertas#tarefa-${registro.id}`}
-            className="font-medium text-navy underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/40"
+            className="underline-offset-[3px] hover:text-foreground hover:underline focus-visible:outline-none focus-visible:underline"
           >
-            Ver tarefa
+            ver tarefa
           </Link>
         </p>
       </article>
@@ -64,50 +73,25 @@ export function RegistroInterno({ registro }: { registro: Registro }) {
   }
 
   return (
-    <article
-      className={cn(
-        "self-stretch rounded-lg border border-l-2 px-3.5 py-2.5",
-        nota
-          ? "border-nota-linha border-l-amarelo bg-nota-fundo"
-          : "border-tarefa-linha border-l-navy bg-tarefa-fundo",
-      )}
-    >
-      <header className="mb-1 flex items-center gap-2">
-        <span
-          className={cn(
-            "text-[11px] font-[650] uppercase tracking-[0.05em]",
-            nota ? "text-amarelo" : "text-navy",
-          )}
-        >
-          {nota ? "Nota interna" : "Tarefa"}
-        </span>
-        <span className="min-w-0 truncate text-[11.5px] text-suave">
+    <article className={CAIXA}>
+      <header className={CABECALHO}>
+        <span>{nota ? "Nota interna" : "Tarefa"}</span>
+        <span aria-hidden>·</span>
+        <span>
           {nota
-            ? (registro.autor ?? "equipe")
+            ? (primeiroNome(registro.autor) ?? "equipe")
             : registro.responsavel
-              ? `para ${registro.responsavel}`
+              ? `para ${primeiroNome(registro.responsavel)}`
               : "sem responsável"}
         </span>
-        <time
-          dateTime={registro.criado_em}
-          className="ml-auto shrink-0 font-mono text-[10.5px] tabular-nums text-suave"
-        >
-          {dataHoraCurta(registro.criado_em)}
-        </time>
+        <span aria-hidden>·</span>
+        <time dateTime={registro.criado_em}>{hora(registro.criado_em)}</time>
       </header>
 
-      <p className="whitespace-pre-wrap break-words text-[13.5px] leading-normal text-tinta">
+      <p className="whitespace-pre-wrap break-words text-[13.5px] leading-snug text-foreground">
         {segmentos.map((s, i) =>
           s.tipo === "mencao" ? (
-            <span
-              key={i}
-              className={cn(
-                "rounded px-1 font-medium",
-                s.alvo === "agente"
-                  ? "bg-laranja-cl font-mono text-[12.5px] text-laranja-esc"
-                  : "bg-bolha-out text-navy",
-              )}
-            >
+            <span key={i} className={cn("rounded px-1 font-medium", s.alvo === "agente" ? "bg-laranja-cl font-mono text-[12.5px] text-laranja-esc" : "bg-bolha-out text-navy")}>
               {s.texto}
             </span>
           ) : (
@@ -117,12 +101,8 @@ export function RegistroInterno({ registro }: { registro: Registro }) {
       </p>
 
       {!nota && registro.prazo && (
-        <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-suave">
-          <svg viewBox="0 0 24 24" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0 stroke-current" fill="none">
-            <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
-            <path d="M3.5 10h17M8 3.5v3M16 3.5v3" />
-          </svg>
-          Vence <b className="font-mono font-medium tabular-nums text-tinta">{dataHoraCurta(registro.prazo)}</b>
+        <p className="mt-1 text-[12px] text-muted-foreground">
+          vence <span className="tabular-nums text-foreground">{dataHoraCurta(registro.prazo)}</span>
         </p>
       )}
     </article>

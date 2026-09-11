@@ -154,7 +154,7 @@ export function BolhaDocumento({ m }: { m: Mensagem }) {
         className="flex w-full items-center gap-2.5 rounded-[9px] border border-linha bg-branco/70 px-2.5 py-2 text-left transition-colors hover:bg-branco"
         aria-label={`Baixar ${doc.nome}`}
       >
-        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-vermelho-bg text-vermelho">
+        <span className="grid size-8 shrink-0 place-items-center rounded-md bg-hover text-suave">
           <Icone className="size-4" />
         </span>
         <span className="min-w-0 flex-1">
@@ -212,48 +212,43 @@ export function BolhaInterativa({ m }: { m: Mensagem }) {
   );
 }
 
+/**
+ * Localização (Diogo, 22:40): NÃO desenha mapa — o mapa seria fixture, e mapa falso mente. Pino,
+ * nome, endereço e o link "abrir no mapa", que é o que o WhatsApp entrega de verdade.
+ */
 export function BolhaLocalizacao({ m }: { m: Mensagem }) {
   const l = m.localizacao!;
   return (
-    <a
-      href={`https://www.google.com/maps?q=${l.lat},${l.lng}`}
-      target="_blank"
-      rel="noreferrer"
-      className={cn("flex flex-col overflow-hidden rounded-[9px] border border-linha bg-branco/70 transition-colors hover:bg-branco", CAIXA_MIDIA)}
-    >
-      <span className="relative block h-[110px] w-full overflow-hidden bg-[#e8efe6]">
-        <svg viewBox="0 0 260 110" className="absolute inset-0 size-full" aria-hidden>
-          <path d="M0 70 C60 60 90 90 150 70 S230 40 260 55" stroke="#fff" strokeWidth="9" fill="none" />
-          <path d="M40 0 C60 40 30 70 60 110" stroke="#fff" strokeWidth="6" fill="none" />
-          <path d="M180 0 C170 40 210 60 200 110" stroke="#fff" strokeWidth="6" fill="none" />
-          <rect x="95" y="20" width="40" height="26" fill="#d9e3d4" />
-          <rect x="150" y="80" width="50" height="22" fill="#d9e3d4" />
-        </svg>
-        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full text-vermelho drop-shadow">
-          <MapPinIcon className="size-7 fill-current text-vermelho" />
-        </span>
-      </span>
-      <span className="px-2.5 py-2">
+    <span className={cn("flex items-start gap-2", CAIXA_MIDIA)}>
+      <MapPinIcon className="mt-0.5 size-4 shrink-0 text-suave" strokeWidth={2} />
+      <span className="min-w-0 flex-1">
         {l.nome && <span className="block text-[0.84rem] font-medium text-tinta">{l.nome}</span>}
-        <span className="block text-[0.74rem] leading-snug text-suave">{l.endereco}</span>
+        <span className="block text-[0.78rem] leading-snug text-suave">{l.endereco}</span>
+        <a
+          href={`https://www.google.com/maps?q=${l.lat},${l.lng}`}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-0.5 inline-block text-[0.76rem] font-medium text-navy underline-offset-2 hover:underline"
+        >
+          abrir no mapa
+        </a>
       </span>
-    </a>
+    </span>
   );
 }
 
+/** Contato (Diogo, 22:40): uma linha — nome, telefone e "salvar" como texto. */
 export function BolhaContato({ m }: { m: Mensagem }) {
   const c = m.contato!;
   return (
-    <span className={cn("flex items-center gap-2.5 rounded-[9px] border border-linha bg-branco/70 px-2.5 py-2", CAIXA_MIDIA)}>
-      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-azul-bg text-azul">
-        <UserRoundIcon className="size-4" />
-      </span>
+    <span className={cn("flex items-center gap-2", CAIXA_MIDIA)}>
+      <UserRoundIcon className="size-4 shrink-0 text-suave" strokeWidth={2} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[0.84rem] font-medium text-tinta">{c.nome}</span>
-        <span className="block font-mono text-[0.72rem] tabular-nums text-suave">{c.telefone}</span>
+        <span className="block font-mono text-[0.74rem] tabular-nums text-suave">{c.telefone}</span>
       </span>
-      <button type="button" className="shrink-0 rounded-md border border-linha px-2 py-1 text-[0.72rem] font-medium text-navy hover:bg-hover">
-        Salvar
+      <button type="button" className="shrink-0 text-[0.76rem] font-medium text-navy underline-offset-2 hover:underline">
+        salvar
       </button>
     </span>
   );

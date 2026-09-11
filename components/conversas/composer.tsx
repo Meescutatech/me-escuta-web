@@ -35,7 +35,7 @@ import { criarAnotacaoLead, criarTarefaLead } from "@/app/(app)/lead/actions";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { iniciaisDe } from "@/lib/dados/tarefa-calculos";
 import { cn } from "@/lib/utils";
-import { marcaDoCanal } from "@/lib/conversas/cor-canal";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { VereditoEnvio } from "./regras/numero.ts";
 import { BotaoEnvio, ListaProgramadas } from "./botao-envio";
 import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
@@ -166,6 +166,8 @@ export function Composer({
     canaisEnvio?.find((c) => c.id === (canalEscolhidoId ?? canalConversaId)) ?? canalDaConversa ?? canaisEnvio?.find((c) => c.producao) ?? canaisEnvio?.[0] ?? null;
   const fioNovo = !!canaisEnvio && !!canalEscolhido && canalEscolhido.id !== canalConversaId;
   const [rascunho, setRascunho] = useState("");
+  // W-D3 (Diogo, 22:40) · a dica do rodapé só aparece com o campo em foco
+  const [focado, setFocado] = useState(false);
   const [anexo, setAnexo] = useState<Anexo | null>(null);
   const [subindo, setSubindo] = useState(false);
   const [gravando, setGravando] = useState(false);
@@ -808,6 +810,8 @@ export function Composer({
                 if (interno) setGatilho(gatilhoMencao(rascunho, e.currentTarget.selectionStart ?? 0));
               }}
               onKeyDown={aoTeclar}
+              onFocus={() => setFocado(true)}
+              onBlur={() => setFocado(false)}
               disabled={!!anexo && !ehImagemAnexo}
               placeholder={placeholder}
               aria-label={interno ? rotuloModo(modo) : "Mensagem para o cliente"}
@@ -844,20 +848,25 @@ export function Composer({
           {modo === "tarefa" && (
             <div className="flex flex-wrap items-center gap-1.5 px-3.5 pb-1 pt-1.5">
               <Campo rotulo="Responsável">
-                <select
+                <Select
                   value={responsavelId}
-                  onChange={(e) => setResponsavelId(e.target.value)}
-                  aria-label="Responsável pela tarefa"
-                  className="cursor-pointer bg-transparent pr-1 text-[12.5px] font-medium text-tinta outline-none"
+                  onValueChange={(v) => setResponsavelId(String(v ?? ""))}
+                  // `items` é o que faz o gatilho mostrar o NOME, não o uuid (Base UI `Select.Value`)
+                  items={Object.fromEntries(mencionaveis.filter((m) => m.tipo === "humano" && m.ativo).map((m) => [m.id, m.nome]))}
                 >
-                  {mencionaveis
-                    .filter((m) => m.tipo === "humano" && m.ativo)
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.nome}
-                      </option>
-                    ))}
-                </select>
+                  <SelectTrigger aria-label="Responsável pela tarefa" className="h-6 border-0 bg-transparent px-1 text-[12.5px] font-medium text-tinta shadow-none">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mencionaveis
+                      .filter((m) => m.tipo === "humano" && m.ativo)
+                      .map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.nome}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </Campo>
               <Campo rotulo="Prazo">
                 <input
@@ -869,22 +878,21 @@ export function Composer({
                 />
               </Campo>
               <Campo rotulo="Tipo">
-                <select
-                  value={tipoTarefa}
-                  onChange={(e) => setTipoTarefa(e.target.value)}
-                  aria-label="Tipo da tarefa"
-                  className={cn(
-                    "cursor-pointer bg-transparent pr-1 text-[12.5px] outline-none",
-                    tipoTarefa ? "font-medium text-tinta" : "text-mute",
-                  )}
-                >
-                  <option value="">Selecione</option>
-                  {tiposTarefa.map((t) => (
-                    <option key={t.chave} value={t.chave}>
-                      {t.rotulo}
-                    </option>
-                  ))}
-                </select>
+                <Select value={tipoTarefa || null} onValueChange={(v) => setTipoTarefa(String(v ?? ""))} items={Object.fromEntries(tiposTarefa.map((t) => [t.chave, t.rotulo]))}>
+                  <SelectTrigger
+                    aria-label="Tipo da tarefa"
+                    className={cn("h-6 border-0 bg-transparent px-1 text-[12.5px] shadow-none", tipoTarefa ? "font-medium text-tinta" : "text-mute")}
+                  >
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tiposTarefa.map((t) => (
+                      <SelectItem key={t.chave} value={t.chave}>
+                        {t.rotulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Campo>
             </div>
           )}
@@ -920,8 +928,9 @@ export function Composer({
             </div>
           )}
 
-          {/* barra de rodapé: dica à esquerda, ação à direita */}
-          <div className="flex items-center gap-2.5 py-2 pl-3.5 pr-2.5">
+          {/* barra de rodapé (Diogo, 22:40): UMA linha, 12px muted — "Enviando por X ▾" como texto,
+              e a dica só com o campo em foco. Nada de chip, caixa ou bolinha. */}
+          <div className="flex min-h-[28px] items-center gap-3 py-1 pl-3.5 pr-2.5 text-[12px] text-mute">
             {!interno && canaisEnvio && canalEscolhido && (
               <div className="relative shrink-0">
                 <button
@@ -931,18 +940,12 @@ export function Composer({
                   aria-expanded={seletorAberto}
                   title={`Por qual número esta mensagem sai · ${canalEscolhido.numero}`}
                   className={cn(
-                    "inline-flex max-w-[300px] items-center gap-1.5 rounded-md border px-2 py-[3px] text-[12px] transition-colors",
-                    fioNovo ? "border-amarelo-bd bg-amarelo-bg text-amarelo" : "border-linha bg-board text-suave hover:bg-hover hover:text-tinta",
+                    "inline-flex max-w-[280px] items-center gap-1 rounded transition-colors hover:text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
+                    fioNovo ? "text-amarelo" : "text-mute",
                   )}
                 >
-                  <span className="text-mute">Enviando por:</span>
-                  <span
-                    className={cn("grid size-[14px] shrink-0 place-items-center rounded-full text-[8.5px] font-bold leading-none", marcaCanal(canalEscolhido).cheia)}
-                    aria-hidden
-                  >
-                    {marcaCanal(canalEscolhido).inicial}
-                  </span>
-                  <span className="truncate font-medium">{canalEscolhido.apelido}</span>
+                  <span>Enviando por</span>
+                  <span className={cn("truncate font-medium", fioNovo ? "text-amarelo" : "text-suave")}>{canalEscolhido.apelido.split(" · ")[0]}</span>
                   <svg viewBox="0 0 24 24" className="size-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <path d="m6 9 6 6 6-6" />
                   </svg>
@@ -953,16 +956,16 @@ export function Composer({
                     <ul
                       role="listbox"
                       aria-label="Número de envio"
-                      className="absolute bottom-full left-0 z-30 mb-1.5 w-[320px] overflow-hidden rounded-lg border border-linha-forte bg-branco py-1 shadow-forte animate-rise"
+                      className="absolute bottom-full left-0 z-30 mb-1.5 w-[300px] overflow-hidden rounded-lg border border-linha-forte bg-branco py-1 shadow-forte animate-rise"
                     >
-                      <li className="px-3 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-mute">Número desta conversa</li>
+                      <li className="px-3 pb-1 pt-1.5 text-[11px] text-mute">Número desta conversa</li>
                       {canaisEnvio
                         .filter((c) => c.id === canalConversaId)
                         .map((c) => (
                           <OpcaoCanal key={c.id} c={c} marcado={canalEscolhido.id === c.id} onEscolher={() => { setCanalEscolhidoId(null); setSeletorAberto(false); }} />
                         ))}
                       {canaisEnvio.some((c) => c.id !== canalConversaId) && (
-                        <li className="mt-1 border-t border-linha px-3 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-mute">
+                        <li className="mt-1 border-t border-linha px-3 pb-1 pt-2 text-[11px] text-mute">
                           Falar com {nomeLead ? nomeLead.split(" ")[0] : "o cliente"} por outro número
                         </li>
                       )}
@@ -976,7 +979,7 @@ export function Composer({
                 )}
               </div>
             )}
-            <span className="min-w-0 truncate text-[12px] text-mute">
+            <span className="min-w-0 truncate">
               {interno ? (
                 <>
                   Digite <Tecla>@</Tecla> para {modo === "nota" ? "avisar alguém" : "atribuir a outra pessoa"}
@@ -989,7 +992,7 @@ export function Composer({
                 <span className="text-amarelo">
                   Complete {pendentes.join(", ")} antes de enviar — variável sem valor.
                 </span>
-              ) : podeComandar ? (
+              ) : !focado ? null : podeComandar ? (
                 <>
                   Digite <Tecla>/</Tecla> para nota{templates.length > 0 ? ", tarefa e templates" : " e tarefa"}
                 </>
@@ -1039,11 +1042,6 @@ export function Composer({
   );
 }
 
-/** A mesma cor/inicial da lista e do rail (`lib/conversas/cor-canal.ts`) — uma marca por número. */
-function marcaCanal(c: CanalEnvioComposer) {
-  return marcaDoCanal({ phone_number_id: c.id, numero_apelido: c.apelido, finalidade: c.producao ? "producao" : null });
-}
-
 function OpcaoCanal({ c, marcado, onEscolher, novo = false }: { c: CanalEnvioComposer; marcado: boolean; onEscolher: () => void; novo?: boolean }) {
   return (
     <li
@@ -1052,14 +1050,11 @@ function OpcaoCanal({ c, marcado, onEscolher, novo = false }: { c: CanalEnvioCom
       onClick={onEscolher}
       className={cn("flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[12.5px] hover:bg-hover", marcado && "bg-board")}
     >
-      <span className={cn("grid size-[18px] shrink-0 place-items-center rounded-full text-[9.5px] font-bold leading-none", marcaCanal(c).cheia)} aria-hidden>
-        {marcaCanal(c).inicial}
-      </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-baseline gap-1.5">
           <span className="truncate font-medium text-tinta">{c.apelido}</span>
-          {c.producao && <span className="rounded-full bg-verde-bg px-1.5 py-px text-[10px] font-semibold text-verde">produção</span>}
-          {c.proprio && <span className="rounded-full bg-azul-bg px-1.5 py-px text-[10px] font-semibold text-azul">seu</span>}
+          {c.producao && <span className="text-[11px] text-mute">produção</span>}
+          {c.proprio && <span className="text-[11px] text-mute">seu</span>}
         </span>
         <span className="block truncate font-mono text-[11px] tabular-nums text-mute">
           {c.numero}

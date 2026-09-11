@@ -38,7 +38,7 @@ import {
 } from "@/components/conversas/bolha-tipada";
 import { gerarPropostaJarvis, type PropostaJarvis as PropostaDoJarvis } from "@/lib/conversas/jarvis-proposta";
 import { PropostaJarvisInline } from "@/components/jarvis/proposta-inline";
-import { AssinaturaJarvis } from "@/components/jarvis/marca";
+import { MarcaJarvis } from "@/components/jarvis/marca";
 import type { AjusteProposta, MotivoDescarte } from "@/components/jarvis/tipos";
 import { BotaoNovaConversa } from "@/components/conversas/nova-conversa";
 import { marcaDoCanal } from "@/lib/conversas/cor-canal";
@@ -251,7 +251,6 @@ export function Inbox({
   // W-D3 · recortes do rail (combinam com a aba): quem atende e por qual número entrou
   const [quemAtende, setQuemAtende] = useState<QuemAtende | null>(null);
   const [numeroFiltro, setNumeroFiltro] = useState<string | null>(null);
-  const [railAberto, setRailAberto] = useState(true);
   // W-D3 · decisões locais sobre as propostas do fio (aceita → nota vira histórico; descartada → some)
   const [decisoes, setDecisoes] = useState<Map<string, PropostaDoJarvis | "descartada">>(new Map());
   const [menuCabecalho, setMenuCabecalho] = useState(false);
@@ -922,102 +921,53 @@ export function Inbox({
             />
           </label>
         </div>
-        <div className="flex gap-3 px-4 pb-1.5 pt-2.5">
+        {/* W-D3 · quatro abas em 272px: gap e padding menores, sem quebra de linha */}
+        <div className="flex gap-2.5 px-3 pb-1.5 pt-2.5">
           {([
-            ["todas", `Todas · ${rotuloContagem("todas")}`],
-            ["minhas", `Minhas · ${rotuloContagem("minhas")}`],
-            ["nao_lidas", `Não lidas · ${rotuloContagem("nao_lidas")}`],
-            ["sem_responsavel", `Sem resp. · ${rotuloContagem("sem_responsavel")}`],
+            ["todas", "Todas"],
+            ["minhas", "Minhas"],
+            ["nao_lidas", "Não lidas"],
+            ["sem_responsavel", "Sem resp."],
           ] as [Aba, string][]).map(([k, rot]) => (
             <button
               key={k}
               onClick={() => setAba(k)}
               className={cn(
-                "border-b-[1.5px] pb-1.5 text-[0.8rem] transition-colors focus-visible:outline-none",
+                "whitespace-nowrap border-b-[1.5px] pb-1.5 text-[0.77rem] transition-colors focus-visible:outline-none",
                 aba === k ? "border-navy font-semibold text-navy" : "border-transparent text-mute hover:text-tinta",
               )}
             >
               {rot}
+              <span className={cn("ml-1 text-[0.68rem] font-normal tabular-nums", aba === k ? "text-suave" : "text-mute")}>{rotuloContagem(k)}</span>
             </button>
           ))}
         </div>
 
-        {/* W-D3 · o RAIL (LiderHub `inbox-rail.tsx`): dois grupos, contadores, um clique filtra e
-            outro limpa. Discreto por construção — h-6, 12px, sem ícone além da bolinha — e
-            recolhível: a lista é o que importa nesta coluna. */}
-        <div className="border-b border-linha px-2 pb-1.5">
-          <button
-            type="button"
-            onClick={() => setRailAberto((v) => !v)}
-            aria-expanded={railAberto}
-            className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-mute transition-colors hover:text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
-          >
-            <span className="flex-1 text-left">Filtrar por</span>
-            {(quemAtende || numeroFiltro) && (
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setQuemAtende(null);
-                  setNumeroFiltro(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setQuemAtende(null);
-                    setNumeroFiltro(null);
-                  }
-                }}
-                className="rounded px-1 font-medium text-laranja-esc hover:underline"
-              >
-                limpar
-              </span>
-            )}
-            <svg viewBox="0 0 24 24" className={cn("size-3 transition-transform", !railAberto && "rotate-180")} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="m18 15-6-6-6 6" />
-            </svg>
-          </button>
-          {railAberto && (
-            <div className="grid grid-cols-2 gap-x-2 px-1">
-              <div>
-                <div className="px-1.5 pb-0.5 pt-1 text-[10.5px] font-medium uppercase tracking-[0.05em] text-mute">Quem atende</div>
-                {(["IA", "HUMANO"] as QuemAtende[]).map((k) => (
-                  <ItemRail
-                    key={k}
-                    ativo={quemAtende === k}
-                    onClick={() => setQuemAtende((v) => (v === k ? null : k))}
-                    icone={<span className={cn("size-2 shrink-0 rounded-full", k === "IA" ? "bg-laranja" : "bg-navy")} aria-hidden />}
-                    rotulo={k === "IA" ? "Clara" : "Humano"}
-                    qtd={railQuem[k]}
-                  />
-                ))}
-              </div>
-              <div>
-                <div className="px-1.5 pb-0.5 pt-1 text-[10.5px] font-medium uppercase tracking-[0.05em] text-mute">Números</div>
-                {railNumeros.map((n) => {
-                  const marca = marcaDoCanal({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade });
-                  return (
-                    <ItemRail
-                      key={n.id}
-                      ativo={numeroFiltro === n.id}
-                      onClick={() => setNumeroFiltro((v) => (v === n.id ? null : n.id))}
-                      icone={
-                        <span className={cn("grid size-3.5 shrink-0 place-items-center rounded-full text-[8px] font-bold leading-none", marca.cheia)} aria-hidden>
-                          {marca.inicial}
-                        </span>
-                      }
-                      rotulo={n.apelido.split(" · ")[0]}
-                      titulo={n.numero ? `${n.apelido} · ${n.numero}` : n.apelido}
-                      qtd={n.qtd}
-                    />
-                  );
-                })}
-                {railNumeros.length === 0 && <div className="px-1.5 py-1 text-[11px] text-mute">—</div>}
-              </div>
-            </div>
-          )}
+        {/* W-D3 · os recortes (Diogo, 22:40): uma linha de chips discretos abaixo das abas — ponto de
+            6px, nome, contagem muted; sem caixa, sem fundo, sem rótulo. Clicar filtra; de novo, limpa. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2 pt-1.5">
+          {(["IA", "HUMANO"] as QuemAtende[]).map((k) => (
+            <ChipRecorte
+              key={k}
+              ativo={quemAtende === k}
+              onClick={() => setQuemAtende((v) => (v === k ? null : k))}
+              cor={k === "IA" ? "bg-laranja" : "bg-navy"}
+              rotulo={k === "IA" ? "Clara" : "Humano"}
+              qtd={railQuem[k]}
+            />
+          ))}
+          {railNumeros.length > 0 && <span aria-hidden className="h-3 w-px bg-linha-forte" />}
+          {railNumeros.map((n) => (
+            <ChipRecorte
+              key={n.id}
+              ativo={numeroFiltro === n.id}
+              onClick={() => setNumeroFiltro((v) => (v === n.id ? null : n.id))}
+              cor={marcaDoCanal({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade }).ponto}
+              rotulo={n.apelido.split(" · ")[0]}
+              titulo={n.numero ? `${n.apelido} · ${n.numero}` : n.apelido}
+              qtd={n.qtd}
+            />
+          ))}
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 pb-4 pt-0.5">
@@ -1379,8 +1329,9 @@ export function Inbox({
               {propostasForaDosDias(blocos, propostasVivas).map((p) => notaDoJarvis(p, false, `prop-fim-${p.id}`))}
               {/* W-D3 · a proposta MANUAL (menu ⋯) nasce agora, no fim do fio, como nota */}
               {propostaManual === "lendo" && (
-                <div className="self-stretch rounded-lg border border-l-[3px] border-tarefa-linha border-l-navy bg-tarefa-fundo px-3.5 py-3 text-[0.8rem] text-suave">
-                  <AssinaturaJarvis tamanho={16} vivo sufixo="está lendo a conversa e o funil…" />
+                <div className="flex items-center gap-1.5 self-stretch rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">
+                  <MarcaJarvis tamanho={16} vivo rotulo="Jarvis" />
+                  <span>lendo a conversa e o funil…</span>
                 </div>
               )}
               {propostaManual && propostaManual !== "lendo" && notaDoJarvis(propostaManual, true, "prop-manual")}
@@ -1729,8 +1680,8 @@ function BolinhaNumero({ c }: { c: ConversaResumo }) {
   );
 }
 
-/** W-D3 · linha do rail: bolinha + rótulo + contagem (LiderHub `RailItem`, mais baixa). */
-function ItemRail({ ativo, onClick, icone, rotulo, titulo, qtd }: { ativo: boolean; onClick: () => void; icone: React.ReactNode; rotulo: string; titulo?: string; qtd: number }) {
+/** W-D3 · um recorte: ponto de 6px + nome + contagem muted. Sem caixa; o ativo escurece o nome. */
+function ChipRecorte({ ativo, onClick, cor, rotulo, titulo, qtd }: { ativo: boolean; onClick: () => void; cor: string; rotulo: string; titulo?: string; qtd: number }) {
   return (
     <button
       type="button"
@@ -1738,13 +1689,13 @@ function ItemRail({ ativo, onClick, icone, rotulo, titulo, qtd }: { ativo: boole
       aria-pressed={ativo}
       title={titulo ?? rotulo}
       className={cn(
-        "flex h-6 w-full items-center gap-1.5 rounded-md px-1.5 text-[12px] leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
-        ativo ? "bg-hover font-semibold text-tinta" : "text-suave hover:bg-hover hover:text-tinta",
+        "inline-flex items-center gap-1.5 rounded text-[12px] leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
+        ativo ? "font-semibold text-tinta" : "text-suave hover:text-tinta",
       )}
     >
-      {icone}
-      <span className="flex-1 truncate text-left">{rotulo}</span>
-      <span className={cn("shrink-0 text-[11px] tabular-nums", ativo ? "text-tinta" : "text-mute")} aria-label={`${qtd} ${qtd === 1 ? "conversa" : "conversas"}`}>
+      <span className={cn("size-1.5 shrink-0 rounded-full", cor, !ativo && "opacity-70")} aria-hidden />
+      <span>{rotulo}</span>
+      <span className="text-[11px] font-normal tabular-nums text-mute" aria-label={`${qtd} ${qtd === 1 ? "conversa" : "conversas"}`}>
         {qtd}
       </span>
     </button>
