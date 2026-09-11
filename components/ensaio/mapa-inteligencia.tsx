@@ -16,7 +16,7 @@ import { SheetAgente } from "./agentes";
  * abrem a mesma sheet dos cards.
  *
  * O que o desenho AFIRMA (e é o mapa de validadores do PRD, não invenção):
- *  · o dado entra pelos NÚMEROS: CLARA (oficial, produção) alimenta a Clara; os Lites são
+ *  · o dado entra pelos NÚMEROS: o Kommo · Oficial (WABA, produção) alimenta a Clara; os Lites são
  *    estritos — a fono e a Sara atendem direto, sem agente na frente;
  *  · a Clara age sozinha na resposta (verde) e PROPÕE agendamento/transbordo para a Sara (navy);
  *  · o Jarvis lê TODA conversa e cria tarefa direto (D62) para o dono do lead ou a gestora;
@@ -90,7 +90,7 @@ export function MapaInteligencia({
   const liteFono = canais.find((c) => c.canal_id === "lite:ana-paula");
 
   const nos: NoMapa[] = [
-    { id: "c_oficial", coluna: "canal", titulo: oficial?.apelido ?? "CLARA", sub: `${oficial ? formatarE164(oficial.numero_e164) : ""} · oficial · produção`, y: 40 },
+    { id: "c_oficial", coluna: "canal", titulo: oficial?.apelido ?? "Kommo · Oficial", sub: `${oficial ? formatarE164(oficial.numero_e164) : ""} · oficial · produção`, y: 40 },
     { id: "c_sara", coluna: "canal", titulo: liteSara?.apelido ?? "lite:sara", sub: `${liteSara ? formatarE164(liteSara.numero_e164) : ""} · Lite · estrito`, y: 250 },
     { id: "c_fono", coluna: "canal", titulo: liteFono?.apelido ?? "lite:ana-paula", sub: `${liteFono ? formatarE164(liteFono.numero_e164) : ""} · Lite · estrito`, y: 350 },
     { id: "c_asaas", coluna: "canal", titulo: "Asaas", sub: "parcelas a vencer e em atraso", y: 480, apagado: !ag("priscila").ativo },

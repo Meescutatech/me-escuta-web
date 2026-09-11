@@ -2,7 +2,8 @@ import { PESSOAS, type PessoaEnsaio } from "../modo";
 
 /**
  * CANAIS de ensaio — três números, os três do contrato D91 §1 (R1/R2):
- *  · `CLARA`         · WABA oficial, o número de PRODUÇÃO (o que era do Kommo). Pertence à empresa;
+ *  · `Kommo · Oficial` · WABA oficial, o número de PRODUÇÃO — "o número do Kommo", como o Diogo
+ *                      fala dele. Pertence à empresa;
  *                      departamento de entrada = Pré-venda; nível `aberto` (todo mundo responde).
  *  · `lite:sara`     · WhatsApp Lite, número da Sara. Ela é a dona (`responsavel_id`), nível
  *                      `estrito` (só ela responde por ele).
@@ -40,7 +41,7 @@ export function gerarCanaisEnsaio(agora: Date = new Date()): CanalEnsaio[] {
   return [
     {
       canal_id: "waba:1067455192551392",
-      apelido: "CLARA",
+      apelido: "Kommo · Oficial",
       numero_e164: "+5531999080271",
       provedor: "waba",
       finalidade: "producao",

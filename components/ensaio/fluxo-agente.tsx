@@ -28,7 +28,7 @@ interface No {
 
 const TEXTOS: Record<AgenteEnsaio["chave"], { gatilho: string[]; contexto: string[]; decide: string[]; evento: string[] }> = {
   clara: {
-    gatilho: ["mensagem recebida", "no número CLARA"],
+    gatilho: ["mensagem recebida", "no Kommo · Oficial"],
     contexto: ["fio da conversa, etapa,", "ficha e horário"],
     decide: ["prompt v7 · Claude", "uma pergunta por vez"],
     evento: ["mensagem_enviada", "etapa_alterada · transbordo"],
