@@ -157,21 +157,61 @@ export function enriquecerCardsEnsaio(cards: CardLead[], agora: Date = new Date(
   });
 }
 
+/**
+ * A FICHA do ensaio (v3): a config `ficha_lead` real tem o grupo Principal com `audiometria`
+ * (seleção Não/Sim) — aqui ela ganha os campos que a fono pergunta em voz alta: para quem é, quem é
+ * o paciente, percebe perda, já usou, cidade. Valores determinísticos pelo índice do lead.
+ */
+const GRUPOS_FICHA_ENSAIO: PainelLead["ficha"]["grupos"] = [
+  {
+    chave: "paciente",
+    nome: "Paciente",
+    campos: [
+      { slug: "audiometria", nome: "Audiometria", tipo: "selecao", opcoes: ["Não", "Sim"], editavel: true },
+      { slug: "audiometria_em", nome: "Feita em", tipo: "data", opcoes: [], editavel: true },
+      { slug: "para_quem", nome: "Aparelho para", tipo: "selecao", opcoes: ["Para mim", "Familiar"], editavel: true },
+      { slug: "paciente_nome", nome: "Quem é o paciente", tipo: "texto", opcoes: [], editavel: true },
+      { slug: "percebe_perda", nome: "Percebe a perda", tipo: "booleano", opcoes: [], editavel: true },
+      { slug: "ja_usou", nome: "Já usou aparelho", tipo: "booleano", opcoes: [], editavel: true },
+      { slug: "cidade", nome: "Cidade", tipo: "texto", opcoes: [], editavel: true },
+      { slug: "e_de_bh", nome: "Região de BH", tipo: "booleano", opcoes: [], editavel: true },
+    ],
+  },
+  {
+    chave: "comercial",
+    nome: "Comercial",
+    campos: [
+      { slug: "como_conheceu", nome: "Como conheceu", tipo: "selecao", opcoes: ["Anúncio", "Indicação", "Busca no Google", "Já era paciente"], editavel: true },
+      { slug: "faixa_valor", nome: "Faixa de valor", tipo: "selecao", opcoes: ["Até R$ 5 mil", "R$ 5-10 mil", "R$ 10-20 mil", "Acima de R$ 20 mil"], editavel: true },
+      { slug: "observacoes", nome: "Observações", tipo: "texto_longo", opcoes: [], editavel: true },
+      { slug: "kommo_id", nome: "Kommo", tipo: "texto", opcoes: [], editavel: false },
+    ],
+  },
+];
+
 /** O painel do drawer (ficha/tarefas/anotações/histórico), com as tarefas desta fixture. */
 export function painelDoLeadEnsaio(lead: CardLead, agora: Date = new Date()): PainelLead {
   const base = painelLeadEnsaio(lead, agora);
+  const i = indiceDoLead(lead.lead_id);
+  const familiar = lead.tags?.includes("familiar decide") || /\(m[ãa]e:/i.test(lead.nome ?? "");
+  const cidade = cidadeDoLeadEnsaio(lead.lead_id);
+  const valores: Record<string, unknown> = {
+    audiometria: lead.audiometria === "fez" ? "Sim" : lead.audiometria === "nao_fez" ? "Não" : null,
+    audiometria_em: lead.audiometria === "fez" ? `2026-0${(i % 3) + 6}-${String((i % 27) + 1).padStart(2, "0")}` : null,
+    para_quem: familiar ? "Familiar" : "Para mim",
+    paciente_nome: familiar ? (lead.nome?.match(/m[ãa]e:\s*([^)]+)/i)?.[1] ?? "Mãe") : null,
+    percebe_perda: i % 5 !== 3,
+    ja_usou: lead.tags?.includes("já usou aparelho") ?? false,
+    cidade: cidade,
+    e_de_bh: cidade ? cidade !== "Nova Lima" : null,
+    como_conheceu: lead.origem === "ind" ? "Indicação" : lead.origem === "meta" || lead.origem === "ig" ? "Anúncio" : i % 2 === 0 ? "Busca no Google" : null,
+    faixa_valor: lead.valor == null ? null : lead.valor < 5000 ? "Até R$ 5 mil" : lead.valor < 10000 ? "R$ 5-10 mil" : lead.valor < 20000 ? "R$ 10-20 mil" : "Acima de R$ 20 mil",
+    observacoes: i % 4 === 0 ? "Prefere contato à tarde. Filha decide." : null,
+    kommo_id: lead.kommo_lead_id ?? null,
+  };
   return {
     ...base,
-    ficha: {
-      ...base.ficha,
-      valores: base.ficha.valores
-        ? {
-            ...base.ficha.valores,
-            cidade: cidadeDoLeadEnsaio(lead.lead_id) ?? "",
-            audiometria: lead.audiometria === "fez" ? "Sim" : lead.audiometria === "nao_fez" ? "Não" : "",
-          }
-        : null,
-    },
+    ficha: { grupos: GRUPOS_FICHA_ENSAIO, valores },
     tarefas: tarefasDoLeadEnsaio(lead, agora),
   };
 }
