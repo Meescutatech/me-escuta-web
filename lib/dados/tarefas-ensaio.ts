@@ -1,5 +1,6 @@
 import type { TarefaVisao } from "./tarefas-visao-calculos";
 import type { DadosVisaoTarefas } from "./tarefas-visao";
+import { MOLDES_DIA } from "./tarefas-ensaio-dia";
 
 /**
  * FIXTURE DE ENSAIO de /tarefas — só com `NEXT_PUBLIC_TAREFAS_ENSAIO=1`, NUNCA por padrão.
@@ -19,9 +20,11 @@ export function ensaioTarefasLigado(env: NodeJS.ProcessEnv = process.env): boole
 const RESPONSAVEIS = [
   { id: "e0000000-0000-4000-8000-000000000001", nome: "sarah@meescuta.com" },
   { id: "e0000000-0000-4000-8000-000000000002", nome: "diogo@meescuta.com" },
+  // W-D5: a fono da fixture de ensaio (lib/ensaio/modo.ts) — tarefas de pós-venda e ajuste
+  { id: "e0000000-0000-4000-8000-000000000004", nome: "anapaula@meescuta.com" },
 ] as const;
 
-interface Molde {
+export interface Molde {
   titulo: string;
   /**
    * lead REAL de produção + instante no meio do fio dele. Só nos três primeiros moldes, e só
@@ -38,7 +41,15 @@ interface Molde {
   motivo_arquivo?: string;
   jarvis?: { por_que: string; fazer: string; trecho: string };
   andamento?: boolean;
-  resp?: 0 | 1;
+  resp?: 0 | 1 | 2;
+  /** W-D5 · benchmark item 4 — ainda não existe no banco; a fixture é quem tem. */
+  prioridade?: "alta" | "media" | "baixa";
+  /**
+   * W-D5 · índice do lead na fixture do FUNIL (`MOLDES_LEADS` em lib/ensaio/fixtures/conversas.ts).
+   * Sem ele o `lead_id` sai do índice do molde — que coincide com o funil só por acaso nos moldes
+   * 4-7. Com ele, o card do funil e a fila da SDR falam do mesmo paciente.
+   */
+  leadIdx?: number;
 }
 
 const MOLDES: Molde[] = [
@@ -47,8 +58,10 @@ const MOLDES: Molde[] = [
     tipo: "ligar",
     lead: "Maria Aparecida Souza",
     leadReal: "3594fd74-1fbf-55e0-ab03-affedf0f55ef",
+    leadIdx: 0,
     ancora: "2026-07-17T19:48:53.466Z",
     prazoHoras: -30,
+    prioridade: "alta",
     resp: 0,
     jarvis: {
       por_que: "Ela disse que decide depois do exame e ninguém agendou — 3 dias parada em Qualificado.",
@@ -56,12 +69,13 @@ const MOLDES: Molde[] = [
       trecho: "vou ver certinho depois do exame aí te falo",
     },
   },
-  { titulo: "Cobrar retorno da simulação da Caixa", tipo: "cobranca", lead: "José Carlos Menezes", leadReal: "70ba301b-eeb6-5bdf-b44e-b10d82829a7c", ancora: "2026-07-17T10:53:21.620Z", prazoHoras: -4, resp: 0, andamento: true },
+  { titulo: "Cobrar retorno da simulação da Caixa", tipo: "cobranca", lead: "José Carlos Menezes", leadReal: "70ba301b-eeb6-5bdf-b44e-b10d82829a7c", leadIdx: 1, ancora: "2026-07-17T10:53:21.620Z", prazoHoras: -4, resp: 0, andamento: true },
   {
     titulo: "Responder dúvida sobre o teste em casa",
     tipo: "followup",
     lead: "Antônia Ribeiro Prado",
     leadReal: "6317dc62-35ef-5fcd-be41-dfae57425a74",
+    leadIdx: 2,
     ancora: "2026-07-20T17:48:35.447Z",
     prazoHoras: 2,
     resp: 0,
@@ -71,11 +85,11 @@ const MOLDES: Molde[] = [
       trecho: "e se eu não me adaptar com o aparelho?",
     },
   },
-  { titulo: "Confirmar presença na teleconsulta de amanhã", tipo: "confirmar", lead: "Waldemar Costa Filho", prazoHoras: 26, resp: 1 },
-  { titulo: "Enviar orientação de uso por áudio", tipo: "followup", lead: "Neusa Maria Braga", prazoHoras: 30, resp: 0, andamento: true },
-  { titulo: "Verificar rastreio do aparelho enviado", tipo: "logistica_expedicao", lead: "Geraldo Nunes", prazoHoras: 75, resp: 1 },
-  { titulo: "Retomar lead que pediu contato em setembro", tipo: "followup", lead: "Irene Salgado", prazoHoras: 120, resp: 0 },
-  { titulo: "Organizar lista de leads sem dono do funil", tipo: "interno", lead: null, prazoHoras: null, resp: 1 },
+  { titulo: "Confirmar presença na teleconsulta de amanhã", tipo: "confirmar", lead: "Waldemar Costa Filho", leadIdx: 3, prazoHoras: 26, resp: 1, prioridade: "media" },
+  { titulo: "Enviar orientação de uso por áudio", tipo: "followup", lead: "Neusa Maria Braga", leadIdx: 4, prazoHoras: 30, resp: 0, andamento: true, prioridade: "baixa" },
+  { titulo: "Verificar rastreio do aparelho enviado", tipo: "logistica_expedicao", lead: "Geraldo Nunes", leadIdx: 5, prazoHoras: 75, resp: 1, prioridade: "media" },
+  { titulo: "Retomar lead que pediu contato em setembro", tipo: "followup", lead: "Irene Salgado", leadIdx: 6, prazoHoras: 120, resp: 0, prioridade: "baixa" },
+  { titulo: "Organizar lista de leads sem dono do funil", tipo: "interno", lead: null, prazoHoras: null, resp: 1, prioridade: "baixa" },
   {
     titulo: "Agendar audiometria na clínica parceira",
     tipo: "agendar",
@@ -105,18 +119,41 @@ const MOLDES: Molde[] = [
   },
 ];
 
-export function visaoTarefasDeEnsaio(agora: Date = new Date()): DadosVisaoTarefas & { emAndamento: string[] } {
+/** `lead_id` da fixture do funil pelo índice do lead lá (`MOLDES_LEADS`). */
+export function leadIdDeEnsaio(idx: number): string {
+  return `1ead0000-0000-4000-8000-${String(idx + 1).padStart(12, "0")}`;
+}
+
+function leadIdDoMolde(m: Molde, i: number, leadsDoFunil: boolean): string | null {
+  if (!m.lead) return null;
+  if (leadsDoFunil && m.leadIdx != null) return leadIdDeEnsaio(m.leadIdx);
+  if (m.leadReal) return m.leadReal;
+  return leadIdDeEnsaio(m.leadIdx ?? i);
+}
+
+/**
+ * `leadsDoFunil` (W-D5): no modo ensaio sem banco (W-D2, `lerSessaoEnsaio`) o lead REAL não
+ * existe em lugar nenhum — a conversa que existe é a da fixture do funil, e é para ela que o
+ * clique tem de levar. Com a flag, `leadIdx` vence `leadReal`. Sem ela (fixture sobre o banco
+ * real, `NEXT_PUBLIC_TAREFAS_ENSAIO`), o lead real continua valendo para o elo de 31/08.
+ */
+export function visaoTarefasDeEnsaio(
+  agora: Date = new Date(),
+  { leadsDoFunil = false }: { leadsDoFunil?: boolean } = {},
+): DadosVisaoTarefas & { emAndamento: string[] } {
   const base = agora.getTime();
   const iso = (h: number) => new Date(base + h * 3_600_000).toISOString();
   const emAndamento: string[] = [];
-  const tarefas: TarefaVisao[] = MOLDES.map((m, i) => {
+  // W-D5: os moldes do dia (tarefas-ensaio-dia.ts) entram DEPOIS dos originais — ids 12+, e os
+  // ids 1-11 continuam os mesmos que as outras telas já linkam (`/tarefas#tarefa-<id>`).
+  const tarefas: TarefaVisao[] = [...MOLDES, ...MOLDES_DIA].map((m, i) => {
     const id = `en5a10-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
     const r = RESPONSAVEIS[m.resp ?? 0];
     const status = m.status ?? "pendente";
     if (m.andamento && status === "pendente") emAndamento.push(id);
     return {
       id,
-      lead_id: m.leadReal ?? (m.lead ? `1ead0000-0000-4000-8000-${String(i + 1).padStart(12, "0")}` : null),
+      lead_id: leadIdDoMolde(m, i, leadsDoFunil),
       lead_nome: m.lead,
       titulo: m.titulo,
       descricao: null,
@@ -134,6 +171,7 @@ export function visaoTarefasDeEnsaio(agora: Date = new Date()): DadosVisaoTarefa
       fazer: m.jarvis?.fazer ?? null,
       trecho: m.jarvis?.trecho ?? null,
       origem: m.jarvis ? "jarvis_conversa" : null,
+      prioridade: m.prioridade ?? null,
     };
   });
   return { tarefas, corte: false, derivadaNoBanco: true, emAndamento };

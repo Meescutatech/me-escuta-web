@@ -4,6 +4,7 @@ import { useState } from "react";
 import { concluirTarefaLead } from "@/app/(app)/lead/actions";
 import { concluirTarefaNotificacao } from "@/app/(app)/notificacoes/actions";
 import { desfechoDaConclusao } from "./regras/conclusao";
+import type { AcoesDaTarefa } from "./executor";
 
 /*
  * CONCLUIR DENTRO DA /tarefas (22/08) — o que faltava para a fila da Sarah esvaziar.
@@ -99,12 +100,17 @@ export function PainelConcluir({
   tarefaId,
   aoSucesso,
   onFechar,
+  executor,
+  autoFocus = true,
 }: {
   /** null = tarefa sem lead; cai na ação sem âncora de lead (ver bloco no topo). */
   leadId: string | null;
   tarefaId: string;
   aoSucesso: () => void;
   onFechar: () => void;
+  /** W-D5 · quem escreve (executor.ts). Ausente = as duas ações de sempre, escolhidas pelo lead_id. */
+  executor?: AcoesDaTarefa;
+  autoFocus?: boolean;
 }) {
   const [resultado, setResultado] = useState("");
   const [ocupado, setOcupado] = useState(false);
@@ -123,9 +129,11 @@ export function PainelConcluir({
     }
     setOcupado(true);
     setErro(null);
-    const r = leadId
-      ? await concluirTarefaLead(leadId, tarefaId, d.desfecho)
-      : await concluirTarefaNotificacao(tarefaId, d.desfecho);
+    const r = executor?.concluir
+      ? await executor.concluir(d.desfecho)
+      : leadId
+        ? await concluirTarefaLead(leadId, tarefaId, d.desfecho)
+        : await concluirTarefaNotificacao(tarefaId, d.desfecho);
     setOcupado(false);
     if (!r.ok) {
       setErro(r.motivo ?? "não foi possível concluir");
@@ -145,7 +153,7 @@ export function PainelConcluir({
     >
       <div className="flex items-center gap-1.5">
         <input
-          autoFocus
+          autoFocus={autoFocus}
           value={resultado}
           onChange={(e) => setResultado(e.target.value)}
           onKeyDown={(e) => {

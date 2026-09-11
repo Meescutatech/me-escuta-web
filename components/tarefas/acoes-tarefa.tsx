@@ -7,7 +7,9 @@ import {
   repactuarPrazoTarefaLead,
 } from "@/app/(app)/lead/actions";
 import { paraDatetimeLocal } from "@/lib/dados/tarefa-calculos";
+import { presetsAdiar } from "@/lib/tarefas/adiar";
 import { cn } from "@/lib/utils";
+import type { AcoesDaTarefa } from "./executor";
 
 /*
  * AÇÕES DE CICLO DE VIDA da tarefa (Rodada 14) — reatribuir · repactuar prazo · arquivar.
@@ -18,6 +20,14 @@ import { cn } from "@/lib/utils";
  * Motivo obrigatório em repactuar e arquivar é regra do DOMÍNIO (check_violation na porta,
  * Bloco A): o botão não submete com motivo em branco, e o banco recusa de novo se alguém
  * burlar a UI. Adiar é permitido e registrado — §10.1: adiar vira registro, não silêncio.
+ *
+ * W-D5 (10/09) · ADIAR EM UM CLIQUE (benchmark §4 item 6). O painel abre já com os três presets
+ * — Amanhã · Em 3 dias · Próxima segunda (lib/tarefas/adiar.ts) — e clicar num deles EMITE na
+ * hora o `tarefa_prazo_repactuado` com `motivo` = o preset. A regra do domínio não afrouxou: o
+ * motivo continua indo no payload e continua obrigatório; só deixou de ser digitado. "Outra
+ * data…" é o caminho antigo (data + hora + motivo), que fica para o caso que os presets não
+ * cobrem. O `executor` opcional (executor.ts) é o que deixa o ensaio sem banco usar o mesmo
+ * painel com estado local.
  */
 
 export interface PessoaAtiva {
@@ -35,6 +45,8 @@ export function AcoesTarefa({
   pessoas,
   aoSucesso,
   onFechar,
+  executor,
+  agora,
 }: {
   leadId: string | null;
   tarefaId: string;
@@ -44,6 +56,10 @@ export function AcoesTarefa({
   pessoas: PessoaAtiva[];
   aoSucesso: () => void;
   onFechar: () => void;
+  /** W-D5 · quem escreve. Ausente = as server actions de sempre. */
+  executor?: AcoesDaTarefa;
+  /** W-D5 · relógio para os presets de adiar; ausente = `Date.now()` */
+  agora?: number;
 }) {
   const [modo, setModo] = useState<Modo | null>(null);
   const [responsavelId, setResponsavelId] = useState("");
@@ -53,6 +69,26 @@ export function AcoesTarefa({
   const [erro, setErro] = useState<string | null>(null);
 
   const outros = pessoas.filter((p) => p.id !== responsavelAtualId);
+  const presets = presetsAdiar(agora ?? Date.now());
+
+  const adiar = executor?.adiar ?? ((prazoIso: string, m: string) => repactuarPrazoTarefaLead(leadId, tarefaId, prazoIso, m));
+  const reatribuir = executor?.reatribuir ?? ((id: string) => reatribuirTarefaLead(leadId, tarefaId, id));
+  const arquivar = executor?.arquivar ?? ((m: string) => arquivarTarefaLead(leadId, tarefaId, m));
+
+  /** um clique: o preset é o prazo E o motivo */
+  async function adiarPreset(prazoIso: string, motivoPreset: string) {
+    if (ocupado) return;
+    setOcupado(true);
+    setErro(null);
+    const r = await adiar(prazoIso, motivoPreset);
+    setOcupado(false);
+    if (!r.ok) {
+      setErro(r.motivo ?? "não foi possível adiar");
+      return;
+    }
+    onFechar();
+    aoSucesso();
+  }
 
   function abrirModo(m: Modo) {
     setModo(m);
@@ -68,15 +104,10 @@ export function AcoesTarefa({
     setErro(null);
     const r =
       modo === "reatribuir"
-        ? await reatribuirTarefaLead(leadId, tarefaId, responsavelId)
+        ? await reatribuir(responsavelId)
         : modo === "repactuar"
-          ? await repactuarPrazoTarefaLead(
-              leadId,
-              tarefaId,
-              prazo ? new Date(prazo).toISOString() : "",
-              motivo,
-            )
-          : await arquivarTarefaLead(leadId, tarefaId, motivo);
+          ? await adiar(prazo ? new Date(prazo).toISOString() : "", motivo)
+          : await arquivar(motivo);
     setOcupado(false);
     if (!r.ok) {
       setErro(r.motivo ?? "não foi possível registrar");
@@ -106,12 +137,49 @@ export function AcoesTarefa({
         if (e.key === "Escape") onFechar();
       }}
     >
-      {/* escolha da ação */}
+      {/* ADIAR EM UM CLIQUE — a primeira linha do painel são os presets, porque adiar é a ação
+          mais frequente da fila (Close: snooze em lote; Kommo: "In an hour, Today, Tomorrow"). */}
       <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11.5px] text-mute">Adiar para</span>
+        {presets.map((p) => (
+          <button
+            key={p.chave}
+            type="button"
+            disabled={ocupado}
+            onClick={() => void adiarPreset(p.prazoIso, p.motivo)}
+            title={`${p.motivo} · 09:00`}
+            className="rounded-full border border-linha bg-branco px-2.5 py-1 text-[12px] font-medium text-tinta transition-colors hover:border-navy hover:bg-[#EAECF5] hover:text-navy disabled:opacity-50"
+          >
+            {p.rotulo}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => abrirModo("repactuar")}
+          aria-pressed={modo === "repactuar"}
+          className={cn(
+            "rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
+            modo === "repactuar"
+              ? "border-navy bg-[#EAECF5] font-semibold text-navy"
+              : "border-linha bg-branco text-suave hover:bg-hover hover:text-tinta",
+          )}
+        >
+          Outra data…
+        </button>
+        <button
+          type="button"
+          onClick={onFechar}
+          className="ml-auto rounded-md px-2 py-1 text-[12px] font-medium text-suave transition-colors hover:bg-hover hover:text-tinta"
+        >
+          Fechar
+        </button>
+      </div>
+
+      {/* as outras duas ações de ciclo de vida */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {(
           [
             ["reatribuir", "Reatribuir"],
-            ["repactuar", "Repactuar prazo"],
             ["arquivar", "Arquivar"],
           ] as [Modo, string][]
         ).map(([m, rotulo]) => (
@@ -130,13 +198,6 @@ export function AcoesTarefa({
             {rotulo}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={onFechar}
-          className="ml-auto rounded-md px-2 py-1 text-[12px] font-medium text-suave transition-colors hover:bg-hover hover:text-tinta"
-        >
-          Fechar
-        </button>
       </div>
 
       {modo === "reatribuir" && (
@@ -183,7 +244,7 @@ export function AcoesTarefa({
               aria-label="Motivo da repactuação (obrigatório)"
               className="min-w-0 flex-1 rounded-md border border-linha-forte bg-branco px-2 py-1 text-[12.5px] outline-none focus:border-laranja"
             />
-            <BotaoConfirmar rotulo="Repactuar" habilitado={podeExecutar && !ocupado} onClick={executar} />
+            <BotaoConfirmar rotulo="Adiar" habilitado={podeExecutar && !ocupado} onClick={executar} />
           </div>
         </div>
       )}

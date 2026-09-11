@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
@@ -19,10 +19,27 @@ import {
   type TarefaVisao,
 } from "@/lib/dados/tarefas-visao-calculos";
 import { useTarefasVivas } from "@/lib/tarefas/tempo-real";
-import { MetaTarefa, PorQueJarvis } from "@/components/tarefas/cartao-meta";
+import { abaAtiva, contagemAbas, filaDoDia, filtrosDaAba, proximaNaFila, type Aba } from "@/lib/tarefas/dia";
+import { aplicarEscritas, escritasVazias, idNovoEnsaio, propostasPendentes, type EscritasEnsaio } from "@/lib/tarefas/ensaio-local";
+import { payloadDaProposta, tarefaDaProposta, type PropostaTarefaPendente } from "@/lib/tarefas/propostas";
+import {
+  arquivarTarefaLead,
+  concluirTarefaLead,
+  criarTarefaLead,
+  reatribuirTarefaLead,
+  repactuarPrazoTarefaLead,
+} from "@/app/(app)/lead/actions";
+import { concluirTarefaNotificacao } from "@/app/(app)/notificacoes/actions";
+import { validarPropostaTarefa } from "@/app/(app)/tarefas/actions";
+import { MetaTarefa, PorQueJarvis, RailPrioridade } from "@/components/tarefas/cartao-meta";
 import { QuadroStatus } from "@/components/tarefas/quadro-status";
 import { AcoesTarefa, BotaoAcoes, type PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
 import { BotaoConcluir, PainelConcluir } from "@/components/tarefas/concluir-tarefa";
+import { AbasTarefas } from "@/components/tarefas/abas";
+import { FilaDoDia, type ProgressoDia } from "@/components/tarefas/fila-do-dia";
+import { DialogoEAgora, type ConcluidaAgora } from "@/components/tarefas/e-agora";
+import { BlocoPropostas } from "@/components/tarefas/proposta-tarefa";
+import type { AcoesDaTarefa, ExecutorTarefas, NovaTarefa } from "@/components/tarefas/executor";
 import { cn } from "@/lib/utils";
 import { destinoDaTarefa } from "@/lib/tarefas/destino";
 
@@ -47,6 +64,22 @@ import { destinoDaTarefa } from "@/lib/tarefas/destino";
  *    não devolvia uma linha. É o "POR QUE AGORA / FAZER" que a Sarah lê hoje no Kommo, e é a
  *    razão de a fila existir: sem ele o card é um título solto.
  *  · BUSCA POR TEXTO. Eram seis filtros e nenhum campo de digitar, com teto de 500 abertas.
+ *
+ * ── W-D5 (10/09) · o que o benchmark de pipeline de tarefas trouxe ──────────────────────────
+ * O layout do Diogo (linha de contadores + barra de filtros + colunas por prazo) FICOU. Em cima
+ * dele entraram, todos "só tela" (§4 do benchmark, marcados [T]):
+ *  · ABAS Hoje · Semana · Todas · Do time (abas.tsx) — a aba é derivada dos filtros;
+ *  · a VIEW HOJE (`?ver=hoje`, fila-do-dia.tsx): vencidas ∪ hoje, minhas, numerada, com
+ *    "Começar as tarefas" e um foco que anda (`?foco=<id>`), atalhos ⏎ / A / J / P;
+ *  · ADIAR EM UM CLIQUE — presets Amanhã · 3 dias · Próxima segunda no painel ⋯ (acoes-tarefa.tsx);
+ *  · "E AGORA?" depois de concluir (e-agora.tsx) — a próxima tarefa com lead e dono preenchidos;
+ *  · PROPOSTAS DO JARVIS (proposta-tarefa.tsx) — aceitar · ajustar · descartar;
+ *  · PRIORIDADE alta/média/baixa — trilho e chip (cartao-meta.tsx), e desempate na ordem;
+ *  · colunas por LEAD no agrupamento.
+ *
+ * ESCRITA: toda ação passa por um `ExecutorTarefas` (executor.ts). Em produção ele é as server
+ * actions de sempre; no ENSAIO (W-D2, `ensaio` = true) é estado local (lib/tarefas/ensaio-local.ts)
+ * reaplicado sobre a fixture — a tela se comporta inteira sem gravar evento nenhum.
  */
 
 export function VisaoTarefas({
@@ -57,6 +90,9 @@ export function VisaoTarefas({
   tiposTarefa,
   emAndamento,
   quadroInicial = false,
+  propostas = [],
+  focoInicial = null,
+  ensaio = false,
 }: {
   dados: DadosVisaoTarefas;
   filtrosIniciais: FiltrosTarefas;
@@ -67,10 +103,17 @@ export function VisaoTarefas({
   emAndamento: { ids: string[]; disponivel: boolean };
   /** `?ver=quadro` — terceira exibição, por STATUS. Vive fora de `FiltrosTarefas` (módulo de outra frente). */
   quadroInicial?: boolean;
+  /** W-D5 · propostas do Jarvis pendentes (core.sugestao_ia, tipo tarefa). A leitura real ainda não existe → []. */
+  propostas?: PropostaTarefaPendente[];
+  /** W-D5 · `?foco=<id>` — a tarefa em foco na fila do dia */
+  focoInicial?: string | null;
+  /** W-D5 · modo ensaio (W-D2): escritas viram estado local, nunca server action */
+  ensaio?: boolean;
 }) {
   const router = useRouter();
   const [filtros, setFiltros] = useState<FiltrosTarefas>(filtrosIniciais);
   const [quadro, setQuadro] = useState<boolean>(quadroInicial);
+  const [foco, setFoco] = useState<string | null>(focoInicial);
   const idsEmAndamento = useMemo(() => new Set(emAndamento.ids), [emAndamento.ids]);
   const [agora, setAgora] = useState<number>(() => Date.now());
 
@@ -100,16 +143,16 @@ export function VisaoTarefas({
    * COMPARTILHAR a visão por link — chega 300 ms depois da última tecla. O ref guarda a última
    * query escrita para o efeito não replicar na montagem a query que o servidor já entregou.
    */
-  const qsEscritaRef = useRef(comQuadro(serializarFiltros(filtrosIniciais), quadroInicial));
+  const qsEscritaRef = useRef(comExtras(serializarFiltros(filtrosIniciais), quadroInicial, focoInicial));
   useEffect(() => {
-    const qs = comQuadro(serializarFiltros(filtros), quadro);
+    const qs = comExtras(serializarFiltros(filtros), quadro, foco);
     if (qs === qsEscritaRef.current) return;
     const t = setTimeout(() => {
       qsEscritaRef.current = qs;
       router.replace(qs ? `/tarefas?${qs}` : "/tarefas", { scroll: false });
     }, 300);
     return () => clearTimeout(t);
-  }, [filtros, quadro, filtrosIniciais, router]);
+  }, [filtros, quadro, foco, filtrosIniciais, router]);
 
   const pessoas = useMemo(
     () => mencionaveis.filter((m) => m.tipo === "humano"),
@@ -141,10 +184,140 @@ export function VisaoTarefas({
     [pessoas, tiposTarefa],
   );
 
-  const cont = useMemo(() => contadores(dados.tarefas), [dados.tarefas]);
+  // ── ESCRITAS: o executor (produção = server actions; ensaio = estado local) ──
+  const [escritas, setEscritas] = useState<EscritasEnsaio>(escritasVazias);
+  const contadorNovo = useRef(0);
+  const [eAgora, setEAgora] = useState<ConcluidaAgora | null>(null);
+  const [progresso, setProgresso] = useState<ProgressoDia>({ concluidas: 0, adiadas: 0, puladas: 0 });
+  const refrescar = useCallback(() => router.refresh(), [router]);
+
+  const tarefas = useMemo(
+    () => (ensaio ? aplicarEscritas(dados.tarefas, escritas, agora) : dados.tarefas),
+    [ensaio, dados.tarefas, escritas, agora],
+  );
+  const propostasAbertas = useMemo(
+    () => (ensaio ? propostasPendentes(propostas, escritas) : propostas),
+    [ensaio, propostas, escritas],
+  );
+
+  const executor = useMemo<ExecutorTarefas>(() => {
+    if (ensaio) {
+      const ok = { ok: true } as const;
+      return {
+        async concluir(t, resultado) {
+          setEscritas((e) => ({ ...e, concluidas: new Map(e.concluidas).set(t.id, resultado) }));
+          return ok;
+        },
+        async adiar(t, prazoIso, motivo) {
+          if (!prazoIso) return { ok: false, motivo: "escolha uma data" };
+          if (!motivo.trim()) return { ok: false, motivo: "motivo obrigatório" };
+          setEscritas((e) => ({ ...e, prazos: new Map(e.prazos).set(t.id, prazoIso) }));
+          return ok;
+        },
+        async reatribuir(t, responsavelId) {
+          setEscritas((e) => ({ ...e, responsaveis: new Map(e.responsaveis).set(t.id, responsavelId) }));
+          return ok;
+        },
+        async arquivar(t, motivo) {
+          if (!motivo.trim()) return { ok: false, motivo: "motivo obrigatório" };
+          setEscritas((e) => ({ ...e, arquivadas: new Map(e.arquivadas).set(t.id, motivo) }));
+          return ok;
+        },
+        async criar(dados: NovaTarefa) {
+          const id = idNovoEnsaio(++contadorNovo.current);
+          const nova: TarefaVisao = {
+            id,
+            lead_id: dados.leadId,
+            lead_nome: dados.leadNome,
+            titulo: dados.titulo,
+            descricao: null,
+            tipo: dados.tipo,
+            responsavel: null,
+            responsavel_id: dados.responsavelId,
+            prazo: dados.prazoIso,
+            status: "pendente",
+            resultado: null,
+            motivo_arquivo: null,
+            criado_em: new Date().toISOString(),
+            concluida_em: null,
+            vencida: false,
+            por_que: null,
+            fazer: null,
+            trecho: null,
+            origem: null,
+            prioridade: dados.prioridade ?? null,
+          };
+          setEscritas((e) => ({ ...e, criadas: [...e.criadas, nova] }));
+          return ok;
+        },
+        async validarProposta(p, decisao, ajuste) {
+          setEscritas((e) => {
+            const resolvidas = new Set(e.propostasResolvidas).add(p.id);
+            if (decisao === "rejeitada") return { ...e, propostasResolvidas: resolvidas };
+            const nova = tarefaDaProposta(p, ajuste ?? {}, Date.now(), idNovoEnsaio(++contadorNovo.current));
+            return { ...e, propostasResolvidas: resolvidas, criadas: [...e.criadas, nova] };
+          });
+          return ok;
+        },
+      };
+    }
+    return {
+      async concluir(t, resultado) {
+        const r = t.lead_id ? await concluirTarefaLead(t.lead_id, t.id, resultado) : await concluirTarefaNotificacao(t.id, resultado);
+        if (r.ok) refrescar();
+        return r;
+      },
+      async adiar(t, prazoIso, motivo) {
+        const r = await repactuarPrazoTarefaLead(t.lead_id, t.id, prazoIso, motivo);
+        if (r.ok) refrescar();
+        return r;
+      },
+      async reatribuir(t, responsavelId) {
+        const r = await reatribuirTarefaLead(t.lead_id, t.id, responsavelId);
+        if (r.ok) refrescar();
+        return r;
+      },
+      async arquivar(t, motivo) {
+        const r = await arquivarTarefaLead(t.lead_id, t.id, motivo);
+        if (r.ok) refrescar();
+        return r;
+      },
+      async criar(dados: NovaTarefa) {
+        // `prioridade` não entra: `DadosTarefa` não a aceita e o payload de `tarefa_criada` ainda
+        // não a tem — é o [M] do benchmark. Cai quieta aqui até a coluna existir.
+        const r = await criarTarefaLead(dados.leadId, {
+          titulo: dados.titulo,
+          tipo: dados.tipo,
+          responsavelId: dados.responsavelId,
+          prazoIso: dados.prazoIso,
+          mencoes: [],
+        });
+        if (r.ok) refrescar();
+        return r;
+      },
+      async validarProposta(p, decisao, ajuste) {
+        const r = await validarPropostaTarefa(p.id, decisao, ajuste ? payloadDaProposta(p, ajuste) : null);
+        if (r.ok) refrescar();
+        return r;
+      },
+    };
+  }, [ensaio, refrescar]);
+
+  /** as ações de UMA tarefa, amarradas — o que os painéis inline recebem */
+  const acoesDe = useCallback(
+    (t: TarefaVisao): AcoesDaTarefa => ({
+      concluir: (resultado) => executor.concluir(t, resultado),
+      adiar: (prazoIso, motivo) => executor.adiar(t, prazoIso, motivo),
+      reatribuir: (id) => executor.reatribuir(t, id),
+      arquivar: (motivo) => executor.arquivar(t, motivo),
+    }),
+    [executor],
+  );
+
+  const cont = useMemo(() => contadores(tarefas), [tarefas]);
   const filtradas = useMemo(
-    () => aplicarFiltros(dados.tarefas, filtros, meuId, agora),
-    [dados.tarefas, filtros, meuId, agora],
+    () => aplicarFiltros(tarefas, filtros, meuId, agora),
+    [tarefas, filtros, meuId, agora],
   );
 
   // F8 · o quadro por status cruza abertas E concluídas: aplica os mesmos filtros (busca,
@@ -154,35 +327,87 @@ export function VisaoTarefas({
     if (!quadro) return [];
     const base = { ...filtros, vencidas: false, prazo: "todos" as const };
     return [
-      ...aplicarFiltros(dados.tarefas, { ...base, status: "abertas" }, meuId, agora),
-      ...aplicarFiltros(dados.tarefas, { ...base, status: "concluidas" }, meuId, agora),
+      ...aplicarFiltros(tarefas, { ...base, status: "abertas" }, meuId, agora),
+      ...aplicarFiltros(tarefas, { ...base, status: "concluidas" }, meuId, agora),
     ];
-  }, [quadro, dados.tarefas, filtros, meuId, agora]);
+  }, [quadro, tarefas, filtros, meuId, agora]);
+
+  // W-D5 · a view do dia: vencidas ∪ hoje sobre o que os filtros deixaram (minhas, busca, tipo)
+  const modoHoje = !quadro && filtros.exibicao === "hoje";
+  const fila = useMemo(() => (modoHoje ? filaDoDia(filtradas, agora) : []), [modoHoje, filtradas, agora]);
+  const aba = quadro ? null : abaAtiva(filtros);
+  const contagem = useMemo(() => contagemAbas(tarefas, meuId, agora), [tarefas, meuId, agora]);
+  function escolherAba(a: Aba) {
+    if (a === "hoje") setQuadro(false);
+    setFiltros(filtrosDaAba(a, filtros));
+    if (a !== "hoje") setFoco(null);
+  }
+  // propostas do recorte: "minhas" só as sugeridas para mim; "do time" todas
+  const propostasDoRecorte = useMemo(
+    () => (filtros.minhas && meuId ? propostasAbertas.filter((p) => p.responsavel_sugerido_id === meuId) : propostasAbertas),
+    [propostasAbertas, filtros.minhas, meuId],
+  );
+  const [propostasVisiveis, setPropostasVisiveis] = useState(false);
 
   // histórico é lista, não funil (bucket de prazo só descreve compromisso futuro)
-  const modoFunil = !quadro && filtros.exibicao === "funil" && filtros.status === "abertas";
+  const modoFunil = !quadro && !modoHoje && filtros.exibicao === "funil" && filtros.status === "abertas";
   const grupos = useMemo(
     () => (modoFunil ? agrupar(filtradas, filtros, agora, nomes) : []),
     [modoFunil, filtradas, filtros, agora, nomes],
   );
   const lista = useMemo(
-    () => (modoFunil ? [] : ordenarLista(filtradas, filtros.status)),
-    [modoFunil, filtradas, filtros.status],
+    () => (modoFunil || modoHoje ? [] : ordenarLista(filtradas, filtros.status)),
+    [modoFunil, modoHoje, filtradas, filtros.status],
   );
+
+  // ── o "e agora?" e o andar do foco ──
+  const filaIdsRef = useRef<string[]>([]);
+  filaIdsRef.current = fila.map((t) => t.id);
+  function andarFoco(depoisDe: string) {
+    if (!modoHoje || foco !== depoisDe) return;
+    // a tarefa saiu da fila (concluída/adiada): o próximo é o que ocupava a posição seguinte
+    const ids = filaIdsRef.current;
+    const i = ids.indexOf(depoisDe);
+    setFoco(i >= 0 ? (ids[i + 1] ?? null) : proximaNaFila(ids, null));
+  }
+  function aoConcluida(t: TarefaVisao, resultado: string) {
+    setProgresso((p) => ({ ...p, concluidas: p.concluidas + 1 }));
+    setConcluindoId(null);
+    // sem lead não há a quem dever a próxima — o foco anda direto
+    if (t.lead_id) setEAgora({ tarefa: t, resultado });
+    else andarFoco(t.id);
+  }
+  function fecharEAgora() {
+    const t = eAgora?.tarefa;
+    setEAgora(null);
+    if (t) andarFoco(t.id);
+  }
+  function aoAdiada(t: TarefaVisao) {
+    setProgresso((p) => ({ ...p, adiadas: p.adiadas + 1 }));
+    andarFoco(t.id);
+  }
+  function mudarFoco(id: string | null) {
+    if (foco && id && foco !== id && modoHoje) {
+      const ids = filaIdsRef.current;
+      if (ids.indexOf(id) === ids.indexOf(foco) + 1) setProgresso((p) => ({ ...p, puladas: p.puladas + 1 }));
+    }
+    setFoco(id);
+  }
 
   // F2 / D62 (27/08): as tarefas do Jarvis vêm do BANCO (core.v_tarefa, origem jarvis_conversa)
   // e entram na fila como qualquer outra — com POR QUE e trecho no cartão. A faixa do protótipo
   // (sessionStorage) saiu daqui.
 
-  const nadaNoWorkspace = dados.tarefas.length === 0;
-  const nadaComFiltro = !nadaNoWorkspace && (quadro ? tarefasQuadro.length === 0 : filtradas.length === 0);
+  const nadaNoWorkspace = tarefas.length === 0;
+  const nadaComFiltro = !nadaNoWorkspace && !modoHoje && (quadro ? tarefasQuadro.length === 0 : filtradas.length === 0);
 
   return (
     <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
-      {/* ── cabeçalho: título + contadores honestos + exibição ── */}
-      <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-5 pb-2 pt-4">
+      {/* ── cabeçalho: abas + contadores honestos + exibição ── */}
+      <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-5 pb-2 pt-3">
         {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
             A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
+        <AbasTarefas ativa={aba} contagem={contagem} onEscolher={escolherAba} semMeuId={!meuId} />
         <span className="font-mono text-[12px] text-suave">
           {cont.abertas.toLocaleString("pt-BR")} abertas
           {cont.vencidas > 0 && (
@@ -212,48 +437,52 @@ export function VisaoTarefas({
             leitura no teto — {filtros.busca.trim() ? "busca parcial" : "lista parcial"}
           </span>
         )}
-        <div className="ml-auto flex items-center gap-2 self-center">
-          {modoFunil && (
-            <select
-              value={filtros.agrupamento}
-              onChange={(e) => mudar({ agrupamento: e.target.value as Agrupamento })}
-              aria-label="Agrupar colunas por"
-              className="cursor-pointer rounded-[6px] border border-linha bg-branco px-2 py-1.5 text-[12.5px] text-tinta outline-none focus:border-linha-forte"
-            >
-              <option value="prazo">Colunas por prazo</option>
-              <option value="responsavel">Colunas por responsável</option>
-              <option value="tipo">Colunas por tipo</option>
-            </select>
-          )}
-          <div className="flex overflow-hidden rounded-[6px] border border-linha bg-branco" role="group" aria-label="Modo de exibição">
-            {(["funil", "quadro", "lista"] as const).map((modo) => {
-              const ativo = modo === "quadro" ? quadro : !quadro && filtros.exibicao === modo;
-              return (
-                <button
-                  key={modo}
-                  type="button"
-                  onClick={() => {
-                    if (modo === "quadro") setQuadro(true);
-                    else {
-                      setQuadro(false);
-                      mudar({ exibicao: modo });
-                    }
-                  }}
-                  aria-pressed={ativo}
-                  className={cn(
-                    "px-3 py-1.5 text-[12.5px] font-medium transition-colors",
-                    ativo ? "bg-[#EAECF5] font-semibold text-navy" : "text-suave hover:bg-hover hover:text-tinta",
-                  )}
-                >
-                  {modo === "funil" ? "Prazo" : modo === "quadro" ? "Status" : "Lista"}
-                </button>
-              );
-            })}
+        {!modoHoje && (
+          <div className="ml-auto flex items-center gap-2 self-center">
+            {modoFunil && (
+              <select
+                value={filtros.agrupamento}
+                onChange={(e) => mudar({ agrupamento: e.target.value as Agrupamento })}
+                aria-label="Agrupar colunas por"
+                className="cursor-pointer rounded-[6px] border border-linha bg-branco px-2 py-1.5 text-[12.5px] text-tinta outline-none focus:border-linha-forte"
+              >
+                <option value="prazo">Colunas por prazo</option>
+                <option value="responsavel">Colunas por pessoa</option>
+                <option value="lead">Colunas por lead</option>
+                <option value="tipo">Colunas por tipo</option>
+              </select>
+            )}
+            <div className="flex overflow-hidden rounded-[6px] border border-linha bg-branco" role="group" aria-label="Modo de exibição">
+              {(["funil", "quadro", "lista"] as const).map((modo) => {
+                const ativo = modo === "quadro" ? quadro : !quadro && filtros.exibicao === modo;
+                return (
+                  <button
+                    key={modo}
+                    type="button"
+                    onClick={() => {
+                      if (modo === "quadro") setQuadro(true);
+                      else {
+                        setQuadro(false);
+                        mudar({ exibicao: modo });
+                      }
+                    }}
+                    aria-pressed={ativo}
+                    className={cn(
+                      "px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+                      ativo ? "bg-[#EAECF5] font-semibold text-navy" : "text-suave hover:bg-hover hover:text-tinta",
+                    )}
+                  >
+                    {modo === "funil" ? "Prazo" : modo === "quadro" ? "Status" : "Lista"}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* ── barra de filtros (estado na URL — a visão é compartilhável por link) ── */}
+      {/* ── barra de filtros (estado na URL — a visão é compartilhável por link) ──
+          Na view Hoje só busca e tipo sobrevivem: minhas/status/prazo/vencidas SÃO a view. */}
       <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5 px-5 pb-3">
         {/* BUSCA — primeiro item da barra de propósito: é o caminho mais curto até UMA tarefa,
             e os seis filtros ao lado só sabem recortar CONJUNTOS. Filtra no cliente, sobre o
@@ -289,39 +518,43 @@ export function VisaoTarefas({
           />
         </label>
 
-        <button
-          type="button"
-          onClick={() => mudar({ minhas: !filtros.minhas, responsavelId: null })}
-          disabled={!meuId}
-          aria-pressed={filtros.minhas}
-          className={cn(
-            "rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors disabled:opacity-50",
-            filtros.minhas
-              ? "border-navy bg-[#EAECF5] font-semibold text-navy"
-              : "border-linha bg-branco text-suave hover:bg-hover hover:text-tinta",
-          )}
-        >
-          Minhas tarefas
-        </button>
+        {!modoHoje && (
+          <>
+            <button
+              type="button"
+              onClick={() => mudar({ minhas: !filtros.minhas, responsavelId: null })}
+              disabled={!meuId}
+              aria-pressed={filtros.minhas}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors disabled:opacity-50",
+                filtros.minhas
+                  ? "border-navy bg-[#EAECF5] font-semibold text-navy"
+                  : "border-linha bg-branco text-suave hover:bg-hover hover:text-tinta",
+              )}
+            >
+              Minhas tarefas
+            </button>
 
-        <select
-          value={filtros.minhas ? "" : filtros.responsavelId ?? ""}
-          onChange={(e) => mudar({ responsavelId: e.target.value || null, minhas: false })}
-          aria-label="Filtrar por responsável"
-          className={cn(
-            "cursor-pointer rounded-full border border-linha bg-branco px-2.5 py-1 text-[12px] outline-none transition-colors hover:bg-hover",
-            filtros.responsavelId && !filtros.minhas ? "font-semibold text-navy" : "text-suave",
-          )}
-        >
-          <option value="">Responsável: todos</option>
-          {pessoas.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.nome}
-            </option>
-          ))}
-        </select>
+            <select
+              value={filtros.minhas ? "" : filtros.responsavelId ?? ""}
+              onChange={(e) => mudar({ responsavelId: e.target.value || null, minhas: false })}
+              aria-label="Filtrar por responsável"
+              className={cn(
+                "cursor-pointer rounded-full border border-linha bg-branco px-2.5 py-1 text-[12px] outline-none transition-colors hover:bg-hover",
+                filtros.responsavelId && !filtros.minhas ? "font-semibold text-navy" : "text-suave",
+              )}
+            >
+              <option value="">Responsável: todos</option>
+              {pessoas.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nome}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
 
-        {!quadro && (
+        {!quadro && !modoHoje && (
         <div className="flex overflow-hidden rounded-full border border-linha bg-branco" role="group" aria-label="Status">
           {(
             [
@@ -348,7 +581,7 @@ export function VisaoTarefas({
         </div>
         )}
 
-        {!quadro && filtros.status === "abertas" && (
+        {!quadro && !modoHoje && filtros.status === "abertas" && (
           <>
             <button
               type="button"
@@ -402,7 +635,7 @@ export function VisaoTarefas({
           ))}
         </select>
 
-        {temFiltroAtivo(filtros) && (
+        {!modoHoje && temFiltroAtivo(filtros) && (
           <button
             type="button"
             onClick={() =>
@@ -421,10 +654,35 @@ export function VisaoTarefas({
             Limpar filtros
           </button>
         )}
+        {modoHoje && (filtros.busca.trim() || filtros.tipo) && (
+          <button
+            type="button"
+            onClick={() => mudar({ tipo: null, busca: "" })}
+            className="rounded-full px-2 py-1 text-[12px] font-medium text-suave transition-colors hover:bg-hover hover:text-tinta"
+          >
+            Limpar
+          </button>
+        )}
       </div>
 
       {/* ── conteúdo ── */}
-      {nadaNoWorkspace ? (
+      {modoHoje ? (
+        <FilaDoDia
+          fila={fila}
+          propostas={propostasDoRecorte}
+          pessoas={pessoasAtivas}
+          nomes={nomes}
+          agora={agora}
+          foco={foco}
+          onFoco={mudarFoco}
+          progresso={progresso}
+          acoesDe={acoesDe}
+          aoConcluida={aoConcluida}
+          aoAdiada={aoAdiada}
+          validarProposta={executor.validarProposta}
+          aoRefrescar={refrescar}
+        />
+      ) : nadaNoWorkspace ? (
         <Vazio>
           Nenhuma tarefa aberta.{" "}
           <button
@@ -463,89 +721,131 @@ export function VisaoTarefas({
           emAndamentoDisponivel={emAndamento.disponivel}
           agora={agora}
           nomes={nomes}
-          aoMudar={() => router.refresh()}
+          aoMudar={refrescar}
         />
       ) : modoFunil ? (
-        <div className="flex flex-1 items-stretch gap-3 overflow-x-auto px-5 pb-5">
-          {grupos.map((g) => (
-            <div key={g.chave} className="flex h-full w-coluna shrink-0 flex-col">
-              <div className="flex items-center gap-2 px-1 pb-2.5 pt-1.5">
-                <span
-                  className={cn(
-                    "truncate text-[12.5px] font-semibold uppercase tracking-[0.05em]",
-                    g.vermelho ? "text-vermelho" : "text-suave",
-                  )}
-                >
-                  {g.rotulo}
-                </span>
-                <span
-                  className={cn(
-                    "ml-auto rounded-full border px-2 py-px font-mono text-[11.5px] tabular-nums",
-                    g.vermelho && g.tarefas.length > 0
-                      ? "border-vermelho-bd bg-vermelho-bg font-semibold text-vermelho"
-                      : "border-linha bg-branco text-suave",
-                  )}
-                >
-                  {g.tarefas.length}
-                </span>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[10px] px-0.5 pb-8 pt-px">
-                {g.tarefas.map((t) => (
-                  <CartaoTarefa
-                    key={t.id}
-                    t={t}
-                    agora={agora}
-                    nomes={nomes}
-                    pessoas={pessoasAtivas}
-                    acoesAberta={acoesId === t.id}
-                    onToggleAcoes={() => abrirAcoes(t.id)}
-                    onFecharAcoes={() => setAcoesId(null)}
-                    concluindo={concluindoId === t.id}
-                    onToggleConcluir={() => abrirConcluir(t.id)}
-                    onFecharConcluir={() => setConcluindoId(null)}
-                    aoMudar={() => router.refresh()}
-                  />
-                ))}
-                {g.tarefas.length === 0 && (
-                  <p className="rounded-lg border border-dashed border-linha px-1.5 py-3.5 text-center text-[12px] text-mute">
-                    {g.vermelho ? "Nada vencido — fila limpa" : "Nenhuma tarefa"}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto px-5 pb-8">
-          <div className="mx-auto max-w-3xl rounded-[10px] border border-linha bg-branco px-4 py-1">
-            {lista.map((t) => (
-              <LinhaTarefa
-                key={t.id}
-                t={t}
-                agora={agora}
-                nomes={nomes}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {propostasDoRecorte.length > 0 && (
+            <div className="px-5">
+              <BlocoPropostas
+                propostas={propostasDoRecorte}
                 pessoas={pessoasAtivas}
-                acoesAberta={acoesId === t.id}
-                onToggleAcoes={() => abrirAcoes(t.id)}
-                onFecharAcoes={() => setAcoesId(null)}
-                concluindo={concluindoId === t.id}
-                onToggleConcluir={() => abrirConcluir(t.id)}
-                onFecharConcluir={() => setConcluindoId(null)}
-                aoMudar={() => router.refresh()}
+                agora={agora}
+                validar={executor.validarProposta}
+                aberto={propostasVisiveis}
+                onToggle={() => setPropostasVisiveis((v) => !v)}
               />
+            </div>
+          )}
+          <div className="flex flex-1 items-stretch gap-3 overflow-x-auto px-5 pb-5">
+            {grupos.map((g) => (
+              <div key={g.chave} className="flex h-full w-coluna shrink-0 flex-col">
+                <div className="flex items-center gap-2 px-1 pb-2.5 pt-1.5">
+                  <span
+                    className={cn(
+                      "truncate text-[12.5px] font-semibold uppercase tracking-[0.05em]",
+                      g.vermelho ? "text-vermelho" : "text-suave",
+                    )}
+                  >
+                    {g.rotulo}
+                  </span>
+                  <span
+                    className={cn(
+                      "ml-auto rounded-full border px-2 py-px font-mono text-[11.5px] tabular-nums",
+                      g.vermelho && g.tarefas.length > 0
+                        ? "border-vermelho-bd bg-vermelho-bg font-semibold text-vermelho"
+                        : "border-linha bg-branco text-suave",
+                    )}
+                  >
+                    {g.tarefas.length}
+                  </span>
+                </div>
+                <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[10px] px-0.5 pb-8 pt-px">
+                  {g.tarefas.map((t) => (
+                    <CartaoTarefa
+                      key={t.id}
+                      t={t}
+                      agora={agora}
+                      nomes={nomes}
+                      pessoas={pessoasAtivas}
+                      acoes={acoesDe(t)}
+                      acoesAberta={acoesId === t.id}
+                      onToggleAcoes={() => abrirAcoes(t.id)}
+                      onFecharAcoes={() => setAcoesId(null)}
+                      concluindo={concluindoId === t.id}
+                      onToggleConcluir={() => abrirConcluir(t.id)}
+                      onFecharConcluir={() => setConcluindoId(null)}
+                      aoConcluida={(resultado) => aoConcluida(t, resultado)}
+                      aoMudar={refrescar}
+                    />
+                  ))}
+                  {g.tarefas.length === 0 && (
+                    <p className="rounded-lg border border-dashed border-linha px-1.5 py-3.5 text-center text-[12px] text-mute">
+                      {g.vermelho ? "Nada vencido — fila limpa" : "Nenhuma tarefa"}
+                    </p>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-5 pb-8">
+          <div className="mx-auto max-w-3xl">
+            {filtros.status === "abertas" && (
+              <BlocoPropostas
+                propostas={propostasDoRecorte}
+                pessoas={pessoasAtivas}
+                agora={agora}
+                validar={executor.validarProposta}
+                aberto={propostasVisiveis}
+                onToggle={() => setPropostasVisiveis((v) => !v)}
+              />
+            )}
+            <div className="rounded-[10px] border border-linha bg-branco px-4 py-1">
+              {lista.map((t) => (
+                <LinhaTarefa
+                  key={t.id}
+                  t={t}
+                  agora={agora}
+                  nomes={nomes}
+                  pessoas={pessoasAtivas}
+                  acoes={acoesDe(t)}
+                  acoesAberta={acoesId === t.id}
+                  onToggleAcoes={() => abrirAcoes(t.id)}
+                  onFecharAcoes={() => setAcoesId(null)}
+                  concluindo={concluindoId === t.id}
+                  onToggleConcluir={() => abrirConcluir(t.id)}
+                  onFecharConcluir={() => setConcluindoId(null)}
+                  aoConcluida={(resultado) => aoConcluida(t, resultado)}
+                  aoMudar={refrescar}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* "E AGORA?" — depois de concluir qualquer tarefa com lead, em qualquer exibição */}
+      <DialogoEAgora
+        concluida={eAgora}
+        pessoas={pessoasAtivas}
+        tiposTarefa={tiposTarefa}
+        meuId={meuId}
+        agora={agora}
+        criar={executor.criar}
+        onFechar={fecharEAgora}
+      />
     </div>
   );
 }
 
-/** `?ver=quadro` entra na URL por fora de `serializarFiltros` (módulo de outra frente). */
-function comQuadro(qs: string, quadro: boolean): string {
-  if (!quadro) return qs;
+/** `?ver=quadro` e `?foco=<id>` entram na URL por fora de `serializarFiltros` (módulos de outras frentes). */
+function comExtras(qs: string, quadro: boolean, foco: string | null): string {
+  if (!quadro && !foco) return qs;
   const p = new URLSearchParams(qs);
-  p.set("ver", "quadro");
+  if (quadro) p.set("ver", "quadro");
+  if (foco) p.set("foco", foco);
   return p.toString();
 }
 
@@ -558,9 +858,9 @@ function Vazio({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Corpo clicável → drawer do lead no funil (onde concluir vive). Navegação programática em
- * vez de <Link>: as ações de ciclo de vida (R14) moram DENTRO do card, e botão dentro de
- * âncora não é HTML válido. O painel de ações faz stopPropagation — clicar nele não navega.
+ * Corpo clicável → a conversa ancorada (31/08). Navegação programática em vez de <Link>: as
+ * ações de ciclo de vida (R14) moram DENTRO do card, e botão dentro de âncora não é HTML válido.
+ * O painel de ações faz stopPropagation — clicar nele não navega.
  */
 function ComLead({
   t,
@@ -593,13 +893,27 @@ function ComLead({
 
 interface PropsAcoes {
   pessoas: PessoaAtiva[];
+  acoes: AcoesDaTarefa;
   acoesAberta: boolean;
   onToggleAcoes: () => void;
   onFecharAcoes: () => void;
   concluindo: boolean;
   onToggleConcluir: () => void;
   onFecharConcluir: () => void;
+  /** W-D5 · abre o "e agora?" no pai, com o resultado em mãos */
+  aoConcluida: (resultado: string) => void;
   aoMudar: () => void;
+}
+
+/** o executor do painel de concluir: escreve e, no sucesso, avisa o pai com o resultado */
+function executorConcluir(acoes: AcoesDaTarefa, aoConcluida: (resultado: string) => void): AcoesDaTarefa {
+  return {
+    concluir: async (resultado) => {
+      const r = acoes.concluir ? await acoes.concluir(resultado) : { ok: false, motivo: "sem executor" };
+      if (r.ok) aoConcluida(resultado);
+      return r;
+    },
+  };
 }
 
 function CartaoTarefa({
@@ -607,12 +921,14 @@ function CartaoTarefa({
   agora,
   nomes,
   pessoas,
+  acoes,
   acoesAberta,
   onToggleAcoes,
   onFecharAcoes,
   concluindo,
   onToggleConcluir,
   onFecharConcluir,
+  aoConcluida,
   aoMudar,
 }: {
   t: TarefaVisao;
@@ -623,11 +939,12 @@ function CartaoTarefa({
     <ComLead
       t={t}
       className={cn(
-        "rounded-[10px] border bg-branco px-3 py-2.5 transition-colors",
+        "relative rounded-[10px] border bg-branco px-3 py-2.5 transition-colors",
         t.lead_id && "hover:border-linha-forte",
         t.vencida ? "border-vermelho-bd" : "border-linha",
       )}
     >
+      <RailPrioridade prioridade={t.prioridade} />
       <div className="flex items-start gap-1.5">
         {t.status === "pendente" && (
           <BotaoConcluir titulo={t.titulo} aberto={concluindo} onToggle={onToggleConcluir} />
@@ -650,7 +967,8 @@ function CartaoTarefa({
         <PainelConcluir
           leadId={t.lead_id}
           tarefaId={t.id}
-          aoSucesso={aoMudar}
+          executor={executorConcluir(acoes, aoConcluida)}
+          aoSucesso={onFecharConcluir}
           onFechar={onFecharConcluir}
         />
       )}
@@ -661,6 +979,8 @@ function CartaoTarefa({
           prazoAtual={t.prazo}
           responsavelAtualId={t.responsavel_id}
           pessoas={pessoas}
+          agora={agora}
+          executor={acoes}
           aoSucesso={aoMudar}
           onFechar={onFecharAcoes}
         />
@@ -674,12 +994,14 @@ function LinhaTarefa({
   agora,
   nomes,
   pessoas,
+  acoes,
   acoesAberta,
   onToggleAcoes,
   onFecharAcoes,
   concluindo,
   onToggleConcluir,
   onFecharConcluir,
+  aoConcluida,
   aoMudar,
 }: {
   t: TarefaVisao;
@@ -691,10 +1013,11 @@ function LinhaTarefa({
     <ComLead
       t={t}
       className={cn(
-        "border-b border-[#F1F0EC] py-2.5 last:border-b-0",
+        "relative border-b border-[#F1F0EC] py-2.5 last:border-b-0",
         t.lead_id && "-mx-2 rounded-md px-2 transition-colors hover:bg-hover",
       )}
     >
+      {!fechada && <RailPrioridade prioridade={t.prioridade} />}
       <div className="flex items-baseline gap-2">
         {t.status === "pendente" && (
           <span className="self-center">
@@ -733,7 +1056,8 @@ function LinhaTarefa({
         <PainelConcluir
           leadId={t.lead_id}
           tarefaId={t.id}
-          aoSucesso={aoMudar}
+          executor={executorConcluir(acoes, aoConcluida)}
+          aoSucesso={onFecharConcluir}
           onFechar={onFecharConcluir}
         />
       )}
@@ -744,6 +1068,8 @@ function LinhaTarefa({
           prazoAtual={t.prazo}
           responsavelAtualId={t.responsavel_id}
           pessoas={pessoas}
+          agora={agora}
+          executor={acoes}
           aoSucesso={aoMudar}
           onFechar={onFecharAcoes}
         />

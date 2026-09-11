@@ -33,12 +33,24 @@ export interface TarefaVisao {
   fazer: string | null;
   trecho: string | null;
   origem: string | null;
+  /**
+   * W-D5 (10/09) · `alta | media | baixa`. AINDA NÃO EXISTE NO BANCO — é o [M] do benchmark de
+   * 10/09 (§4 item 4: coluna + projetor no molde da 0298). A leitura real não preenche e o campo
+   * fica `undefined`; a fixture de ensaio preenche. Sem ela a ordem é só prazo, e basta.
+   */
+  prioridade?: "alta" | "media" | "baixa" | null;
 }
 
 export type StatusFiltro = "abertas" | "concluidas" | "arquivadas";
 export type PrazoFiltro = "todos" | "hoje" | "amanha" | "semana" | "sem_prazo";
-export type Agrupamento = "prazo" | "responsavel" | "tipo";
-export type Exibicao = "funil" | "lista";
+/** `lead` (W-D5): colunas por paciente — "tudo que devo a esta pessoa" numa coluna só. */
+export type Agrupamento = "prazo" | "responsavel" | "tipo" | "lead";
+/**
+ * `hoje` (W-D5) é a VIEW DO DIA: vencidas ∪ hoje, minhas, numeradas, com foco que anda
+ * (lib/tarefas/dia.ts). Vive em `exibicao` porque é uma FORMA de ver, como funil e lista —
+ * mas impõe `minhas` e ignora `prazo`/`vencidas` (a view é o recorte).
+ */
+export type Exibicao = "funil" | "lista" | "hoje";
 
 export interface FiltrosTarefas {
   exibicao: Exibicao;
@@ -79,8 +91,9 @@ export function parseFiltros(params: Record<string, string | string[] | undefine
   const status = um(params.status);
   const prazo = um(params.prazo);
   return {
-    exibicao: exibicao === "lista" ? "lista" : "funil",
-    agrupamento: agrupamento === "responsavel" || agrupamento === "tipo" ? agrupamento : "prazo",
+    exibicao: exibicao === "lista" ? "lista" : exibicao === "hoje" ? "hoje" : "funil",
+    agrupamento:
+      agrupamento === "responsavel" || agrupamento === "tipo" || agrupamento === "lead" ? agrupamento : "prazo",
     minhas: um(params.minhas) === "1",
     responsavelId: um(params.resp),
     status: status === "concluidas" || status === "arquivadas" ? status : "abertas",
@@ -236,14 +249,21 @@ function prazoMs(t: TarefaVisao): number {
   return Number.isFinite(ms) ? ms : SEM_PRAZO_MS;
 }
 
+/** alta → 0, média/ausente → 1, baixa → 2 (espelho de lib/tarefas/dia.ts, sem importar de lá). */
+function pesoPrio(t: TarefaVisao): number {
+  return t.prioridade === "alta" ? 0 : t.prioridade === "baixa" ? 2 : 1;
+}
+
 /**
- * Lista plana: abertas por prazo (mais atrasada primeiro, sem prazo por último);
- * concluídas/arquivadas pelo desfecho mais recente primeiro.
+ * Lista plana: abertas por prazo (mais atrasada primeiro, sem prazo por último), prioridade
+ * desempatando prazos iguais (W-D5); concluídas/arquivadas pelo desfecho mais recente primeiro.
  */
 export function ordenarLista(tarefas: TarefaVisao[], status: StatusFiltro): TarefaVisao[] {
   const copia = [...tarefas];
   if (status === "abertas") {
-    copia.sort((a, b) => prazoMs(a) - prazoMs(b) || a.criado_em.localeCompare(b.criado_em));
+    copia.sort(
+      (a, b) => prazoMs(a) - prazoMs(b) || pesoPrio(a) - pesoPrio(b) || a.criado_em.localeCompare(b.criado_em),
+    );
   } else {
     const quando = (t: TarefaVisao) => t.concluida_em ?? t.criado_em;
     copia.sort((a, b) => quando(b).localeCompare(quando(a)));
@@ -285,10 +305,17 @@ export function agrupar(
   const chaveDe =
     f.agrupamento === "responsavel"
       ? (t: TarefaVisao) => t.responsavel_id ?? ""
-      : (t: TarefaVisao) => t.tipo ?? "";
+      : f.agrupamento === "lead"
+        ? (t: TarefaVisao) => t.lead_id ?? ""
+        : (t: TarefaVisao) => t.tipo ?? "";
+  const nomeLead = new Map<string, string>();
+  if (f.agrupamento === "lead") for (const t of ordenadas) if (t.lead_id && t.lead_nome) nomeLead.set(t.lead_id, t.lead_nome);
   const rotuloDe = (chave: string) => {
-    if (!chave) return f.agrupamento === "responsavel" ? "Sem responsável" : "Sem tipo";
+    if (!chave) {
+      return f.agrupamento === "responsavel" ? "Sem responsável" : f.agrupamento === "lead" ? "Sem lead (internas)" : "Sem tipo";
+    }
     if (f.agrupamento === "responsavel") return nomes.membros.get(chave) ?? "Outro membro";
+    if (f.agrupamento === "lead") return nomeLead.get(chave) ?? "Lead sem nome";
     return nomes.tipos.get(chave) ?? chave;
   };
 
