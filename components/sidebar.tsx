@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { IconeJarvis } from "@/components/header/icone-jarvis";
-import { itensSidebar, type ItemSidebar } from "@/lib/header/navegacao";
+import { itensSidebar, ROTA_SIGNOUT, type ItemSidebar } from "@/lib/header/navegacao";
+import { rotuloPapel, type Papel } from "@/lib/membros";
 
 /*
  * Sidebar de ícones (r9-tokens §6, aprovada 22/07) — substitui o menu de topo:
@@ -94,11 +96,24 @@ function Icone({ nome, className }: { nome: ItemSidebar["icone"]; className: str
   );
 }
 
+/**
+ * W-D2 (10/09, pedido do Diogo 21:30) · O PERFIL DESCE DO HEADER PARA O RODAPÉ DA SIDEBAR.
+ * Padrão LiderHub `sidebar.tsx` / Twenty: avatar + nome + papel embaixo da navegação, e logo acima
+ * um item com engrenagem "Configurações". O header fica só com o que é da TELA (Jarvis, relatar,
+ * sino). O menu do avatar (e-mail + Sair) continua existindo — abre para cima.
+ */
+export interface PerfilSidebar {
+  nome: string | null;
+  email: string;
+  papel: Papel | null;
+}
+
 export function Sidebar({
   contFunil,
   contNaoLidas,
   contVencidas,
   verMarketing = false,
+  perfil = null,
 }: {
   contFunil: number | null;
   contNaoLidas: number | null;
@@ -109,9 +124,12 @@ export function Sidebar({
    * Isto é ORGANIZAÇÃO, não controle de acesso: a rota recusa e a RLS da `0251` defende o dado.
    */
   verMarketing?: boolean;
+  /** quem está logado — rodapé da sidebar. `null` = rodapé não renderiza (compatibilidade). */
+  perfil?: PerfilSidebar | null;
 }) {
   const pathname = usePathname();
   const itens = itensSidebar({ pathname, contFunil, contNaoLidas, contVencidas, verMarketing });
+  const emConfig = pathname.startsWith("/configuracoes");
 
   return (
     <aside className="lateral-r9 group fixed bottom-0 left-0 top-0 z-50 flex w-[60px] flex-col gap-0.5 overflow-hidden whitespace-nowrap border-r border-linha bg-branco px-2.5 pb-3.5 pt-3 transition-[width] duration-[180ms] ease-out hover:w-[216px] focus-within:w-[216px] hover:shadow-[8px_0_28px_rgba(31,35,40,.08)] focus-within:shadow-[8px_0_28px_rgba(31,35,40,.08)]">
@@ -170,6 +188,96 @@ export function Sidebar({
           </Link>
         ))}
       </nav>
+
+      {perfil && (
+        <div className="mt-auto flex flex-col gap-0.5 border-t border-linha pt-2">
+          <Link
+            href="/configuracoes"
+            aria-current={emConfig ? "page" : undefined}
+            className={cn(
+              "relative flex h-10 items-center gap-3 rounded-lg px-2 text-[13.5px] no-underline",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45",
+              emConfig ? "bg-[#EAECF5] font-semibold text-navy" : "font-medium text-suave hover:bg-hover hover:text-tinta",
+            )}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="ml-0.5 h-5 w-5 flex-none">
+              <path d="M12.2 3.5h-.4a1.6 1.6 0 0 0-1.6 1.6v.2a1.6 1.6 0 0 1-1 1.5l-.3.1a1.6 1.6 0 0 1-1.8-.3l-.1-.1a1.6 1.6 0 0 0-2.3 0l-.3.3a1.6 1.6 0 0 0 0 2.3l.1.1a1.6 1.6 0 0 1 .3 1.8l-.1.3a1.6 1.6 0 0 1-1.5 1H3.1a1.6 1.6 0 0 0-1.6 1.6v.4a1.6 1.6 0 0 0 1.6 1.6h.2a1.6 1.6 0 0 1 1.5 1l.1.3a1.6 1.6 0 0 1-.3 1.8l-.1.1a1.6 1.6 0 0 0 0 2.3l.3.3a1.6 1.6 0 0 0 2.3 0l.1-.1a1.6 1.6 0 0 1 1.8-.3l.3.1a1.6 1.6 0 0 1 1 1.5v.2a1.6 1.6 0 0 0 1.6 1.6h.4a1.6 1.6 0 0 0 1.6-1.6v-.2a1.6 1.6 0 0 1 1-1.5l.3-.1a1.6 1.6 0 0 1 1.8.3l.1.1a1.6 1.6 0 0 0 2.3 0l.3-.3a1.6 1.6 0 0 0 0-2.3l-.1-.1a1.6 1.6 0 0 1-.3-1.8l.1-.3a1.6 1.6 0 0 1 1.5-1h.2a1.6 1.6 0 0 0 1.6-1.6v-.4a1.6 1.6 0 0 0-1.6-1.6h-.2a1.6 1.6 0 0 1-1.5-1l-.1-.3a1.6 1.6 0 0 1 .3-1.8l.1-.1a1.6 1.6 0 0 0 0-2.3l-.3-.3a1.6 1.6 0 0 0-2.3 0l-.1.1a1.6 1.6 0 0 1-1.8.3l-.3-.1a1.6 1.6 0 0 1-1-1.5v-.2a1.6 1.6 0 0 0-1.6-1.6z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            <span className="opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
+              Configurações
+            </span>
+          </Link>
+          <PerfilRodape perfil={perfil} />
+        </div>
+      )}
     </aside>
+  );
+}
+
+function iniciais(quem: string): string {
+  const base = quem.includes("@") ? quem.split("@")[0] : quem;
+  const nome = base.replace(/[._-]/g, " ").trim();
+  const partes = nome.split(/\s+/);
+  const letras = partes.length >= 2 ? partes[0][0] + partes[partes.length - 1][0] : nome.slice(0, 2);
+  return letras.toUpperCase();
+}
+
+/** Avatar + nome + papel; clique abre o menu da conta (e-mail + Sair) para CIMA. */
+function PerfilRodape({ perfil }: { perfil: PerfilSidebar }) {
+  const [aberto, setAberto] = useState(false);
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const aoClicar = (e: MouseEvent) => {
+      if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false);
+    };
+    const aoTeclar = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false);
+    document.addEventListener("mousedown", aoClicar);
+    document.addEventListener("keydown", aoTeclar);
+    return () => {
+      document.removeEventListener("mousedown", aoClicar);
+      document.removeEventListener("keydown", aoTeclar);
+    };
+  }, [aberto]);
+  const nome = perfil.nome ?? perfil.email.split("@")[0];
+  return (
+    <div ref={caixa} className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={aberto}
+        aria-label={`Sua conta: ${nome}`}
+        className="flex h-11 w-full items-center gap-3 rounded-lg px-1.5 text-left hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45"
+      >
+        <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-navy text-[11px] font-bold text-branco">
+          {iniciais(nome)}
+        </span>
+        <span className="min-w-0 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-hover:delay-[50ms] group-focus-within:opacity-100">
+          <span className="block truncate text-[13px] font-semibold text-tinta">{nome}</span>
+          <span className="block truncate text-[11px] text-suave">{perfil.papel ? rotuloPapel(perfil.papel) : "—"}</span>
+        </span>
+      </button>
+      {aberto && (
+        <div
+          role="menu"
+          aria-label="Sua conta"
+          className="absolute bottom-[calc(100%+6px)] left-0 z-50 w-[220px] overflow-hidden rounded-[10px] border border-linha bg-branco shadow-[0_4px_16px_rgba(31,35,40,.10)]"
+        >
+          <div className="border-b border-linha px-3 py-2.5">
+            <p className="truncate text-[13px] font-semibold text-tinta">{nome}</p>
+            <p className="truncate text-[12px] text-suave">{perfil.email}</p>
+          </div>
+          <div className="p-1.5">
+            <form action={ROTA_SIGNOUT} method="post">
+              <button type="submit" role="menuitem" className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-tinta hover:bg-hover">
+                Sair
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

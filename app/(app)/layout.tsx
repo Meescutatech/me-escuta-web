@@ -79,6 +79,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         contNaoLidas={contadores.naoLidas}
         contVencidas={contadores.tarefasVencidas}
         verMarketing={podeVerMarketing(papel)}
+        perfil={{ nome, email: user.email ?? "usuario", papel }}
       />
       <Header
         departamentos={escopoEstado.visiveis}
@@ -149,6 +150,7 @@ async function AppLayoutEnsaio({
         contNaoLidas={naoLidas}
         contVencidas={3}
         verMarketing={podeVerMarketing(pessoa.papel)}
+        perfil={{ nome: pessoa.nome, email: pessoa.email, papel: pessoa.papel }}
       />
       <Header
         departamentos={escopoEstado.visiveis}

@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { Sino } from "@/components/notificacoes/sino";
 import { SeletorDepartamento } from "@/components/header/seletor-departamento";
 import { RelatarDestaTela } from "@/components/header/relatar-desta-tela";
-import { Identidade } from "@/components/header/identidade";
 import { JarvisGatilho } from "@/components/header/jarvis-gatilho";
 import { lerTituloDaRota } from "@/lib/header/titulos";
 import type { Departamento } from "@/lib/departamentos/escopo";
@@ -143,8 +142,8 @@ export function Header({
             desta entrega (alguém redesenha o sino aqui dentro e deixa o antigo morrendo no layout),
             e o C3 vigia isso pelo path do SVG: ele tem de casar com UM arquivo só. */}
         <Sino inicial={notificacoes} disponivel={notificacoesDisponiveis} />
-
-        <Identidade email={email} nome={nome} departamentos={departamentos} />
+        {/* W-D2 (10/09): o avatar/perfil SAIU daqui — mora no rodapé da sidebar (`PerfilRodape`),
+            com a engrenagem de Configurações logo acima. O header fica só com o que é da tela. */}
       </div>
     </header>
   );
