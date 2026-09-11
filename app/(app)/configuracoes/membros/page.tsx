@@ -4,6 +4,7 @@ import { TabelaMembros } from "@/components/membros/tabela-membros";
 import { lerSessaoEnsaio, DEPARTAMENTOS_ENSAIO } from "@/lib/ensaio/sessao";
 import { gerarConvitesEnsaio, gerarMembrosEnsaio } from "@/lib/ensaio/fixtures/membros";
 import { MembrosEnsaio } from "@/components/ensaio/membros";
+import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default async function MembrosPage() {
         membros={gerarMembrosEnsaio(agora)}
         convites={gerarConvitesEnsaio(agora)}
         departamentos={DEPARTAMENTOS_ENSAIO}
+        canais={gerarCanaisEnsaio(agora)}
         agoraIso={agora.toISOString()}
       />
     );

@@ -38,6 +38,8 @@ import {
   type VinculoDepartamento,
 } from "@/lib/ensaio/fixtures/membros";
 import { CascaConfig, Contagem } from "./casca-config";
+import { SheetMembro } from "./sheet-membro";
+import type { CanalEnsaio } from "@/lib/ensaio/fixtures/canais";
 
 /**
  * /configuracoes/membros (ensaio) — UMA tabela de quem tem acesso, os convites pendentes logo
@@ -63,6 +65,7 @@ export function MembrosEnsaio({
   membros: membrosIniciais,
   convites: convitesIniciais,
   departamentos,
+  canais,
   agoraIso,
 }: {
   meuId: string;
@@ -70,6 +73,7 @@ export function MembrosEnsaio({
   membros: MembroEnsaio[];
   convites: ConviteEnsaio[];
   departamentos: Departamento[];
+  canais: CanalEnsaio[];
   agoraIso: string;
 }) {
   const agora = useMemo(() => new Date(agoraIso), [agoraIso]);
@@ -77,6 +81,7 @@ export function MembrosEnsaio({
   const [convites, setConvites] = useState(convitesIniciais);
   const [busca, setBusca] = useState("");
   const [convidando, setConvidando] = useState(false);
+  const [abertoId, setAbertoId] = useState<string | null>(null);
   const podeGerir = meuPapel === "owner" || meuPapel === "admin";
 
   const termo = busca.trim().toLowerCase();
@@ -154,7 +159,7 @@ export function MembrosEnsaio({
             <col style={{ width: "8%" }} />
           </colgroup>
           <TableHeader>
-            <TableRow>
+            <TableRow className="[&>th]:text-[12.5px]">
               <TableHead>Pessoa</TableHead>
               <TableHead>Papel</TableHead>
               <TableHead>Departamentos</TableHead>
@@ -169,31 +174,38 @@ export function MembrosEnsaio({
               <TableEmpty colSpan={5}>{termo ? "Ninguém com esse nome ou e-mail." : "Nenhum membro ainda."}</TableEmpty>
             ) : (
               membrosVisiveis.map((m) => (
-                <TableRow key={m.id} className={cn(!m.ativo && "opacity-60")}>
+                <TableRow
+                  key={m.id}
+                  className={cn("cursor-pointer [&>td]:py-3.5", !m.ativo && "opacity-60")}
+                  onClick={() => setAbertoId(m.id)}
+                  tabIndex={0}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setAbertoId(m.id)}
+                  aria-label={`Abrir perfil de ${m.nome}`}
+                >
                   <TableCell>
-                    <div className="flex items-center gap-2.5">
-                      <Avatar size="sm" variant={m.id === meuId ? "solid" : "subtle"}>
+                    <div className="flex items-center gap-3">
+                      <Avatar size="lg" variant={m.id === meuId ? "solid" : "subtle"}>
                         <AvatarFallback>{iniciaisMembro(m.nome, m.email)}</AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate text-ui-13 font-medium text-foreground">{m.nome}</span>
-                          {m.id === meuId && <span className="text-ui-11 text-muted-foreground">(você)</span>}
-                          {!m.ativo && <Badge variant="muted" size="xs">sem acesso</Badge>}
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-[15.5px] font-semibold leading-tight text-foreground">{m.nome}</span>
+                          {m.id === meuId && <span className="text-ui-12 text-muted-foreground">(você)</span>}
+                          {!m.ativo && <Badge variant="muted" size="sm">sem acesso</Badge>}
                         </div>
-                        <div className="truncate text-ui-12 text-muted-foreground">{m.email}</div>
+                        <div className="mt-0.5 truncate text-[13.5px] text-muted-foreground">{m.email}</div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <span className="text-ui-13 text-foreground">{rotuloPapel(m.papel)}</span>
-                    {m.funcao && <div className="truncate text-ui-11 text-muted-foreground">{m.funcao}</div>}
+                    <span className="text-[14.5px] text-foreground">{rotuloPapel(m.papel)}</span>
+                    {m.funcao && <div className="truncate text-[12.5px] text-muted-foreground">{m.funcao}</div>}
                   </TableCell>
                   <TableCell>
                     <Vinculos vinculos={m.departamentos} rotuloDep={rotuloDep} papel={m.papel} />
                   </TableCell>
-                  <TableCell className="text-ui-13 text-muted-foreground">{haQuantoTempo(m.ultimo_acesso_em, agora)}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-[14px] text-muted-foreground">{haQuantoTempo(m.ultimo_acesso_em, agora)}</TableCell>
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     {podeGerir && m.id !== meuId && m.papel !== "owner" ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Ações de ${m.nome}`} />}>
@@ -235,24 +247,24 @@ export function MembrosEnsaio({
                 {pendentes.map((c) => {
                   const ex = expiraEm(c.expira_em, agora);
                   return (
-                    <TableRow key={c.id}>
+                    <TableRow key={c.id} className="[&>td]:py-3.5">
                       <TableCell>
-                        <div className="flex items-center gap-2.5">
-                          <Avatar size="sm" variant="muted">
+                        <div className="flex items-center gap-3">
+                          <Avatar size="lg" variant="muted">
                             <AvatarFallback>{c.nome ? iniciaisMembro(c.nome, c.email ?? "x@x") : <LinkIcon className="size-3.5" />}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                            <div className="truncate text-ui-13 font-medium text-foreground">{c.nome ?? "Convite por link"}</div>
-                            <div className="truncate text-ui-12 text-muted-foreground">{c.email ?? "sem e-mail — só o link"}</div>
+                            <div className="truncate text-[15px] font-semibold text-foreground">{c.nome ?? "Convite por link"}</div>
+                            <div className="mt-0.5 truncate text-[13.5px] text-muted-foreground">{c.email ?? "sem e-mail — só o link"}</div>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-ui-13 text-foreground">{rotuloPapel(c.papel)}</TableCell>
+                      <TableCell className="text-[14.5px] text-foreground">{rotuloPapel(c.papel)}</TableCell>
                       <TableCell>
                         <Vinculos vinculos={c.departamentos} rotuloDep={rotuloDep} papel={c.papel} />
                       </TableCell>
                       <TableCell>
-                        <span className={cn("text-ui-13", ex.urgente ? "font-medium text-warning-ink" : "text-muted-foreground")}>{ex.texto}</span>
+                        <span className={cn("text-[14px]", ex.urgente ? "font-medium text-warning-ink" : "text-muted-foreground")}>{ex.texto}</span>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -287,6 +299,17 @@ export function MembrosEnsaio({
         </section>
       )}
 
+      <SheetMembro
+        membro={membros.find((m) => m.id === abertoId) ?? null}
+        eu={meuId}
+        gestao={podeGerir}
+        departamentos={departamentos}
+        canais={canais}
+        agora={agora}
+        onFechar={() => setAbertoId(null)}
+        onDesativar={(m) => desativar(m)}
+      />
+
       <DialogoConvite
         aberto={convidando}
         aoFechar={() => setConvidando(false)}
@@ -312,7 +335,7 @@ function Vinculos({
 }) {
   if (vinculos.length === 0) {
     return (
-      <span className="text-ui-12 text-muted-foreground">
+      <span className="text-[13.5px] text-muted-foreground">
         {papel === "owner" || papel === "admin" ? "todos" : papel === "marketing" ? "captação" : "—"}
       </span>
     );
@@ -321,11 +344,11 @@ function Vinculos({
     <div className="flex flex-wrap gap-1">
       {vinculos.map((v) => (
         <span key={v.departamento} className="inline-flex items-center gap-1">
-          <Badge variant="outline" size="xs" className="bg-card">
+          <Badge variant="outline" size="sm" className="bg-card text-[12px]">
             {rotuloDep(v.departamento)}
           </Badge>
           {v.papel_no_departamento === "gestor" && (
-            <Badge variant="info" size="xs">
+            <Badge variant="info" size="sm" className="text-[12px]">
               gestora
             </Badge>
           )}
