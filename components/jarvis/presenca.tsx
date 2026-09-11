@@ -27,11 +27,13 @@ import { SelecaoJarvis } from "./selecao";
  * existe lista normativa de atalhos reservados, e `⌘K` é a convenção que converge (Linear, Slack,
  * GitHub, Vercel, Raycast) e não é interceptada por Chrome nem Safari no Mac.
  *
- *   ⌘K / Ctrl+K   abre e fecha — MENOS com o foco num campo de texto, onde `⌘K` é do sistema
- *                 (macOS: "adicionar link"). Ali ele passa direto, de propósito.
- *   ⇧⌘K / Ctrl+⇧K abre de qualquer lugar, inclusive de dentro de um campo — é o escape que a
- *                 própria Vercel documenta para quando a página já tem o seu ⌘K.
- *   /             abre, quando o foco NÃO está em campo de texto (atalho secundário).
+ *   ⌘K / Ctrl+K   SOBE UM DEGRAU: fechado → pequeno → popup → fechado. Duas batidas levam ao
+ *                 popup, que é o que o Diogo pediu em 00:45 ("⌘K duas vezes abre o popup").
+ *                 Com o foco num campo de texto ele passa direto, de propósito: no macOS `⌘K` é
+ *                 do sistema ("adicionar link").
+ *   ⇧⌘K / Ctrl+⇧K vai DIRETO ao popup, de qualquer lugar, inclusive de dentro de um campo — é o
+ *                 escape que a própria Vercel documenta para quando a página já tem o seu ⌘K.
+ *   /             abre o modo pequeno, quando o foco NÃO está em campo de texto.
  *   Esc           fecha e devolve o foco a quem chamou.
  *
  * `event.key` e nunca `event.code`: `code` é posição física e muda de letra no ABNT2.
@@ -49,7 +51,7 @@ function emCampoDeTexto(alvo: EventTarget | null): boolean {
 }
 
 function AtalhoJarvis() {
-  const { abrir, fechar, alternar, aberto } = useJarvis();
+  const { abrir, expandir, fechar, alternar, aberto } = useJarvis();
 
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => {
@@ -64,8 +66,7 @@ function AtalhoJarvis() {
 
       if (meta && e.shiftKey && tecla === "k") {
         e.preventDefault();
-        if (aberto) fechar();
-        else abrir(null);
+        expandir(null);
         return;
       }
       if (meta && !e.shiftKey && !e.altKey && tecla === "k") {
@@ -82,7 +83,7 @@ function AtalhoJarvis() {
     };
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [abrir, fechar, alternar, aberto]);
+  }, [abrir, expandir, fechar, alternar, aberto]);
 
   return null;
 }

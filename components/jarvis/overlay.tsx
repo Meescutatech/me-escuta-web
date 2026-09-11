@@ -7,6 +7,7 @@ import { MaximizeIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ondeEstou, useJarvis } from "@/lib/jarvis/contexto";
 import { avisoEnsaioDaTela, sugestoesEnsaioDaTela } from "@/lib/ensaio/jarvis-telas";
+import { MORFOSE } from "./dock";
 import { MarcaJarvis } from "./marca";
 import { useMovimento } from "./movimento";
 import { SuperficieJarvis } from "./superficie";
@@ -28,7 +29,8 @@ import { SuperficieJarvis } from "./superficie";
  */
 
 export function OverlayJarvis() {
-  const { aberto, fechar, contexto, contratoTela, papel, usuarioId, ensaio, perguntaPendente, consumirPergunta } = useJarvis();
+  const { modo, fechar, contexto, contratoTela, papel, usuarioId, ensaio, perguntaPendente, consumirPergunta } = useJarvis();
+  const aberto = modo === "popup";
   const mov = useMovimento();
   const painel = useRef<HTMLDivElement>(null);
   const gatilho = useRef<Element | null>(null);
@@ -78,13 +80,20 @@ export function OverlayJarvis() {
               role="dialog"
               aria-modal="true"
               aria-label="Jarvis"
-              initial={mov.reduzido ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.985 }}
-              animate={mov.reduzido ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-              exit={mov.reduzido ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.99 }}
-              transition={{ duration: mov.reduzido ? 0.12 : 0.2, ease: [0.2, 0.65, 0.3, 0.9] }}
-              className="pointer-events-auto flex max-h-[min(76vh,680px)] w-full max-w-[720px] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-[0_16px_48px_rgba(31,35,40,.18)]"
+              layoutId={mov.reduzido ? undefined : "jarvis-casca"}
+              style={{ borderRadius: 14 }}
+              initial={mov.reduzido ? { opacity: 0 } : false}
+              animate={mov.reduzido ? { opacity: 1 } : undefined}
+              exit={mov.reduzido ? { opacity: 0 } : { opacity: 0, transition: { duration: 0.12 } }}
+              transition={mov.reduzido ? { duration: 0.12 } : MORFOSE}
+              className="pointer-events-auto flex max-h-[min(76vh,680px)] w-full max-w-[720px] flex-col overflow-hidden border border-border bg-popover shadow-[0_16px_48px_rgba(31,35,40,.18)]"
             >
-              <header className="flex flex-none items-center gap-2 border-b border-border/60 px-4 py-2.5">
+              <motion.header
+                initial={mov.reduzido ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.18, delay: mov.reduzido ? 0 : 0.14 }}
+                className="flex flex-none items-center gap-2 border-b border-border/60 px-4 py-2.5"
+              >
                 <MarcaJarvis tamanho={16} rotulo="Jarvis" className="text-foreground" />
                 <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">{onde}</span>
                 {aviso && (
@@ -111,8 +120,14 @@ export function OverlayJarvis() {
                   <XIcon className="size-4" aria-hidden />
                   <span className="sr-only">Fechar</span>
                 </button>
-              </header>
+              </motion.header>
 
+              <motion.div
+                initial={mov.reduzido ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.2, delay: mov.reduzido ? 0 : 0.14 }}
+                className="flex min-h-0 flex-1 flex-col"
+              >
               <SuperficieJarvis
                 usuarioId={usuarioId}
                 papel={papel}
@@ -136,6 +151,7 @@ export function OverlayJarvis() {
                 </span>
                 <span className="ml-auto">O Jarvis só consulta — o que ele propõe, você decide.</span>
               </footer>
+              </motion.div>
             </motion.div>
           </div>
         </div>

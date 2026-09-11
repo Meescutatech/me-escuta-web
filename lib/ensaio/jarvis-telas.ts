@@ -41,15 +41,45 @@ export function sugestoesEnsaioDaTela(rota: string): string[] | null {
 export function avisoEnsaioDaTela(rota: string): AvisoJarvis | null {
   switch (chaveDaRota(rota)) {
     case "/":
-      return { quantidade: 4, texto: "conversas sem resposta", pergunta: "Quantas conversas estão sem resposta?" };
+      return {
+        onde: "no dashboard",
+        quantidade: 4,
+        texto: "conversas sem resposta",
+        previa: "A mais antiga é a de Maria Aparecida, esperando o endereço da clínica há 3 h.",
+        pergunta: "Quantas conversas estão sem resposta?",
+      };
     case "/conversas":
-      return { quantidade: 4, texto: "sem resposta há mais de 2 h", pergunta: "Quantas conversas estão sem resposta?" };
+      return {
+        onde: "nas conversas",
+        quantidade: 4,
+        texto: "sem resposta há mais de 2 h",
+        previa: "Maria Aparecida (3 h), José Carlos (2 h 40), Dona Neusa (2 h 10) e Sebastiana.",
+        pergunta: "Quantas conversas estão sem resposta?",
+      };
     case "/tarefas":
-      return { quantidade: 7, texto: "tarefas vencidas", pergunta: "Quais tarefas estão vencidas e de quem?" };
+      return {
+        onde: "em tarefas",
+        quantidade: 7,
+        texto: "tarefas vencidas",
+        previa: "Quatro são da Sara; a mais antiga venceu há 3 dias — o Pix do Antônio.",
+        pergunta: "Quais tarefas estão vencidas e de quem?",
+      };
     case "/funil":
-      return { quantidade: 3, texto: "leads parados há 5+ dias", pergunta: "Quais leads estão parados?" };
+      return {
+        onde: "no funil",
+        quantidade: 3,
+        texto: "leads parados há 5+ dias",
+        previa: "Terezinha, Geraldo e Antônio, todos travados em Qualificado.",
+        pergunta: "Quais leads estão parados?",
+      };
     case "/marketing":
-      return { quantidade: 36, texto: "leads sem origem", pergunta: "Quanto gastamos em mídia este mês?" };
+      return {
+        onde: "em marketing",
+        quantidade: 36,
+        texto: "leads sem origem",
+        previa: "R$ 7.369 em mídia nos últimos 30 dias e 36 leads que ninguém sabe de onde vieram.",
+        pergunta: "Quanto gastamos em mídia este mês?",
+      };
     default:
       return null;
   }

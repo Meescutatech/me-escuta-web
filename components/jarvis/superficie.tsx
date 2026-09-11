@@ -75,6 +75,12 @@ export function SuperficieJarvis({
   const campo = useRef<HTMLTextAreaElement>(null);
   const [demorando, setDemorando] = useState(false);
   const [feito, setFeito] = useState<{ texto: string; href?: string | null } | null>(null);
+  // digitar FILTRA as perguntas prontas (debounce curto — é filtro local, não rede)
+  const [peneira, setPeneira] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setPeneira(texto), 200);
+    return () => clearTimeout(t);
+  }, [texto]);
 
   // "ainda trabalhando" depois de 10 s — prazo explícito, nunca espera muda
   useEffect(() => {
@@ -148,6 +154,7 @@ export function SuperficieJarvis({
             perguntar(texto);
           }
         }}
+        aria-label="Pergunte ao Jarvis"
         placeholder="Pergunte sobre esta tela, o funil, a equipe ou o marketing"
         aria-busy={vivo}
         className={cn(
@@ -158,17 +165,39 @@ export function SuperficieJarvis({
     </form>
   );
 
-  const Prontas = prontas.length > 0 && (
+  /*
+   * AS PERGUNTAS BROTAM DA PÍLULA (referência `animated-search-bar` do 21st.dev, 11/09): cada uma
+   * entra de baixo para cima, com escala e desfoque curtos, uma depois da outra — como se saíssem
+   * de dentro do campo que acabou de se abrir. A referência usa `y (i+1)*50`, `scale .3` e
+   * `blur 10px`; aqui isso ficaria histriônico numa tela densa de 12,5px, então a física é a mesma
+   * e a amplitude é um quarto. O filtro `gooey` em SVG da referência NÃO entrou: sobre o nosso
+   * fundo claro ele borra o próprio texto que a lista existe para mostrar (ver STATUS).
+   */
+  const filtradas = peneira.trim()
+    ? prontas.filter((q) => q.toLowerCase().includes(peneira.trim().toLowerCase()))
+    : prontas;
+
+  const Prontas = filtradas.length > 0 && (
     <div>
-      <p className="text-[12px] text-muted-foreground">Pergunte</p>
-      <ul className="mt-1 space-y-0.5">
-        {prontas.map((q) => (
-          <li key={q}>
-            <button type="button" onClick={() => perguntar(q)} className={cn("text-left text-[12.5px] text-foreground", LINK)}>
-              {q}
-            </button>
-          </li>
-        ))}
+      <p className="text-[12px] text-muted-foreground">{peneira.trim() ? "Talvez você queira perguntar" : "Pergunte"}</p>
+      <ul role="listbox" aria-label="Perguntas sugeridas para esta tela" className="mt-1 space-y-0.5">
+        <AnimatePresence initial={false}>
+          {filtradas.map((q, i) => (
+            <motion.li
+              key={q}
+              role="option"
+              aria-selected={false}
+              initial={mov.reduzido ? { opacity: 0 } : { opacity: 0, y: 12 + i * 2, scale: 0.96, filter: "blur(3px)" }}
+              animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
+              transition={mov.reduzido ? { duration: 0.15 } : { type: "spring", duration: 0.5, bounce: 0.3, delay: i * 0.05 }}
+            >
+              <button type="button" onClick={() => perguntar(q)} className={cn("text-left text-[12.5px] text-foreground", LINK)}>
+                {q}
+              </button>
+            </motion.li>
+          ))}
+        </AnimatePresence>
       </ul>
     </div>
   );
@@ -210,7 +239,11 @@ export function SuperficieJarvis({
             )}
           </div>
           <RespostaBlocos resposta={atual.resposta} vivo={vivo && atual.id === historico[0]?.id} onAcao={aoAcao} />
-          {demorando && vivo && <p className="mt-2 text-[11.5px] text-muted-foreground">Ainda trabalhando — a consulta está demorando mais que o normal.</p>}
+          {demorando && vivo && (
+            <p role="status" className="mt-2 text-[11.5px] text-muted-foreground">
+              Ainda trabalhando — a consulta está demorando mais que o normal.
+            </p>
+          )}
           <AnimatePresence initial={false}>
             {feito && (
               <motion.p

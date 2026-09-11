@@ -43,14 +43,28 @@ export interface ItemDaTela {
   rotulo?: string | null;
 }
 
-/** O que o Jarvis tem a dizer sobre ESTA tela — é isto que faz o dock piscar. */
+/** O que o Jarvis tem a dizer sobre ESTA tela — é isto que faz o dock falar. */
 export interface AvisoJarvis {
-  /** "conversas sem resposta" — o número vem separado para o dock poder destacá-lo */
+  /** "leads parados" — o número vem separado para o dock poder destacá-lo */
   texto: string;
   quantidade?: number | null;
+  /** DE ONDE veio: "no funil", "nesta conversa", "em tarefas". Sem isto o dock fica solto. */
+  onde?: string | null;
+  /** uma linha do que ele diria — aparece ao passar o mouse, antes de abrir qualquer coisa */
+  previa?: string | null;
   /** a pergunta que o clique no dock já dispara */
   pergunta?: string | null;
 }
+
+/**
+ * AS TRÊS ALTURAS DO JARVIS (11/09, depois do "não pode ficar assim jogado no canto"):
+ *   fechado — a pílula ancorada, dizendo de onde vem o que ela tem a dizer;
+ *   pequeno — a pílula VIRA um campo fino ali mesmo: pergunta curta, resposta em 1-3 linhas, no
+ *             máximo uma ação. Sem véu, sem escurecer nada, sem tirar ninguém do lugar;
+ *   popup   — o overlay ancorado no alto, para o que precisa de blocos, listas e trace.
+ * ⌘K sobe um degrau de cada vez (fechado → pequeno → popup); ⇧⌘K vai direto ao popup.
+ */
+export type ModoJarvis = "fechado" | "pequeno" | "popup";
 
 export interface ContextoJarvisTela {
   rota: string;
@@ -71,9 +85,14 @@ interface ValorJarvis {
   contexto: ContextoJarvisTela;
   /** o contexto no formato do contrato do runtime (F9) */
   contratoTela: ContextoTela;
+  modo: ModoJarvis;
+  /** atalho de leitura: `modo !== "fechado"` */
   aberto: boolean;
-  abrir: (pergunta?: string | null) => void;
+  abrir: (pergunta?: string | null, modo?: ModoJarvis) => void;
+  /** do pequeno para o popup, guardando a pergunta que já estava lá */
+  expandir: (pergunta?: string | null) => void;
   fechar: () => void;
+  /** ⌘K: sobe um degrau; do popup, fecha */
   alternar: () => void;
   /** pergunta que o overlay deve disparar assim que abrir (consumida uma vez) */
   perguntaPendente: string | null;
@@ -92,8 +111,10 @@ const VAZIO: ContextoJarvisTela = { rota: "/", busca: null, titulo: null, item: 
 const SEM_PROVEDOR: ValorJarvis = {
   contexto: VAZIO,
   contratoTela: { rota: "/", busca: null, lead_id: null, conversa_id: null },
+  modo: "fechado",
   aberto: false,
   abrir: () => {},
+  expandir: () => {},
   fechar: () => {},
   alternar: () => {},
   perguntaPendente: null,
@@ -167,6 +188,19 @@ export function ondeEstou(c: ContextoJarvisTela): string {
   return partes.join(" · ");
 }
 
+/** "no funil", "nesta conversa", "em tarefas" — o de-onde que o dock precisa dizer antes de abrir. */
+export function ondeCurto(c: ContextoJarvisTela): string {
+  if (c.item?.tipo === "conversa") return "nesta conversa";
+  if (c.item?.tipo === "lead") return "neste lead";
+  if (c.rota === "/") return "no dashboard";
+  if (c.rota.startsWith("/funil")) return "no funil";
+  if (c.rota.startsWith("/conversas")) return "nas conversas";
+  if (c.rota.startsWith("/tarefas")) return "em tarefas";
+  if (c.rota.startsWith("/marketing")) return "em marketing";
+  if (c.rota.startsWith("/configuracoes")) return "nas configurações";
+  return `em ${c.rota.replace(/^\//, "")}`;
+}
+
 /** As perguntas que cabem AQUI: as da tela primeiro; sem elas, as do contrato. */
 export function sugestoesDaTela(c: ContextoJarvisTela, contrato: ContextoTela, papel: PapelUsuario): string[] {
   if (c.sugestoes && c.sugestoes.length > 0) return c.sugestoes.slice(0, 4);
@@ -187,7 +221,7 @@ export function ProvedorJarvis({
   const pathname = usePathname();
   const busca = useSearchParams();
   const [registros, setRegistros] = useState<Record<string, RegistroDeTela>>({});
-  const [aberto, setAberto] = useState(false);
+  const [modo, setModo] = useState<ModoJarvis>("fechado");
   const [perguntaPendente, setPerguntaPendente] = useState<string | null>(null);
 
   const registrar = useCallback((id: string, registro: RegistroDeTela | null) => {
@@ -226,20 +260,24 @@ export function ProvedorJarvis({
     return c;
   }, [contexto]);
 
-  const abrir = useCallback((pergunta?: string | null) => {
+  const abrir = useCallback((pergunta?: string | null, alvo: ModoJarvis = "pequeno") => {
     if (pergunta) setPerguntaPendente(pergunta);
-    setAberto(true);
+    setModo(alvo === "fechado" ? "pequeno" : alvo);
+  }, []);
+  const expandir = useCallback((pergunta?: string | null) => {
+    if (pergunta) setPerguntaPendente(pergunta);
+    setModo("popup");
   }, []);
   const fechar = useCallback(() => {
-    setAberto(false);
+    setModo("fechado");
     setPerguntaPendente(null);
   }, []);
-  const alternar = useCallback(() => setAberto((v) => !v), []);
+  const alternar = useCallback(() => setModo((m) => (m === "fechado" ? "pequeno" : m === "pequeno" ? "popup" : "fechado")), []);
   const consumirPergunta = useCallback(() => setPerguntaPendente(null), []);
 
   const valor = useMemo<ValorJarvis>(
-    () => ({ contexto, contratoTela, aberto, abrir, fechar, alternar, perguntaPendente, consumirPergunta, registrar, papel, usuarioId, ensaio, montado: true }),
-    [contexto, contratoTela, aberto, abrir, fechar, alternar, perguntaPendente, consumirPergunta, registrar, papel, usuarioId, ensaio],
+    () => ({ contexto, contratoTela, modo, aberto: modo !== "fechado", abrir, expandir, fechar, alternar, perguntaPendente, consumirPergunta, registrar, papel, usuarioId, ensaio, montado: true }),
+    [contexto, contratoTela, modo, abrir, expandir, fechar, alternar, perguntaPendente, consumirPergunta, registrar, papel, usuarioId, ensaio],
   );
 
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
