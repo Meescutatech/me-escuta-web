@@ -3,41 +3,33 @@
 import { LockIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintTooltip } from "@/components/ui/hint-tooltip";
-import { MarcaJarvis } from "./marca";
+import { MarcaJarvis, type VarianteMarca } from "./marca";
 
 /**
- * A RÉGUA DE AUTONOMIA DO JARVIS, por tipo de ação (W-J, 10/09/2026) — para /configuracoes/inteligencia.
+ * A RÉGUA DE AUTONOMIA DO JARVIS, por tipo de ação — v2 na dieta (W-J, 10/09/2026).
  *
- * O vocabulário é o do banco, não meu: nível ∈ auto | propor | proibido (0165, `autonomia_jsonb`) e
- * TETO ∈ auto | propor (0161, `flag.teto_autonomia`: "teto ≠ configuração — declara o que é
- * PERMITIDO configurar"). A régua mostra as duas camadas na mesma linha: as três posições, e o
- * cadeado na posição que o teto não deixa escolher — com o fundamento da 0161 no tooltip.
+ * Vocabulário do banco: nível ∈ auto | propor | proibido (0165) e TETO ∈ auto | propor (0161:
+ * "teto ≠ configuração — declara o que é PERMITIDO configurar"). Uma linha por capacidade; à
+ * direita, três posições em texto (Faz sozinho · Propõe · Nunca) num trilho `muted`, a ativa em
+ * `card` com hairline — sem navy chapado, sem chip gritando. A posição que o teto não deixa
+ * escolher leva um cadeado de 14px inline e o fundamento da 0161 no tooltip.
  *
- * As quatro do Art. III.3 (preço, negociação, crédito, conduta clínica) vêm TRAVADAS em "Nunca",
- * com o artigo escrito na linha. Não é um switch desligado; é uma linha que não tem switch. O
- * anti-padrão que isto evita é o do Salesforce: confirmação como flag escondida por action, que
- * quem opera não vê — aqui a régua é legível na tela em que se decide.
- *
- * Mudar uma posição é um evento (`autonomia_alterada{capacidade, nivel}`), com quem mudou e quando;
- * nunca é deploy. Quem não pode publicar config (membro) vê a régua em leitura, com a mesma cara.
+ * As do Art. III.3 (preço, negociação, crédito, conduta clínica) vêm travadas em "Nunca", numa
+ * seção própria com uma linha de explicação. Não é switch desligado; é linha sem switch. Mudar
+ * uma posição vira `autonomia_alterada{capacidade, nivel}`, com quem e quando — nunca deploy.
  */
 
 export type NivelAutonomia = "auto" | "propor" | "proibido";
 export type TetoAutonomia = "auto" | "propor";
 
 export interface LinhaAutonomia {
-  /** chave da capacidade (`criar_tarefa`, `mover_etapa`, `falar_preco`…) */
   chave: string;
   rotulo: string;
-  /** uma frase: o que o Jarvis faz quando esta capacidade age */
   descricao: string;
   nivel: NivelAutonomia;
   teto: TetoAutonomia;
-  /** fundamento do teto (0161) — vai no tooltip do cadeado */
   fundamento: string;
-  /** Art. III.3 — a linha nasce e morre em "Nunca" */
   travada?: boolean;
-  /** quem mudou por último e quando — "Rodolfo · 08/09" */
   alteradaPor?: string | null;
 }
 
@@ -47,32 +39,31 @@ const POSICOES: Array<{ nivel: NivelAutonomia; rotulo: string; ajuda: string }> 
   { nivel: "proibido", rotulo: "Nunca", ajuda: "O Jarvis nem propõe." },
 ];
 
-/** `auto` só é permitido se o teto for `auto`; `propor` e `proibido` sempre cabem sob qualquer teto. */
 function cabeNoTeto(nivel: NivelAutonomia, teto: TetoAutonomia): boolean {
   return nivel !== "auto" || teto === "auto";
 }
 
 export interface ReguaAutonomiaProps {
   linhas: LinhaAutonomia[];
-  /** owner/admin editam; membro vê */
   podeEditar: boolean;
   onMudar?: (chave: string, nivel: NivelAutonomia) => void;
+  marca?: VarianteMarca;
   className?: string;
 }
 
-export function ReguaAutonomia({ linhas, podeEditar, onMudar, className }: ReguaAutonomiaProps) {
+export function ReguaAutonomia({ linhas, podeEditar, onMudar, marca = "arco", className }: ReguaAutonomiaProps) {
   const livres = linhas.filter((l) => !l.travada);
   const travadas = linhas.filter((l) => l.travada);
 
   return (
-    <section className={cn("rounded-[11px] border border-linha bg-branco", className)} aria-label="Autonomia do Jarvis por tipo de ação">
-      <header className="flex items-center gap-2.5 border-b border-linha px-5 py-3.5">
-        <MarcaJarvis tamanho={20} />
-        <h2 className="text-[14px] font-[650] tracking-[-0.01em] text-navy">O que o Jarvis faz sozinho, o que ele propõe</h2>
-        {!podeEditar && <span className="ml-auto text-[11.5px] text-suave">só leitura — quem publica é admin ou owner</span>}
+    <section className={cn("rounded-md border border-border bg-card", className)} aria-label="Autonomia do Jarvis por tipo de ação">
+      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <MarcaJarvis variante={marca} tamanho={16} className="text-foreground" />
+        <h2 className="text-[13.5px] font-medium text-foreground">O que o Jarvis faz sozinho e o que ele propõe</h2>
+        {!podeEditar && <span className="ml-auto text-[12px] text-muted-foreground">só leitura</span>}
       </header>
 
-      <ul className="divide-y divide-linha">
+      <ul className="divide-y divide-border">
         {livres.map((l) => (
           <Linha key={l.chave} linha={l} podeEditar={podeEditar} onMudar={onMudar} />
         ))}
@@ -80,13 +71,11 @@ export function ReguaAutonomia({ linhas, podeEditar, onMudar, className }: Regua
 
       {travadas.length > 0 && (
         <>
-          <div className="flex items-center gap-2 border-y border-linha bg-board px-5 py-2">
-            <LockIcon className="size-3.5 text-suave" aria-hidden />
-            <p className="text-[12px] text-suave">
-              <span className="font-semibold text-tinta">Nunca é do Jarvis</span> — Constituição, Art. III.3. Não tem switch; muda por emenda, não por configuração.
-            </p>
-          </div>
-          <ul className="divide-y divide-linha">
+          <p className="flex items-center gap-1.5 border-y border-border bg-muted/40 px-4 py-2 text-[12px] text-muted-foreground">
+            <LockIcon className="size-3.5" aria-hidden />
+            Nunca é do Jarvis — Constituição, Art. III.3. Muda por emenda, não por configuração.
+          </p>
+          <ul className="divide-y divide-border">
             {travadas.map((l) => (
               <Linha key={l.chave} linha={l} podeEditar={false} />
             ))}
@@ -94,8 +83,8 @@ export function ReguaAutonomia({ linhas, podeEditar, onMudar, className }: Regua
         </>
       )}
 
-      <footer className="border-t border-linha px-5 py-2.5 text-[11.5px] text-suave">
-        Cada mudança fica registrada com quem mudou e quando, e vale na hora — nada aqui precisa de deploy.
+      <footer className="border-t border-border px-4 py-2 text-[12px] text-muted-foreground">
+        Cada mudança fica registrada com quem mudou e quando, e vale na hora.
       </footer>
     </section>
   );
@@ -103,18 +92,16 @@ export function ReguaAutonomia({ linhas, podeEditar, onMudar, className }: Regua
 
 function Linha({ linha: l, podeEditar, onMudar }: { linha: LinhaAutonomia; podeEditar: boolean; onMudar?: (chave: string, nivel: NivelAutonomia) => void }) {
   return (
-    <li className={cn("flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:gap-4", l.travada && "opacity-80")}>
+    <li className="flex flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-4">
       <div className="min-w-0 flex-1">
-        <p className="text-[13.5px] font-semibold text-tinta">{l.rotulo}</p>
-        <p className="text-[12.5px] leading-normal text-suave">{l.descricao}</p>
-        {l.alteradaPor && !l.travada && <p className="mt-0.5 text-[11px] text-mute">mudou por último: {l.alteradaPor}</p>}
+        <p className={cn("text-[13.5px] font-medium", l.travada ? "text-muted-foreground" : "text-foreground")}>{l.rotulo}</p>
+        <p className="text-[12.5px] leading-normal text-muted-foreground">
+          {l.descricao}
+          {l.alteradaPor && !l.travada && <span className="ml-1.5 text-[11.5px]">· mudou por último: {l.alteradaPor}</span>}
+        </p>
       </div>
 
-      <div
-        role="radiogroup"
-        aria-label={`Autonomia para ${l.rotulo}`}
-        className={cn("inline-flex shrink-0 self-start rounded-md border p-0.5 text-[12px] sm:self-auto", l.travada ? "border-linha bg-board" : "border-linha-forte bg-branco")}
-      >
+      <div role="radiogroup" aria-label={`Autonomia para ${l.rotulo}`} className="inline-flex shrink-0 self-start rounded-md bg-muted p-0.5 text-[12px] sm:self-auto">
         {POSICOES.map((pos) => {
           const ativa = l.nivel === pos.nivel;
           const cabe = cabeNoTeto(pos.nivel, l.teto);
@@ -132,15 +119,13 @@ function Linha({ linha: l, podeEditar, onMudar }: { linha: LinhaAutonomia; podeE
               }}
               title={pos.ajuda}
               className={cn(
-                "inline-flex items-center gap-1 rounded-[5px] px-2.5 py-1 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45",
-                ativa && !l.travada && "bg-navy text-branco",
-                ativa && l.travada && "bg-linha-forte text-tinta",
-                !ativa && !bloqueada && "text-suave hover:bg-hover hover:text-tinta",
-                !ativa && bloqueada && "cursor-not-allowed text-mute/70",
+                "inline-flex items-center gap-1 rounded-[5px] px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                ativa && "bg-card font-medium text-foreground shadow-[0_0_0_1px_var(--border)]",
+                !ativa && !bloqueada && "text-muted-foreground hover:text-foreground",
+                !ativa && bloqueada && "cursor-not-allowed text-muted-foreground/60",
               )}
             >
-              {!cabe && !l.travada && <LockIcon className="size-3" aria-hidden />}
-              {l.travada && ativa && <LockIcon className="size-3" aria-hidden />}
+              {((!cabe && !l.travada) || (l.travada && ativa)) && <LockIcon className="size-3.5" aria-hidden />}
               {pos.rotulo}
             </button>
           );

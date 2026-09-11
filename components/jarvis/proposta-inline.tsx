@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { PencilLineIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { dataHoraCurta } from "@/lib/dados/tarefa-calculos";
-import { AssinaturaJarvis } from "./marca";
-import { RAIL, Rotulo, SeloEstado, Trecho, fraseDoEstado, prazoUrgente, textoDoOriginal, textoPrazo } from "./partes";
+import { Button } from "@/components/ui/button";
+import { AssinaturaJarvis, MarcaJarvis, type VarianteMarca } from "./marca";
+import { linhaDoEstado, prazoUrgente, tempoDesde, textoDoOriginal, textoPrazo } from "./partes";
 import {
   ROTULO_MOTIVO,
   ROTULO_PRAZO,
@@ -18,52 +18,57 @@ import {
 } from "./tipos";
 
 /**
- * A NOTA INTERNA DO JARVIS DENTRO DO FIO (W-J, 10/09/2026).
+ * A NOTA DO JARVIS NO FIO — v2 (W-J, 10/09/2026, reconstruída depois da reprovação das 22:30).
  *
- * Não é bolha e não é mensagem ao paciente: ocupa a largura toda, na superfície âmbar tostado da
- * família "isto fica entre nós" (`tarefa.*`, a mesma da nota humana e do "Jarvis criou tarefa" de
- * registro-interno.tsx), com um rail esquerdo cuja cor É o estado — navy esperando decisão, verde
- * decidida/feita, cinza descartada. Quem varre o fio lê o estado sem ler o texto.
+ * Referências: mensagens de agente do Linear, Fin no composer do Intercom, blocos do Notion AI.
+ * QUIETA e tipográfica, sem chrome: nada de rótulo em caixa alta, tracejado, selo colorido ou
+ * rail de estado. O que dá hierarquia é o tipo — cinco linhas, cada uma com um tamanho:
  *
- * O card carrega o que o worker exige para propor (contrato.ts do runtime): POR QUE AGORA, FAZER e
- * o TRECHO literal do paciente — sem trecho não há proposta, e a tela não inventa um. "Ver no fio"
- * rola até a mensagem citada (`onIrAoTrecho`/`hrefTrecho`) — a evidência é clicável.
+ *   marca + "Jarvis sugere uma tarefa" + hora            12px, muted
+ *   a AÇÃO em uma frase                                    15px, medium, foreground
+ *   o porquê, com o trecho do paciente em itálico          13px, muted
+ *   prazo · responsável                                    12px, muted
+ *   Aceitar (botão pequeno) · Ajustar · Descartar (texto)
  *
- * Ações (só em `proposta`): Aceitar · Ajustar · Descartar.
- *   Aceitar diz o que vai acontecer ("vira tarefa para Sara, hoje") antes do clique.
- *   Ajustar edita FAZER / prazo / responsável no lugar e o botão vira "Aceitar com ajustes" — o
- *   `AjusteProposta` sai no callback e o payload ganha `ajustada_de` (lib/tarefas/propostas.ts).
- *   Descartar pede o motivo em três chips (é o feedback que vira dataset; LiderHub gravava
- *   sent_as_is/sent_edited/discarded e nós gravamos o mesmo em `sugestao_rejeitada`).
+ * Fundo `muted/40`, borda 1px `border`, raio md. Duas variantes para o Diogo escolher:
+ *   (a) sem lateral colorida — a nota se distingue do resto do fio só pelo fundo e pelo tipo;
+ *   (b) lateral esquerda de 2px na cor de acento (`primary`) enquanto espera decisão.
  *
- * Depois da decisão, o card FICA no fio, com o nome de quem decidiu e quando — e quando a tarefa
- * é concluída, o mesmo card mostra "feita por Sara". O ciclo abre e fecha na mesma superfície.
- * Quem decide é sempre pessoa; o Jarvis nunca é sujeito da frase de estado.
+ * Estados decididos (aceita / ajustada / descartada / feita) COLAPSAM numa linha —
+ * "Aceita por Sara · 14:32 · ver tarefa" — que abre a proposta original ao clique. O ciclo
+ * abre e fecha no mesmo lugar do fio; quem decide é sempre pessoa.
  */
+
+export type VarianteNota = "a" | "b";
 
 export interface PropostaInlineProps {
   proposta: PropostaJarvis;
-  /** pessoas que podem ser responsável (para o Ajustar) */
+  /** (a) sem lateral · (b) lateral de 2px em `primary` enquanto proposta */
+  variante?: VarianteNota;
+  /** qual marca vai no cabeçalho — em escolha; padrão `arco` */
+  marca?: VarianteMarca;
+  /** mostra o nome do lead no cabeçalho (fora do fio, em /tarefas) */
+  mostrarLead?: boolean;
   responsaveis?: Pessoa[];
-  /** rola até a mensagem citada — o card vira o ponteiro para a evidência */
   onIrAoTrecho?: (mensagemId: string | null) => void;
   hrefTrecho?: string | null;
-  /** link para a tarefa criada (estados aceita/ajustada/feita) */
   hrefTarefa?: string | null;
   onAceitar?: (proposta: PropostaJarvis, ajuste: AjusteProposta | null) => void;
   onDescartar?: (proposta: PropostaJarvis, motivo: MotivoDescarte, observacao: string | null) => void;
-  /** sem botões, mesmo em `proposta` (ex.: papel `marketing`, ou histórico) */
   somenteLeitura?: boolean;
-  /** abre já em edição/descartar — o card compacto de /tarefas expande para cá */
   modoInicial?: "ver" | "ajustar" | "descartar";
-  /** o card de /tarefas passa isto para voltar ao compacto */
   onVoltar?: () => void;
   agoraMs?: number;
   className?: string;
 }
 
+const LINK = "text-[12.5px] text-muted-foreground underline-offset-[3px] hover:text-foreground hover:underline focus-visible:outline-none focus-visible:underline";
+
 export function PropostaJarvisInline({
-  proposta,
+  proposta: p,
+  variante = "a",
+  marca = "arco",
+  mostrarLead = false,
   responsaveis = [],
   onIrAoTrecho,
   hrefTrecho,
@@ -80,226 +85,238 @@ export function PropostaJarvisInline({
   const [ajuste, setAjuste] = useState<AjusteProposta>({});
   const [motivo, setMotivo] = useState<MotivoDescarte | null>(null);
   const [observacao, setObservacao] = useState("");
+  const [aberta, setAberta] = useState(false);
 
-  const p = proposta;
-  const aberta = p.estado === "proposta" && !somenteLeitura;
-  const decidida = p.estado !== "proposta";
-  const descartada = p.estado === "descartada";
-
+  const agora = agoraMs ?? Date.now();
   const fazer = ajuste.fazer ?? p.fazer;
   const prazo = ajuste.prazo === undefined ? p.prazo : ajuste.prazo;
   const responsavelId = ajuste.responsavel_id === undefined ? p.responsavel_id : ajuste.responsavel_id;
-  const responsavelNome =
-    ajuste.responsavel_nome === undefined ? p.responsavel_nome : ajuste.responsavel_nome;
-
+  const responsavelNome = ajuste.responsavel_nome === undefined ? p.responsavel_nome : ajuste.responsavel_nome;
   const houveAjuste =
     fazer.trim() !== p.fazer.trim() || (prazo ?? null) !== (p.prazo ?? null) || (responsavelId ?? null) !== (p.responsavel_id ?? null);
 
-  const frase = fraseDoEstado(p);
-  const original = textoDoOriginal(p);
+  const caixa = "rounded-md border border-border bg-muted/40";
 
-  function aceitar() {
-    onAceitar?.(p, houveAjuste ? { fazer, prazo, responsavel_id: responsavelId, responsavel_nome: responsavelNome } : null);
-    setModo("ver");
+  // ── decidida: uma linha, que abre a proposta original ao clique ────────────────────────────
+  if (p.estado !== "proposta") {
+    const feitaOuAceita = p.estado !== "descartada";
+    const original = textoDoOriginal(p);
+    return (
+      <div className={cn(caixa, "px-3.5 py-2", className)} aria-label={`Proposta do Jarvis — ${linhaDoEstado(p)}`}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
+          <MarcaJarvis variante={marca} tamanho={16} className="text-muted-foreground" />
+          {feitaOuAceita && <CheckIcon className="size-3.5 text-success-ink" strokeWidth={2.25} aria-hidden />}
+          <span>{linhaDoEstado(p)}</span>
+          {feitaOuAceita && hrefTarefa && (
+            <>
+              <span aria-hidden>·</span>
+              <a href={hrefTarefa} className={LINK}>
+                ver tarefa
+              </a>
+            </>
+          )}
+          <button type="button" onClick={() => setAberta((v) => !v)} aria-expanded={aberta} className={cn(LINK, "ml-auto")}>
+            {aberta ? "fechar" : "ver proposta"}
+          </button>
+        </div>
+        {aberta && (
+          <div className="mt-2 border-t border-border pt-2">
+            <p className={cn("text-[13.5px] font-medium leading-snug text-foreground", p.estado === "descartada" && "text-muted-foreground line-through")}>{p.fazer}</p>
+            {original && <p className="mt-0.5 text-[12px] text-muted-foreground">{original}</p>}
+            <p className="mt-1 text-[12.5px] leading-normal text-muted-foreground">
+              {p.por_que}
+              {p.trecho && <em> “{p.trecho}”</em>}
+            </p>
+            {p.observacao_descarte && <p className="mt-1 text-[12px] text-muted-foreground">motivo: {p.observacao_descarte}</p>}
+          </div>
+        )}
+      </div>
+    );
   }
+
+  // ── proposta: as cinco linhas ───────────────────────────────────────────────────────────────
+  const editando = modo === "ajustar";
+  const acoes = !somenteLeitura;
 
   return (
     <article
-      className={cn(
-        "self-stretch rounded-lg border border-l-[3px] border-tarefa-linha bg-tarefa-fundo px-3.5 py-3 transition-opacity",
-        RAIL[p.estado],
-        descartada && "opacity-70",
-        className,
-      )}
-      aria-label={aberta ? "Proposta do Jarvis esperando decisão" : `Proposta do Jarvis — ${p.estado}`}
+      className={cn(caixa, "px-3.5 py-3", variante === "b" && "border-l-2 border-l-primary", className)}
+      aria-label="Proposta do Jarvis esperando decisão"
     >
-      <header className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <AssinaturaJarvis tamanho={16} sufixo={decidida ? "propôs" : "propõe"} />
-        {frase ? (
-          <span className="min-w-0 truncate text-[11.5px] text-suave">· {frase}</span>
-        ) : (
-          <span className="text-[11.5px] text-suave">· nada foi criado ainda</span>
-        )}
-        <SeloEstado estado={p.estado} className="ml-auto" />
-        <time dateTime={p.criado_em} className={cn("shrink-0 font-mono text-[10.5px] tabular-nums text-suave", !decidida && "ml-auto")}>
-          {dataHoraCurta(p.criado_em)}
-        </time>
-      </header>
-
-      <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-1.5 text-[13.5px]">
-        <Rotulo>Por que agora</Rotulo>
-        <dd className={cn("leading-normal text-tinta", descartada && "line-through decoration-linha-forte")}>{p.por_que}</dd>
-
-        <Rotulo>Fazer</Rotulo>
-        <dd className="leading-normal text-tinta">
-          {modo === "ajustar" ? (
-            <input
-              autoFocus
-              value={fazer}
-              onChange={(e) => setAjuste((a) => ({ ...a, fazer: e.target.value }))}
-              aria-label="Ajustar o que fazer"
-              maxLength={160}
-              className="w-full rounded-md border border-tarefa-linha bg-branco px-2.5 py-1.5 text-[13.5px] text-tinta outline-none focus:border-laranja"
-            />
-          ) : (
-            <span className={cn("font-semibold", descartada && "line-through decoration-linha-forte")}>{fazer}</span>
-          )}
-          {original && <span className="mt-0.5 block text-[12px] text-suave">{original}</span>}
-        </dd>
-
-        {p.trecho && (
+      <header className="flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground">
+        <AssinaturaJarvis variante={marca} tamanho={16} sufixo="sugere uma tarefa" />
+        {mostrarLead && p.lead_nome && (
           <>
-            <Rotulo>Trecho</Rotulo>
-            <dd>
-              <Trecho
-                texto={p.trecho}
-                href={hrefTrecho ?? undefined}
-                onIr={onIrAoTrecho ? () => onIrAoTrecho(p.trecho_mensagem_id ?? null) : undefined}
-              />
-            </dd>
+            <span aria-hidden>·</span>
+            <span className="text-foreground">{p.lead_nome}</span>
           </>
         )}
+        <span aria-hidden>·</span>
+        <time dateTime={p.criado_em}>{tempoDesde(p.criado_em, agora)}</time>
+      </header>
 
-        <Rotulo>Prazo</Rotulo>
-        <dd>
-          {modo === "ajustar" ? (
-            <div className="inline-flex rounded-md border border-tarefa-linha bg-branco p-0.5 text-[12px]" role="radiogroup" aria-label="Prazo">
-              {(Object.keys(ROTULO_PRAZO) as PrazoCurto[]).map((k) => {
-                const ativo = prazo === k;
-                return (
-                  <button
-                    key={k}
-                    type="button"
-                    role="radio"
-                    aria-checked={ativo}
-                    onClick={() => setAjuste((a) => ({ ...a, prazo: k }))}
-                    className={cn("rounded-[5px] px-2 py-0.5 font-medium", ativo ? "bg-navy text-branco" : "text-suave hover:text-tinta")}
-                  >
-                    {ROTULO_PRAZO[k]}
-                  </button>
-                );
-              })}
-              {!ehPrazoCurto(prazo) && prazo && <span className="px-2 py-0.5 text-suave">{textoPrazo(prazo)}</span>}
-            </div>
-          ) : (
-            <span className={cn(prazoUrgente(prazo, agoraMs) && !decidida ? "font-semibold text-vermelho" : "text-tinta")}>{textoPrazo(prazo)}</span>
-          )}
-        </dd>
-
-        <Rotulo>Responsável</Rotulo>
-        <dd>
-          {modo === "ajustar" && responsaveis.length > 0 ? (
-            <select
-              value={responsavelId ?? ""}
-              onChange={(e) => {
-                const r = responsaveis.find((x) => x.id === e.target.value);
-                setAjuste((a) => ({ ...a, responsavel_id: e.target.value || null, responsavel_nome: r?.nome ?? null }));
-              }}
-              aria-label="Responsável pela tarefa"
-              className="rounded-md border border-tarefa-linha bg-branco px-2 py-1 text-[12.5px] text-tinta outline-none"
-            >
-              {responsaveis.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.nome}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="text-tinta">{responsavelNome ?? "sem responsável"}</span>
-          )}
-        </dd>
-      </dl>
-
-      {decidida && hrefTarefa && !descartada && (
-        <p className="mt-2 text-[12px]">
-          <a href={hrefTarefa} className="font-medium text-navy underline-offset-2 hover:underline">
-            abrir a tarefa
-          </a>
-        </p>
+      {editando ? (
+        <input
+          autoFocus
+          value={fazer}
+          onChange={(e) => setAjuste((a) => ({ ...a, fazer: e.target.value }))}
+          aria-label="Ajustar o que fazer"
+          maxLength={160}
+          className="mt-1.5 w-full rounded-md border border-border bg-background px-2 py-1 text-[15px] font-medium leading-snug text-foreground outline-none focus:border-ring"
+        />
+      ) : (
+        <p className="mt-1.5 text-[15px] font-medium leading-snug text-foreground">{fazer}</p>
       )}
 
-      {aberta && modo !== "descartar" && (
-        <footer className="mt-3 border-t border-tarefa-linha/70 pt-2.5">
-          <div className="flex flex-wrap items-center gap-2">
+      <p className="mt-1 text-[13px] leading-normal text-muted-foreground">
+        {p.por_que}
+        {p.trecho && (
+          <>
+            {" "}
+            <em>“{p.trecho}”</em>
+            {(hrefTrecho || onIrAoTrecho) && (
+              <>
+                {" "}
+                {hrefTrecho ? (
+                  <a href={hrefTrecho} className={LINK}>
+                    ver no fio
+                  </a>
+                ) : (
+                  <button type="button" onClick={() => onIrAoTrecho?.(p.trecho_mensagem_id ?? null)} className={LINK}>
+                    ver no fio
+                  </button>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </p>
+
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground">
+        {editando ? (
+          <span role="radiogroup" aria-label="Prazo" className="inline-flex items-center gap-1.5">
+            {(Object.keys(ROTULO_PRAZO) as PrazoCurto[]).map((k, i) => (
+              <span key={k} className="inline-flex items-center gap-1.5">
+                {i > 0 && <span aria-hidden>·</span>}
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={prazo === k}
+                  onClick={() => setAjuste((a) => ({ ...a, prazo: k }))}
+                  className={cn("underline-offset-[3px] hover:text-foreground", prazo === k ? "font-medium text-foreground underline" : "")}
+                >
+                  {ROTULO_PRAZO[k]}
+                </button>
+              </span>
+            ))}
+            {!ehPrazoCurto(prazo) && prazo && <span>({textoPrazo(prazo)})</span>}
+          </span>
+        ) : (
+          <span className={cn(prazoUrgente(prazo, agora) && "font-medium text-foreground")}>{textoPrazo(prazo)}</span>
+        )}
+        <span aria-hidden>·</span>
+        {editando && responsaveis.length > 0 ? (
+          <select
+            value={responsavelId ?? ""}
+            onChange={(e) => {
+              const r = responsaveis.find((x) => x.id === e.target.value);
+              setAjuste((a) => ({ ...a, responsavel_id: e.target.value || null, responsavel_nome: r?.nome.split(" ")[0] ?? null }));
+            }}
+            aria-label="Responsável"
+            className="rounded border border-border bg-background px-1.5 py-0.5 text-[12px] text-foreground outline-none focus:border-ring"
+          >
+            {responsaveis.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.nome}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span>{responsavelNome ?? "sem responsável"}</span>
+        )}
+      </p>
+
+      {acoes && modo !== "descartar" && (
+        <footer className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <Button
+            size="sm"
+            onClick={() => {
+              onAceitar?.(p, houveAjuste ? { fazer, prazo, responsavel_id: responsavelId, responsavel_nome: responsavelNome } : null);
+              setModo("ver");
+            }}
+          >
+            {editando && houveAjuste ? "Aceitar com ajustes" : "Aceitar"}
+          </Button>
+          {editando ? (
             <button
               type="button"
-              onClick={aceitar}
-              className="rounded-md bg-laranja px-3.5 py-1.5 text-[13px] font-semibold text-branco transition-colors hover:bg-laranja-esc focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45"
+              onClick={() => {
+                setAjuste({});
+                onVoltar ? onVoltar() : setModo("ver");
+              }}
+              className={LINK}
             >
-              {modo === "ajustar" && houveAjuste ? "Aceitar com ajustes" : "Aceitar"}
+              Cancelar
             </button>
-            <button
-              type="button"
-              onClick={() => (modo === "ajustar" && onVoltar ? onVoltar() : setModo(modo === "ajustar" ? "ver" : "ajustar"))}
-              aria-pressed={modo === "ajustar"}
-              className="inline-flex items-center gap-1.5 rounded-md border border-tarefa-linha bg-branco px-3 py-1.5 text-[13px] font-medium text-navy transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45"
-            >
-              <PencilLineIcon className="size-3.5" />
-              {modo === "ajustar" ? "Pronto" : "Ajustar"}
+          ) : (
+            <button type="button" onClick={() => setModo("ajustar")} className={LINK}>
+              Ajustar
             </button>
-            <button
-              type="button"
-              onClick={() => setModo("descartar")}
-              className="ml-auto rounded-md px-3 py-1.5 text-[13px] text-suave transition-colors hover:bg-hover hover:text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/45"
-            >
+          )}
+          {!editando && (
+            <button type="button" onClick={() => setModo("descartar")} className={LINK}>
               Descartar
             </button>
-          </div>
-          <p className="mt-1.5 text-[11.5px] text-suave">
-            ao aceitar: vira tarefa para <b className="font-semibold text-tinta">{responsavelNome ?? "quem você escolher"}</b>, prazo{" "}
-            <b className="font-semibold text-tinta">{textoPrazo(prazo).toLowerCase()}</b>
-            {houveAjuste && " · o ajuste fica registrado"}
-          </p>
+          )}
         </footer>
       )}
 
-      {aberta && modo === "descartar" && (
-        <footer className="mt-3 border-t border-tarefa-linha/70 pt-2.5">
-          <p className="mb-1.5 text-[12px] text-tinta">Por que descartar? O Jarvis aprende com o motivo e não repete por 7 dias.</p>
-          <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="Motivo do descarte">
-            {(Object.keys(ROTULO_MOTIVO) as MotivoDescarte[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                role="radio"
-                aria-checked={motivo === m}
-                onClick={() => setMotivo(m)}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
-                  motivo === m ? "border-navy bg-navy text-branco" : "border-tarefa-linha bg-branco text-suave hover:text-tinta",
-                )}
-              >
-                {ROTULO_MOTIVO[m]}
-              </button>
+      {acoes && modo === "descartar" && (
+        <footer className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px] text-muted-foreground">
+          <span>Por quê?</span>
+          <span role="radiogroup" aria-label="Motivo do descarte" className="inline-flex flex-wrap items-center gap-1.5">
+            {(Object.keys(ROTULO_MOTIVO) as MotivoDescarte[]).map((m, i) => (
+              <span key={m} className="inline-flex items-center gap-1.5">
+                {i > 0 && <span aria-hidden>·</span>}
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={motivo === m}
+                  onClick={() => setMotivo(m)}
+                  className={cn("underline-offset-[3px] hover:text-foreground", motivo === m ? "font-medium text-foreground underline" : "")}
+                >
+                  {ROTULO_MOTIVO[m]}
+                </button>
+              </span>
             ))}
-          </div>
+          </span>
           {motivo === "outro" && (
             <input
               autoFocus
               value={observacao}
               onChange={(e) => setObservacao(e.target.value)}
-              placeholder="Em uma frase"
+              placeholder="em uma frase"
               aria-label="Motivo em uma frase"
-              className="mt-2 w-full rounded-md border border-tarefa-linha bg-branco px-2.5 py-1.5 text-[13px] text-tinta outline-none placeholder:text-mute focus:border-laranja"
+              className="min-w-[180px] flex-1 rounded border border-border bg-background px-1.5 py-0.5 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
             />
           )}
-          <div className="mt-2.5 flex items-center gap-2">
-            <button
-              type="button"
+          <span className="inline-flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="outline"
               disabled={!motivo}
               onClick={() => {
                 if (!motivo) return;
                 onDescartar?.(p, motivo, observacao.trim() || null);
                 setModo("ver");
               }}
-              className="rounded-md border border-linha-forte bg-branco px-3 py-1.5 text-[13px] font-medium text-tinta transition-colors enabled:hover:bg-hover disabled:opacity-50"
             >
-              Confirmar descarte
-            </button>
-            <button type="button" onClick={() => (onVoltar ? onVoltar() : setModo("ver"))} className="rounded-md px-3 py-1.5 text-[13px] text-suave hover:bg-hover hover:text-tinta">
+              Confirmar
+            </Button>
+            <button type="button" onClick={() => (onVoltar ? onVoltar() : setModo("ver"))} className={LINK}>
               Voltar
             </button>
-          </div>
+          </span>
         </footer>
       )}
     </article>

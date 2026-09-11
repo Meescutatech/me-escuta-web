@@ -1,108 +1,122 @@
 import { cn } from "@/lib/utils";
 
 /**
- * A MARCA DO JARVIS (W-J, 10/09/2026) — um desenho só, para todo lugar em que o Jarvis aparece.
+ * A MARCA DO JARVIS — v2 (W-J, 10/09/2026, depois da reprovação do roundel navy às 22:30).
  *
- * O problema que ela resolve: "IA" estava com o mesmo brilho de quatro pontas em três lugares
- * (sidebar, header, seção Agentes das configurações) — e o brilho é o ícone genérico de IA de
- * qualquer produto. O Jarvis não é "a IA": é um agente com nome, que MONITORA a operação e
- * chama a atenção de alguém. A marca diz isso em duas formas:
+ * Régua do Diogo: tem de ficar MELHOR que o sparkles genérico. Monocromática no `foreground`
+ * (herda `currentColor`, então vale na sidebar, no header e sobre navy), traço fino, o laranja só
+ * como acento do estado `vivo` (consultando/pensando). Nada de roundel, avatar com letra ou navy
+ * chapado. Três variantes, para escolher na galeria `/jarvis/galeria`:
  *
- *   • o monograma J — a mesma letra que o Diogo já usava como avatar no chat `/jarvis` e no
- *     registro "Jarvis criou tarefa" do fio. Não é sparkle, não é robô, não é balão.
- *   • o ponto de atenção — um ponto laranja na borda superior direita. Laranja é o único acento
- *     de ação do sistema (R9), e é exatamente o que o Jarvis faz: aponta onde agir. Quando o
- *     Jarvis está pensando/consultando, o ponto pulsa (`vivo`), com `prefers-reduced-motion`
- *     respeitado pela classe `pulso-ao-vivo` de globals.css.
+ *   `arco`    (a) glifo próprio: um ponto e um arco fino por cima dele — uma forma só. É a ideia
+ *             de escuta/atenção (o Jarvis nota algo e avisa), não de robô. Em `vivo` o ponto
+ *             fica laranja e pulsa.
+ *   `faisca`  (b) o sparkles reinterpretado: UMA faísca — a cabeça no alto à direita e um raio só
+ *             que afina para baixo e à esquerda. Assimétrica, cheia (em
+ *             traço virava agulha). Sem o brilho de quatro pontas. Em `vivo` fica laranja.
+ *   `palavra` (c) wordmark "jarvis" em mono semibold 11–12px, minúsculo, com um ponto de estado
+ *             antes — para uso inline (assinatura de nota, chip, cabeçalho de card). O ponto é
+ *             `muted-foreground`; em `vivo`, laranja e pulsando.
  *
- * Duas variantes, mesma grade 24×24:
- *   `selo`  — roundel navy com o J em branco. É o AVATAR: fio da conversa, chat, cards, dashboard.
- *   `traco` — J em traço, `currentColor`, stroke 1.8 como os outros ícones da sidebar/header.
- *             Aqui o ponto também é currentColor: na navegação nada é colorido além do ativo.
- *
- * Tamanhos: 16 (inline em texto/chip), 20 (header, linha de card), 32 (cabeçalho de bloco).
- * A Clara e os outros agentes NÃO usam esta marca — cada um terá a sua; o que se compartilha é a
- * regra (letra + ponto), não o desenho.
+ * Grade 24×24 nas duas de traço. Tamanhos 16 / 20 / 32. `rotulo` dá `role="img"`; sem ele a
+ * marca é decorativa. `pulso-ao-vivo` (globals.css) respeita `prefers-reduced-motion`.
  */
 
 export type TamanhoMarca = 16 | 20 | 32;
-export type VarianteMarca = "selo" | "traco";
+export type VarianteMarca = "arco" | "faisca" | "palavra";
 
 export function MarcaJarvis({
+  variante = "arco",
   tamanho = 20,
-  variante = "selo",
   vivo = false,
   rotulo,
   className,
 }: {
-  tamanho?: TamanhoMarca;
   variante?: VarianteMarca;
-  /** o Jarvis está consultando/pensando: o ponto pulsa */
+  tamanho?: TamanhoMarca;
+  /** o Jarvis está consultando/pensando */
   vivo?: boolean;
-  /** rótulo acessível; sem ele a marca é decorativa (`aria-hidden`) */
+  /** rótulo acessível; sem ele a marca é decorativa */
   rotulo?: string;
   className?: string;
 }) {
   const a11y = rotulo ? { role: "img" as const, "aria-label": rotulo } : { "aria-hidden": true as const };
 
-  if (variante === "traco") {
+  if (variante === "palavra") {
+    const fonte = tamanho >= 32 ? "text-[13px]" : tamanho === 20 ? "text-[12px]" : "text-[11px]";
+    return (
+      <span className={cn("inline-flex items-center gap-1.5 font-mono font-semibold leading-none tracking-[-0.01em] text-foreground", fonte, className)} {...a11y}>
+        <span
+          aria-hidden
+          className={cn("inline-block rounded-full", tamanho >= 32 ? "h-[7px] w-[7px]" : "h-1.5 w-1.5", vivo ? "bg-primary pulso-ao-vivo" : "bg-muted-foreground")}
+        />
+        jarvis
+      </span>
+    );
+  }
+
+  const traco = tamanho <= 16 ? 1.75 : 1.5;
+
+  if (variante === "faisca") {
+    // Uma faísca: a cabeça (ponto cheio) no alto à direita e UM raio que afina para baixo e à
+    // esquerda. Cheia, não em traço — em traço virava agulha/pena (medido na galeria v2a).
     return (
       <svg
         viewBox="0 0 24 24"
         width={tamanho}
         height={tamanho}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className={cn("shrink-0", className)}
+        fill="currentColor"
+        className={cn("shrink-0", vivo && "text-primary pulso-ao-vivo", className)}
         {...a11y}
       >
-        <path d="M9.5 6.5h6.5" />
-        <path d="M14 6.5v8a3.25 3.25 0 0 1-6.5 0" />
-        <circle cx="19" cy="5" r="2.1" fill="currentColor" stroke="none" className={cn(vivo && "pulso-ao-vivo")} />
+        <circle cx="16.5" cy="7.5" r={tamanho <= 16 ? 2.9 : 2.6} />
+        <path d="M4.5 19.5L17.7 8.9 15.1 6.3Z" />
       </svg>
     );
   }
 
   return (
-    <svg viewBox="0 0 24 24" width={tamanho} height={tamanho} fill="none" className={cn("shrink-0", className)} {...a11y}>
-      <circle cx="12" cy="12" r="11" className="fill-navy" />
-      <g stroke="#FFFFFF" strokeWidth={tamanho <= 16 ? 2.4 : 2.1} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M9 7h6.5" />
-        <path d="M13.75 7v7.6a3.1 3.1 0 0 1-6.2 0" />
-      </g>
-      <circle cx="19.2" cy="4.8" r={tamanho <= 16 ? 3.7 : 3.3} className="fill-branco" />
-      <circle cx="19.2" cy="4.8" r={tamanho <= 16 ? 2.7 : 2.3} className={cn("fill-laranja", vivo && "pulso-ao-vivo")} />
+    <svg
+      viewBox="0 0 24 24"
+      width={tamanho}
+      height={tamanho}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={traco}
+      strokeLinecap="round"
+      className={cn("shrink-0", className)}
+      {...a11y}
+    >
+      <path d="M4.64 9.64A9 9 0 0 1 20 16" />
+      <circle cx="11" cy="16" r={tamanho <= 16 ? 2.4 : 2.1} fill="currentColor" stroke="none" className={cn(vivo && "fill-primary pulso-ao-vivo")} />
     </svg>
   );
 }
 
 /**
- * O lockup "marca + Jarvis" para cabeçalhos de bloco e chips. O nome vai em navy, no peso 650 que
- * os títulos da casa usam — o Jarvis assina, não grita.
+ * Assinatura inline: a marca escolhida + "Jarvis" em texto, para cabeçalhos de nota e de card.
+ * Com `variante="palavra"` a própria marca já é o nome — não duplica.
  */
 export function AssinaturaJarvis({
-  tamanho = 20,
+  variante = "arco",
+  tamanho = 16,
   vivo = false,
   sufixo,
   className,
 }: {
+  variante?: VarianteMarca;
   tamanho?: TamanhoMarca;
   vivo?: boolean;
-  /** texto discreto depois do nome: "propõe", "diz", "criou tarefa" */
+  /** "sugere uma tarefa", "diz", "criou tarefa" */
   sufixo?: string;
   className?: string;
 }) {
-  const texto = tamanho >= 32 ? "text-[15px]" : tamanho === 20 ? "text-[13px]" : "text-[12px]";
+  const fonte = tamanho >= 32 ? "text-[14px]" : tamanho === 20 ? "text-[13px]" : "text-[12px]";
   return (
-    <span className={cn("inline-flex items-center gap-1.5", className)}>
-      <MarcaJarvis tamanho={tamanho} vivo={vivo} />
-      <span className={cn("font-[650] leading-none tracking-[-0.01em] text-navy", texto)}>
-        Jarvis
-        {sufixo && <span className="font-medium text-suave"> {sufixo}</span>}
-      </span>
+    <span className={cn("inline-flex items-center gap-1.5 text-muted-foreground", fonte, className)}>
+      <MarcaJarvis variante={variante} tamanho={tamanho} vivo={vivo} className={variante === "palavra" ? undefined : "text-foreground"} />
+      {variante !== "palavra" && <span className="font-medium text-foreground">Jarvis</span>}
+      {sufixo && <span>{sufixo}</span>}
     </span>
   );
 }

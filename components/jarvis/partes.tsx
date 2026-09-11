@@ -1,14 +1,9 @@
-"use client";
-
-import { CheckIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { dataHoraCurta } from "@/lib/dados/tarefa-calculos";
-import { ROTULO_PRAZO, ROTULO_MOTIVO, ehPrazoCurto, type EstadoProposta, type PropostaJarvis } from "./tipos";
+import { ROTULO_MOTIVO, ROTULO_PRAZO, ehPrazoCurto, type PropostaJarvis } from "./tipos";
 
 /**
- * PARTES COMPARTILHADAS das superfícies do Jarvis — o que o card do fio e o card de /tarefas têm
- * em comum, para que as duas telas mostrem a MESMA proposta com a mesma cara. Nada aqui é
- * exportado para fora de `components/jarvis/`.
+ * Funções puras compartilhadas pelas superfícies do Jarvis (v2 — só texto, sem JSX; a dieta
+ * tirou selo, rótulo em caixa e rail coloridos).
  */
 
 export function tempoDesde(iso: string | null | undefined, agoraMs = Date.now()): string {
@@ -36,90 +31,41 @@ export function prazoUrgente(prazo: PropostaJarvis["prazo"], agoraMs = Date.now(
   return Number.isFinite(t) && t - agoraMs < 24 * 3_600_000;
 }
 
-/** A cor do rail esquerdo — é o estado a um relance na varredura do fio. */
-export const RAIL: Record<EstadoProposta, string> = {
-  proposta: "border-l-navy",
-  aceita: "border-l-verde",
-  ajustada: "border-l-verde",
-  descartada: "border-l-linha-forte",
-  feita: "border-l-verde",
-};
-
-/** Rótulo de campo — sentence case, pequeno, sem caixa alta. */
-export function Rotulo({ children }: { children: React.ReactNode }) {
-  return <dt className="pt-[3px] text-[11.5px] font-semibold leading-tight text-mute">{children}</dt>;
-}
-
-export function Trecho({ texto, href, onIr }: { texto: string; href?: string | null; onIr?: () => void }) {
-  const corpo = (
-    <blockquote className="border-l-2 border-linha-forte pl-2.5 text-[12.5px] italic leading-snug text-suave">
-      “{texto}”
-    </blockquote>
-  );
-  if (!href && !onIr) return corpo;
-  return (
-    <div className="flex flex-col gap-1">
-      {corpo}
-      {href ? (
-        <a href={href} className="w-fit text-[11.5px] font-medium text-navy underline-offset-2 hover:underline">
-          ver no fio
-        </a>
-      ) : (
-        <button type="button" onClick={onIr} className="w-fit text-[11.5px] font-medium text-navy underline-offset-2 hover:underline">
-          ver no fio
-        </button>
-      )}
-    </div>
-  );
+function horaCurta(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(d);
 }
 
 /**
- * A frase de cabeçalho do estado — quem decidiu e quando. É sempre PESSOA: "Sara aceitou",
- * "Ana Paula ajustou", "Rodolfo descartou", "feita por Sara". O Jarvis nunca aparece como sujeito
- * de uma decisão sobre a própria proposta.
+ * A linha colapsada dos estados decididos — "Aceita por Sara · 14:32". Sempre PESSOA como sujeito:
+ * o Jarvis nunca decide sobre a própria proposta.
  */
-export function fraseDoEstado(p: PropostaJarvis): string | null {
+export function linhaDoEstado(p: PropostaJarvis): string {
   const quem = p.decidido_por ?? "alguém";
-  const quando = p.decidido_em ? ` · ${dataHoraCurta(p.decidido_em)}` : "";
+  const hora = horaCurta(p.decidido_em);
+  const h = hora ? ` · ${hora}` : "";
   switch (p.estado) {
     case "proposta":
-      return null;
+      return "";
     case "aceita":
-      return `${quem} aceitou${quando}`;
+      return `Aceita por ${quem}${h}`;
     case "ajustada":
-      return `${quem} ajustou e aceitou${quando}`;
+      return `Aceita com ajustes por ${quem}${h}`;
     case "descartada": {
       const motivo = p.motivo_descarte ? ` · ${ROTULO_MOTIVO[p.motivo_descarte].toLowerCase()}` : "";
-      return `${quem} descartou${quando}${motivo}`;
+      return `Descartada por ${quem}${h}${motivo}`;
     }
     case "feita": {
       const por = p.feita_por ?? p.decidido_por ?? "alguém";
-      const em = p.feita_em ? ` · ${dataHoraCurta(p.feita_em)}` : "";
-      return `feita por ${por}${em}`;
+      const hf = horaCurta(p.feita_em);
+      return `Feita por ${por}${hf ? ` · ${hf}` : ""}`;
     }
   }
 }
 
-export function SeloEstado({ estado, className }: { estado: EstadoProposta; className?: string }) {
-  if (estado === "proposta") return null;
-  if (estado === "descartada") {
-    return <span className={cn("inline-flex items-center rounded-full bg-hover px-2 py-px text-[11px] font-medium text-suave", className)}>descartada</span>;
-  }
-  if (estado === "feita") {
-    return (
-      <span className={cn("inline-flex items-center gap-1 rounded-full bg-verde px-2 py-px text-[11px] font-semibold text-branco", className)}>
-        <CheckIcon className="size-3" strokeWidth={3} /> feita
-      </span>
-    );
-  }
-  return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full bg-verde-bg px-2 py-px text-[11px] font-semibold text-verde", className)}>
-      <CheckIcon className="size-3" strokeWidth={3} /> {estado === "ajustada" ? "tarefa criada com ajustes" : "tarefa criada"}
-    </span>
-  );
-}
-
-/** "era: Ligar amanhã · Ana Paula" — o que a pessoa mudou em relação ao proposto. */
+/** "era: Responder Neusa · amanhã · Sara" — o que a pessoa mudou em relação ao proposto. */
 export function textoDoOriginal(p: PropostaJarvis): string | null {
   const o = p.original;
   if (!o) return null;
