@@ -41,7 +41,7 @@ import { PropostaJarvisInline } from "@/components/jarvis/proposta-inline";
 import { MarcaJarvis } from "@/components/jarvis/marca";
 import type { AjusteProposta, MotivoDescarte } from "@/components/jarvis/tipos";
 import { BotaoNovaConversa } from "@/components/conversas/nova-conversa";
-import { BotaoFoco, ContagemFoco, FimDaFila, useAtalhosFoco } from "@/components/conversas/foco";
+import { BotaoFoco, ContagemFoco, FimDaFila, MolduraFoco, useAtalhosFoco } from "@/components/conversas/foco";
 import { ItemListaFoco } from "@/components/tarefas/item-lista-foco";
 import { FaixaTarefaConversa } from "@/components/tarefas/faixa-tarefa-conversa";
 import type { ConversaEmFoco } from "@/lib/tarefas/foco";
@@ -1052,7 +1052,8 @@ export function Inbox({
   }
 
   return (
-    <div className="flex h-[calc(100vh-var(--altura-topo))] bg-board">
+    <div className="flex h-[calc(100vh-var(--altura-topo))] bg-board transition-[height] duration-200">
+      <MolduraFoco ligado={foco} />
       {/* ═══════════ ZONA 1 · LISTA ═══════════ */}
       <aside className="flex w-[272px] shrink-0 flex-col border-r border-linha bg-branco">
         {/*
@@ -1062,7 +1063,11 @@ export function Inbox({
           30px NA COLUNA, que é justamente onde falta espaço. O "+" herda a linha da busca.
           (A recomendação era o contrário; a medição inverteu, e o efeito pedido — altura — é este.)
         */}
-        <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-2.5">
+        {/* W-D3 v7 (Diogo, 01:00) · EM FOCO some tudo que não é a tarefa: busca, "+", pilha de
+            rostos e abas saem; fica o raio, que também é a saída. A linha continua com a MESMA
+            altura (h-8 + padding), então ligar e desligar não move uma linha sequer. */}
+        <div className={cn("flex items-center gap-1.5 px-3 pb-1.5 pt-2.5", foco && "justify-end")}>
+          {!foco && (
           <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-linha bg-board px-2.5 focus-within:border-linha-forte">
             <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-[14px] w-[14px] shrink-0 stroke-mute" fill="none">
               <circle cx="11" cy="11" r="7" />
@@ -1076,6 +1081,10 @@ export function Inbox({
               className="w-full bg-transparent text-[0.82rem] text-tinta outline-none placeholder:text-mute"
             />
           </label>
+          )}
+          {foco && <span className="min-w-0 flex-1 truncate text-[12px] font-[650] text-tinta">Foco</span>}
+          {!foco && (
+          <>
           {/* v5 · a pilha vive na linha da BUSCA: as quatro abas já ocupam os 248px úteis da
               coluna, e aqui ela não custa um pixel de altura — que era o pedido. */}
           <PilhaFiltros
@@ -1091,8 +1100,10 @@ export function Inbox({
               setNumeroFiltro(null);
             }}
           />
+          </>
+          )}
           <BotaoFoco ligado={foco} pendentes={linhasFoco.length} onAlternar={alternarFoco} />
-          {canaisEnvio && canaisEnvio.length > 0 ? <BotaoNovaConversa canais={canaisEnvio} /> : null}
+          {!foco && canaisEnvio && canaisEnvio.length > 0 ? <BotaoNovaConversa canais={canaisEnvio} /> : null}
         </div>
         {/*
           W-D3 v5 · UMA LINHA de 32px: abas à esquerda, filtros à direita. As duas propostas foram
@@ -1102,7 +1113,7 @@ export function Inbox({
           continua dizendo quantos, e devolve a linha inteira que a régua de avatares comia.
         */}
         {foco ? (
-          <ContagemFoco linhas={filaFoco} feitas={feitasFoco.length} onSair={alternarFoco} />
+          <ContagemFoco linhas={filaFoco} feitas={feitasFoco.length} posicao={posicaoNaFila} />
         ) : (
         <div className="flex h-8 items-center border-b border-linha px-3">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -1150,7 +1161,7 @@ export function Inbox({
           {/* W-D3 v6 · em FOCO a lista é a fila: item com a TAREFA no lugar da prévia, na ordem de
               ataque. Fora do foco, a lista de sempre (com a faixa "Sem departamento"). */}
           {foco ? filaFoco.map((l) => linhaDoFoco(l)) : comDepartamento.map(linhaDaConversa)}
-          {foco && filaFoco.length === 0 && <FimDaFila feitas={feitasFoco.length} onSair={alternarFoco} />}
+          {foco && filaFoco.length === 0 && <FimDaFila feitas={feitasFoco.length} />}
 
           {/*
             FAIXA "SEM DEPARTAMENTO" (D6-g) — e ela é ESCOPO, não enfeite.
@@ -1225,11 +1236,10 @@ export function Inbox({
                 {origemLegivel ? <ChipNumeroCabecalho c={selecionada} /> : null}
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
-                {foco && posicaoNaFila >= 0 && (
-                  <span className="text-[0.72rem] tabular-nums text-mute" title="posição na fila do foco">
-                    {posicaoNaFila + 1} de {filaFoco.length}
-                  </span>
-                )}
+                {/* v7 · em foco o par "Clara conduz / Assumir" sai: a responsa é de quem está na
+                    fila, e o transbordo acontece no ato de responder (Diogo, 01:00). */}
+                {!foco && (
+                <>
                 <span
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border border-linha bg-board px-3 py-1 text-[0.78rem] text-suave",
@@ -1245,6 +1255,8 @@ export function Inbox({
                 >
                   {modoClara ? "Assumir" : "Devolver à Clara"}
                 </button>
+                </>
+                )}
                 {/* W-D3 · menu ⋯ do cabeçalho: o gatilho manual do Jarvis mora aqui, discreto e
                     sem ícone de IA (Diogo, 22:10). A proposta que ele gera entra no fio como nota. */}
                 {jarvisSobDemanda && (
@@ -1286,17 +1298,38 @@ export function Inbox({
               </div>
             </div>
 
-            {/* W-D3 v6 · a faixa da tarefa: 44px fixos colados ao topo do fio (zero deslocamento) */}
+            {/* W-D3 v6/v7 · a faixa da tarefa: 44px fixos colados ao topo do fio (zero deslocamento).
+                O resumo do Jarvis não é toggle: aparece no HOVER da faixa, num popover ancorado
+                (Diogo, 01:00) — ler o porquê não deve custar um clique nem mover o fio. */}
             {foco && linhaFocoDaSelecionada && (
-              <FaixaTarefaConversa
-                linha={linhaFocoDaSelecionada}
-                agoraMs={Date.now()}
-                rotuloTipo={tiposTarefa.find((t) => t.chave === linhaFocoDaSelecionada.tarefa.tipo)?.rotulo ?? null}
-                onConcluir={concluirDoFoco}
-                onAdiar={adiarDoFoco}
-                onPular={pularDoFoco}
-                onVerNoFio={() => fimRef.current?.scrollIntoView({ behavior: "smooth" })}
-              />
+              <div className="group/faixa relative shrink-0">
+                <FaixaTarefaConversa
+                  linha={linhaFocoDaSelecionada}
+                  agoraMs={Date.now()}
+                  rotuloTipo={tiposTarefa.find((t) => t.chave === linhaFocoDaSelecionada.tarefa.tipo)?.rotulo ?? null}
+                  onConcluir={concluirDoFoco}
+                  onAdiar={adiarDoFoco}
+                  onPular={pularDoFoco}
+                  onVerNoFio={() => fimRef.current?.scrollIntoView({ behavior: "smooth" })}
+                />
+                {(linhaFocoDaSelecionada.resumo || linhaFocoDaSelecionada.resumoJarvis) && (
+                  <div
+                    role="note"
+                    className="pointer-events-none absolute left-4 top-[calc(100%-4px)] z-30 w-[420px] max-w-[calc(100%-2rem)] rounded-lg border border-linha-forte bg-branco p-3 opacity-0 shadow-forte transition-opacity duration-150 group-hover/faixa:opacity-100"
+                  >
+                    <p className="mb-1 flex items-center gap-1.5 text-[11px] text-mute">
+                      <MarcaJarvis tamanho={16} rotulo="Jarvis" className="text-mute" />
+                      por que agora
+                    </p>
+                    <p className="text-[12.5px] leading-relaxed text-tinta">
+                      {linhaFocoDaSelecionada.resumo?.situacao ?? linhaFocoDaSelecionada.resumoJarvis}
+                    </p>
+                    {linhaFocoDaSelecionada.resumo?.sugestao && (
+                      <p className="mt-1.5 text-[12.5px] leading-relaxed text-suave">{linhaFocoDaSelecionada.resumo.sugestao}</p>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* mensagens — thread real (RF-27..33) */}
@@ -1516,6 +1549,23 @@ export function Inbox({
               {propostaManual && propostaManual !== "lendo" && notaDoJarvis(propostaManual, true, "prop-manual")}
               <div ref={fimRef} />
             </div>
+
+            {/* v7 · PULAR RÁPIDO É O CORAÇÃO: um alvo grande, fixo no canto, e três teclas (J,
+                seta direita, P). Fica acima da pill de novas mensagens quando as duas aparecem. */}
+            {foco && linhaFocoDaSelecionada && filaFoco.length > 1 && (
+              <button
+                onClick={pularDoFoco}
+                title="Próxima conversa da fila — J, → ou P"
+                className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 rounded-full border border-linha-forte bg-branco px-3.5 py-2 text-[0.78rem] font-semibold text-navy shadow-forte transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+                style={{ bottom: novas > 0 ? "3.75rem" : undefined }}
+              >
+                Próxima
+                <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M5 12h14m-6-6 6 6-6 6" />
+                </svg>
+                <kbd className="ml-1 rounded border border-linha bg-board px-1 font-mono text-[10px] font-normal text-mute">J</kbd>
+              </button>
+            )}
 
             {/* pill de novas mensagens — aparece quando o scroll está lá em cima; clique desce (RF-30) */}
             {novas > 0 && (

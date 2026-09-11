@@ -19,6 +19,60 @@ import type { ConversaEmFoco } from "@/lib/tarefas/foco";
  * navbar: o foco é um jeito de olhar ESTA tela, não um lugar novo do app.
  */
 
+/**
+ * A MOLDURA DO FOCO e o sumiço do shell (Diogo, 01:00 — "eliminar distração", e o desafio
+ * nomeado: ZERO layout shift).
+ *
+ * Ligar o foco marca `data-foco="1"` no `<html>`; as regras abaixo fazem o resto, e todas mexem
+ * em PROPRIEDADES ANIMÁVEIS, nunca em `display`:
+ *  · a sidebar e o header saem por opacidade + translação — continuam no DOM, apenas fora do
+ *    caminho e sem receber clique;
+ *  · o espaço que eles ocupavam é devolvido por `padding` com transição de 200ms, e a altura do
+ *    fio acompanha porque `--altura-topo` vira 0 no modo (o token é um só, como manda a casa);
+ *  · a moldura é um retângulo fixo com quatro gradientes que somem para dentro: não pisca, não
+ *    pulsa e não intercepta ponteiro.
+ *
+ * O `<style>` mora AQUI e não no `globals.css` de propósito: é regra de UMA tela, e morre com ela.
+ */
+export function MolduraFoco({ ligado }: { ligado: boolean }) {
+  useEffect(() => {
+    const el = document.documentElement;
+    if (ligado) el.dataset.foco = "1";
+    else delete el.dataset.foco;
+    return () => {
+      delete el.dataset.foco;
+    };
+  }, [ligado]);
+
+  return (
+    <>
+      <style>{`
+        .min-h-screen { transition: padding-left 200ms ease; }
+        main { transition: padding-top 200ms ease; }
+        aside.lateral-r9, header[role="banner"] { transition: opacity 180ms ease, transform 200ms ease; }
+        html[data-foco="1"] { --altura-topo: 0px; }
+        html[data-foco="1"] .min-h-screen { padding-left: 0; }
+        html[data-foco="1"] aside.lateral-r9 { opacity: 0; transform: translateX(-100%); pointer-events: none; }
+        html[data-foco="1"] aside.lateral-r9:hover, html[data-foco="1"] aside.lateral-r9:focus-within { width: 60px; box-shadow: none; }
+        html[data-foco="1"] header[role="banner"] { opacity: 0; transform: translateY(-100%); pointer-events: none; }
+      `}</style>
+      <div
+        aria-hidden
+        className={cn("pointer-events-none fixed inset-0 z-[60] transition-opacity duration-300", ligado ? "opacity-100" : "opacity-0")}
+        style={{
+          backgroundImage: [
+            "linear-gradient(to bottom, rgba(236,102,46,.28), rgba(236,102,46,0) 10px)",
+            "linear-gradient(to top, rgba(236,102,46,.28), rgba(236,102,46,0) 10px)",
+            "linear-gradient(to right, rgba(236,102,46,.28), rgba(236,102,46,0) 10px)",
+            "linear-gradient(to left, rgba(236,102,46,.28), rgba(236,102,46,0) 10px)",
+          ].join(","),
+          boxShadow: "inset 0 0 0 1.5px rgba(236,102,46,.45)",
+        }}
+      />
+    </>
+  );
+}
+
 export function BotaoFoco({ ligado, pendentes, onAlternar }: { ligado: boolean; pendentes: number; onAlternar: () => void }) {
   return (
     <button
@@ -42,27 +96,39 @@ export function BotaoFoco({ ligado, pendentes, onAlternar }: { ligado: boolean; 
   );
 }
 
-/** A linha de contagem do topo da lista em foco — ocupa o lugar das abas, não soma altura. */
-export function ContagemFoco({ linhas, feitas, onSair }: { linhas: ConversaEmFoco[]; feitas: number; onSair: () => void }) {
+/**
+ * A linha de contagem do topo da fila — ocupa o lugar das abas, não soma altura, e traz a barra
+ * fininha do percurso. Sem "sair do foco" aqui: quem tira do modo é o raio, e só ele (01:00) —
+ * dois botões para a mesma saída é o tipo de redundância que faz a pessoa procurar o terceiro.
+ */
+export function ContagemFoco({ linhas, feitas, posicao }: { linhas: ConversaEmFoco[]; feitas: number; posicao: number }) {
   const vencidas = linhas.filter((l) => l.tarefa.estado === "vencida").length;
+  const total = linhas.length + feitas;
+  const andado = total > 0 ? Math.min(100, Math.round(((feitas + Math.max(0, posicao)) / total) * 100)) : 0;
   return (
-    <div className="flex h-8 items-center gap-2 border-b border-linha px-3 text-[12px]">
+    <div className="relative flex h-8 items-center gap-2 border-b border-linha px-3 text-[12px]">
       <span className="min-w-0 truncate">
-        <span className="font-semibold text-tinta">
-          {linhas.length} {linhas.length === 1 ? "conversa" : "conversas"} com tarefa
-        </span>
+        {posicao >= 0 ? (
+          <span className="font-semibold tabular-nums text-tinta">
+            {feitas + posicao + 1} de {total}
+          </span>
+        ) : (
+          <span className="font-semibold text-tinta">
+            {linhas.length} {linhas.length === 1 ? "conversa" : "conversas"}
+          </span>
+        )}
         {vencidas > 0 && <span className="text-vermelho"> · {vencidas} {vencidas === 1 ? "vencida" : "vencidas"}</span>}
         {feitas > 0 && <span className="text-verde"> · {feitas} {feitas === 1 ? "feita" : "feitas"}</span>}
       </span>
-      <button type="button" onClick={onSair} className="ml-auto shrink-0 text-[11.5px] text-suave underline-offset-2 hover:text-tinta hover:underline">
-        sair do foco
-      </button>
+      <span aria-hidden className="absolute inset-x-0 bottom-0 h-[2px] bg-linha">
+        <span className="block h-full bg-laranja transition-[width] duration-300" style={{ width: `${andado}%` }} />
+      </span>
     </div>
   );
 }
 
 /** Fim da fila — dentro da própria lista, sem tela nova (Diogo: "estado zero por hoje"). */
-export function FimDaFila({ feitas, onSair }: { feitas: number; onSair: () => void }) {
+export function FimDaFila({ feitas }: { feitas: number }) {
   return (
     <div className="px-5 py-10 text-center">
       <p className="text-[13px] font-medium text-tinta">Zero por hoje.</p>
@@ -75,13 +141,7 @@ export function FimDaFila({ feitas, onSair }: { feitas: number; onSair: () => vo
           <>Nenhuma conversa com tarefa pendente sua. O que chegar de novo aparece aqui.</>
         )}
       </p>
-      <button
-        type="button"
-        onClick={onSair}
-        className="mt-3 rounded-lg border border-linha-forte px-3 py-1.5 text-[12.5px] font-medium text-navy transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
-      >
-        Sair do foco
-      </button>
+      <p className="mt-2 text-[11.5px] text-mute">O raio no topo tira você do foco.</p>
     </div>
   );
 }
@@ -100,6 +160,7 @@ export function useAtalhosFoco({
   ligado: boolean;
   onConcluir: () => void;
   onAdiar: () => void;
+  /** "próxima": J, seta direita e P caem todos aqui — pular rápido é o coração do modo */
   onPular: () => void;
   onSair: () => void;
 }) {
@@ -119,7 +180,7 @@ export function useAtalhosFoco({
       } else if (e.key === "a" || e.key === "A") {
         e.preventDefault();
         onAdiar();
-      } else if (e.key === "p" || e.key === "P") {
+      } else if (e.key === "p" || e.key === "P" || e.key === "j" || e.key === "J" || e.key === "ArrowRight") {
         e.preventDefault();
         onPular();
       }
