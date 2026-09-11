@@ -3,6 +3,7 @@ import type { TarefaVisao } from "@/lib/dados/tarefas-visao-calculos";
 import { conversaIdDeEnsaio } from "@/lib/dados/tarefas-ensaio";
 import { ETAPAS_PADRAO } from "@/lib/dados/funil-etapas";
 import { resumoDerivado, type ResumoJarvis } from "@/lib/tarefas/resumo";
+import type { SinaisDoLead } from "@/lib/tarefas/prioridade";
 import { gerarConversasEnsaio, gerarLeadsEnsaio } from "./fixtures/conversas";
 
 /**
@@ -232,6 +233,44 @@ export function resumoDeEnsaio(t: TarefaVisao, lead: CardLead | null, agora: Dat
 export function comResumosDeEnsaio(tarefas: TarefaVisao[], agora: Date = new Date()): TarefaVisao[] {
   const leads = new Map(gerarLeadsEnsaio(agora).map((l) => [l.lead_id, l]));
   return tarefas.map((t) => (t.resumo ? t : { ...t, resumo: resumoDeEnsaio(t, t.lead_id ? (leads.get(t.lead_id) ?? null) : null, agora) }));
+}
+
+// ─────────────────── os SINAIS da priorização (W-T, 11/09) ───────────────────
+
+/**
+ * O que a ordem "Mais urgente primeiro" precisa saber do LEAD por trás da tarefa — etapa, valor e
+ * há quanto tempo ele está esperando resposta (`lib/tarefas/prioridade.ts`).
+ *
+ * ⚠️ **Isto é ensaio, e a leitura real ainda não traz nada disto.** Em produção `sinais` chega
+ * vazio e o peso cai para vencida → hoje → prioridade → prazo, que é a ordem que a tela já tinha.
+ * O caminho real são duas leituras que ainda não existem: etapa e valor saem de `core.v_lead_card`
+ * (existem, é só ler pelo `lead_id` da tarefa), e a espera sai da última mensagem de entrada sem
+ * resposta em `core.v_mensagem` — essa é a cara, porque é por conversa.
+ *
+ * A espera só conta quando a ÚLTIMA mensagem do fio é do cliente: se nós falamos por último, o
+ * lead não está esperando — está pensando, e contar isso como dívida encheria a fila de urgência
+ * falsa.
+ */
+export function sinaisDeEnsaio(tarefas: TarefaVisao[], agora: Date = new Date()): Record<string, SinaisDoLead> {
+  const leads = gerarLeadsEnsaio(agora);
+  const contextos = contextoFocoEnsaio(tarefas, agora);
+  const agoraMs = agora.getTime();
+  const saida: Record<string, SinaisDoLead> = {};
+  for (const t of tarefas) {
+    const i = idxDoLead(t.lead_id);
+    const lead = i == null ? null : leads[i];
+    if (!lead) continue;
+    const ctx = contextos[t.id];
+    const ultima = ctx?.fio.length ? ctx.fio[ctx.fio.length - 1] : null;
+    const esperando = ultima && ultima.de === "cliente" ? (agoraMs - new Date(ultima.em).getTime()) / H : null;
+    saida[t.id] = {
+      etapa: lead.etapa,
+      etapa_nome: nomeEtapa(lead.etapa),
+      valor: lead.valor ?? null,
+      horas_sem_resposta: esperando != null && esperando > 0 ? esperando : null,
+    };
+  }
+  return saida;
 }
 
 // ───────────────────────────── 2. fios curtos ─────────────────────────────
