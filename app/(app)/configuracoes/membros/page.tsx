@@ -6,7 +6,6 @@ import { gerarConvitesEnsaio, gerarMembrosEnsaio } from "@/lib/ensaio/fixtures/m
 import { MembrosEnsaio } from "@/components/ensaio/membros";
 import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
 import { lerDadosMembros } from "@/lib/dados/membros-reais";
-import type { Papel } from "@/lib/membros";
 
 export const dynamic = "force-dynamic";
 

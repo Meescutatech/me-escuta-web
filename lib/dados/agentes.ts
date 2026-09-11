@@ -2,6 +2,19 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { agentesInteligencia, type AgenteInteligencia } from "@/lib/ensaio/inteligencia";
 
 /**
+ * Quem ainda NÃO opera, dito pelo Diogo em 11/09. Levindo está `ativo=true` no banco desde a
+ * semente, e Priscila `false` — nenhum dos dois roda de verdade. Mostrar o flag cru faria a tela
+ * afirmar que o Levindo trabalha.
+ *
+ * Entra como PENDÊNCIA em vez de esconder o agente: a pendência já é o mecanismo que a tela usa
+ * para bloquear o botão de ligar e dizer por quê (`cartoes-agentes.tsx`: `impedido =
+ * pendencias.length > 0`). Some daqui no dia em que o agente operar — não é rótulo cosmético,
+ * é o que impede alguém de ligar e esperar resultado.
+ */
+const EM_DESENVOLVIMENTO = new Set(["levindo", "priscila"]);
+const AVISO_DESENVOLVIMENTO = "Em desenvolvimento — ainda não opera; ligar aqui não produz efeito.";
+
+/**
  * OS AGENTES, COM O ESTADO QUE O BANCO TEM — 11/09/2026.
  *
  * Até hoje `/configuracoes/agentes` redirecionava para a página da Clara fora do ensaio, porque
@@ -34,7 +47,7 @@ export async function lerAgentesReais(agora: Date = new Date()): Promise<AgenteI
     const { data, error } = await supabase
       .schema("core")
       .from("agente")
-      .select("id,nome,ativo,prompt_versao")
+      .select("id,nome,ativo,prompt_versao,prompt_sistema,area")
       .in(
         "id",
         base.map((b) => b.chave),
@@ -56,13 +69,30 @@ export async function lerAgentesReais(agora: Date = new Date()): Promise<AgenteI
         // que falta credencial e o agente está desligado, o motivo continua valendo.
         situacao: ativo ? "ligado" : b.situacao === "esperando_credencial" ? "esperando_credencial" : "desligado",
         versao_prompt: typeof r.prompt_versao === "number" ? r.prompt_versao : b.versao_prompt,
+        // o ROTEIRO de verdade, de core.agente.prompt_sistema. Sem isto a tela mostraria o texto
+        // da fixture e alguém editaria um prompt que não é o que roda.
+        prompt: typeof r.prompt_sistema === "string" && r.prompt_sistema.length > 0 ? r.prompt_sistema : b.prompt,
+        area: typeof r.area === "string" && r.area.length > 0 ? r.area : b.area,
         ultima_acao: null,
         ultimos_7d: [],
         numeros: [],
         execucoes: [],
+        pendencias: EM_DESENVOLVIMENTO.has(b.chave)
+          ? [AVISO_DESENVOLVIMENTO, ...b.pendencias]
+          : b.pendencias,
       };
     });
   } catch {
     return null;
   }
+}
+
+/**
+ * UM agente, para a tela de detalhe (`/configuracoes/agentes/[id]`). Reusa `lerAgentesReais` de
+ * propósito: se a lista e o detalhe lessem por caminhos diferentes, um diria "ligado" e o outro
+ * "desligado" no primeiro dia em que divergissem.
+ */
+export async function lerAgenteReal(id: string, agora: Date = new Date()): Promise<AgenteInteligencia | null> {
+  const todos = await lerAgentesReais(agora);
+  return todos?.find((a) => a.chave === id) ?? null;
 }
