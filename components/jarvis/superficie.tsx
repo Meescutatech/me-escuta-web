@@ -155,7 +155,7 @@ export function SuperficieJarvis({
           }
         }}
         aria-label="Pergunte ao Jarvis"
-        placeholder="Pergunte sobre esta tela, o funil, a equipe ou o marketing"
+        placeholder="Pergunte alguma coisa sobre esta tela"
         aria-busy={vivo}
         className={cn(
           "w-full resize-none bg-transparent font-medium leading-snug tracking-[-0.01em] text-foreground outline-none placeholder:font-normal placeholder:text-muted-foreground/70",
@@ -292,9 +292,11 @@ export function SuperficieJarvis({
     );
   }
 
+  // o painel ABRAÇA o conteúdo: sem resposta ele tem a altura das sugestões, e só cresce até o
+  // teto quando há o que mostrar. Caixa alta e vazia é o que faz parecer "chat genérico esperando".
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
-      <div className="px-4 pb-3 pt-3">{Campo}</div>
+      <div className="flex-none px-4 pb-3 pt-3">{Campo}</div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {naoRespondeu ? <div className="space-y-5 pt-1">{Prontas}{Anteriores}</div> : Resposta}
       </div>

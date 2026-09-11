@@ -74,7 +74,8 @@ export function OverlayJarvis() {
             transition={{ duration: mov.reduzido ? 0.1 : 0.18 }}
             className="absolute inset-0 cursor-default bg-foreground/[0.07] supports-[backdrop-filter]:backdrop-blur-[1.5px]"
           />
-          <div className="pointer-events-none absolute inset-0 flex justify-center px-4 pt-[11vh]">
+          {/* `items-start`: sem isto o flex ESTICA o painel até o `max-h` e sobra uma caixa branca vazia embaixo */}
+          <div className="pointer-events-none absolute inset-0 flex items-start justify-center px-4 pt-[11vh]">
             <motion.div
               ref={painel}
               role="dialog"
@@ -86,7 +87,7 @@ export function OverlayJarvis() {
               animate={mov.reduzido ? { opacity: 1 } : undefined}
               exit={mov.reduzido ? { opacity: 0 } : { opacity: 0, transition: { duration: 0.12 } }}
               transition={mov.reduzido ? { duration: 0.12 } : MORFOSE}
-              className="pointer-events-auto flex max-h-[min(76vh,680px)] w-full max-w-[720px] flex-col overflow-hidden border border-border bg-popover shadow-[0_16px_48px_rgba(31,35,40,.18)]"
+              className="pointer-events-auto flex max-h-[min(74vh,640px)] w-full max-w-[720px] flex-col overflow-hidden border border-border bg-popover shadow-[0_16px_48px_rgba(31,35,40,.18)]"
             >
               <motion.header
                 initial={mov.reduzido ? false : { opacity: 0 }}
@@ -126,7 +127,7 @@ export function OverlayJarvis() {
                 initial={mov.reduzido ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.2, delay: mov.reduzido ? 0 : 0.14 }}
-                className="flex min-h-0 flex-1 flex-col"
+                className="flex min-h-0 flex-col"
               >
               <SuperficieJarvis
                 usuarioId={usuarioId}
@@ -139,7 +140,7 @@ export function OverlayJarvis() {
                 perguntaInicial={inicial}
                 enviarAoAbrir={Boolean(inicial)}
                 aoSair={fechar}
-                className="min-h-0 flex-1"
+                className="min-h-0"
               />
 
               <footer className={cn("flex flex-none items-center gap-3 border-t border-border/60 px-4 py-2 text-[11px] text-muted-foreground")}>

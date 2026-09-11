@@ -72,6 +72,18 @@ function AtalhoJarvis() {
       if (meta && !e.shiftKey && !e.altKey && tecla === "k") {
         // com o foco num campo, ⌘K é do sistema (macOS: adicionar link) — deixa passar
         if (noCampo) return;
+        /*
+         * A TELA PODE FICAR COM O ⌘K. O /funil já tem "Buscar ou perguntar ao Jarvis… ⌘K" no
+         * topo: se eu abrisse o overlay ali, roubaria o atalho que a própria tela anuncia. Quem
+         * quiser ficar com ele põe `data-jarvis-atalho-local` no campo — o ⌘K foca aquele campo,
+         * e o ⇧⌘K continua abrindo o popup de qualquer lugar.
+         */
+        const local = document.querySelector<HTMLElement>("[data-jarvis-atalho-local]");
+        if (local) {
+          e.preventDefault();
+          local.focus();
+          return;
+        }
         e.preventDefault();
         alternar();
         return;

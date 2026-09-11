@@ -9,6 +9,7 @@ import { ondeEstou, useJarvis } from "@/lib/jarvis/contexto";
 import { useConversaJarvis } from "@/lib/jarvis/usar-conversa";
 import type { AcaoResposta, RespostaJarvis } from "@/lib/jarvis/resposta-tipos";
 import { sugestoesEnsaioDaTela } from "@/lib/ensaio/jarvis-telas";
+import { MarcaJarvis } from "./marca";
 import { useMovimento } from "./movimento";
 
 /**
@@ -145,7 +146,10 @@ export function PequenoJarvis({ aoFechar }: { aoFechar: () => void }) {
         transition={{ duration: 0.18, delay: mov.reduzido ? 0 : 0.12 }}
         className="px-3.5 py-2.5"
       >
-        <p className="truncate text-[11px] text-muted-foreground">{ondeEstou(contexto)}</p>
+        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <MarcaJarvis tamanho={16} vivo={vivo} rotulo="Jarvis" className="text-foreground" />
+          <span className="min-w-0 flex-1 truncate">{ondeEstou(contexto)}</span>
+        </p>
 
         <form
           onSubmit={(e) => {

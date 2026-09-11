@@ -33,6 +33,13 @@ import { useMovimento } from "./movimento";
 
 const DURACAO_PADRAO_MS = 220;
 
+/** o ISO é UTC; o rótulo tem de estar no fuso de quem lê, senão o trace mente a hora */
+function horaLocal(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(d);
+}
+
 function paraExecucao(passos: PassoJarvis[], em: string): ExecucaoTrace {
   let cursor = 0;
   const convertidos: PassoTrace[] = passos.map((p) => {
@@ -51,8 +58,8 @@ function paraExecucao(passos: PassoJarvis[], em: string): ExecucaoTrace {
   });
   const total = Math.max(cursor, 1);
   return {
-    id: `consulta_${em.slice(11, 19).replace(/:/g, "")}`,
-    quando: `às ${em.slice(11, 16)}`,
+    id: `consulta_${horaLocal(em).replace(":", "")}`,
+    quando: `às ${horaLocal(em)}`,
     duracaoMs: total,
     estado: passos.some((p) => p.estado === "falhou") ? "erro" : passos.some((p) => p.estado === "andamento") ? "rodando" : "feito",
     passos: convertidos,

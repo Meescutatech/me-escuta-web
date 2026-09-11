@@ -41,12 +41,14 @@ export function sugestoesEnsaioDaTela(rota: string): string[] | null {
 export function avisoEnsaioDaTela(rota: string): AvisoJarvis | null {
   switch (chaveDaRota(rota)) {
     case "/":
+      // No dashboard os números JÁ estão na tela — repeti-los na pílula é ruído. O que o painel
+      // não responde é a pergunta da Sara: por onde começar. É isso que ele oferece aqui.
       return {
         onde: "no dashboard",
-        quantidade: 4,
-        texto: "conversas sem resposta",
-        previa: "A mais antiga é a de Maria Aparecida, esperando o endereço da clínica há 3 h.",
-        pergunta: "Quantas conversas estão sem resposta?",
+        quantidade: null,
+        texto: "por onde começar",
+        previa: "Comece por Maria Aparecida: ela espera o endereço da clínica há 3 h e a audiometria é sexta.",
+        pergunta: "O que eu faço agora?",
       };
     case "/conversas":
       return {

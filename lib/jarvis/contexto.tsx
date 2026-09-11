@@ -155,7 +155,7 @@ function useIdEstavel(): string {
 /** Filtros legíveis da URL — sem os identificadores técnicos, que viram `item`. */
 function filtrosDe(busca: string | null): Record<string, string> {
   if (!busca) return {};
-  const fora = new Set(["lead", "c", "conversa", "como", "pergunta", "contexto"]);
+  const fora = new Set(["lead", "c", "conversa", "como", "pergunta", "contexto", "jarvis"]);
   const saida: Record<string, string> = {};
   for (const [k, v] of new URLSearchParams(busca)) {
     if (!fora.has(k) && v) saida[k] = v;
@@ -259,6 +259,31 @@ export function ProvedorJarvis({
     if (contexto.item?.tipo === "lead" && !c.lead_id) c.lead_id = contexto.item.id;
     return c;
   }, [contexto]);
+
+  /*
+   * LINK QUE JÁ ABRE O JARVIS: `?jarvis=pequeno|popup` (opcionalmente com `&pergunta=`) sobre
+   * QUALQUER tela. Serve para mandar "olha isto" para alguém, para a demo, e é como os prints
+   * desta rodada foram tirados. Dispara uma vez e limpa os parâmetros da URL, para que um reload
+   * não repita a pergunta — mesmo cuidado que a `/jarvis?pergunta=` já tinha.
+   */
+  const deepLink = useRef(false);
+  useEffect(() => {
+    if (deepLink.current) return;
+    const alvo = busca.get("jarvis");
+    if (alvo !== "pequeno" && alvo !== "popup") return;
+    deepLink.current = true;
+    const q = (busca.get("pergunta") ?? "").trim().slice(0, 500) || null;
+    if (q) setPerguntaPendente(q);
+    setModo(alvo);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("jarvis");
+      url.searchParams.delete("pergunta");
+      window.history.replaceState(window.history.state, "", url.toString());
+    } catch {
+      /* sem URL para limpar */
+    }
+  }, [busca]);
 
   const abrir = useCallback((pergunta?: string | null, alvo: ModoJarvis = "pequeno") => {
     if (pergunta) setPerguntaPendente(pergunta);
