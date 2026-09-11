@@ -5,6 +5,10 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { Quadro } from "@/components/funil/quadro";
 import { lerLeadsSemResponsavel } from "@/lib/dados/identidades";
 import { lerMotivosPerda } from "@/lib/dados/motivo-perda";
+import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
+import { gerarFunilEnsaio } from "@/lib/ensaio/fixtures/conversas";
+import { mencionaveisEnsaio } from "@/lib/ensaio/fixtures/mencionaveis";
+import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 
 // Sempre lê o estado atual do funil (sem cache) — projeção do ledger.
 export const dynamic = "force-dynamic";
@@ -14,6 +18,26 @@ export default async function FunilPage({
 }: {
   searchParams: { lead?: string };
 }) {
+  // W-D2 · modo ensaio: os 40 leads da fixture, zero leitura.
+  const ensaio = lerSessaoEnsaio();
+  if (ensaio) {
+    const agora = new Date();
+    const motivos = await lerMotivosPerda(); // degrada para a semente embutida (cliente sem banco)
+    return (
+      <Quadro
+        dados={gerarFunilEnsaio(agora)}
+        geradoEm={agora.toISOString()}
+        abrirLead={searchParams.lead ?? null}
+        autorEmail={ensaio.email}
+        autorId={ensaio.id}
+        mencionaveis={mencionaveisEnsaio(agora)}
+        tiposTarefa={TIPOS_TAREFA_SEMENTE}
+        motivosPerda={motivos.motivos}
+        motivosDaConfig={motivos.daConfig}
+        semResponsavel={{ orfaos: 9, aguardandoDePara: 0, lido: true }}
+      />
+    );
+  }
   // board + autor exibido no drawer (o ator real é carimbado pela porta) + lista do `@` e
   // tipos de tarefa (R13 / Bloco C) em paralelo — o drawer é o caminho de criação a partir do
   // funil, e nada disto depende do funil (getUser vai à rede)

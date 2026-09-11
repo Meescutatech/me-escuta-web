@@ -25,6 +25,19 @@ import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 import { frasePrograma } from "@/lib/conversas/programar-envio";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
+import {
+  BolhaCitada,
+  BolhaContato,
+  BolhaDocumento,
+  BolhaFigurinha,
+  BolhaInterativa,
+  BolhaLocalizacao,
+  BolhaVideo,
+  ReacoesChips,
+  RotuloProgramada,
+} from "@/components/conversas/bolha-tipada";
+import { PropostaJarvis, gerarPropostaJarvis, type PropostaDoJarvis } from "@/components/conversas/proposta-jarvis";
+import type { CanalEnvioComposer } from "@/components/conversas/composer";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
 import { ehAudio, ehImagem, temImagemVisivel } from "@/lib/conversas/midia";
@@ -143,6 +156,8 @@ export function Inbox({
   programadas,
   ancoraEm = null,
   alvoNaoEncontrado = false,
+  canaisEnvio = null,
+  jarvisSobDemanda = false,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -186,6 +201,14 @@ export function Inbox({
   ancoraEm?: string | null;
   /** 31/08 · veio `?c=`/`?lead=` que não está na caixa: diz o porquê em vez de abrir outra. */
   alvoNaoEncontrado?: boolean;
+  /**
+   * W-D2 (R2/R4 do contrato D91) · os canais pelos quais ESTA pessoa pode enviar, já filtrados
+   * no servidor. `null` = a tela não sabe (leitura real ainda não expõe) e o composer não desenha
+   * o seletor — segue a regra M7 de "responde pelo número que recebeu".
+   */
+  canaisEnvio?: CanalEnvioComposer[] | null;
+  /** W-D2 · botão "Pedir ao Jarvis" no cabeçalho (mock do momento 1 da demo). */
+  jarvisSobDemanda?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -212,6 +235,16 @@ export function Inbox({
 
   const rolagemRef = useRef<HTMLDivElement>(null);
   const fimRef = useRef<HTMLDivElement>(null);
+  // W-D2 · proposta do Jarvis pedida pelo cabeçalho: null = nada pedido; "lendo" = esperando.
+  const [propostaJarvis, setPropostaJarvis] = useState<PropostaDoJarvis | "lendo" | null>(null);
+  const pedirAoJarvis = () => {
+    if (!selecionada) return;
+    setPropostaJarvis("lendo");
+    setTimeout(() => {
+      setPropostaJarvis(gerarPropostaJarvis(selecionada, mensagens));
+      setTimeout(() => fimRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 50);
+    }, 1400);
+  };
 
   /**
    * F2 / D62 (27/08) · O JARVIS CRIA A TAREFA — no runtime, não aqui.
@@ -849,6 +882,20 @@ export function Inbox({
                 {origemLegivel ? <ChipNumeroCabecalho c={selecionada} /> : null}
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
+                {jarvisSobDemanda && (
+                  <button
+                    onClick={pedirAoJarvis}
+                    disabled={propostaJarvis === "lendo"}
+                    title="O Jarvis lê esta conversa e propõe a próxima ação"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-linha-forte px-3 py-1.5 text-[0.78rem] font-semibold text-navy transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40 disabled:opacity-60"
+                  >
+                    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+                      <path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
+                    </svg>
+                    {propostaJarvis === "lendo" ? "Jarvis lendo…" : "Pedir ao Jarvis"}
+                  </button>
+                )}
                 <span
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border border-linha bg-board px-3 py-1 text-[0.78rem] text-suave",
@@ -910,29 +957,41 @@ export function Inbox({
                             const motivo = motivoErroPermanente(m.erro_codigo);
                             const podeRetry = podeTentarDeNovo(m);
                             const ehAncora = ancora?.id === m.id;
+                            const figurinha = ehFigurinha(m);
+                            const programada = !!m.programada_para;
                             return (
                               <div
                                 key={m.id}
+                                id={`msg-${m.id}`}
                                 ref={ehAncora ? ancoraRef : undefined}
                                 className={cn(
-                                  "flex flex-col",
+                                  "flex flex-col gap-[3px]",
                                   saida ? "items-end" : "items-start",
                                   ehAncora && ancoraViva && "ancora-tarefa",
                                 )}
                               >
                                 <div
                                   className={cn(
-                                    "whitespace-pre-wrap break-words px-3.5 py-2.5 text-[0.88rem] leading-relaxed",
-                                    saida
-                                      ? "rounded-[13px] rounded-br-[5px] bg-bolha-out text-tinta"
-                                      : "rounded-[13px] rounded-bl-[5px] border border-linha bg-bolha-in text-tinta",
-                                    saida && !primeira && "rounded-tr-[5px]",
-                                    !saida && !primeira && "rounded-tl-[5px]",
-                                    falhou && "border border-vermelho-bd bg-vermelho-bg",
+                                    "whitespace-pre-wrap break-words text-[0.88rem] leading-relaxed",
+                                    // figurinha vai SEM balão (LiderHub: `MessageRow bare` + STICKER_BOX)
+                                    figurinha
+                                      ? "p-0"
+                                      : cn(
+                                          "px-3.5 py-2.5",
+                                          saida
+                                            ? "rounded-[13px] rounded-br-[5px] bg-bolha-out text-tinta"
+                                            : "rounded-[13px] rounded-bl-[5px] border border-linha bg-bolha-in text-tinta",
+                                          saida && !primeira && "rounded-tr-[5px]",
+                                          !saida && !primeira && "rounded-tl-[5px]",
+                                          falhou && "border border-vermelho-bd bg-vermelho-bg",
+                                          programada && "border border-dashed border-amarelo-bd bg-amarelo-bg/60",
+                                        ),
                                   )}
                                 >
+                                  {m.citada && !figurinha && <BolhaCitada citada={m.citada} saida={saida} />}
                                   <ConteudoBolha m={m} />
                                 </div>
+                                {m.reacoes && m.reacoes.length > 0 && <ReacoesChips reacoes={m.reacoes} saida={saida} />}
                                 {falhou ? (
                                   <div className="mt-[3px] flex items-center gap-2 px-1 text-[0.7rem] text-vermelho">
                                     <span>
@@ -948,10 +1007,15 @@ export function Inbox({
                                       </button>
                                     )}
                                   </div>
+                                ) : programada ? (
+                                  <div className="px-1 text-[0.68rem] tabular-nums text-mute">
+                                    <RotuloProgramada quando={m.programada_para!} />
+                                    <span className="ml-1.5">· ainda não enviada</span>
+                                  </div>
                                 ) : ultima ? (
-                                  <div className="mt-[3px] px-1 text-[0.68rem] tabular-nums text-mute">
+                                  <div className="px-1 text-[0.68rem] tabular-nums text-mute">
                                     {saida && grupo.falante === "clara" && <b className="font-medium text-laranja">Clara</b>}
-                                    {saida && grupo.falante === "sara" && <b className="font-medium text-navy">Você</b>}
+                                    {saida && grupo.falante === "sara" && <b className="font-medium text-navy">{m.autor_nome && m.autor_nome !== nomeAtendente ? m.autor_nome : "Você"}</b>}
                                     {saida ? " · " : ""}
                                     {hhmm(m.criado_em)}
                                     {saida && (
@@ -1042,6 +1106,27 @@ export function Inbox({
               {/* F2 / D62 · a tarefa que o Jarvis cria entra no FIO, como registro
                   (`RegistroInterno` com `jarvis`), no horário em que nasceu — não colada
                   ao composer: ela não pede decisão. */}
+              {/* W-D2 · a proposta do Jarvis pedida pelo cabeçalho — card de largura total, no fim do fio */}
+              {propostaJarvis === "lendo" && (
+                <div className="self-stretch rounded-[11px] border border-dashed border-linha-forte bg-board px-4 py-3 text-[0.8rem] text-suave">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="size-1.5 animate-pulse rounded-full bg-navy" />
+                    O Jarvis está lendo a conversa e o funil…
+                  </span>
+                </div>
+              )}
+              {propostaJarvis && propostaJarvis !== "lendo" && (
+                <PropostaJarvis
+                  proposta={propostaJarvis}
+                  mencionaveis={mencionaveis}
+                  onAceitar={(p) => {
+                    setPropostaJarvis({ ...p, estado: "aceita" });
+                    avisar(`Tarefa criada para ${p.responsavelNome}: ${p.fazer}`);
+                  }}
+                  onDescartar={() => setPropostaJarvis(null)}
+                  onAlterar={(p) => setPropostaJarvis(p)}
+                />
+              )}
               <div ref={fimRef} />
             </div>
 
@@ -1093,6 +1178,8 @@ export function Inbox({
               programadas={programadas}
               onProgramar={programar}
               onCancelarProgramado={cancelarProgramado}
+              canaisEnvio={canaisEnvio}
+              canalConversaId={selecionada.phone_number_id ?? null}
             />
           </>
         )}
@@ -1255,11 +1342,23 @@ export function Inbox({
  * me-escuta-midia) ainda não existe — áudio/imagem/documento aparecem nomeados, com a
  * transcrição/visualização anunciada como pendente em vez de player quebrado ou URL da Meta.
  */
+function ehFigurinha(m: Mensagem): boolean {
+  const tipo = (m.tipo_conteudo ?? "").toLowerCase();
+  return (tipo === "sticker" || tipo === "figurinha") && !!m.midia_url;
+}
+
 function ConteudoBolha({ m }: { m: Mensagem }) {
   const tipo = (m.tipo_conteudo ?? "text").toLowerCase();
   if (tipo === "text" || tipo === "texto") {
     return m.corpo ? <>{m.corpo}</> : <span className="italic opacity-70">[mensagem vazia]</span>;
   }
+  // W-D2 · corpos tipados — só quando o campo tipado existe (fixture hoje; projeção amanhã)
+  if (m.interativo) return <BolhaInterativa m={m} />;
+  if (m.documento) return <BolhaDocumento m={m} />;
+  if (m.localizacao) return <BolhaLocalizacao m={m} />;
+  if (m.contato) return <BolhaContato m={m} />;
+  if (tipo === "video" && m.midia_url) return <BolhaVideo m={m} />;
+  if (ehFigurinha(m)) return <BolhaFigurinha m={m} />;
   if (ehAudio(tipo)) {
     // player quando a mídia já está no bucket; degrade honesto quando não (bolha-audio.tsx)
     return <BolhaAudio m={m} />;

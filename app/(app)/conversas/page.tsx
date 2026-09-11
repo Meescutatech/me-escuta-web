@@ -15,6 +15,19 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { lerEstadoEscopo } from "@/lib/dados/departamentos";
 import { Inbox } from "@/components/conversas/inbox";
 import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
+import { lerSessaoEnsaio, estadoEscopoEnsaio } from "@/lib/ensaio/sessao";
+import { mencionaveisEnsaio } from "@/lib/ensaio/fixtures/mencionaveis";
+import {
+  conversasVisiveisPara,
+  etapasEnsaio,
+  gerarConversasEnsaio,
+  gerarLeadsEnsaio,
+  painelLeadEnsaio,
+  paginaEnsaio,
+} from "@/lib/ensaio/fixtures/conversas";
+import { canaisDeEnvio, formatarE164, gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
+import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
+import type { CanalEnvioComposer } from "@/components/conversas/composer";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +50,60 @@ export default async function ConversasPage({
 }: {
   searchParams: { c?: string; lead?: string; em?: string };
 }) {
+  // W-D2 · MODO ENSAIO: o mesmo <Inbox>, alimentado pela fixture. Visibilidade = R4 do contrato
+  // (por papel + lotação + canal próprio) e escopo do header, os dois aplicados no servidor.
+  const ensaio = lerSessaoEnsaio();
+  if (ensaio) {
+    const agora = new Date();
+    const { escopo, ativo } = estadoEscopoEnsaio(ensaio);
+    const canais = gerarCanaisEnsaio(agora);
+    const { conversas: todas, mensagens: porConversa } = gerarConversasEnsaio(agora);
+    const conversas = conversasVisiveisPara(ensaio, todas, escopo, canais);
+    const alvoPedido = searchParams.c ?? searchParams.lead ?? null;
+    const doAlvo =
+      (searchParams.c && conversas.find((c) => c.id === searchParams.c)?.id) ||
+      (searchParams.lead && conversas.find((c) => c.lead_id === searchParams.lead)?.id) ||
+      null;
+    const selecionadaId = doAlvo || (alvoPedido ? null : conversas[0]?.id) || null;
+    const selecionada = conversas.find((c) => c.id === selecionadaId) ?? null;
+    const lead = selecionada?.lead_id ? gerarLeadsEnsaio(agora).find((l) => l.lead_id === selecionada.lead_id) ?? null : null;
+    const envio = canaisDeEnvio(ensaio, canais);
+    const canaisEnvio: CanalEnvioComposer[] = envio.canais.map((c) => ({
+      id: c.canal_id,
+      apelido: c.apelido,
+      numero: formatarE164(c.numero_e164),
+      provedor: c.provedor,
+      producao: c.finalidade === "producao" && c.provedor === "waba",
+      proprio: c.responsavel_id === ensaio.id,
+    }));
+    const mencionaveis = mencionaveisEnsaio(agora);
+    return (
+      <Inbox
+        conversas={conversas}
+        total={conversas.length}
+        corte={false}
+        proximoCursor={null}
+        origemLegivel
+        selecionadaId={selecionadaId}
+        mensagens={selecionadaId ? porConversa.get(selecionadaId) ?? [] : []}
+        sugestoes={[]}
+        painel={lead ? painelLeadEnsaio(lead, agora) : null}
+        autorEmail={ensaio.email}
+        autorId={ensaio.id}
+        nomeAtendente={ensaio.nome.split(" ")[0]}
+        mencionaveis={mencionaveis}
+        tiposTarefa={TIPOS_TAREFA_SEMENTE}
+        templates={[]}
+        etapas={etapasEnsaio()}
+        departamentoAtivo={ativo ? { chave: ativo.chave, rotulo: ativo.rotulo } : null}
+        programadas={[]}
+        ancoraEm={searchParams.em ?? null}
+        alvoNaoEncontrado={!!alvoPedido && !doAlvo}
+        canaisEnvio={canaisEnvio}
+        jarvisSobDemanda
+      />
+    );
+  }
   // autor exibido (getUser vai à rede) + insumos do composer em paralelo com a lista —
   // nada aqui depende de nada. O autor das notas/tarefas sai desta mesma chamada: o uuid é o
   // dado forte (responsavel_id / autor_id / mencionado_id) e o e-mail fica só como legado de

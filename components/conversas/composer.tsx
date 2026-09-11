@@ -71,6 +71,21 @@ function fmtSegundos(s: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/**
+ * W-D2 (R2/R4 do contrato D91) · um canal pelo qual esta pessoa pode ENVIAR. Já filtrado no
+ * servidor (`porta.canais_de_envio(uid)`); o composer só desenha e deixa trocar.
+ */
+export interface CanalEnvioComposer {
+  id: string;
+  apelido: string;
+  numero: string;
+  provedor: "waba" | "nao_oficial";
+  /** o número de produção (Kommo) — pré-selecionado (R2). */
+  producao: boolean;
+  /** `responsavel_id` = a pessoa logada (o número dela). */
+  proprio: boolean;
+}
+
 export function Composer({
   modoClara,
   pending,
@@ -92,6 +107,8 @@ export function Composer({
   programadas,
   onProgramar,
   onCancelarProgramado,
+  canaisEnvio = null,
+  canalConversaId = null,
 }: {
   modoClara: boolean;
   pending: boolean;
@@ -132,7 +149,21 @@ export function Composer({
   /** Grava `envio_programado`. Devolve true quando gravou — só então o campo esvazia. */
   onProgramar: (quandoMs: number, texto: string) => Promise<boolean>;
   onCancelarProgramado: (id: string) => void;
+  /**
+   * W-D2 · "Enviando por {número}". `null` = sem seletor (comportamento M7 de sempre). Com lista, o
+   * canal DESTA conversa vem marcado; escolher outro NÃO muda este fio — abre/cria a conversa com o
+   * mesmo cliente naquele número (R3: `md5(pnid|tel)`), e a tela diz isso antes do envio.
+   */
+  canaisEnvio?: CanalEnvioComposer[] | null;
+  canalConversaId?: string | null;
 }) {
+  // W-D2 · canal escolhido para ENVIAR: começa no canal da conversa (R3); null = ainda sem canal.
+  const [canalEscolhidoId, setCanalEscolhidoId] = useState<string | null>(null);
+  const [seletorAberto, setSeletorAberto] = useState(false);
+  const canalDaConversa = canaisEnvio?.find((c) => c.id === canalConversaId) ?? null;
+  const canalEscolhido =
+    canaisEnvio?.find((c) => c.id === (canalEscolhidoId ?? canalConversaId)) ?? canalDaConversa ?? canaisEnvio?.find((c) => c.producao) ?? canaisEnvio?.[0] ?? null;
+  const fioNovo = !!canaisEnvio && !!canalEscolhido && canalEscolhido.id !== canalConversaId;
   const [rascunho, setRascunho] = useState("");
   const [anexo, setAnexo] = useState<Anexo | null>(null);
   const [subindo, setSubindo] = useState(false);
@@ -690,7 +721,7 @@ export function Composer({
                  que as 12 mensagens de 27/07 chegaram ao telefone do Diogo. Bloquear quebraria o
                  ensaio. O que não é legítimo é descobrir DEPOIS.
                · não cadastrado / desligado -> DESABILITA, com o motivo nomeado. */}
-          {!interno && origem && (origem.motivo || origem.aviso || origem.respondePor) ? (
+          {!interno && origem && (origem.motivo || origem.aviso || (origem.respondePor && !canaisEnvio)) ? (
             <div
               className={cn(
                 "flex items-start gap-2 border-b px-3.5 py-[7px] text-[12px]",
@@ -871,8 +902,75 @@ export function Composer({
             </div>
           )}
 
+          {/* W-D2 · fio novo: trocar o número NÃO responde por aqui — abre outra conversa (R3) */}
+          {!interno && fioNovo && canalEscolhido && (
+            <div className="flex items-center gap-2 border-t border-nota-linha bg-nota-faixa px-3.5 py-[7px] text-[12px] text-amarelo">
+              <span className="font-[650]">Fio novo neste número:</span>
+              <span className="min-w-0 flex-1 truncate">
+                a conversa com {nomeLead ?? "este cliente"} por {canalEscolhido.apelido} abre separada — esta continua como está.
+              </span>
+              <button
+                type="button"
+                onClick={() => setCanalEscolhidoId(null)}
+                className="shrink-0 rounded px-1.5 py-px font-medium underline-offset-2 hover:underline"
+              >
+                voltar ao número desta conversa
+              </button>
+            </div>
+          )}
+
           {/* barra de rodapé: dica à esquerda, ação à direita */}
           <div className="flex items-center gap-2.5 py-2 pl-3.5 pr-2.5">
+            {!interno && canaisEnvio && canalEscolhido && (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSeletorAberto((v) => !v)}
+                  aria-haspopup="listbox"
+                  aria-expanded={seletorAberto}
+                  title="Por qual número esta mensagem sai"
+                  className={cn(
+                    "inline-flex max-w-[300px] items-center gap-1.5 rounded-md border px-2 py-[3px] text-[12px] transition-colors",
+                    fioNovo ? "border-amarelo-bd bg-amarelo-bg text-amarelo" : "border-linha bg-board text-suave hover:bg-hover hover:text-tinta",
+                  )}
+                >
+                  <span className="text-mute">Enviando por</span>
+                  <span className={cn("size-1.5 shrink-0 rounded-full", canalEscolhido.provedor === "waba" ? "bg-verde" : "bg-navy")} aria-hidden />
+                  <span className="truncate font-medium">{canalEscolhido.apelido}</span>
+                  <span className="hidden truncate font-mono tabular-nums text-mute sm:inline">{canalEscolhido.numero}</span>
+                  <svg viewBox="0 0 24 24" className="size-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+                {seletorAberto && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setSeletorAberto(false)} aria-hidden />
+                    <ul
+                      role="listbox"
+                      aria-label="Número de envio"
+                      className="absolute bottom-full left-0 z-30 mb-1.5 w-[320px] overflow-hidden rounded-lg border border-linha-forte bg-branco py-1 shadow-forte animate-rise"
+                    >
+                      <li className="px-3 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-mute">Número desta conversa</li>
+                      {canaisEnvio
+                        .filter((c) => c.id === canalConversaId)
+                        .map((c) => (
+                          <OpcaoCanal key={c.id} c={c} marcado={canalEscolhido.id === c.id} onEscolher={() => { setCanalEscolhidoId(null); setSeletorAberto(false); }} />
+                        ))}
+                      {canaisEnvio.some((c) => c.id !== canalConversaId) && (
+                        <li className="mt-1 border-t border-linha px-3 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-mute">
+                          Falar com {nomeLead ? nomeLead.split(" ")[0] : "o cliente"} por outro número
+                        </li>
+                      )}
+                      {canaisEnvio
+                        .filter((c) => c.id !== canalConversaId)
+                        .map((c) => (
+                          <OpcaoCanal key={c.id} c={c} marcado={canalEscolhido.id === c.id} onEscolher={() => { setCanalEscolhidoId(c.id); setSeletorAberto(false); }} novo />
+                        ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
             <span className="min-w-0 truncate text-[12px] text-mute">
               {interno ? (
                 <>
@@ -933,6 +1031,35 @@ export function Composer({
         </p>
       )}
     </div>
+  );
+}
+
+function OpcaoCanal({ c, marcado, onEscolher, novo = false }: { c: CanalEnvioComposer; marcado: boolean; onEscolher: () => void; novo?: boolean }) {
+  return (
+    <li
+      role="option"
+      aria-selected={marcado}
+      onClick={onEscolher}
+      className={cn("flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[12.5px] hover:bg-hover", marcado && "bg-board")}
+    >
+      <span className={cn("size-1.5 shrink-0 rounded-full", c.provedor === "waba" ? "bg-verde" : "bg-navy")} aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate font-medium text-tinta">{c.apelido}</span>
+          {c.producao && <span className="rounded-full bg-verde-bg px-1.5 py-px text-[10px] font-semibold text-verde">produção</span>}
+          {c.proprio && <span className="rounded-full bg-azul-bg px-1.5 py-px text-[10px] font-semibold text-azul">seu</span>}
+        </span>
+        <span className="block truncate font-mono text-[11px] tabular-nums text-mute">
+          {c.numero}
+          {novo ? " · abre conversa nova" : ""}
+        </span>
+      </span>
+      {marcado && (
+        <svg viewBox="0 0 24 24" className="size-3.5 shrink-0 text-navy" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      )}
+    </li>
   );
 }
 

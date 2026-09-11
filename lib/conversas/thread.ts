@@ -68,6 +68,8 @@ export function rotuloDia(iso: string): string {
   const hoje0 = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
   const dia0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const dif = Math.round((hoje0 - dia0) / 86400000);
+  // W-D2: mensagem PROGRAMADA vive no futuro — o chip do dia precisa saber dizer "amanhã".
+  if (dif === -1) return "amanhã";
   if (dif <= 0) return "hoje";
   if (dif === 1) return "ontem";
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
