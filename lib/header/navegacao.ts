@@ -83,18 +83,11 @@ export function itensSidebar({
       ponto: contVencidas != null && contVencidas > 0,
     },
   ];
-  if (verMarketing) {
-    // T7 (RF-12): organização, não controle de acesso — a rota e a RLS da 0251 é que defendem.
-    itens.push({
-      href: "/marketing",
-      rotulo: "Marketing",
-      icone: "marketing",
-      ativa: pathname.startsWith("/marketing"),
-      cont: null,
-      tom: "neutro",
-      ponto: false,
-    });
-  }
+  // W-D2 (10/09, 23:00 — pedido do Diogo, item B): "Marketing" SAIU da sidebar. O conteúdo virou a
+  // aba Marketing do dashboard (`/?aba=marketing`, W-D4) e `/marketing` só redireciona para lá. O
+  // parâmetro `verMarketing` fica na assinatura por compatibilidade com os call sites e os testes:
+  // quem pode ver marketing continua chegando pelo dashboard, que já sabe filtrar por papel.
+  void verMarketing;
   return itens;
 }
 

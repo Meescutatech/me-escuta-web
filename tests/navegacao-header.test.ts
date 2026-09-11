@@ -37,12 +37,12 @@ test("Fila de validação, Configurações e Relatar problema SAÍRAM do menu", 
   assert.ok(!hrefs.some((h) => h.startsWith("/fila") || h.startsWith("/configuracoes") || h.startsWith("/suporte")));
 });
 
-test("ordem completa com marketing: Jarvis · Dashboard · Funil · Conversas · Tarefas · Marketing", () => {
+test("ordem completa: Jarvis · Dashboard · Funil · Conversas · Tarefas — Marketing SAIU (virou aba do dashboard, W-D4)", () => {
   assert.deepEqual(
     itensSidebar({ ...base, verMarketing: true }).map((i) => i.rotulo),
-    ["Jarvis", "Dashboard", "Funil", "Conversas", "Tarefas", "Marketing"],
+    ["Jarvis", "Dashboard", "Funil", "Conversas", "Tarefas"],
   );
-  assert.equal(itensSidebar(base).length, 5, "sem marketing são 5");
+  assert.equal(itensSidebar(base).length, 5, "com ou sem marketing são 5");
 });
 
 test("contadores: funil sempre que houver número; conversas/tarefas só acima de zero", () => {
