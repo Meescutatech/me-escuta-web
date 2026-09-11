@@ -160,3 +160,39 @@ test("toda ordem do seletor é executável — nenhuma opção de menu sem imple
     assert.ok(r.every((x) => x.peso != null), `${o.chave} não devolveu o peso — o "por quê" ficaria sem fonte`);
   }
 });
+
+// ─────────────── o calendário (lib/tarefas/calendario.ts) ───────────────
+
+const { gradeDoMes, gradeDaSemana, porDia, prazoNoDia, rotuloSemana, ymdSP } = await import("../lib/tarefas/calendario.ts");
+
+test("a grade do mês tem SEMPRE 6 linhas de 7 — trocar de mês não pode mudar a altura da tela", () => {
+  for (const mes of ["2026-02-01", "2026-09-01", "2026-11-01"]) {
+    assert.equal(gradeDoMes(mes, AGORA).length, 42, `${mes} não deu 42 células`);
+  }
+  const setembro = gradeDoMes("2026-09-01", AGORA);
+  assert.equal(setembro[0].ymd, "2026-08-31", "a semana começa na SEGUNDA: 01/09/2026 é terça");
+  assert.equal(setembro.filter((d) => d.hoje).length, 1);
+  assert.equal(setembro.find((d) => d.hoje)?.ymd, ymdSP(AGORA));
+});
+
+test("a semana tem 7 dias e começa na segunda", () => {
+  const semana = gradeDaSemana("2026-09-10", AGORA);
+  assert.equal(semana.length, 7);
+  assert.equal(semana[0].ymd, "2026-09-07");
+  assert.equal(rotuloSemana(semana), "7 – 13 de setembro");
+});
+
+test("arrastar para outro dia MANTÉM a hora — quinta 14h vira sexta 14h, não 09:00", () => {
+  const quinta14 = "2026-09-10T17:00:00.000Z"; // 14:00 SP
+  const novo = prazoNoDia("2026-09-11", quinta14);
+  assert.equal(novo, "2026-09-11T17:00:00.000Z");
+  // vindo da gaveta (sem prazo), cai às 09:00 SP = 12:00 UTC
+  assert.equal(prazoNoDia("2026-09-11", null), "2026-09-11T12:00:00.000Z");
+});
+
+test("o mapa por dia usa São Paulo, não UTC — 21h de quinta não pode cair na sexta", () => {
+  const noite = tarefa({ id: "noite", prazo: "2026-09-11T00:30:00.000Z" }); // 10/09 21:30 em SP
+  const mapa = porDia([noite, tarefa({ id: "sem-prazo" })]);
+  assert.deepEqual([...mapa.keys()], ["2026-09-10"]);
+  assert.equal(mapa.get("2026-09-10")?.length, 1, "tarefa sem prazo não entra no calendário");
+});

@@ -330,14 +330,9 @@ export function FiltrosTarefas({
               Limpar tudo
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void navigator.clipboard?.writeText(window.location.href)}
-            title="Copia o link desta visão — os filtros vivem na URL"
-            className="ml-auto text-[12px] text-mute underline-offset-[3px] hover:text-tinta hover:underline"
-          >
-            Salvar visão
-          </button>
+          {/* o "Salvar visão" que copiava o link SAIU: quem salva visão agora é o popover Visões
+              (lib/tarefas/visoes.ts), que guarda filtros + ordem + forma com um nome. Dois botões
+              com o mesmo nome fazendo coisas diferentes é pior que nenhum dos dois. */}
         </div>
       )}
     </div>

@@ -428,6 +428,16 @@ export function VisaoTarefas({
   const grupos = useMemo<GrupoDia[]>(() => {
     if (quadro) return [];
     if (modoHoje) {
+      /*
+       * Com a ordem de URGÊNCIA a fila do dia é UMA lista. Medido no ensaio: cortando em Vencidas
+       * × Hoje, a numeração saía 1,2,4,3,5 — porque o peso põe uma "vence hoje" com lead quente à
+       * frente de uma vencida fria, e o corte reordena o DOM. Número que pula é a tela discordando
+       * de si mesma; o que venceu continua dito em vermelho em cada linha, e o cabeçalho conta
+       * quantas são.
+       */
+      if (ranqueada) {
+        return fila.length ? [{ chave: "hoje" as GrupoDia["chave"], rotulo: "Mais urgente primeiro", tarefas: fila, vermelho: false }] : [];
+      }
       return [
         { chave: "vencidas", rotulo: "Vencidas", tarefas: fila.filter((t) => t.vencida), vermelho: true },
         { chave: "hoje", rotulo: "Hoje", tarefas: fila.filter((t) => !t.vencida), vermelho: false },
@@ -472,6 +482,15 @@ export function VisaoTarefas({
     () => (quadro ? new Map(ordenar(tarefasQuadro, ordem, sinais, agora).map((x, i) => [x.t.id, i])) : null),
     [quadro, tarefasQuadro, ordem, sinais, agora],
   );
+
+  /*
+   * Em HOJE a posição é a da FILA DO DIA, não a da lista inteira: o cabeçalho diz "Nº 3 de 7 do
+   * dia", e um número ao lado da linha que contasse outro universo faria a tela discordar de si
+   * mesma na mesma tela.
+   */
+  const rankFila = useMemo(() => new Map(fila.map((t, i) => [t.id, i])), [fila]);
+  const rankLinha = modoHoje ? rankFila : rank;
+  const totalLinha = modoHoje ? fila.length : ordenadas.length;
 
   const propostasDoRecorte = useMemo(
     () => (filtros.minhas && meuId ? propostasAbertas.filter((p) => p.responsavel_sugerido_id === meuId) : propostasAbertas),
@@ -911,8 +930,8 @@ export function VisaoTarefas({
                               return n;
                             })
                           }
-                          posicao={ranqueada ? (rank.get(t.id) ?? 0) + 1 : undefined}
-                          totalNaOrdem={ordenadas.length}
+                          posicao={ranqueada && rankLinha.has(t.id) ? (rankLinha.get(t.id) ?? 0) + 1 : undefined}
+                          totalNaOrdem={totalLinha}
                           peso={ranqueada ? pesos.get(t.id) : undefined}
                           painel={painelDa(t.id)}
                           onPainel={(p) => abrirPainel(t.id, p)}
