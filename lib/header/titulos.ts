@@ -37,14 +37,27 @@ const MAPA: Record<string, string> = {
   // O que NÃO entra junto é a contagem de 405: ARB-R17-33 — número só entra no header se uma
   // pessoa conseguir zerá-lo numa sessão, e 405 com 9 dias de idade é mutirão, não sino.
   "/agentes": "Agentes",
+  // Um nome por tela, e é o MESMO da nav lateral (`lib/ensaio/config-secoes.ts`): o item da nav, o
+  // H1 e o título do header não podem divergir — é o mesmo lugar visto de três ângulos.
   "/configuracoes": "Configurações",
   "/configuracoes/membros": "Membros",
-  "/configuracoes/clara": "Clara",
-  "/configuracoes/agentes/jarvis": "Jarvis",
-  "/configuracoes/canais": "Números de WhatsApp",
-  "/configuracoes/funil": "Funil de vendas",
-  "/configuracoes/templates": "Templates",
-  "/configuracoes/avancado": "Todas as configurações",
+  "/configuracoes/cargos": "Cargos",
+  "/configuracoes/departamentos": "Cargos",
+  "/configuracoes/canais": "Números conectados",
+  "/configuracoes/inteligencia": "Mapa",
+  "/configuracoes/agentes": "Agentes",
+  "/configuracoes/clara": "Agentes",
+  "/configuracoes/agentes/jarvis": "Agentes",
+  "/configuracoes/claude": "Claude",
+  "/configuracoes/conexoes": "Conexões",
+  "/configuracoes/meta": "Conexões",
+  "/configuracoes/funil": "Funil e etapas",
+  "/configuracoes/templates": "Mensagens prontas",
+  "/configuracoes/regras": "Regras e SLAs",
+  "/configuracoes/geral": "Geral",
+  "/configuracoes/identidades": "Identidades",
+  "/configuracoes/auditoria": "Auditoria e histórico",
+  "/configuracoes/avancado": "Auditoria e histórico",
   "/configuracoes/suporte": "Suporte",
 };
 

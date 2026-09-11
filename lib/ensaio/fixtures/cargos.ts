@@ -308,3 +308,20 @@ export function permissoesEfetivas(
 
   return { ve, faz, jarvis, naoAlcanca: cargo?.esconde ?? [] };
 }
+
+/**
+ * O cargo de um CONVITE. Separado de `cargoDe` porque o convite ainda não é uma pessoa: ele carrega
+ * `papel` + `departamentos` e mais nada.
+ *
+ * Casa contra TODOS os cargos, não só os ativos — o primeiro convite para um cargo do PRD (a
+ * Priscila em Cobrança, por exemplo) é justamente o momento em que ele deixa de ser "disponível",
+ * e mostrar "Sem cargo" ali faria a tela parecer defeituosa quando está certa.
+ */
+export function cargoDoConvite(convite: { papel: PapelWorkspace; departamentos: VinculoDepartamento[] }): Cargo | null {
+  const dep = convite.departamentos[0]?.departamento ?? null;
+  return (
+    CARGOS.find((c) => c.papeis.includes(convite.papel) && c.departamento === dep) ??
+    CARGOS.find((c) => c.papeis.includes(convite.papel) && c.departamento === null && dep === null) ??
+    null
+  );
+}
