@@ -363,28 +363,37 @@ export function VisaoTarefas({
   // ── o "e agora?" e o andar do foco ──
   const filaIdsRef = useRef<string[]>([]);
   filaIdsRef.current = fila.map((t) => t.id);
-  function andarFoco(depoisDe: string) {
-    if (!modoHoje || foco !== depoisDe) return;
-    // a tarefa saiu da fila (concluída/adiada): o próximo é o que ocupava a posição seguinte
+  /**
+   * O próximo da fila é decidido NO INSTANTE da ação (concluir/adiar), sobre a fila de antes:
+   * depois que a tarefa some, "quem vinha depois dela" não é mais derivável da lista. O "e
+   * agora?" fecha bem depois — por isso o próximo fica guardado num ref até lá.
+   */
+  const proximoRef = useRef<string | null>(null);
+  function proximoDepoisDe(id: string): string | null {
     const ids = filaIdsRef.current;
-    const i = ids.indexOf(depoisDe);
-    setFoco(i >= 0 ? (ids[i + 1] ?? null) : proximaNaFila(ids, null));
+    const i = ids.indexOf(id);
+    return i >= 0 ? (ids[i + 1] ?? null) : proximaNaFila(ids.filter((x) => x !== id), null);
+  }
+  function andarFoco(depoisDe: string, proximo: string | null) {
+    if (!modoHoje || foco !== depoisDe) return;
+    setFoco(proximo);
   }
   function aoConcluida(t: TarefaVisao, resultado: string) {
     setProgresso((p) => ({ ...p, concluidas: p.concluidas + 1 }));
     setConcluindoId(null);
+    proximoRef.current = proximoDepoisDe(t.id);
     // sem lead não há a quem dever a próxima — o foco anda direto
     if (t.lead_id) setEAgora({ tarefa: t, resultado });
-    else andarFoco(t.id);
+    else andarFoco(t.id, proximoRef.current);
   }
   function fecharEAgora() {
     const t = eAgora?.tarefa;
     setEAgora(null);
-    if (t) andarFoco(t.id);
+    if (t) andarFoco(t.id, proximoRef.current);
   }
   function aoAdiada(t: TarefaVisao) {
     setProgresso((p) => ({ ...p, adiadas: p.adiadas + 1 }));
-    andarFoco(t.id);
+    andarFoco(t.id, proximoDepoisDe(t.id));
   }
   function mudarFoco(id: string | null) {
     if (foco && id && foco !== id && modoHoje) {
