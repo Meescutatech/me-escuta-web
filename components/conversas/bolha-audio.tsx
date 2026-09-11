@@ -1,25 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MicIcon } from "lucide-react";
 import { obterUrlMidia } from "@/app/(app)/conversas/actions";
+import { AudioPlayer } from "@/components/ui/audio-player";
 import { temPlayerDeAudio } from "@/lib/conversas/midia";
 import type { Mensagem } from "@/lib/dados/conversas";
 
 /*
  * Bolha de mensagem de voz (rodada 5 — pipeline de mídia). Com midia_caminho presente, busca a
- * signed URL do bucket privado quando a bolha monta (lazy, MVP) e renderiza <audio controls>;
- * sem caminho (mídia não baixada / falhou) mantém o degrade honesto de antes — nunca player
- * quebrado. Transcrição (corpo) continua aparecendo quando existir.
+ * signed URL do bucket privado quando a bolha monta (lazy, MVP) e renderiza o player; sem caminho
+ * (mídia não baixada / falhou) mantém o degrade honesto de antes — nunca player quebrado.
+ * Transcrição (corpo) continua aparecendo quando existir.
+ *
+ * W-D3 (10/09): o `<audio controls>` nativo deu lugar ao `AudioPlayer` do preset (LiderHub
+ * `audio-player.tsx`, portado em components/ui): play/pause, barra de progresso, duração e
+ * velocidade 1× · 1,5× · 2× — que é o que se quer para um recado de paciente. `duracao_s` vem da
+ * mensagem quando a projeção tem, e o player mostra antes de baixar o arquivo.
  */
 
 function PlayerAudio({
   caminho,
-  mime,
   urlPronta,
+  duracao,
 }: {
   caminho: string;
-  mime?: string | null;
   urlPronta?: string | null;
+  duracao?: number | null;
 }) {
   const [url, setUrl] = useState<string | null>(urlPronta ?? null);
   const [erro, setErro] = useState(false);
@@ -58,29 +65,30 @@ function PlayerAudio({
     return <span className="text-[0.76rem] italic text-mute">carregando áudio…</span>;
   }
   return (
-    <audio controls preload="metadata" className="h-9 w-64 max-w-full">
-      <source src={url} type={mime ?? undefined} />
-      seu navegador não toca este áudio
-    </audio>
+    <AudioPlayer
+      src={url}
+      durationHint={duracao ?? undefined}
+      showSpeed
+      onError={() => setErro(true)}
+      className="w-[240px] max-w-full"
+    />
   );
 }
 
 export function BolhaAudio({ m }: { m: Mensagem }) {
+  const comPlayer = temPlayerDeAudio(m);
   return (
     <span className="flex flex-col gap-1.5">
-      <span className="flex items-center gap-2 font-medium">
-        <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 stroke-suave" fill="none">
-          <rect x="9" y="2" width="6" height="12" rx="3" />
-          <path d="M5 10a7 7 0 0 0 14 0M12 17v4" />
-        </svg>
-        Mensagem de voz
-      </span>
-      {temPlayerDeAudio(m) ? (
-        <PlayerAudio caminho={m.midia_caminho!} mime={m.midia_mime} urlPronta={m.midia_url} />
-      ) : null}
+      {!comPlayer && (
+        <span className="flex items-center gap-2 font-medium">
+          <MicIcon className="size-4 shrink-0 text-suave" strokeWidth={2} />
+          Mensagem de voz
+        </span>
+      )}
+      {comPlayer ? <PlayerAudio caminho={m.midia_caminho!} urlPronta={m.midia_url} duracao={m.duracao_s} /> : null}
       {m.corpo ? (
         <span className="text-[0.84rem] text-suave">“{m.corpo}”</span>
-      ) : temPlayerDeAudio(m) ? null : (
+      ) : comPlayer ? null : (
         <span className="text-[0.76rem] italic text-mute">
           transcrição e player chegam com a pipeline de mídia
         </span>

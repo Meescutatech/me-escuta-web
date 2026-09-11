@@ -1,6 +1,7 @@
 import type { BlocoDia, GrupoBolhas } from "@/lib/conversas/thread";
 import type { AnotacaoLead, MencaoLead, TarefaLead } from "@/lib/dados/lead-painel";
 import type { Mencionavel, TipoMencionavel } from "@/lib/conversas/mencao";
+import type { PropostaJarvis } from "@/lib/conversas/jarvis-proposta";
 
 /**
  * REGISTRO INTERNO na timeline da conversa (Rodada 13 / Bloco C — C2).
@@ -108,16 +109,21 @@ export function montarRegistros(
 
 export type ItemTimeline =
   | { tipo: "grupo"; grupo: GrupoBolhas; quando: string }
-  | { tipo: "registro"; registro: RegistroInterno; quando: string };
+  | { tipo: "registro"; registro: RegistroInterno; quando: string }
+  /** W-D3 · a nota do Jarvis com a proposta, no ponto do fio em que nasceu. */
+  | { tipo: "proposta"; proposta: PropostaJarvis; quando: string };
 
 /**
  * Intercala os registros do dia entre os grupos de bolhas, por horário. Registro fora dos dias
  * que têm mensagem não aparece aqui — ele continua visível na aba Tarefas e notas do painel.
+ *
+ * W-D3 · as PROPOSTAS do Jarvis entram pela mesma regra (mesmo dia, mesmo horário relativo):
+ * a nota dele aparece exatamente onde ele leu o que o motivou. Descartada não entra.
  */
-export function itensDoDia(bloco: BlocoDia, registros: RegistroInterno[]): ItemTimeline[] {
-  const doDia = registros.filter((r) =>
-    bloco.grupos.some((g) => g.itens.some((m) => mesmoDia(m.criado_em, r.criado_em))),
-  );
+export function itensDoDia(bloco: BlocoDia, registros: RegistroInterno[], propostas: PropostaJarvis[] = []): ItemTimeline[] {
+  const noDia = (iso: string) => bloco.grupos.some((g) => g.itens.some((m) => mesmoDia(m.criado_em, iso)));
+  const doDia = registros.filter((r) => noDia(r.criado_em));
+  const propostasDoDia = propostas.filter((p) => p.estado !== "descartada" && noDia(p.criado_em));
   const itens: ItemTimeline[] = [
     ...bloco.grupos.map((grupo) => ({
       tipo: "grupo" as const,
@@ -125,8 +131,16 @@ export function itensDoDia(bloco: BlocoDia, registros: RegistroInterno[]): ItemT
       quando: grupo.itens[0]?.criado_em ?? "",
     })),
     ...doDia.map((registro) => ({ tipo: "registro" as const, registro, quando: registro.criado_em })),
+    ...propostasDoDia.map((proposta) => ({ tipo: "proposta" as const, proposta, quando: proposta.criado_em })),
   ];
   return itens.sort((a, b) => a.quando.localeCompare(b.quando));
+}
+
+/** Propostas que NÃO cabem em nenhum dia com mensagem (ex.: a manual, de agora, num fio parado) — vão para o fim. */
+export function propostasForaDosDias(blocos: BlocoDia[], propostas: PropostaJarvis[]): PropostaJarvis[] {
+  return propostas.filter(
+    (p) => p.estado !== "descartada" && !blocos.some((b) => b.grupos.some((g) => g.itens.some((m) => mesmoDia(m.criado_em, p.criado_em)))),
+  );
 }
 
 function mesmoDia(a: string, b: string): boolean {

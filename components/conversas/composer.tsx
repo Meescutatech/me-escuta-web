@@ -35,6 +35,7 @@ import { criarAnotacaoLead, criarTarefaLead } from "@/app/(app)/lead/actions";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { iniciaisDe } from "@/lib/dados/tarefa-calculos";
 import { cn } from "@/lib/utils";
+import { marcaDoCanal } from "@/lib/conversas/cor-canal";
 import type { VereditoEnvio } from "./regras/numero.ts";
 import { BotaoEnvio, ListaProgramadas } from "./botao-envio";
 import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
@@ -928,16 +929,20 @@ export function Composer({
                   onClick={() => setSeletorAberto((v) => !v)}
                   aria-haspopup="listbox"
                   aria-expanded={seletorAberto}
-                  title="Por qual número esta mensagem sai"
+                  title={`Por qual número esta mensagem sai · ${canalEscolhido.numero}`}
                   className={cn(
                     "inline-flex max-w-[300px] items-center gap-1.5 rounded-md border px-2 py-[3px] text-[12px] transition-colors",
                     fioNovo ? "border-amarelo-bd bg-amarelo-bg text-amarelo" : "border-linha bg-board text-suave hover:bg-hover hover:text-tinta",
                   )}
                 >
-                  <span className="text-mute">Enviando por</span>
-                  <span className={cn("size-1.5 shrink-0 rounded-full", canalEscolhido.provedor === "waba" ? "bg-verde" : "bg-navy")} aria-hidden />
+                  <span className="text-mute">Enviando por:</span>
+                  <span
+                    className={cn("grid size-[14px] shrink-0 place-items-center rounded-full text-[8.5px] font-bold leading-none", marcaCanal(canalEscolhido).cheia)}
+                    aria-hidden
+                  >
+                    {marcaCanal(canalEscolhido).inicial}
+                  </span>
                   <span className="truncate font-medium">{canalEscolhido.apelido}</span>
-                  <span className="hidden truncate font-mono tabular-nums text-mute sm:inline">{canalEscolhido.numero}</span>
                   <svg viewBox="0 0 24 24" className="size-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <path d="m6 9 6 6 6-6" />
                   </svg>
@@ -1034,6 +1039,11 @@ export function Composer({
   );
 }
 
+/** A mesma cor/inicial da lista e do rail (`lib/conversas/cor-canal.ts`) — uma marca por número. */
+function marcaCanal(c: CanalEnvioComposer) {
+  return marcaDoCanal({ phone_number_id: c.id, numero_apelido: c.apelido, finalidade: c.producao ? "producao" : null });
+}
+
 function OpcaoCanal({ c, marcado, onEscolher, novo = false }: { c: CanalEnvioComposer; marcado: boolean; onEscolher: () => void; novo?: boolean }) {
   return (
     <li
@@ -1042,7 +1052,9 @@ function OpcaoCanal({ c, marcado, onEscolher, novo = false }: { c: CanalEnvioCom
       onClick={onEscolher}
       className={cn("flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[12.5px] hover:bg-hover", marcado && "bg-board")}
     >
-      <span className={cn("size-1.5 shrink-0 rounded-full", c.provedor === "waba" ? "bg-verde" : "bg-navy")} aria-hidden />
+      <span className={cn("grid size-[18px] shrink-0 place-items-center rounded-full text-[9.5px] font-bold leading-none", marcaCanal(c).cheia)} aria-hidden>
+        {marcaCanal(c).inicial}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="truncate font-medium text-tinta">{c.apelido}</span>

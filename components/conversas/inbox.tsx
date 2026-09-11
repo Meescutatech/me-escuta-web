@@ -36,7 +36,17 @@ import {
   ReacoesChips,
   RotuloProgramada,
 } from "@/components/conversas/bolha-tipada";
-import { PropostaJarvis, gerarPropostaJarvis, type PropostaDoJarvis } from "@/components/conversas/proposta-jarvis";
+import { gerarPropostaJarvis, type PropostaJarvis as PropostaDoJarvis } from "@/lib/conversas/jarvis-proposta";
+import { PropostaJarvisInline } from "@/components/jarvis/proposta-inline";
+import { AssinaturaJarvis } from "@/components/jarvis/marca";
+import type { AjusteProposta, MotivoDescarte } from "@/components/jarvis/tipos";
+import { BotaoNovaConversa } from "@/components/conversas/nova-conversa";
+import { marcaDoCanal } from "@/lib/conversas/cor-canal";
+import {
+  aceitarPropostaJarvisEnsaio,
+  cancelarProgramadaEnsaio,
+  descartarPropostaJarvisEnsaio,
+} from "@/app/(app)/conversas/ensaio-actions";
 import type { CanalEnvioComposer } from "@/components/conversas/composer";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
@@ -65,7 +75,7 @@ import { AnotacoesLead } from "@/components/lead/anotacoes-lead";
 import { AbaHistorico } from "@/components/lead/aba-historico";
 import { mapaDeAgentes, mapaDeEtapas, mapaDePessoas } from "@/components/lead/regras/historico.ts";
 import { RegistroInterno } from "@/components/conversas/registro-interno";
-import { itensDoDia, montarRegistros } from "@/lib/conversas/registro-timeline";
+import { itensDoDia, montarRegistros, propostasForaDosDias } from "@/lib/conversas/registro-timeline";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import type { TemplateMensagem, VariaveisTemplate } from "@/lib/templates";
@@ -133,7 +143,13 @@ function textoNaEtapa(iso: string | null | undefined): string {
   return dd === 0 ? "hoje" : dd === 1 ? "1 dia" : `${dd} dias`;
 }
 
-type Aba = "todas" | "clara" | "humano" | "nao_lidas";
+/**
+ * W-D3 (10/09, aprovado pelo Diogo às 22:15) · as abas viram ATALHOS: Todas · Minhas · Não lidas ·
+ * Sem responsável. "Clara" e "Humano" saíram daqui e foram para o rail "Quem atende", junto com
+ * os "Números" — dois recortes que se combinam com qualquer atalho.
+ */
+type Aba = "todas" | "minhas" | "nao_lidas" | "sem_responsavel";
+type QuemAtende = "IA" | "HUMANO";
 
 export function Inbox({
   conversas,
@@ -158,6 +174,9 @@ export function Inbox({
   alvoNaoEncontrado = false,
   canaisEnvio = null,
   jarvisSobDemanda = false,
+  propostas = [],
+  tarefasPorProposta = null,
+  ensaio = false,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -207,8 +226,14 @@ export function Inbox({
    * o seletor — segue a regra M7 de "responde pelo número que recebeu".
    */
   canaisEnvio?: CanalEnvioComposer[] | null;
-  /** W-D2 · botão "Pedir ao Jarvis" no cabeçalho (mock do momento 1 da demo). */
+  /** W-D3 · gatilho manual "Pedir sugestão ao Jarvis" no menu ⋯ do cabeçalho (só ensaio). */
   jarvisSobDemanda?: boolean;
+  /** W-D3 · as propostas do Jarvis desta conversa, no ponto do fio em que nasceram. */
+  propostas?: PropostaDoJarvis[];
+  /** W-D3 · proposta decidida → id da tarefa que nasceu dela (para "Ver tarefa" e para não duplicar o registro). */
+  tarefasPorProposta?: Record<string, string> | null;
+  /** W-D3 · modo ensaio: aceitar/descartar/cancelar vão para o cookie de estado, não para a porta. */
+  ensaio?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -222,7 +247,14 @@ export function Inbox({
   const [busca, setBusca] = useState("");
   const [aba, setAba] = useState<Aba>("todas");
   const [editando, setEditando] = useState<{ id: string; texto: string } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ texto: string; link?: { href: string; rotulo: string } } | null>(null);
+  // W-D3 · recortes do rail (combinam com a aba): quem atende e por qual número entrou
+  const [quemAtende, setQuemAtende] = useState<QuemAtende | null>(null);
+  const [numeroFiltro, setNumeroFiltro] = useState<string | null>(null);
+  const [railAberto, setRailAberto] = useState(true);
+  // W-D3 · decisões locais sobre as propostas do fio (aceita → nota vira histórico; descartada → some)
+  const [decisoes, setDecisoes] = useState<Map<string, PropostaDoJarvis | "descartada">>(new Map());
+  const [menuCabecalho, setMenuCabecalho] = useState(false);
   const [ctxColapsado, setCtxColapsado] = useState(false);
   const [novas, setNovas] = useState(0); // pill "N novas" quando o scroll está lá em cima (RF-30)
   // F22 · páginas seguintes acumuladas no cliente. A página 1 vem do servidor por props.
@@ -235,16 +267,98 @@ export function Inbox({
 
   const rolagemRef = useRef<HTMLDivElement>(null);
   const fimRef = useRef<HTMLDivElement>(null);
-  // W-D2 · proposta do Jarvis pedida pelo cabeçalho: null = nada pedido; "lendo" = esperando.
-  const [propostaJarvis, setPropostaJarvis] = useState<PropostaDoJarvis | "lendo" | null>(null);
+  // W-D3 · proposta MANUAL (gatilho do menu ⋯): nasce agora, no fim do fio; null = nada pedido.
+  const [propostaManual, setPropostaManual] = useState<PropostaDoJarvis | "lendo" | null>(null);
   const pedirAoJarvis = () => {
     if (!selecionada) return;
-    setPropostaJarvis("lendo");
+    setMenuCabecalho(false);
+    setPropostaManual("lendo");
     setTimeout(() => {
-      setPropostaJarvis(gerarPropostaJarvis(selecionada, mensagens));
+      setPropostaManual(gerarPropostaJarvis(selecionada, mensagens));
       setTimeout(() => fimRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 50);
     }, 1400);
   };
+
+  /**
+   * W-D3 · ACEITAR a proposta = a tarefa nasce (no ensaio, no cookie; em produção, `tarefa_criada`
+   * pela porta) e a nota vira histórico no mesmo lugar. DESCARTAR = a nota some, motivo opcional.
+   * As decisões ficam num mapa local para a tela responder na hora; o refresh traz o mesmo estado
+   * do servidor.
+   */
+  function aceitarProposta(p: PropostaDoJarvis, ajuste: AjusteProposta | null, manual: boolean) {
+    if (!selecionada) return;
+    startTransition(async () => {
+      if (!ensaio) {
+        avisar("Aceitar proposta do Jarvis ainda não grava fora do ensaio.");
+        return;
+      }
+      const r = await aceitarPropostaJarvisEnsaio({ proposta: { ...p, lead_id: p.lead_id ?? selecionada.lead_id ?? null, lead_nome: p.lead_nome ?? titulo ?? null }, ajuste, manual });
+      if (!r.ok) {
+        avisar(`Não criou a tarefa: ${r.motivo}`);
+        return;
+      }
+      if (manual) setPropostaManual(r.proposta);
+      else setDecisoes((m) => new Map(m).set(p.id, r.proposta));
+      setTarefasDasPropostas((m) => new Map(m).set(p.id, r.tarefa.id));
+      setToast({
+        texto: `Tarefa criada para ${r.proposta.responsavel_nome ?? "você"}: ${r.proposta.fazer}`,
+        link: { href: `/tarefas?status=abertas#tarefa-${r.tarefa.id}`, rotulo: "ver em /tarefas" },
+      });
+      setTimeout(() => setToast(null), 6000);
+      router.refresh();
+    });
+  }
+  function descartarProposta(p: PropostaDoJarvis, manual: boolean, motivo: MotivoDescarte, observacao: string | null) {
+    if (manual) setPropostaManual(null);
+    else setDecisoes((m) => new Map(m).set(p.id, "descartada"));
+    startTransition(async () => {
+      if (!ensaio) return;
+      const r = await descartarPropostaJarvisEnsaio({ propostaId: p.id, manual, motivo, observacao });
+      if (!r.ok) avisar(`Não descartou: ${r.motivo}`);
+      else router.refresh();
+    });
+  }
+  /** "ver no fio" da nota do Jarvis: rola até a mensagem citada e a marca por um instante. */
+  function irAoTrecho(mensagemId: string | null) {
+    if (!mensagemId) return;
+    const el = document.getElementById(`msg-${mensagemId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ancora-tarefa");
+    setTimeout(() => el.classList.remove("ancora-tarefa"), 2400);
+  }
+  const responsaveis = useMemo(() => mencionaveis.filter((m) => m.tipo === "humano" && m.ativo).map((m) => ({ id: m.id, nome: m.nome })), [mencionaveis]);
+  // W-D3 · a nota decidida linka para a tarefa que nasceu dela (id vem da ação; no reload, do servidor)
+  const [tarefasDasPropostas, setTarefasDasPropostas] = useState<Map<string, string>>(new Map());
+  const hrefTarefaDe = (p: PropostaDoJarvis) => {
+    const id = tarefasDasPropostas.get(p.id) ?? tarefasPorProposta?.[p.id] ?? null;
+    return id ? `/tarefas?status=abertas#tarefa-${id}` : null;
+  };
+  /** monta a nota do W-J com os callbacks do fio (`manual` = nasceu do menu ⋯, não da fixture). */
+  function notaDoJarvis(p: PropostaDoJarvis, manual: boolean, key: string) {
+    return (
+      <PropostaJarvisInline
+        key={key}
+        proposta={p}
+        responsaveis={responsaveis}
+        hrefTarefa={hrefTarefaDe(p)}
+        onIrAoTrecho={irAoTrecho}
+        onAceitar={(q, ajuste) => aceitarProposta(q, ajuste, manual)}
+        onDescartar={(q, motivo, observacao) => descartarProposta(q, manual, motivo, observacao)}
+      />
+    );
+  }
+  /** as propostas do fio com as decisões locais aplicadas por cima (a fixture/servidor é a base). */
+  const propostasVivas = useMemo(
+    () =>
+      propostas
+        .map((p) => {
+          const d = decisoes.get(p.id);
+          return d === "descartada" ? { ...p, estado: "descartada" as const } : d ?? p;
+        })
+        .filter((p) => p.conversa_id === selecionadaId),
+    [propostas, decisoes, selecionadaId],
+  );
 
   /**
    * F2 / D62 (27/08) · O JARVIS CRIA A TAREFA — no runtime, não aqui.
@@ -343,13 +457,16 @@ export function Inbox({
   const ancora = useMemo(() => idDaAncora(visiveis, ancoraEm), [visiveis, ancoraEm]);
 
   // R13/C2: notas e tarefas do lead viram registros no mesmo fio das mensagens
-  const registros = useMemo(
-    () =>
-      painel
-        ? montarRegistros(painel.anotacoes, painel.tarefas, painel.mencoes, mencionaveis)
-        : [],
-    [painel, mencionaveis],
-  );
+  // W-D3 · a tarefa que nasceu de uma proposta ACEITA não entra duas vezes: a nota do Jarvis (com
+  // "aceita por…") já é o registro dela no fio; o card "Jarvis criou tarefa" fica para as que o
+  // worker cria sozinho (autonomia `auto`).
+  const registros = useMemo(() => {
+    if (!painel) return [];
+    const daProposta = new Set([...Object.values(tarefasPorProposta ?? {}), ...tarefasDasPropostas.values()]);
+    return montarRegistros(painel.anotacoes, painel.tarefas, painel.mencoes, mencionaveis).filter(
+      (r) => !(r.tipo === "tarefa" && daProposta.has(r.id)),
+    );
+  }, [painel, mencionaveis, tarefasPorProposta, tarefasDasPropostas]);
 
   // abertura → âncora no divider de não-lidas (ou no fim); mensagem nova → rola só se já estava
   // no fim, senão vira contador na pill — NUNCA rouba o scroll da Sara (RF-30)
@@ -388,7 +505,7 @@ export function Inbox({
   }, []);
 
   function avisar(m: string) {
-    setToast(m);
+    setToast({ texto: m });
     setTimeout(() => setToast(null), 3500);
   }
 
@@ -433,16 +550,40 @@ export function Inbox({
     }
   }
 
-  // filtros da lista (RF-31): Todas · Clara conduz · Humano conduz · Não lidas
+  // W-D3 · "minha" = o dono atual sou eu (e-mail legado ou `humano:<uid>`); "sem responsável" =
+  // ninguém humano assumiu (a Clara conduz ou o fio está solto).
+  const ehMinha = (c: ConversaResumo) =>
+    !!c.dono_atual && (c.dono_atual === autorEmail || c.dono_atual === autorId || c.dono_atual === `humano:${autorId}`);
+  const semResponsavel = (c: ConversaResumo) => !c.dono_atual;
+
+  // filtros da lista (RF-31): Todas · Minhas · Não lidas · Sem responsável
   const contagens = useMemo(
     () => ({
       todas: carregadas.length,
-      clara: carregadas.filter((c) => c.mode === "IA").length,
-      humano: carregadas.filter((c) => c.mode === "HUMANO").length,
+      minhas: carregadas.filter(ehMinha).length,
       nao_lidas: carregadas.filter((c) => c.nao_lida).length,
+      sem_responsavel: carregadas.filter(semResponsavel).length,
     }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [carregadas, autorEmail, autorId],
+  );
+
+  // W-D3 · o rail: quem atende e por qual número entrou, com contagem sobre o que está carregado.
+  const railQuem = useMemo(
+    () => ({ IA: carregadas.filter((c) => c.mode === "IA").length, HUMANO: carregadas.filter((c) => c.mode === "HUMANO").length }),
     [carregadas],
   );
+  const railNumeros = useMemo(() => {
+    const mapa = new Map<string, { id: string; apelido: string; numero: string | null; finalidade: "producao" | "teste" | null; qtd: number }>();
+    for (const c of carregadas) {
+      if (!c.phone_number_id) continue;
+      const atual = mapa.get(c.phone_number_id);
+      if (atual) atual.qtd++;
+      else mapa.set(c.phone_number_id, { id: c.phone_number_id, apelido: c.numero_apelido ?? "número desconhecido", numero: c.numero_e164 ?? null, finalidade: c.finalidade ?? null, qtd: 1 });
+    }
+    // produção primeiro, depois por volume
+    return [...mapa.values()].sort((a, b) => (b.finalidade === "producao" && b.id.startsWith("waba:") ? 1 : 0) - (a.finalidade === "producao" && a.id.startsWith("waba:") ? 1 : 0) || b.qtd - a.qtd);
+  }, [carregadas]);
 
   /**
    * F22 · nenhum contador exibe o tamanho da página como se fosse o total.
@@ -460,13 +601,16 @@ export function Inbox({
   const conversasVisiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return carregadas.filter((c) => {
-      if (aba === "clara" && c.mode !== "IA") return false;
-      if (aba === "humano" && c.mode !== "HUMANO") return false;
+      if (aba === "minhas" && !ehMinha(c)) return false;
       if (aba === "nao_lidas" && !c.nao_lida) return false;
+      if (aba === "sem_responsavel" && !semResponsavel(c)) return false;
+      if (quemAtende && c.mode !== quemAtende) return false;
+      if (numeroFiltro && c.phone_number_id !== numeroFiltro) return false;
       if (!q) return true;
       return (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").includes(q);
     });
-  }, [carregadas, busca, aba]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregadas, busca, aba, quemAtende, numeroFiltro, autorEmail, autorId]);
 
   function abrir(id: string) {
     router.push(`/conversas?c=${id}`);
@@ -560,7 +704,7 @@ export function Inbox({
 
   function cancelarProgramado(id: string) {
     startTransition(async () => {
-      const r = await cancelarEnvioProgramado(id);
+      const r = ensaio ? await cancelarProgramadaEnsaio(id) : await cancelarEnvioProgramado(id);
       if (r.ok) {
         avisar("Envio programado cancelado.");
         router.refresh();
@@ -707,14 +851,20 @@ export function Inbox({
                 )}
               >
                 {ativa && <span className="absolute inset-y-[9px] left-0 w-[2px] rounded bg-laranja" />}
-                <span
-                  className={cn(
-                    "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full text-[0.72rem] font-semibold text-branco",
-                    ia ? "bg-laranja" : "bg-navy",
-                  )}
-                  title={ia ? "Clara (IA)" : "Humano"}
-                >
-                  {ia ? "C" : c.nome ? iniciais(c.nome) : "S"}
+                <span className="relative shrink-0">
+                  <span
+                    className={cn(
+                      "grid h-[30px] w-[30px] place-items-center rounded-full text-[0.72rem] font-semibold text-branco",
+                      ia ? "bg-laranja" : "bg-navy",
+                    )}
+                    title={ia ? "Clara (IA)" : "Humano"}
+                  >
+                    {ia ? "C" : c.nome ? iniciais(c.nome) : "S"}
+                  </span>
+                  {/* W-D3 · por qual NÚMERO ela entrou: a inicial do apelido, na cor do canal,
+                      no canto do avatar (LiderHub: glifo da plataforma no avatar). O rótulo
+                      inteiro fica no title — e nunca é o phone_number_id (M7/CA-9). */}
+                  {origemLegivel && c.phone_number_id ? <BolinhaNumero c={c} /> : null}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
@@ -730,10 +880,10 @@ export function Inbox({
                   <div className={cn("mt-0.5 truncate text-[0.78rem]", c.previa ? "text-suave" : "text-mute")}>
                     {prev}
                   </div>
-                  {/* M7 · o chip de número: POR ONDE esta conversa entrou. Medido: 12 das 13
-                      conversas visíveis hoje são do mesmo canal, e é justamente por serem quase
-                      todas do mesmo que ninguém percebe qual. */}
-                  {origemLegivel ? <ChipNumeroLinha c={c} /> : null}
+                  {/* M7 · os SELOS do número (teste / sem identidade / sem finalidade) continuam
+                      na linha — o selo TESTE não se esconde por valor único (ARB-R18-05). O
+                      apelido saiu daqui e foi para a bolinha no avatar (W-D3). */}
+                  {origemLegivel ? <ChipNumeroLinha c={c} soSelos /> : null}
                 </div>
                 {(c.nao_lidas_qtd ?? 0) > 0 ? (
                   <span className="mt-2.5 grid h-[17px] min-w-[17px] shrink-0 place-items-center self-start rounded-full bg-laranja px-1 text-[0.66rem] font-semibold leading-none text-branco">
@@ -754,7 +904,11 @@ export function Inbox({
           {/* M6: vira `h2` e FICA. Não é título de página — é o cabeçalho da coluna de 272px
               (`<aside className="flex w-[272px] ...">`). Um critério que a apagasse quebraria a
               coluna do inbox (SPEC-M6 §5.4, fronteira 2). */}
-          <h2 className="mb-2.5 text-[15px] font-[650] leading-none text-tinta">Conversas</h2>
+          <div className="mb-2.5 flex items-center justify-between">
+            <h2 className="text-[15px] font-[650] leading-none text-tinta">Conversas</h2>
+            {/* W-D3 · nova conversa por número (só quando a tela sabe por quais números envia) */}
+            {canaisEnvio && canaisEnvio.length > 0 ? <BotaoNovaConversa canais={canaisEnvio} /> : null}
+          </div>
           <label className="flex items-center gap-2 rounded-lg border border-linha bg-board px-2.5 py-1.5 focus-within:border-linha-forte">
             <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-[14px] w-[14px] shrink-0 stroke-mute" fill="none">
               <circle cx="11" cy="11" r="7" />
@@ -771,9 +925,9 @@ export function Inbox({
         <div className="flex gap-3 px-4 pb-1.5 pt-2.5">
           {([
             ["todas", `Todas · ${rotuloContagem("todas")}`],
-            ["clara", `Clara · ${rotuloContagem("clara")}`],
-            ["humano", `Humano · ${rotuloContagem("humano")}`],
+            ["minhas", `Minhas · ${rotuloContagem("minhas")}`],
             ["nao_lidas", `Não lidas · ${rotuloContagem("nao_lidas")}`],
+            ["sem_responsavel", `Sem resp. · ${rotuloContagem("sem_responsavel")}`],
           ] as [Aba, string][]).map(([k, rot]) => (
             <button
               key={k}
@@ -786,6 +940,84 @@ export function Inbox({
               {rot}
             </button>
           ))}
+        </div>
+
+        {/* W-D3 · o RAIL (LiderHub `inbox-rail.tsx`): dois grupos, contadores, um clique filtra e
+            outro limpa. Discreto por construção — h-6, 12px, sem ícone além da bolinha — e
+            recolhível: a lista é o que importa nesta coluna. */}
+        <div className="border-b border-linha px-2 pb-1.5">
+          <button
+            type="button"
+            onClick={() => setRailAberto((v) => !v)}
+            aria-expanded={railAberto}
+            className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-mute transition-colors hover:text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+          >
+            <span className="flex-1 text-left">Filtrar por</span>
+            {(quemAtende || numeroFiltro) && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQuemAtende(null);
+                  setNumeroFiltro(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setQuemAtende(null);
+                    setNumeroFiltro(null);
+                  }
+                }}
+                className="rounded px-1 font-medium text-laranja-esc hover:underline"
+              >
+                limpar
+              </span>
+            )}
+            <svg viewBox="0 0 24 24" className={cn("size-3 transition-transform", !railAberto && "rotate-180")} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="m18 15-6-6-6 6" />
+            </svg>
+          </button>
+          {railAberto && (
+            <div className="grid grid-cols-2 gap-x-2 px-1">
+              <div>
+                <div className="px-1.5 pb-0.5 pt-1 text-[10.5px] font-medium uppercase tracking-[0.05em] text-mute">Quem atende</div>
+                {(["IA", "HUMANO"] as QuemAtende[]).map((k) => (
+                  <ItemRail
+                    key={k}
+                    ativo={quemAtende === k}
+                    onClick={() => setQuemAtende((v) => (v === k ? null : k))}
+                    icone={<span className={cn("size-2 shrink-0 rounded-full", k === "IA" ? "bg-laranja" : "bg-navy")} aria-hidden />}
+                    rotulo={k === "IA" ? "Clara" : "Humano"}
+                    qtd={railQuem[k]}
+                  />
+                ))}
+              </div>
+              <div>
+                <div className="px-1.5 pb-0.5 pt-1 text-[10.5px] font-medium uppercase tracking-[0.05em] text-mute">Números</div>
+                {railNumeros.map((n) => {
+                  const marca = marcaDoCanal({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade });
+                  return (
+                    <ItemRail
+                      key={n.id}
+                      ativo={numeroFiltro === n.id}
+                      onClick={() => setNumeroFiltro((v) => (v === n.id ? null : n.id))}
+                      icone={
+                        <span className={cn("grid size-3.5 shrink-0 place-items-center rounded-full text-[8px] font-bold leading-none", marca.cheia)} aria-hidden>
+                          {marca.inicial}
+                        </span>
+                      }
+                      rotulo={n.apelido.split(" · ")[0]}
+                      titulo={n.numero ? `${n.apelido} · ${n.numero}` : n.apelido}
+                      qtd={n.qtd}
+                    />
+                  );
+                })}
+                {railNumeros.length === 0 && <div className="px-1.5 py-1 text-[11px] text-mute">—</div>}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 pb-4 pt-0.5">
@@ -882,20 +1114,6 @@ export function Inbox({
                 {origemLegivel ? <ChipNumeroCabecalho c={selecionada} /> : null}
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
-                {jarvisSobDemanda && (
-                  <button
-                    onClick={pedirAoJarvis}
-                    disabled={propostaJarvis === "lendo"}
-                    title="O Jarvis lê esta conversa e propõe a próxima ação"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-linha-forte px-3 py-1.5 text-[0.78rem] font-semibold text-navy transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40 disabled:opacity-60"
-                  >
-                    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
-                      <path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
-                    </svg>
-                    {propostaJarvis === "lendo" ? "Jarvis lendo…" : "Pedir ao Jarvis"}
-                  </button>
-                )}
                 <span
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border border-linha bg-board px-3 py-1 text-[0.78rem] text-suave",
@@ -911,6 +1129,44 @@ export function Inbox({
                 >
                   {modoClara ? "Assumir" : "Devolver à Clara"}
                 </button>
+                {/* W-D3 · menu ⋯ do cabeçalho: o gatilho manual do Jarvis mora aqui, discreto e
+                    sem ícone de IA (Diogo, 22:10). A proposta que ele gera entra no fio como nota. */}
+                {jarvisSobDemanda && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setMenuCabecalho((v) => !v)}
+                      aria-haspopup="menu"
+                      aria-expanded={menuCabecalho}
+                      aria-label="Mais ações"
+                      title="Mais ações"
+                      className="grid h-[30px] w-[30px] place-items-center rounded-lg text-mute transition-colors hover:bg-hover hover:text-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+                    >
+                      <svg viewBox="0 0 24 24" className="size-4" fill="currentColor" aria-hidden>
+                        <circle cx="5" cy="12" r="1.8" />
+                        <circle cx="12" cy="12" r="1.8" />
+                        <circle cx="19" cy="12" r="1.8" />
+                      </svg>
+                    </button>
+                    {menuCabecalho && (
+                      <>
+                        <div className="fixed inset-0 z-20" onClick={() => setMenuCabecalho(false)} aria-hidden />
+                        <div role="menu" className="absolute right-0 top-full z-30 mt-1 w-[232px] overflow-hidden rounded-lg border border-linha-forte bg-branco py-1 shadow-forte animate-rise">
+                          <button
+                            role="menuitem"
+                            type="button"
+                            onClick={pedirAoJarvis}
+                            disabled={propostaManual === "lendo"}
+                            className="flex w-full flex-col items-start px-3 py-2 text-left transition-colors hover:bg-hover disabled:opacity-60"
+                          >
+                            <span className="text-[0.82rem] font-medium text-tinta">{propostaManual === "lendo" ? "Jarvis lendo a conversa…" : "Pedir sugestão ao Jarvis"}</span>
+                            <span className="text-[0.72rem] text-mute">ele lê o fio e propõe a próxima tarefa</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -929,10 +1185,14 @@ export function Inbox({
                   <span className="sticky top-0 z-10 my-1 self-center rounded-full border border-linha bg-branco px-3 py-0.5 text-[0.71rem] text-mute shadow-suave">
                     {bloco.dia}
                   </span>
-                  {itensDoDia(bloco, registros).map((item, gi) => {
+                  {itensDoDia(bloco, registros, propostasVivas).map((item, gi) => {
                     // R13/C2: nota e tarefa entram no mesmo fio cronológico, em largura total
                     if (item.tipo === "registro") {
                       return <RegistroInterno key={`reg-${item.registro.id}`} registro={item.registro} />;
+                    }
+                    // W-D3 · a nota do Jarvis, no ponto em que a proposta nasceu
+                    if (item.tipo === "proposta") {
+                      return notaDoJarvis(item.proposta, false, `prop-${item.proposta.id}`);
                     }
                     const grupo = item.grupo;
                     const saida = grupo.falante !== "cliente";
@@ -1008,9 +1268,18 @@ export function Inbox({
                                     )}
                                   </div>
                                 ) : programada ? (
-                                  <div className="px-1 text-[0.68rem] tabular-nums text-mute">
+                                  <div className="flex items-center gap-1.5 px-1 text-[0.68rem] tabular-nums text-mute">
                                     <RotuloProgramada quando={m.programada_para!} />
-                                    <span className="ml-1.5">· ainda não enviada</span>
+                                    <span>· ainda não enviada</span>
+                                    {/* W-D3 · programar sem poder desprogramar é um envio que a pessoa não controla mais */}
+                                    <button
+                                      type="button"
+                                      onClick={() => cancelarProgramado(m.id)}
+                                      disabled={pending}
+                                      className="font-medium text-amarelo underline-offset-2 hover:underline disabled:opacity-50"
+                                    >
+                                      cancelar
+                                    </button>
                                   </div>
                                 ) : ultima ? (
                                   <div className="px-1 text-[0.68rem] tabular-nums text-mute">
@@ -1106,27 +1375,15 @@ export function Inbox({
               {/* F2 / D62 · a tarefa que o Jarvis cria entra no FIO, como registro
                   (`RegistroInterno` com `jarvis`), no horário em que nasceu — não colada
                   ao composer: ela não pede decisão. */}
-              {/* W-D2 · a proposta do Jarvis pedida pelo cabeçalho — card de largura total, no fim do fio */}
-              {propostaJarvis === "lendo" && (
-                <div className="self-stretch rounded-[11px] border border-dashed border-linha-forte bg-board px-4 py-3 text-[0.8rem] text-suave">
-                  <span className="inline-flex items-center gap-2">
-                    <span className="size-1.5 animate-pulse rounded-full bg-navy" />
-                    O Jarvis está lendo a conversa e o funil…
-                  </span>
+              {/* W-D3 · propostas cujo dia não tem mensagem (fio parado) vão para o fim, ainda como nota */}
+              {propostasForaDosDias(blocos, propostasVivas).map((p) => notaDoJarvis(p, false, `prop-fim-${p.id}`))}
+              {/* W-D3 · a proposta MANUAL (menu ⋯) nasce agora, no fim do fio, como nota */}
+              {propostaManual === "lendo" && (
+                <div className="self-stretch rounded-lg border border-l-[3px] border-tarefa-linha border-l-navy bg-tarefa-fundo px-3.5 py-3 text-[0.8rem] text-suave">
+                  <AssinaturaJarvis tamanho={16} vivo sufixo="está lendo a conversa e o funil…" />
                 </div>
               )}
-              {propostaJarvis && propostaJarvis !== "lendo" && (
-                <PropostaJarvis
-                  proposta={propostaJarvis}
-                  mencionaveis={mencionaveis}
-                  onAceitar={(p) => {
-                    setPropostaJarvis({ ...p, estado: "aceita" });
-                    avisar(`Tarefa criada para ${p.responsavelNome}: ${p.fazer}`);
-                  }}
-                  onDescartar={() => setPropostaJarvis(null)}
-                  onAlterar={(p) => setPropostaJarvis(p)}
-                />
-              )}
+              {propostaManual && propostaManual !== "lendo" && notaDoJarvis(propostaManual, true, "prop-manual")}
               <div ref={fimRef} />
             </div>
 
@@ -1328,8 +1585,20 @@ export function Inbox({
       </aside>
 
       {toast && (
-        <div className="pointer-events-none fixed bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-md border border-linha-forte bg-branco px-4 py-2.5 text-sm text-navy shadow-[0_6px_26px_rgba(37,47,99,.12)]">
-          {toast}
+        <div className={cn("fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-md border border-linha-forte bg-branco px-4 py-2.5 text-sm text-navy shadow-[0_6px_26px_rgba(37,47,99,.12)]", !toast.link && "pointer-events-none")}>
+          <span className="max-w-[52ch] truncate">{toast.texto}</span>
+          {toast.link && (
+            <button
+              type="button"
+              onClick={() => {
+                setToast(null);
+                router.push(toast.link!.href);
+              }}
+              className="shrink-0 font-semibold text-laranja-esc underline-offset-2 hover:underline"
+            >
+              {toast.link.rotulo}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -1437,13 +1706,70 @@ function Selos({ selos }: { selos: SeloChip[] }) {
   );
 }
 
-function ChipNumeroLinha({ c }: { c: ConversaResumo }) {
+/** W-D3 · a bolinha no canto do avatar: inicial do apelido na cor do canal. */
+function BolinhaNumero({ c }: { c: ConversaResumo }) {
   const chip = chipDoNumero({
     phone_number_id: c.phone_number_id ?? null,
     numero_apelido: c.numero_apelido ?? null,
     numero_e164: c.numero_e164 ?? null,
     finalidade: c.finalidade ?? null,
   });
+  const marca = marcaDoCanal({ phone_number_id: c.phone_number_id, numero_apelido: c.numero_apelido, finalidade: c.finalidade ?? null });
+  return (
+    <span
+      title={chip.titulo}
+      className={cn(
+        "absolute -bottom-0.5 -right-0.5 grid size-[15px] place-items-center rounded-full text-[8.5px] font-bold leading-none ring-2 ring-branco",
+        marca.cheia,
+      )}
+    >
+      {marca.inicial}
+      <span className="sr-only">{chip.rotulo}</span>
+    </span>
+  );
+}
+
+/** W-D3 · linha do rail: bolinha + rótulo + contagem (LiderHub `RailItem`, mais baixa). */
+function ItemRail({ ativo, onClick, icone, rotulo, titulo, qtd }: { ativo: boolean; onClick: () => void; icone: React.ReactNode; rotulo: string; titulo?: string; qtd: number }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      title={titulo ?? rotulo}
+      className={cn(
+        "flex h-6 w-full items-center gap-1.5 rounded-md px-1.5 text-[12px] leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
+        ativo ? "bg-hover font-semibold text-tinta" : "text-suave hover:bg-hover hover:text-tinta",
+      )}
+    >
+      {icone}
+      <span className="flex-1 truncate text-left">{rotulo}</span>
+      <span className={cn("shrink-0 text-[11px] tabular-nums", ativo ? "text-tinta" : "text-mute")} aria-label={`${qtd} ${qtd === 1 ? "conversa" : "conversas"}`}>
+        {qtd}
+      </span>
+    </button>
+  );
+}
+
+function ChipNumeroLinha({ c, soSelos = false }: { c: ConversaResumo; soSelos?: boolean }) {
+  const chip = chipDoNumero({
+    phone_number_id: c.phone_number_id ?? null,
+    numero_apelido: c.numero_apelido ?? null,
+    numero_e164: c.numero_e164 ?? null,
+    finalidade: c.finalidade ?? null,
+  });
+  // W-D3 · com o apelido na bolinha do avatar, a linha só desenha os selos — e só quando há
+  if (soSelos) {
+    if (chip.selos.length === 0 && !chip.atencao) return null;
+    return (
+      <div className="mt-1 flex items-center gap-1 overflow-hidden" title={chip.titulo}>
+        {chip.atencao && (
+          <span className="truncate rounded-[3px] bg-amarelo/10 px-1 py-px text-[0.62rem] leading-[1.3] text-amarelo">{chip.rotulo}</span>
+        )}
+        <Selos selos={chip.selos} />
+      </div>
+    );
+  }
   return (
     <div className="mt-1 flex items-center gap-1 overflow-hidden" title={chip.titulo}>
       <span

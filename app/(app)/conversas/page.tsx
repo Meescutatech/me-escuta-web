@@ -26,6 +26,15 @@ import {
   paginaEnsaio,
 } from "@/lib/ensaio/fixtures/conversas";
 import { canaisDeEnvio, formatarE164, gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
+import {
+  cardDoLeadNovo,
+  lerEstadoConversasEnsaio,
+  programadasDaConversa,
+  propostasComDecisoes,
+  resumoDaConversaNova,
+  tarefaAceitaComoLead,
+} from "@/lib/ensaio/conversas-extra";
+import { CONVERSA_JOSE_CARLOS, TAREFA_JOSE_CARLOS, propostasJarvisEnsaio, tarefaDaPropostaAceitaEnsaio } from "@/lib/ensaio/jarvis-propostas";
 import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 import type { CanalEnvioComposer } from "@/components/conversas/composer";
 
@@ -57,7 +66,16 @@ export default async function ConversasPage({
     const agora = new Date();
     const { escopo, ativo } = estadoEscopoEnsaio(ensaio);
     const canais = gerarCanaisEnsaio(agora);
-    const { conversas: todas, mensagens: porConversa } = gerarConversasEnsaio(agora);
+    const { conversas: daFixture, mensagens: porConversa } = gerarConversasEnsaio(agora);
+    // W-D3 · o que a demo mudou e o cookie lembra: conversas abertas pelo "+", tarefas aceitas do
+    // Jarvis, programadas canceladas, decisões sobre as propostas. Tudo SOMA por cima da fixture.
+    const estado = lerEstadoConversasEnsaio();
+    const leads = gerarLeadsEnsaio(agora);
+    const novas = estado.conversas
+      .map((n) => resumoDaConversaNova(n, canais, leads))
+      .filter((c): c is NonNullable<typeof c> => !!c)
+      .filter((c) => !daFixture.some((f) => f.id === c.id));
+    const todas = [...novas.reverse(), ...daFixture];
     const conversas = conversasVisiveisPara(ensaio, todas, escopo, canais);
     const alvoPedido = searchParams.c ?? searchParams.lead ?? null;
     const doAlvo =
@@ -66,7 +84,29 @@ export default async function ConversasPage({
       null;
     const selecionadaId = doAlvo || (alvoPedido ? null : conversas[0]?.id) || null;
     const selecionada = conversas.find((c) => c.id === selecionadaId) ?? null;
-    const lead = selecionada?.lead_id ? gerarLeadsEnsaio(agora).find((l) => l.lead_id === selecionada.lead_id) ?? null : null;
+    const novaSelecionada = estado.conversas.find((n) => n.id === selecionadaId) ?? null;
+    const lead = selecionada?.lead_id
+      ? leads.find((l) => l.lead_id === selecionada.lead_id) ?? (novaSelecionada ? cardDoLeadNovo(novaSelecionada, ensaio) : null)
+      : null;
+    // mensagens da selecionada, menos as programadas que a pessoa cancelou nesta demo
+    const mensagensSel = (selecionadaId ? porConversa.get(selecionadaId) ?? [] : []).filter(
+      (m) => !(m.programada_para && estado.canceladas.includes(m.id)),
+    );
+    // as propostas do Jarvis (fixture + decisões), só das conversas que esta pessoa vê
+    const visiveisIds = new Set(conversas.map((c) => c.id));
+    const propostas = propostasComDecisoes(propostasJarvisEnsaio(agora), estado).filter((p) => !!p.conversa_id && visiveisIds.has(p.conversa_id));
+    // proposta decidida → tarefa que nasceu dela ("Ver tarefa" na nota; e o registro não duplica)
+    const tarefasPorProposta: Record<string, string> = { "prop-ensaio-jose-carlos": TAREFA_JOSE_CARLOS };
+    for (const d of estado.propostas) if (d.tarefa_id) tarefasPorProposta[d.id] = d.tarefa_id;
+    // painel do lead + as tarefas que nasceram de propostas aceitas (a da fixture e as do cookie)
+    const painel = lead ? painelLeadEnsaio(lead, agora) : null;
+    if (painel && selecionada) {
+      const aceitas = [
+        ...(selecionada.id === CONVERSA_JOSE_CARLOS ? [tarefaDaPropostaAceitaEnsaio(agora)] : []),
+        ...estado.tarefas.filter((t) => t.conversa_id === selecionada.id || (t.lead_id && t.lead_id === selecionada.lead_id)).map(tarefaAceitaComoLead),
+      ];
+      painel.tarefas = [...aceitas, ...painel.tarefas];
+    }
     const envio = canaisDeEnvio(ensaio, canais);
     const canaisEnvio: CanalEnvioComposer[] = envio.canais.map((c) => ({
       id: c.canal_id,
@@ -85,9 +125,9 @@ export default async function ConversasPage({
         proximoCursor={null}
         origemLegivel
         selecionadaId={selecionadaId}
-        mensagens={selecionadaId ? porConversa.get(selecionadaId) ?? [] : []}
+        mensagens={mensagensSel}
         sugestoes={[]}
-        painel={lead ? painelLeadEnsaio(lead, agora) : null}
+        painel={painel}
         autorEmail={ensaio.email}
         autorId={ensaio.id}
         nomeAtendente={ensaio.nome.split(" ")[0]}
@@ -96,11 +136,14 @@ export default async function ConversasPage({
         templates={[]}
         etapas={etapasEnsaio()}
         departamentoAtivo={ativo ? { chave: ativo.chave, rotulo: ativo.rotulo } : null}
-        programadas={[]}
+        programadas={selecionadaId ? programadasDaConversa(selecionadaId, mensagensSel, estado.canceladas) : []}
         ancoraEm={searchParams.em ?? null}
         alvoNaoEncontrado={!!alvoPedido && !doAlvo}
         canaisEnvio={canaisEnvio}
         jarvisSobDemanda
+        propostas={propostas}
+        tarefasPorProposta={tarefasPorProposta}
+        ensaio
       />
     );
   }
