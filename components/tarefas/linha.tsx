@@ -20,9 +20,11 @@ import { presetsAdiar } from "@/lib/tarefas/adiar";
 import { textoPrazoHumano } from "@/lib/tarefas/dia";
 import { destinoDaTarefa } from "@/lib/tarefas/destino";
 import { cn } from "@/lib/utils";
+import type { PesoTarefa } from "@/lib/tarefas/prioridade";
 import { AcoesTarefa, type PessoaAtiva } from "./acoes-tarefa";
 import { PainelConcluir } from "./concluir-tarefa";
-import { ResumoJarvisBloco } from "./resumo-jarvis";
+import { ComResumoNoHover } from "./resumo-hover";
+import { PosicaoUrgencia } from "./posicao-urgencia";
 import type { AcoesDaTarefa } from "./executor";
 
 /*
@@ -65,6 +67,9 @@ export function LinhaTarefa({
   aoAdiada,
   aoMudar,
   onFocar,
+  posicao,
+  totalNaOrdem,
+  peso,
 }: {
   t: TarefaVisao;
   agora: number;
@@ -83,6 +88,11 @@ export function LinhaTarefa({
   aoAdiada: () => void;
   aoMudar: () => void;
   onFocar?: () => void;
+  /** v4 · a posição na ordem "Mais urgente primeiro" — só na lista ranqueada */
+  posicao?: number;
+  totalNaOrdem?: number;
+  /** a conta que pôs a tarefa nessa posição; o hover na posição mostra os fatores */
+  peso?: PesoTarefa;
 }) {
   const router = useRouter();
   const mov = useMovimento();
@@ -161,6 +171,9 @@ export function LinhaTarefa({
       aria-current={emFoco ? "true" : undefined}
     >
       <div className="flex items-start gap-3 px-4 py-3">
+        {/* v4 · a POSIÇÃO na ordem de urgência, com a conta atrás dela (hover) */}
+        {posicao != null && peso && <PosicaoUrgencia posicao={posicao} total={totalNaOrdem ?? posicao} peso={peso} />}
+
         {/* ALVO 1 · a caixa: abre o campo de resultado — não conclui sozinha (0037) */}
         <button
           type="button"
@@ -199,15 +212,19 @@ export function LinhaTarefa({
               {pendente && t.prioridade === "alta" && (
                 <span className="mb-px size-1.5 shrink-0 self-center rounded-full bg-primary" title="prioridade alta" aria-label="prioridade alta" />
               )}
-              <span
-                className={cn(
-                  "min-w-0 truncate text-[15px] font-medium leading-snug underline-offset-[3px]",
-                  fechada ? "text-mute line-through decoration-mute/60" : "text-tinta",
-                  destino && "group-hover/titulo:underline",
-                )}
-              >
-                {t.titulo}
-              </span>
+              {/* O RESUMO MORA AQUI desde 11/09 (pedido do Diogo): o mouse no título abre o
+                  popover ancorado, sem clique, sem expandir e sem empurrar a lista. */}
+              <ComResumoNoHover t={t} onVerNoFio={destino ? abrirConversa : undefined} className="block min-w-0 flex-1">
+                <span
+                  className={cn(
+                    "block min-w-0 truncate text-[15px] font-medium leading-snug underline-offset-[3px]",
+                    fechada ? "text-mute line-through decoration-mute/60" : "text-tinta",
+                    destino && "group-hover/titulo:underline",
+                  )}
+                >
+                  {t.titulo}
+                </span>
+              </ComResumoNoHover>
             </span>
             {t.lead_nome && <span className="shrink-0 text-[13px] text-mute">{t.lead_nome}</span>}
           </div>
@@ -220,13 +237,15 @@ export function LinhaTarefa({
             }}
             className="cursor-pointer"
           >
-            {/* o porquê é a CHAMADA do resumo: com a linha aberta e resumo gravado, ele sai —
-                a mesma frase duas vezes, uma truncada e outra inteira, é ruído, não hierarquia. */}
-            {jarvis && t.por_que && !(detalhes && t.resumo) && (
-              <p className={cn("mt-0.5 flex items-start gap-1.5 text-[13px] leading-snug", fechada ? "text-mute/80" : "text-mute")}>
-                <MarcaJarvis tamanho={16} rotulo="Criada pelo Jarvis" className="mt-px shrink-0" />
-                <span className={cn("min-w-0", !detalhes && "truncate")}>{t.por_que}</span>
-              </p>
+            {/* o porquê continua na linha (11/09): com o resumo no HOVER, ele deixou de brigar
+                com a versão inteira dentro do toggle — não há mais duas cópias na mesma tela. */}
+            {jarvis && t.por_que && (
+              <ComResumoNoHover t={t} onVerNoFio={destino ? abrirConversa : undefined} className="block">
+                <p className={cn("mt-0.5 flex items-start gap-1.5 text-[13px] leading-snug", fechada ? "text-mute/80" : "text-mute")}>
+                  <MarcaJarvis tamanho={16} rotulo="Criada pelo Jarvis" className="mt-px shrink-0" />
+                  <span className={cn("min-w-0", !detalhes && "truncate")}>{t.por_que}</span>
+                </p>
+              </ComResumoNoHover>
             )}
             {!jarvis && t.descricao && !detalhes && <p className="mt-0.5 truncate text-[13px] leading-snug text-mute">{t.descricao}</p>}
             <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-mute">
@@ -270,20 +289,18 @@ export function LinhaTarefa({
             {detalhes && (
               <motion.div key="detalhes" variants={mov.abrir} initial="hidden" animate="visible" exit="exit">
                 <div className="mt-3 flex flex-col gap-3 border-t border-[#F1F0EC] pt-3 text-[13px]">
-              {t.resumo ? (
-                <ResumoJarvisBloco resumo={t.resumo} t={t} onVerNoFio={destino ? abrirConversa : undefined} />
-              ) : (
-                jarvis &&
-                t.trecho && (
-                  <div className="flex flex-col gap-1">
-                    <blockquote className="border-l-2 border-linha-forte pl-2.5 italic leading-snug text-suave">“{t.trecho}”</blockquote>
-                    {destino && (
-                      <button type="button" onClick={abrirConversa} className="w-fit text-[12.5px] text-mute underline-offset-[3px] hover:text-tinta hover:underline">
-                        ver no fio
-                      </button>
-                    )}
-                  </div>
-                )
+              {/* o RESUMO saiu daqui em 11/09 — ele mora no hover do título. O toggle ficou com o
+                  que ele sempre fez melhor: o que não cabe num popover de passagem (o trecho
+                  inteiro, a descrição, o histórico e as ações). */}
+              {t.trecho && (
+                <div className="flex flex-col gap-1">
+                  <blockquote className="border-l-2 border-linha-forte pl-2.5 italic leading-snug text-suave">“{t.trecho}”</blockquote>
+                  {destino && (
+                    <button type="button" onClick={abrirConversa} className="w-fit text-[12.5px] text-mute underline-offset-[3px] hover:text-tinta hover:underline">
+                      ver no fio
+                    </button>
+                  )}
+                </div>
               )}
               {t.descricao && <p className="whitespace-pre-line leading-snug text-suave">{t.descricao}</p>}
               <Historico t={t} />
