@@ -3,7 +3,6 @@
 import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { Sino } from "@/components/notificacoes/sino";
-import { FiltroDepartamento, rotaTemFiltro } from "@/components/header/filtro-departamento";
 import { RelatarDestaTela } from "@/components/header/relatar-desta-tela";
 import { JarvisGatilho } from "@/components/header/jarvis-gatilho";
 import { lerTituloDaRota } from "@/lib/header/titulos";
@@ -99,12 +98,10 @@ export function Header({
           <h1 className="truncate text-[20px] font-[650] tracking-[-0.01em] text-tinta">{titulo}</h1>
         )}
 
-        {/* W-D2 (item C, 21:40): o "Comercial ▾" com ícone SAIU. Departamento é FILTRO, não
-            workspace: um segmented control discreto, só nas telas em que filtrar faz sentido, e
-            só para quem vê mais de um departamento. Um departamento só = nada no header. */}
-        {!escopoIndisponivel && departamentos.length > 1 && rotaTemFiltro(pathname) && (
-          <FiltroDepartamento departamentos={departamentos} ativo={ativo} />
-        )}
+        {/* W-D2 (23:10, Diogo: "tira essa porra de departamentos"): NENHUM recorte de departamento
+            no header. O filtro vive só dentro da toolbar da tela que o usa (dashboard tem o dele,
+            conversas usa os chips). `departamentos`/`ativo` continuam chegando por prop porque o
+            escopo é lido no servidor e outras partes do shell dependem dele — aqui não desenham nada. */}
         {escopoIndisponivel && <span className="sr-only">Departamento indisponível</span>}
       </div>
 
