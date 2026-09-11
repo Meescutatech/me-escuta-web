@@ -73,7 +73,10 @@ export function rotuloDepartamento(chave: string | null | undefined): string {
 export function estadoEscopoEnsaio(pessoa: PessoaEnsaio): EstadoEscopo {
   const vinculos = pessoa.departamentos.map((d) => d.departamento);
   const visiveis = ordenar(visiveisPara(DEPARTAMENTOS_ENSAIO, vinculos, pessoa.papel));
-  const ativo = escolherAtivo(visiveis, lerPreferenciaDepartamento());
+  const preferida = lerPreferenciaDepartamento();
+  // item C (21:40): "Todos" existe no filtro. Cookie `todos` = sem escopo (ativo null) para quem vê
+  // mais de um departamento; para quem vê um só, o único é o ativo.
+  const ativo = preferida === "todos" && visiveis.length > 1 ? null : escolherAtivo(visiveis, preferida);
   const chaves = visiveis.map((d) => d.chave);
   const escopo = ativo ? resolverEscopo(ativo.chave, ARVORE_ENSAIO, SINONIMOS_ENSAIO, chaves) : null;
   return { visiveis, ativo, escopo, indisponivel: false, arvore: ARVORE_ENSAIO, sinonimos: SINONIMOS_ENSAIO };

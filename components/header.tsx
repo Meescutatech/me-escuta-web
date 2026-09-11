@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { Sino } from "@/components/notificacoes/sino";
-import { SeletorDepartamento } from "@/components/header/seletor-departamento";
+import { FiltroDepartamento, rotaTemFiltro } from "@/components/header/filtro-departamento";
 import { RelatarDestaTela } from "@/components/header/relatar-desta-tela";
 import { JarvisGatilho } from "@/components/header/jarvis-gatilho";
 import { lerTituloDaRota } from "@/lib/header/titulos";
@@ -92,36 +92,20 @@ export function Header({
       className="fixed inset-x-0 left-[60px] top-0 z-40 flex h-[var(--altura-topo)] items-center gap-4 border-b border-linha bg-branco pl-5 pr-4"
     >
       <div className="flex min-w-0 items-center gap-4">
-        {/* ESCOPO. Três estados, e os três são reais hoje. */}
-        {ativo && departamentos.length > 1 && (
-          <SeletorDepartamento
-            departamentos={departamentos}
-            ativo={ativo}
-            comPendencia={comPendencia}
-          />
-        )}
-        {ativo && departamentos.length === 1 && (
-          /* C11 — UM DEPARTAMENTO SÓ NÃO RENDERIZA SELETOR. Dropdown de uma opção é ruído. Mesma
-             posição, mesma tipografia, sem chevron, sem foco, sem nada para abrir. E este é o
-             caminho NORMAL, não a exceção: `core.usuario` tem hoje uma conta real ativa e ZERO
-             `membro` ativo. */
-          <span className="truncate text-[13.5px] font-medium text-tinta">{ativo.rotulo}</span>
-        )}
-        {escopoIndisponivel && (
-          /* Erro de leitura das views do M8: degrada para NADA e o escopo NÃO é aplicado. Nunca um
-             rótulo que o servidor não conseguiu validar — rótulo errado é pior que rótulo ausente,
-             porque o rótulo do topo é promessa dura. */
-          <span className="sr-only">Departamento indisponível</span>
-        )}
-
-        {ativo && titulo && <span aria-hidden className="h-4 w-px flex-none bg-linha" />}
-
         {/* CONTEXTO INTERNO. Não é link, não é breadcrumb, e vem de fonte única (lib/header/titulos).
             Único elemento elástico do header: trunca com elipse e nunca quebra em duas linhas —
             duas linhas custariam 104px do inbox, o pior resultado possível. */}
         {titulo && (
           <h1 className="truncate text-[20px] font-[650] tracking-[-0.01em] text-tinta">{titulo}</h1>
         )}
+
+        {/* W-D2 (item C, 21:40): o "Comercial ▾" com ícone SAIU. Departamento é FILTRO, não
+            workspace: um segmented control discreto, só nas telas em que filtrar faz sentido, e
+            só para quem vê mais de um departamento. Um departamento só = nada no header. */}
+        {!escopoIndisponivel && departamentos.length > 1 && rotaTemFiltro(pathname) && (
+          <FiltroDepartamento departamentos={departamentos} ativo={ativo} />
+        )}
+        {escopoIndisponivel && <span className="sr-only">Departamento indisponível</span>}
       </div>
 
       <div className="ml-auto flex flex-none items-center gap-2">
