@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
 import { ArrowUpRightIcon, CalendarClockIcon, CheckIcon, ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MarcaJarvis } from "@/components/jarvis/marca";
+import { useMovimento } from "@/components/jarvis/movimento";
 import type { EventoTarefa, TarefaVisao } from "@/lib/dados/tarefas-visao-calculos";
 import { dataHoraCurta, iniciaisDe, nomeResponsavel } from "@/lib/dados/tarefa-calculos";
 import { presetsAdiar } from "@/lib/tarefas/adiar";
@@ -20,6 +22,7 @@ import { destinoDaTarefa } from "@/lib/tarefas/destino";
 import { cn } from "@/lib/utils";
 import { AcoesTarefa, type PessoaAtiva } from "./acoes-tarefa";
 import { PainelConcluir } from "./concluir-tarefa";
+import { ResumoJarvisBloco } from "./resumo-jarvis";
 import type { AcoesDaTarefa } from "./executor";
 
 /*
@@ -37,6 +40,11 @@ import type { AcoesDaTarefa } from "./executor";
  * 2ª linha 13px muted com prazo (vermelho só se venceu) · avatar 18px · tipo em texto; o porquê
  * do Jarvis vira uma linha muted truncada, aberta com o ARCO (a marca é a assinatura). No hover
  * aparecem Concluir · Adiar ▾ · Abrir conversa · ⋯ sobre a 2ª linha, sem mexer no layout.
+ *
+ * W-T (noite): ao expandir, o PRIMEIRO bloco é o RESUMO DO JARVIS (resumo-jarvis.tsx) — situação
+ * do lead, o que ele viu (trecho + "ver no fio"), o que fazer e por quê; para tarefa de humano o
+ * Jarvis ainda resume o contexto. Depois vêm descrição, histórico e as ações. O expand anima
+ * altura 0 → auto com `useMovimento` (regra do Diogo: zero layout shift nos toggles).
  */
 
 type Nomes = { membros: Map<string, string>; tipos: Map<string, string> };
@@ -77,6 +85,7 @@ export function LinhaTarefa({
   onFocar?: () => void;
 }) {
   const router = useRouter();
+  const mov = useMovimento();
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const pendente = t.status === "pendente";
@@ -211,7 +220,9 @@ export function LinhaTarefa({
             }}
             className="cursor-pointer"
           >
-            {jarvis && t.por_que && (
+            {/* o porquê é a CHAMADA do resumo: com a linha aberta e resumo gravado, ele sai —
+                a mesma frase duas vezes, uma truncada e outra inteira, é ruído, não hierarquia. */}
+            {jarvis && t.por_que && !(detalhes && t.resumo) && (
               <p className={cn("mt-0.5 flex items-start gap-1.5 text-[13px] leading-snug", fechada ? "text-mute/80" : "text-mute")}>
                 <MarcaJarvis tamanho={16} rotulo="Criada pelo Jarvis" className="mt-px shrink-0" />
                 <span className={cn("min-w-0", !detalhes && "truncate")}>{t.por_que}</span>
@@ -253,20 +264,28 @@ export function LinhaTarefa({
           </div>
           {erro && <p className="mt-1 text-[12px] font-medium text-vermelho">{erro}</p>}
 
-          {/* DETALHES — descrição inteira, trecho, histórico e as ações completas */}
-          {detalhes && (
-            <div className="mt-3 flex flex-col gap-3 border-t border-[#F1F0EC] pt-3 text-[13px]">
-              {t.descricao && <p className="whitespace-pre-line leading-snug text-suave">{t.descricao}</p>}
-              {jarvis && t.trecho && (
-                <div className="flex flex-col gap-1">
-                  <blockquote className="border-l-2 border-linha-forte pl-2.5 italic leading-snug text-suave">“{t.trecho}”</blockquote>
-                  {destino && (
-                    <button type="button" onClick={abrirConversa} className="w-fit text-[12.5px] text-mute underline-offset-[3px] hover:text-tinta hover:underline">
-                      ver no fio
-                    </button>
-                  )}
-                </div>
+          {/* DETALHES — o resumo do Jarvis primeiro; depois descrição, histórico e as ações completas.
+              Altura 0 → auto animada (useMovimento): o resto da lista desce junto, sem pulo. */}
+          <AnimatePresence initial={false}>
+            {detalhes && (
+              <motion.div key="detalhes" variants={mov.abrir} initial="hidden" animate="visible" exit="exit">
+                <div className="mt-3 flex flex-col gap-3 border-t border-[#F1F0EC] pt-3 text-[13px]">
+              {t.resumo ? (
+                <ResumoJarvisBloco resumo={t.resumo} t={t} onVerNoFio={destino ? abrirConversa : undefined} />
+              ) : (
+                jarvis &&
+                t.trecho && (
+                  <div className="flex flex-col gap-1">
+                    <blockquote className="border-l-2 border-linha-forte pl-2.5 italic leading-snug text-suave">“{t.trecho}”</blockquote>
+                    {destino && (
+                      <button type="button" onClick={abrirConversa} className="w-fit text-[12.5px] text-mute underline-offset-[3px] hover:text-tinta hover:underline">
+                        ver no fio
+                      </button>
+                    )}
+                  </div>
+                )
               )}
+              {t.descricao && <p className="whitespace-pre-line leading-snug text-suave">{t.descricao}</p>}
               <Historico t={t} />
               {pendente && (
                 <div className="flex flex-wrap items-center gap-1">
@@ -298,8 +317,10 @@ export function LinhaTarefa({
                   )}
                 </div>
               )}
-            </div>
-          )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* o chevron — ALVO 3, sempre visível e discreto */}

@@ -72,3 +72,21 @@ export async function validarPropostaTarefa(
   revalidatePath("/fila");
   return { ok: true };
 }
+
+/**
+ * W-T (10/09, noite) · ENSAIO — o cookie das tarefas (lib/ensaio/tarefas-sessao.ts).
+ *
+ * Só com `ensaioLigado()`; fora dele não faz nada e diz que não fez. Recebe o estado INTEIRO
+ * já mesclado pelo cliente (o cliente é quem tem o estado vivo), grava e revalida as duas rotas
+ * que o leem. Nada aqui encosta no Supabase — é o "ledger" da demo, e morre em 24 h.
+ */
+export async function gravarEnsaioTarefas(estado: unknown): Promise<ResultadoEvento> {
+  const { ensaioLigado } = await import("@/lib/ensaio/modo");
+  if (!ensaioLigado()) return { ok: false, motivo: "fora do ensaio" };
+  const { gravarEstadoTarefasEnsaio } = await import("@/lib/ensaio/tarefas-sessao");
+  const { normalizar } = await import("@/lib/tarefas/sessao-foco");
+  gravarEstadoTarefasEnsaio(normalizar(estado));
+  revalidatePath("/tarefas");
+  revalidatePath("/tarefas/foco");
+  return { ok: true };
+}

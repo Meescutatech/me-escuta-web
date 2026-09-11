@@ -48,7 +48,8 @@ import {
   repactuarPrazoTarefaLead,
 } from "@/app/(app)/lead/actions";
 import { concluirTarefaNotificacao } from "@/app/(app)/notificacoes/actions";
-import { validarPropostaTarefa } from "@/app/(app)/tarefas/actions";
+import { gravarEnsaioTarefas, validarPropostaTarefa } from "@/app/(app)/tarefas/actions";
+import { ESTADO_TAREFAS_VAZIO, escritasDoCookie, type EstadoTarefasEnsaio } from "@/lib/tarefas/sessao-foco";
 import { QuadroStatus, type ExecutorQuadro } from "@/components/tarefas/quadro-status";
 import { ListaDeAcoes, type ItemAcao } from "@/components/jarvis/lista-de-acoes";
 import { iniciarTarefa, reabrirTarefa } from "@/app/(app)/tarefas/actions";
@@ -103,6 +104,8 @@ export function VisaoTarefas({
   propostas = [],
   focoInicial = null,
   ensaio = false,
+  estadoCookie = null,
+  criadasDoCookie = [],
 }: {
   dados: DadosVisaoTarefas;
   filtrosIniciais: FiltrosTarefas;
@@ -119,6 +122,10 @@ export function VisaoTarefas({
   focoInicial?: string | null;
   /** modo ensaio (W-D2): escritas viram estado local, nunca server action */
   ensaio?: boolean;
+  /** W-T · o cookie do ensaio (concluídas, adiadas, criadas, sessão de foco) — base das escritas locais */
+  estadoCookie?: EstadoTarefasEnsaio | null;
+  /** W-T · as tarefas criadas no cookie, já como `TarefaVisao` com resumo (o servidor monta) */
+  criadasDoCookie?: TarefaVisao[];
 }) {
   const router = useRouter();
   const [filtros, setFiltros] = useState<FiltrosTarefas>(filtrosIniciais);
@@ -168,7 +175,23 @@ export function VisaoTarefas({
   );
 
   // ── ESCRITAS: o executor (produção = server actions; ensaio = estado local) ──
-  const [escritas, setEscritas] = useState<EscritasEnsaio>(escritasVazias);
+  const [escritas, setEscritas] = useState<EscritasEnsaio>(() => {
+    if (!ensaio || !estadoCookie) return escritasVazias();
+    const e = escritasDoCookie(estadoCookie, nomes.membros);
+    return { ...e, criadas: criadasDoCookie };
+  });
+  // W-T · o cookie do ensaio: cada escrita local que muda o quadro também vai para ele, para a
+  // lista e o modo foco (rota própria) contarem a mesma história. Fire-and-forget: a tela já
+  // mudou pelo estado local; o cookie é a memória para a PRÓXIMA requisição.
+  const cookieRef = useRef<EstadoTarefasEnsaio>(estadoCookie ?? ESTADO_TAREFAS_VAZIO);
+  const persistir = useCallback(
+    (muda: (e: EstadoTarefasEnsaio) => EstadoTarefasEnsaio) => {
+      if (!ensaio) return;
+      cookieRef.current = muda(cookieRef.current);
+      void gravarEnsaioTarefas(cookieRef.current);
+    },
+    [ensaio],
+  );
   const idsEmAndamento = useMemo(
     () => new Set(ensaio ? emAndamentoComEscritas(emAndamento.ids, escritas) : emAndamento.ids),
     [ensaio, emAndamento.ids, escritas],
@@ -195,18 +218,21 @@ export function VisaoTarefas({
       return {
         async concluir(t, resultado) {
           setEscritas((e) => ({ ...e, concluidas: new Map(e.concluidas).set(t.id, resultado) }));
+          persistir((c) => ({ ...c, concluidas: { ...c.concluidas, [t.id]: { resultado, em: new Date().toISOString() } } }));
           return ok;
         },
         async adiar(t, prazoIso, motivo) {
           if (!prazoIso) return { ok: false, motivo: "escolha uma data" };
           if (!motivo.trim()) return { ok: false, motivo: "motivo obrigatório" };
+          const texto = `${motivo} · novo prazo ${dataHoraCurta(prazoIso)}`;
           setEscritas((e) =>
             comEvento({ ...e, prazos: new Map(e.prazos).set(t.id, prazoIso) }, t.id, {
               quando: new Date().toISOString(),
               tipo: "adiada",
-              texto: `${motivo} · novo prazo ${dataHoraCurta(prazoIso)}`,
+              texto,
             }),
           );
+          persistir((c) => ({ ...c, prazos: { ...c.prazos, [t.id]: { prazo: prazoIso, motivo: texto, em: new Date().toISOString() } } }));
           return ok;
         },
         async reatribuir(t, responsavelId) {
@@ -249,6 +275,13 @@ export function VisaoTarefas({
             prioridade: d.prioridade ?? null,
           };
           setEscritas((e) => ({ ...e, criadas: [...e.criadas, nova] }));
+          persistir((c) => ({
+            ...c,
+            criadas: [
+              ...c.criadas,
+              { id: nova.id, lead_id: nova.lead_id, lead_nome: nova.lead_nome, titulo: nova.titulo, tipo: nova.tipo, responsavel_id: nova.responsavel_id, prazo: nova.prazo, prioridade: nova.prioridade ?? null, criado_em: nova.criado_em, depois_de: eAgora?.tarefa.id ?? null },
+            ],
+          }));
           return ok;
         },
         async validarProposta(p, decisao, ajuste) {
@@ -295,7 +328,8 @@ export function VisaoTarefas({
         return r;
       },
     };
-  }, [ensaio, refrescar, pessoasAtivas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ensaio, refrescar, pessoasAtivas, persistir]);
 
   // v3 · o quadro por status escreve por aqui (ensaio = local; produção = iniciar/reabrir reais)
   const executorQuadro = useMemo<ExecutorQuadro>(() => {

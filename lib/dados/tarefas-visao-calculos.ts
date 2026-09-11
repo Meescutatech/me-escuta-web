@@ -1,3 +1,5 @@
+import type { ResumoJarvis } from "@/lib/tarefas/resumo";
+
 /**
  * Lógica pura da VISÃO DE TAREFAS (`/tarefas`, Rodada 14) — filtros, buckets de prazo e
  * agrupamento estilo funil. Paridade com a tela de tarefas do Kommo, corrigindo o que os
@@ -50,6 +52,13 @@ export interface TarefaVisao {
    * escritas do ensaio montam. Ausente = a tela mostra só "criada em".
    */
   historico?: EventoTarefa[];
+  /**
+   * W-T (10/09, noite) · o RESUMO DO JARVIS — situação do lead, o que ele viu no fio, o que fazer
+   * e por quê (lib/tarefas/resumo.ts). Gravado pelo worker (`tarefa_resumida`), nunca recalculado
+   * ao abrir. A leitura real ainda não o traz (fica `undefined` → a tela deriva a situação da
+   * view do lead quando tem, ou mostra só o porquê); a fixture de ensaio preenche.
+   */
+  resumo?: ResumoJarvis | null;
 }
 
 export interface EventoTarefa {

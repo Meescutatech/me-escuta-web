@@ -11,6 +11,9 @@ import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 import { visaoTarefasDeEnsaio } from "@/lib/dados/tarefas-ensaio";
 import { propostasDeEnsaio } from "@/lib/dados/tarefas-ensaio-dia";
 import { tarefasAceitasComoVisao } from "@/lib/ensaio/conversas-extra";
+import { comResumosDeEnsaio } from "@/lib/ensaio/tarefas-foco";
+import { lerEstadoTarefasEnsaio } from "@/lib/ensaio/tarefas-sessao";
+import { tarefaDoCookie } from "@/lib/tarefas/sessao-foco";
 
 // Sempre lê o estado atual — projeção do ledger, nunca cache.
 export const dynamic = "force-dynamic";
@@ -32,7 +35,13 @@ export default async function TarefasPage({
     // Sem duplicar: se um id já veio do fio, a fixture não o repete.
     const aceitas = tarefasAceitasComoVisao(undefined, agora);
     const idsAceitas = new Set(aceitas.map((t) => t.id));
-    const dados = { ...fixture, tarefas: [...aceitas, ...fixture.tarefas.filter((t) => !idsAceitas.has(t.id))] };
+    // W-T: toda tarefa entra com o RESUMO DO JARVIS (fixture faz o papel do worker); e o cookie do
+    // ensaio (concluídas, adiadas, criadas no "e agora?", sessão de foco) vem por cima — é o que
+    // faz /tarefas e /tarefas/foco contarem a mesma história depois de um F5.
+    const dados = { ...fixture, tarefas: comResumosDeEnsaio([...aceitas, ...fixture.tarefas.filter((t) => !idsAceitas.has(t.id))], agora) };
+    const estadoCookie = lerEstadoTarefasEnsaio();
+    const nomesEnsaio = new Map(mencionaveisEnsaio(agora).map((m) => [m.id, m.nome]));
+    const criadasDoCookie = comResumosDeEnsaio(estadoCookie.criadas.map((c) => tarefaDoCookie(c, nomesEnsaio)), agora);
     const ver = Array.isArray(searchParams.ver) ? searchParams.ver[0] : searchParams.ver;
     const foco = Array.isArray(searchParams.foco) ? searchParams.foco[0] : searchParams.foco;
     // W-D5 · a SDR entra pela view do dia (benchmark §4 item 7: "redirect pós-login para SDR").
@@ -53,6 +62,8 @@ export default async function TarefasPage({
         propostas={propostasDeEnsaio(agora)}
         focoInicial={foco ?? null}
         ensaio
+        estadoCookie={estadoCookie}
+        criadasDoCookie={criadasDoCookie}
       />
     );
   }
