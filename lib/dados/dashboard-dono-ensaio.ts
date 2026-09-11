@@ -125,10 +125,21 @@ export const TEMPO_ETAPA_ENSAIO: Record<string, number> = {
 
 // ─────────────── atenção ───────────────
 
-export function atencaoDeEnsaio(canais: LinhaCanal[], agora: Date): Atencao {
+/**
+ * `departamento` recorta o que TEM departamento: conversas pela `area` carimbada, tarefas pela
+ * lotação de quem é responsável (Sara = Pré-venda; a fono, Clínico, que cai no lado do Pós-venda).
+ * Leads parados não recortam — o funil é um só, e o lead não carrega departamento.
+ */
+export function atencaoDeEnsaio(canais: LinhaCanal[], agora: Date, departamento: "pre_venda" | "pos_venda" | null = null): Atencao {
   const agoraMs = agora.getTime();
-  const { conversas } = gerarConversasEnsaio(agora);
-  const { tarefas } = visaoTarefasDeEnsaio(agora);
+  const ehPre = (area: string | null | undefined) => area === "pre_venda" || area == null;
+  const departamentoDaPessoa = (id: string | null) => pessoaPorId(id)?.departamentos[0]?.departamento ?? null;
+  const conversas = gerarConversasEnsaio(agora).conversas.filter((c) => !departamento || (departamento === "pre_venda" ? ehPre(c.area) : !ehPre(c.area)));
+  const tarefas = visaoTarefasDeEnsaio(agora).tarefas.filter((t) => {
+    if (!departamento) return true;
+    const d = departamentoDaPessoa(t.responsavel_id);
+    return departamento === "pre_venda" ? d === "pre_venda" || d == null : d != null && d !== "pre_venda";
+  });
   const funil = gerarFunilEnsaio(agora);
   const nomeDe = (id: string | null, fallback: string | null) => pessoaPorId(id)?.nome.split(" ")[0] ?? (fallback ?? "sem responsável").replace(/@.*$/, "");
   const itens = ordenarAtencao([

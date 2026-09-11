@@ -98,7 +98,7 @@ export async function lerDashboardDono(
     const en = gerarEnsaioDashboard(agora);
     const canaisTodos = canaisDeEnsaio(en, base.janela, agora);
     const canais = departamento ? canaisTodos.filter((c) => (departamento === "pos_venda" ? c.departamento !== "pre_venda" : c.departamento === "pre_venda")) : canaisTodos;
-    const atencao = atencaoDeEnsaio(canais, agora);
+    const atencao = atencaoDeEnsaio(canais, agora, departamento);
     const meta = metaDeEnsaio(en.etapaDia, agora);
     const carga = cargaAgoraDeEnsaio(agora);
     const equipe: LinhaEquipe[] = base.porAtor
