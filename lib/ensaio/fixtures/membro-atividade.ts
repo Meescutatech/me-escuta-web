@@ -170,3 +170,63 @@ export function agruparPorDia<T extends { em: string }>(itens: T[], agora: Date)
   }
   return Array.from(grupos.entries()).map(([dia, itens]) => ({ dia, itens }));
 }
+
+/**
+ * SESSÕES ATIVAS — os aparelhos em que a pessoa está logada agora.
+ *
+ * É o bloco que faltava no painel de perfil (Diogo, 11/09: "a sheet atual é pobre, preciso de mais
+ * informações"): "quem tem acesso" não é só a linha na tabela de membros, é também **por onde**.
+ * O IP vem mascarado no último octeto de propósito — o painel é aberto por qualquer gestão, e o
+ * endereço inteiro não ajuda a decidir nada que o "encerrar" não resolva.
+ */
+export interface SessaoMembro {
+  id: string;
+  aparelho: string;
+  navegador: string;
+  onde: string;
+  ip: string;
+  ultimaEm: string;
+  /** a sessão de quem está olhando a tela */
+  atual: boolean;
+}
+
+export function gerarSessoesMembro(m: MembroEnsaio, agora: Date = new Date(), euMesmo = false): SessaoMembro[] {
+  if (!m.ativo || !m.ultimo_acesso_em) return [];
+  const t = agora.getTime();
+  const rnd = prng((parseInt(m.id.slice(-4), 16) || 11) * 3);
+  const fono = m.departamentos.some((d) => d.departamento === "clinico");
+  const sessoes: SessaoMembro[] = [
+    {
+      id: `${m.id.slice(0, 8)}-s1`,
+      aparelho: fono ? "iPhone 13" : "MacBook Air",
+      navegador: fono ? "Safari · iOS 18" : "Chrome 129 · macOS",
+      onde: "Belo Horizonte · MG",
+      ip: `177.${40 + Math.floor(rnd() * 60)}.${10 + Math.floor(rnd() * 200)}.•••`,
+      ultimaEm: m.ultimo_acesso_em,
+      atual: euMesmo,
+    },
+  ];
+  if (rnd() < 0.7) {
+    sessoes.push({
+      id: `${m.id.slice(0, 8)}-s2`,
+      aparelho: fono ? "Windows 11" : "iPhone 15",
+      navegador: fono ? "Chrome 128 · Windows" : "Safari · iOS 18",
+      onde: fono ? "Contagem · MG" : "Belo Horizonte · MG",
+      ip: `189.${10 + Math.floor(rnd() * 80)}.${10 + Math.floor(rnd() * 200)}.•••`,
+      ultimaEm: new Date(t - (2 + Math.floor(rnd() * 20)) * H).toISOString(),
+      atual: false,
+    });
+  }
+  return sessoes.sort((a, b) => b.ultimaEm.localeCompare(a.ultimaEm));
+}
+
+/** Os quatro números do bloco "Com IA": perguntas · aceitas · ajustadas · descartadas. */
+export function resumoComIa(comIa: ComIa[]): Array<{ rotulo: string; valor: string }> {
+  const conta = (t: TipoComIa) => String(comIa.filter((c) => c.tipo === t).length);
+  return [
+    { rotulo: "perguntas", valor: conta("pergunta_jarvis") },
+    { rotulo: "aceitas", valor: conta("proposta_aceita") },
+    { rotulo: "ajustadas", valor: conta("proposta_ajustada") },
+    { rotulo: "descartadas", valor: conta("proposta_descartada") },
+  ];
+}
