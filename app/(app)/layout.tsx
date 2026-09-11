@@ -16,6 +16,7 @@ import { PESSOAS } from "@/lib/ensaio/modo";
 import { gerarConversasEnsaio, conversasVisiveisPara, gerarLeadsEnsaio } from "@/lib/ensaio/fixtures/conversas";
 import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
 import { VerComo } from "@/components/ensaio/ver-como";
+import { Toaster } from "@/components/ui/sonner";
 
 /**
  * Shell autenticado (r9): SIDEBAR de ícones retrátil — colapsada (60px) por padrão, expande no
@@ -161,6 +162,7 @@ async function AppLayoutEnsaio({
       />
       <main className="pt-[var(--altura-topo)]">{children}</main>
       <VerComo atual={pessoa} pessoas={PESSOAS} />
+      <Toaster />
       <MarcaBuild />
     </div>
   );

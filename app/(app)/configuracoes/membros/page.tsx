@@ -1,6 +1,9 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import type { ConviteLinha, MembroLinha, Papel } from "@/lib/membros";
 import { TabelaMembros } from "@/components/membros/tabela-membros";
+import { lerSessaoEnsaio, DEPARTAMENTOS_ENSAIO } from "@/lib/ensaio/sessao";
+import { gerarConvitesEnsaio, gerarMembrosEnsaio } from "@/lib/ensaio/fixtures/membros";
+import { MembrosEnsaio } from "@/components/ensaio/membros";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +14,22 @@ export const dynamic = "force-dynamic";
  * membro comum não recebe convites (policy 0035) e a UI degrada pra leitura.
  */
 export default async function MembrosPage() {
+  // W-D2 · modo ensaio: a tela nova, com fixture, sem banco.
+  const ensaio = lerSessaoEnsaio();
+  if (ensaio) {
+    const agora = new Date();
+    return (
+      <MembrosEnsaio
+        meuId={ensaio.id}
+        meuPapel={ensaio.papel}
+        membros={gerarMembrosEnsaio(agora)}
+        convites={gerarConvitesEnsaio(agora)}
+        departamentos={DEPARTAMENTOS_ENSAIO}
+        agoraIso={agora.toISOString()}
+      />
+    );
+  }
+
   const supabase = criarClienteServidor();
   // getUser junto das leituras — vai à rede e não depende delas
   const [userRes, { data: papelData }, { data: membros }, { data: convites }] = await Promise.all([

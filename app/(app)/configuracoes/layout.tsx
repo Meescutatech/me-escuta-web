@@ -107,7 +107,9 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
           fim da rolagem sem cobrir o campo "O que mudou" que fica logo acima dela. E a mesma
           familia do E-029 — camada de cima esconde produto —, so que aqui a camada e do produto. */}
       <main className="min-w-0 flex-1 px-12 pb-[120px] pt-11 max-md:px-5 max-md:pt-8">
-        <div className="max-w-[720px]">{children}</div>
+        {/* W-D2: tela que renderiza um filho com `data-largo` (tabelas de 5+ colunas: membros,
+            canais, agentes) ganha 960px; as outras seguem nos 720px. `:has` — Chrome 105+. */}
+        <div className="max-w-[720px] [&:has(>[data-largo])]:max-w-[960px]">{children}</div>
       </main>
     </div>
   );
