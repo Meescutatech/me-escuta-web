@@ -120,7 +120,11 @@ export function GraficoBarras({
 
       <div className="mt-1 flex justify-between font-mono text-[10px] tabular-nums text-mute">
         {rotulos.map((r, i) => (
-          <span key={i} className={cn("min-w-0 flex-1 text-center", i % passoRotulo !== 0 && i !== n - 1 && "invisible")}>
+          <span
+            key={i}
+            // o último dia sempre aparece; o rótulo periódico some quando ficaria colado nele ("09/09 10/09")
+            className={cn("min-w-0 flex-1 text-center", !(i === n - 1 || (i % passoRotulo === 0 && n - 1 - i >= passoRotulo / 2)) && "invisible")}
+          >
             {r}
           </span>
         ))}
