@@ -1,8 +1,13 @@
 import { AlertTriangleIcon, InboxIcon, MessageSquareReplyIcon, TrophyIcon, UserPlusIcon, ZapIcon } from "lucide-react";
 import type { DadosDashboardDono } from "@/lib/dados/dashboard-dono";
-import { fmtInt, fmtMinutos, fmtMoeda, fmtPct, variacao, type Comparado } from "@/lib/dados/dashboard-ceo-calculos";
-import { compactar } from "@/lib/dados/dashboard-dono-calculos";
+import { fmtInt, fmtMinutos, fmtPct, variacao, type Comparado } from "@/lib/dados/dashboard-ceo-calculos";
+import { compactar, fmtMoedaCurta } from "@/lib/dados/dashboard-dono-calculos";
 import { CartaoIndicador } from "./relatorio";
+
+const MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+function mesCurto(ym: string): string {
+  return MESES_CURTOS[Number(ym.slice(5, 7)) - 1] ?? ym;
+}
 
 /**
  * Os seis números do topo — "como estamos indo", em uma linha. Cada card tem a variação contra o
@@ -20,7 +25,7 @@ export function KpisDono({ dados }: { dados: DadosDashboardDono }) {
   };
   const vencidas = dados.atencao.itens.find((i) => i.tipo === "tarefas_vencidas");
   const semLeituraVencidas = dados.atencao.indisponiveis.includes("tarefas_vencidas");
-  const quebraVencidas = vencidas?.quebra.slice(0, 2).map((q) => `${q.rotulo} ${q.quantidade}`).join(" · ");
+  const quebraVencidas = vencidas?.quebra.slice(0, 2).map((q) => `${q.rotulo} ${q.valor}`).join(" · ");
   const leadsPorDia = negocio.leadsNovos.atual == null ? null : negocio.leadsNovos.atual / periodo;
 
   return (
@@ -31,7 +36,7 @@ export function KpisDono({ dados }: { dados: DadosDashboardDono }) {
         icone={InboxIcon}
         acento="var(--chart-2)"
         valor={fmtInt(negocio.conversasComEntrada.atual)}
-        detalhe={`${fmtInt(negocio.mensagensRecebidas.atual)} mensagens`}
+        detalhe={`${fmtInt(negocio.mensagensRecebidas.atual)} msgs`}
         delta={variacao(negocio.conversasComEntrada)}
         trajetoria={compactar(trajetorias.recebidas)}
         corTrajetoria="var(--chart-2)"
@@ -82,7 +87,7 @@ export function KpisDono({ dados }: { dados: DadosDashboardDono }) {
         icone={TrophyIcon}
         acento="var(--chart-1)"
         valor={ganhos ? fmtInt(ganhos.entradas.atual) : "—"}
-        detalhe={dados.meta ? `${fmtMoeda(dados.meta.valor)} no mês` : ganhos && ganhos.valor > 0 ? `${fmtMoeda(ganhos.valor)} em valor` : ""}
+        detalhe={dados.meta ? `${fmtMoedaCurta(dados.meta.valor)} em ${mesCurto(dados.meta.mes)}` : ""}
         delta={ganhos ? variacao(ganhos.entradas) : null}
         trajetoria={compactar(trajetorias.ganhos)}
         corTrajetoria="var(--chart-1)"

@@ -93,7 +93,8 @@ export type TipoAtencao = "sem_resposta" | "tarefas_vencidas" | "leads_parados" 
 
 export interface QuebraAtencao {
   rotulo: string;
-  quantidade: number;
+  /** já formatado — "3", "1h46", "R$ 12 mil" — porque a unidade muda por tipo */
+  valor: string;
   href?: string;
 }
 
@@ -124,6 +125,24 @@ export function horasDesde(iso: string | null | undefined, agoraMs: number): num
   if (!iso) return null;
   const t = new Date(iso).getTime();
   return Number.isFinite(t) ? Math.max(0, (agoraMs - t) / 3_600_000) : null;
+}
+
+/** "4 min" · "1h46" — o mesmo desenho do `fmtMinutos` do dashboard, sem importar a camada de cima. */
+export function fmtMin(min: number | null): string {
+  if (min == null) return "—";
+  if (min < 60) return `${Math.round(min)} min`;
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+}
+
+/** "R$ 81 mil" · "R$ 1,2 mi" · "R$ 950" — para caber na terceira linha de um card estreito. */
+export function fmtMoedaCurta(v: number | null | undefined): string {
+  if (v == null) return "—";
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `R$ ${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
+  if (abs >= 1_000) return `R$ ${Math.round(v / 1_000).toLocaleString("pt-BR")} mil`;
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 }
 
 export function fmtHoras(h: number | null): string {
@@ -162,18 +181,22 @@ export function atencaoSemResposta(conversas: ConversaResumo[], agoraMs: number,
     quebra: [...porNumero.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 4)
-      .map(([rotulo, quantidade]) => ({ rotulo, quantidade })),
+      .map(([rotulo, quantidade]) => ({ rotulo, valor: String(quantidade) })),
   };
 }
 
+/** Nome curto de uma pessoa a partir do que a tarefa carrega: id → nome do catálogo; senão o e-mail sem domínio. */
+export type ResolverNome = (id: string | null, fallback: string | null) => string;
+export const nomeDoEmail: ResolverNome = (_id, fallback) => (fallback ?? "sem responsável").replace(/@.*$/, "");
+
 /** Tarefas vencidas, quebradas por responsável. */
-export function atencaoTarefasVencidas(tarefas: TarefaVisao[]): ItemAtencao | null {
+export function atencaoTarefasVencidas(tarefas: TarefaVisao[], nomeDe: ResolverNome = nomeDoEmail): ItemAtencao | null {
   const vencidas = tarefas.filter((t) => t.status === "pendente" && t.vencida);
   if (vencidas.length === 0) return null;
   const porPessoa = new Map<string, { nome: string; n: number; id: string | null }>();
   for (const t of vencidas) {
     const k = t.responsavel_id ?? t.responsavel ?? "sem responsável";
-    const atual = porPessoa.get(k) ?? { nome: t.responsavel ?? "sem responsável", n: 0, id: t.responsavel_id };
+    const atual = porPessoa.get(k) ?? { nome: nomeDe(t.responsavel_id, t.responsavel), n: 0, id: t.responsavel_id };
     atual.n++;
     porPessoa.set(k, atual);
   }
@@ -188,13 +211,23 @@ export function atencaoTarefasVencidas(tarefas: TarefaVisao[]): ItemAtencao | nu
     quebra: [...porPessoa.values()]
       .sort((a, b) => b.n - a.n)
       .slice(0, 4)
-      .map((p) => ({ rotulo: p.nome.replace(/@.*$/, ""), quantidade: p.n, href: p.id ? `/tarefas?responsavel=${encodeURIComponent(p.id)}` : undefined })),
+      .map((p) => ({ rotulo: p.nome, valor: String(p.n), href: p.id ? `/tarefas?responsavel=${encodeURIComponent(p.id)}` : undefined })),
   };
 }
 
-/** Leads parados além do SLA da etapa — a MESMA `prioridadeCard` que pinta o funil (D55). */
-export function atencaoLeadsParados(cards: CardLead[], sla: SlaEtapas, agoraMs: number): ItemAtencao | null {
+/**
+ * Leads parados além do SLA da etapa — a MESMA `prioridadeCard` que pinta o funil (D55). Só as
+ * etapas ABERTAS entram: lead em ganho/perdido não está "parado", está terminado.
+ */
+export function atencaoLeadsParados(
+  cards: CardLead[],
+  sla: SlaEtapas,
+  agoraMs: number,
+  etapas: Array<{ chave: string; nome: string; tipo: string }> = [],
+): ItemAtencao | null {
+  const abertas = new Map(etapas.filter((e) => e.tipo === "aberto").map((e) => [e.chave, e.nome] as const));
   const estourados = cards
+    .filter((c) => abertas.size === 0 || abertas.has(c.etapa))
     .map((c) => ({ c, p: prioridadeCard(c, sla, agoraMs) }))
     .filter((x) => x.p.faixa === "agora" && !x.p.pausado);
   if (estourados.length === 0) return null;
@@ -215,7 +248,7 @@ export function atencaoLeadsParados(cards: CardLead[], sla: SlaEtapas, agoraMs: 
     quebra: [...porEtapa.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 4)
-      .map(([etapa, quantidade]) => ({ rotulo: etapa, quantidade, href: `/funil?etapa=${encodeURIComponent(etapa)}` })),
+      .map(([etapa, quantidade]) => ({ rotulo: abertas.get(etapa) ?? etapa, valor: String(quantidade), href: `/funil?etapa=${encodeURIComponent(etapa)}` })),
   };
 }
 
@@ -246,8 +279,7 @@ export function atencaoCanais(canais: LinhaCanal[]): ItemAtencao | null {
     .filter((c) => c.ativo)
     .map((c) => {
       if (!c.conectado) return { c, motivo: "desconectado", peso: 3 };
-      if (c.primeiraRespostaMin != null && c.primeiraRespostaMin > MINUTOS_SLA_CANAL)
-        return { c, motivo: `1ª resposta ${Math.round(c.primeiraRespostaMin)} min`, peso: 2 };
+      if (c.primeiraRespostaMin != null && c.primeiraRespostaMin > MINUTOS_SLA_CANAL) return { c, motivo: `${fmtMin(c.primeiraRespostaMin)} na 1ª resposta`, peso: 2 };
       if (c.semResposta > 0) return { c, motivo: `${c.semResposta} sem resposta`, peso: 1 };
       return null;
     })
@@ -255,17 +287,22 @@ export function atencaoCanais(canais: LinhaCanal[]): ItemAtencao | null {
     .sort((a, b) => b.peso - a.peso);
   if (problemas.length === 0) return null;
   const desconectados = problemas.filter((p) => p.peso === 3).length;
+  const lentos = problemas.filter((p) => p.peso === 2).length;
+  const titulo =
+    desconectados > 0
+      ? `${desconectados} ${desconectados === 1 ? "número desconectado" : "números desconectados"}`
+      : lentos > 0
+        ? `${lentos} ${lentos === 1 ? "número" : "números"} acima de ${MINUTOS_SLA_CANAL} min na 1ª resposta`
+        : `${problemas.length} ${problemas.length === 1 ? "número com conversa" : "números com conversas"} esperando`;
   return {
     tipo: "canal",
-    titulo:
-      desconectados > 0
-        ? `${desconectados} ${desconectados === 1 ? "número desconectado" : "números desconectados"}`
-        : `${problemas.length} ${problemas.length === 1 ? "número" : "números"} acima de ${MINUTOS_SLA_CANAL} min na 1ª resposta`,
-    detalhe: problemas.map((p) => `${p.c.apelido}: ${p.motivo}`).slice(0, 2).join(" · "),
+    titulo,
+    // o detalhe fica nos chips (um por número, com o motivo) — repetir aqui seria a mesma frase duas vezes
+    detalhe: null,
     quantidade: problemas.length,
     gravidade: desconectados > 0 ? "alta" : "media",
     href: desconectados > 0 ? "/configuracoes/canais" : "/?aba=canais",
-    quebra: problemas.slice(0, 4).map((p) => ({ rotulo: p.c.apelido, quantidade: p.c.semResposta, href: `/conversas?canal=${encodeURIComponent(p.c.canal_id)}` })),
+    quebra: problemas.slice(0, 4).map((p) => ({ rotulo: p.c.apelido, valor: p.motivo, href: `/conversas?canal=${encodeURIComponent(p.c.canal_id)}` })),
   };
 }
 
@@ -279,7 +316,7 @@ export function atencaoPropostasJarvis(pendentes: number | null, porAgente: Arra
     quantidade: pendentes,
     gravidade: "baixa",
     href: "/fila",
-    quebra: porAgente.slice(0, 4).map((a) => ({ rotulo: a.nome, quantidade: a.n })),
+    quebra: porAgente.slice(0, 4).map((a) => ({ rotulo: a.nome, valor: String(a.n) })),
   };
 }
 

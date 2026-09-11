@@ -50,7 +50,7 @@ function LinhaPessoa({ r, maxConversas, mediaTipo, periodo, ativo }: { r: LinhaE
           valor={`${fmtMinutos(r.primeiraResposta.medianaMin)}${amostra > 0 && amostra < 5 ? " *" : ""}`}
           tom={barra?.tomTexto ?? "neutro"}
           barra={barra}
-          tituloBarra={`${fmtMinutos(r.primeiraResposta.medianaMin)} contra ${fmtMinutos(mediaTipo)} da média ${r.tipo === "agente" ? "dos agentes" : "das pessoas"}`}
+          tituloBarra={`${fmtMinutos(r.primeiraResposta.medianaMin)} contra ${fmtMinutos(mediaTipo)} da mediana ${r.tipo === "agente" ? "dos agentes" : "das pessoas"}`}
         />
       </td>
       <td className={cn(cel, "text-right text-ui-13 tabular-nums text-foreground")}>
@@ -85,8 +85,10 @@ export function AbaEquipe({ dados }: { dados: DadosDashboardDono }) {
   const linhas = dados.equipe.filter((r) => r.ativo || r.temAtividade);
   const pessoas = linhas.filter((r) => r.tipo === "humano");
   const max = Math.max(1, ...linhas.map((r) => r.conversas.atual ?? 0));
-  const mediaPessoas = mediaEquipeMin(pessoas);
-  const mediaAgentes = mediaEquipeMin(linhas.filter((r) => r.tipo === "agente"));
+  // A régua das barras é o MESMO número do KPI e do rodapé: a mediana de 1ª resposta de todas as
+  // conversas respondidas por pessoas (e, para agentes, por agentes) — um número só na tela.
+  const mediaPessoas = dados.atendimento.primeiraResposta.humanoMin ?? mediaEquipeMin(pessoas);
+  const mediaAgentes = dados.atendimento.primeiraResposta.agenteMin ?? mediaEquipeMin(linhas.filter((r) => r.tipo === "agente"));
   const concluidas = linhas.reduce((s, r) => s + (r.tarefasConcluidas.atual ?? 0), 0);
   const concluidasAntes = linhas.reduce((s, r) => s + (r.tarefasConcluidas.anterior ?? 0), 0);
   const transbordos = dados.atendimento.transbordos;
@@ -103,7 +105,7 @@ export function AbaEquipe({ dados }: { dados: DadosDashboardDono }) {
         <CartaoIndicador
           tamanho="sm"
           rotulo="1ª resposta · pessoas"
-          dica="Mediana de 1ª resposta das conversas em que uma pessoa respondeu primeiro. É a régua das barras de tempo da tabela."
+          dica="Mediana de 1ª resposta das conversas em que uma pessoa respondeu primeiro. É a régua das barras de tempo da tabela e o número do rodapé."
           icone={ZapIcon}
           acento="var(--chart-1)"
           valor={fmtMinutos(dados.atendimento.primeiraResposta.humanoMin)}
@@ -117,13 +119,13 @@ export function AbaEquipe({ dados }: { dados: DadosDashboardDono }) {
         descricao="Uma linha por quem atendeu no período — agentes primeiro, depois pessoas."
         icone={UsersIcon}
         meta={`${fmtInt(pessoas.length)} ${pessoas.length === 1 ? "pessoa" : "pessoas"} · ${fmtInt(linhas.length - pessoas.length)} ${linhas.length - pessoas.length === 1 ? "agente" : "agentes"}`}
-        dica="Conversas são as conversas distintas em que o ator deu a sua primeira resposta. A barra de 1ª resposta compara com a média do PRÓPRIO tipo (agentes com agentes, pessoas com pessoas) — não existe meta de tempo no produto, então a régua é o desempenho real. Carga é quantas conversas abertas estão com a pessoa agora."
+        dica="Conversas são as conversas distintas em que o ator deu a sua primeira resposta. A barra de 1ª resposta compara com a mediana do PRÓPRIO tipo (agentes com agentes, pessoas com pessoas) — não existe meta de tempo no produto, então a régua é o desempenho real. Carga é quantas conversas abertas estão com a pessoa agora."
         legenda={
           <ul className="flex flex-col gap-2">
             <ItemLegenda cor={COR_AGENTE} nome="Azul" glosa="agente (Clara, Jarvis)." />
             <ItemLegenda cor={COR_HUMANO} nome="Laranja" glosa="pessoa da equipe." />
-            <ItemLegenda cor="var(--chart-1)" nome="Verde" glosa="1ª resposta na média do tipo ou abaixo." />
-            <ItemLegenda cor="var(--chart-5)" nome="Vermelho" glosa="50% acima da média do tipo ou mais." />
+            <ItemLegenda cor="var(--chart-1)" nome="Verde" glosa="1ª resposta na mediana do tipo ou abaixo." />
+            <ItemLegenda cor="var(--chart-5)" nome="Vermelho" glosa="50% acima da mediana do tipo ou mais." />
           </ul>
         }
         rodape="Clicar no nome recorta o dashboard inteiro naquele ator (o mesmo 'ver como' de cima). * = menos de 5 conversas na amostra."
@@ -151,7 +153,7 @@ export function AbaEquipe({ dados }: { dados: DadosDashboardDono }) {
               </tbody>
               <tfoot>
                 <tr className="border-t border-border text-ui-11 text-muted-foreground">
-                  <td className="py-2 pr-2">Média · pessoas / agentes</td>
+                  <td className="py-2 pr-2">Mediana · pessoas / agentes</td>
                   <td />
                   <td />
                   <td className="px-2 py-2 text-right tabular-nums">

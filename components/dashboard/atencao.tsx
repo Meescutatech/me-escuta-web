@@ -48,7 +48,7 @@ function Linha({ item }: { item: ItemAtencao }) {
               {item.quebra.map((q) => (
                 <span key={q.rotulo} className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-px text-ui-11 text-muted-foreground">
                   <span className="truncate">{q.rotulo}</span>
-                  <span className="font-medium text-foreground tabular-nums">{fmtInt(q.quantidade)}</span>
+                  <span className="font-medium text-foreground tabular-nums">{q.valor}</span>
                 </span>
               ))}
             </span>

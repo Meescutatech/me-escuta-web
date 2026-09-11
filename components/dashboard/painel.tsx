@@ -59,9 +59,11 @@ export function PainelDashboard({
         </span>
       </div>
 
-      {departamento && !dados.departamentoAplicado && (
-        <p className="mb-3 rounded-lg bg-warning-tint px-3.5 py-2 text-ui-12 text-warning-ink">
-          As leituras do ledger ainda não separam por departamento — os números abaixo são de toda a operação. O recorte vale para atenção, equipe e canais quando a migration chegar.
+      {departamento && (
+        <p className="mb-3 text-ui-12 text-muted-foreground">
+          {dados.departamentoAplicado
+            ? "Recorte aplicado a atenção, equipe e canais. KPIs, funil e série seguem de toda a operação — as views do ledger ainda não separam por departamento."
+            : "As leituras do ledger ainda não separam por departamento: os números abaixo são de toda a operação."}
         </p>
       )}
 

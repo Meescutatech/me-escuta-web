@@ -109,23 +109,23 @@ export function AbaMarketing({ visao, periodo }: { visao: VisaoMarketing; period
             <SerieLeads pontos={visao.serie} />
           </CartaoGrafico>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
             <SecaoTabela titulo="De onde vieram" descricao="Pago / orgânico → plataforma → campanha → anúncio." icone={GitBranchIcon} dica="Cada linha é um nó da origem: nome, cidades da segmentação, barra proporcional ao total de leads do período, leads e custo por lead. Campanha com anúncios abre e fecha." meta={!visao.vocabularioDisponivel ? "sem vocabulário de canais" : undefined}>
               {visao.arvore.length === 0 ? <BlocoVazio titulo="Nenhum lead com origem neste período" /> : <ArvoreOrigem arvore={visao.arvore} total={visao.resumo.leads} />}
             </SecaoTabela>
-            <div className="flex flex-col gap-4">
-              <SecaoTabela titulo="Custo por origem" descricao="Quanto cada plataforma trouxe e custou." icone={CoinsIcon} dica="Leads e custo por plataforma paga, mais o orgânico para comparação. CPL é investido ÷ leads da própria plataforma.">
-                <CustoPorPlataforma visao={visao} />
-              </SecaoTabela>
-              <SecaoTabela titulo="Até onde chegaram" descricao="Etapa atual dos leads de cada origem." icone={TargetIcon} dica="De cada origem, quantos leads chegaram a Qualificado, Consulta e Venda — pela etapa ATUAL (quem está em Proposta já passou por Qualificado). Perdido não conta em marco nenhum.">
-                <FunilOrigem linhas={visao.funil} marcos={visao.marcos} />
-              </SecaoTabela>
-            </div>
+            <SecaoTabela titulo="Custo por origem" descricao="Quanto cada plataforma trouxe e custou." icone={CoinsIcon} dica="Leads e custo por plataforma paga, mais o orgânico para comparação. CPL é investido ÷ leads da própria plataforma.">
+              <CustoPorPlataforma visao={visao} />
+            </SecaoTabela>
           </div>
 
-          <SecaoTabela titulo="Campanhas e custo" descricao="Custo por lead de cada campanha, ordenado por gasto." icone={MegaphoneIcon} dica="Uma linha por campanha com lead ou gasto no período. Sem custo ingerido, a coluna CPL fica em “—”.">
-            <TabelaCampanhas linhas={visao.campanhas} estadoCusto={visao.estadoCusto} />
-          </SecaoTabela>
+          <div className="grid items-start gap-4 xl:grid-cols-2">
+            <SecaoTabela titulo="Até onde chegaram" descricao="Etapa atual dos leads de cada origem." icone={TargetIcon} dica="De cada origem, quantos leads chegaram a Qualificado, Consulta e Venda — pela etapa ATUAL (quem está em Proposta já passou por Qualificado). Perdido não conta em marco nenhum.">
+              <FunilOrigem linhas={visao.funil} marcos={visao.marcos} />
+            </SecaoTabela>
+            <SecaoTabela titulo="Campanhas e custo" descricao="Custo por lead de cada campanha, ordenado por gasto." icone={MegaphoneIcon} dica="Uma linha por campanha com lead ou gasto no período. Sem custo ingerido, a coluna CPL fica em “—”.">
+              <TabelaCampanhas linhas={visao.campanhas} estadoCusto={visao.estadoCusto} />
+            </SecaoTabela>
+          </div>
         </>
       )}
     </div>

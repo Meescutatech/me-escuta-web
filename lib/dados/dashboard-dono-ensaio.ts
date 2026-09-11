@@ -1,4 +1,5 @@
 import { gerarCanaisEnsaio, formatarE164 } from "@/lib/ensaio/fixtures/canais";
+import { pessoaPorId } from "@/lib/ensaio/modo";
 import { gerarConversasEnsaio, gerarFunilEnsaio } from "@/lib/ensaio/fixtures/conversas";
 import { visaoTarefasDeEnsaio } from "./tarefas-ensaio";
 import { ymdEmSaoPaulo } from "./dashboard-calculos.ts";
@@ -129,10 +130,11 @@ export function atencaoDeEnsaio(canais: LinhaCanal[], agora: Date): Atencao {
   const { conversas } = gerarConversasEnsaio(agora);
   const { tarefas } = visaoTarefasDeEnsaio(agora);
   const funil = gerarFunilEnsaio(agora);
+  const nomeDe = (id: string | null, fallback: string | null) => pessoaPorId(id)?.nome.split(" ")[0] ?? (fallback ?? "sem responsável").replace(/@.*$/, "");
   const itens = ordenarAtencao([
     atencaoSemResposta(conversas, agoraMs),
-    atencaoTarefasVencidas(tarefas),
-    atencaoLeadsParados(funil.cards, funil.sla, agoraMs),
+    atencaoTarefasVencidas(tarefas, nomeDe),
+    atencaoLeadsParados(funil.cards, funil.sla, agoraMs, funil.todasEtapas),
     atencaoCanais(canais),
     atencaoPropostasJarvis(4, [
       { nome: "Clara", n: 3 },
@@ -172,7 +174,7 @@ export function jarvisDizDeEnsaio(
 
   const partes: string[] = [];
   if (semResposta) partes.push(semResposta.titulo.replace(/^(\d+) conversas?/, (m) => m.toLowerCase()));
-  if (vencidas && vencidas.quebra[0]) partes.push(`${vencidas.quebra[0].rotulo} tem ${vencidas.quebra[0].quantidade} ${vencidas.quebra[0].quantidade === 1 ? "tarefa vencida" : "tarefas vencidas"}`);
+  if (vencidas && vencidas.quebra[0]) partes.push(`${vencidas.quebra[0].rotulo} tem ${vencidas.quebra[0].valor} ${vencidas.quebra[0].valor === "1" ? "tarefa vencida" : "tarefas vencidas"}`);
   const frase =
     partes.length > 0
       ? `${partes[0].charAt(0).toUpperCase()}${partes[0].slice(1)}${partes[1] ? `, e ${partes[1]}` : ""}.`

@@ -25,15 +25,15 @@ export function FunilOrigem({ linhas, marcos }: { linhas: LinhaFunilOrigem[]; ma
     <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] border-collapse text-[12.5px]">
         <thead>
-          <tr className="border-b border-linha font-mono text-[10px] uppercase tracking-[0.04em] text-mute">
-            <th className="pb-1.5 text-left font-normal">Origem</th>
-            <th className="pb-1.5 text-right font-normal">Leads</th>
+          <tr className="border-b border-linha text-ui-11 font-medium text-muted-foreground">
+            <th className="pb-2 text-left font-medium">Origem</th>
+            <th className="pb-2 text-right font-medium">Leads</th>
             {marcosAtivos.map((m) => (
-              <th key={m} className="pb-1.5 pl-4 text-left font-normal" title={`Etapa: ${marcos.nome[m] ?? ""}`}>
+              <th key={m} className="pb-2 pl-4 text-left font-medium" title={`Etapa: ${marcos.nome[m] ?? ""}`}>
                 {marcos.nome[m] ?? ROTULO_MARCO[m]}
               </th>
             ))}
-            {temPerdidos && <th className="pb-1.5 text-right font-normal">Perdidos</th>}
+            {temPerdidos && <th className="pb-2 text-right font-medium">Perdidos</th>}
           </tr>
         </thead>
         <tbody>
@@ -47,23 +47,23 @@ export function FunilOrigem({ linhas, marcos }: { linhas: LinhaFunilOrigem[]; ma
                     <span className="font-medium text-tinta">{l.rotulo}</span>
                   </span>
                 </td>
-                <td className="py-2 text-right font-mono tabular-nums text-tinta">{inteiro(l.leads)}</td>
+                <td className="py-2 text-right tabular-nums text-tinta">{inteiro(l.leads)}</td>
                 {marcosAtivos.map((m) => {
                   const v = l.marcos[m];
                   const t = l.taxas[m];
                   return (
                     <td key={m} className="py-2 pl-4">
                       <div className="flex items-center gap-2">
-                        <span className="w-8 text-right font-mono tabular-nums text-tinta">{inteiro(v)}</span>
+                        <span className="w-8 text-right tabular-nums text-tinta">{inteiro(v)}</span>
                         <span className="h-[6px] w-[64px] overflow-hidden rounded-[2px] bg-fundo" aria-hidden>
                           <span className="block h-full rounded-[2px]" style={{ width: `${t == null ? 0 : Math.max(t > 0 ? 2 : 0, t * 100)}%`, background: cor }} />
                         </span>
-                        <span className="w-9 font-mono text-[11px] tabular-nums text-mute">{pct(t)}</span>
+                        <span className="w-9 text-[11px] tabular-nums text-mute">{pct(t)}</span>
                       </div>
                     </td>
                   );
                 })}
-                {temPerdidos && <td className="py-2 text-right font-mono tabular-nums text-suave">{inteiro(l.perdidos)}</td>}
+                {temPerdidos && <td className="py-2 text-right tabular-nums text-suave">{inteiro(l.perdidos)}</td>}
               </tr>
             );
           })}

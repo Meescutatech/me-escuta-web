@@ -86,7 +86,7 @@ export function CartaoIndicador({
       {tamanho !== "sm" ? (
         <div className="flex h-4 items-end justify-between gap-2">
           <span className="truncate text-ui-11 text-muted-foreground tabular-nums">{detalhe ?? ""}</span>
-          {trajetoria && trajetoria.length > 0 ? <MiniBarras valores={trajetoria} cor={corTrajetoria} className="w-20" /> : null}
+          {trajetoria && trajetoria.length > 0 ? <MiniBarras valores={trajetoria} cor={corTrajetoria} className={grande ? "w-24" : "w-16"} /> : null}
         </div>
       ) : null}
     </Card>

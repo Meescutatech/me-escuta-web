@@ -49,11 +49,11 @@ function Linha({ no, total, nivel, resumo }: { no: NoOrigem; total: number; nive
       <div className="h-[8px] overflow-hidden rounded-[2px] bg-fundo" aria-hidden>
         <div className="h-full rounded-[2px]" style={{ width: `${largura}%`, background: cor, opacity: forte ? 1 : 0.85 }} />
       </div>
-      <div className={cn("text-right font-mono tabular-nums", forte ? "text-[13px] font-semibold text-tinta" : "text-[12.5px] text-tinta")}>
+      <div className={cn("text-right tabular-nums", forte ? "text-[13px] font-semibold text-tinta" : "text-[12.5px] text-tinta")}>
         {inteiro(no.leads)}
         {forte && no.fracao != null && <span className="ml-1 text-[11px] font-normal text-mute">{pct(no.fracao)}</span>}
       </div>
-      <div className="text-right font-mono text-[12px] tabular-nums text-suave" title={no.gasto != null ? `Investido ${brl(no.gasto)}` : undefined}>
+      <div className="text-right text-[12px] tabular-nums text-suave" title={no.gasto != null ? `Investido ${brl(no.gasto)}` : undefined}>
         {no.cpl != null ? brl(no.cpl) : no.gasto != null && no.leads === 0 ? <span className="text-amarelo">{brl(no.gasto)} · 0 leads</span> : ""}
       </div>
     </div>
@@ -82,7 +82,7 @@ function No({ no, total, nivel }: { no: NoOrigem; total: number; nivel: number }
 export function ArvoreOrigem({ arvore, total }: { arvore: NoOrigem[]; total: number }) {
   return (
     <div>
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(90px,28%)_56px_84px] gap-x-3 border-b border-linha pb-1.5 font-mono text-[10px] uppercase tracking-[0.04em] text-mute">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(90px,28%)_56px_84px] gap-x-3 border-b border-linha pb-2 text-ui-11 font-medium text-muted-foreground">
         <span>Origem</span>
         <span>Parte do total</span>
         <span className="text-right">Leads</span>

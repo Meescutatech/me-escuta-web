@@ -12,11 +12,11 @@ export function TabelaCampanhas({ linhas, estadoCusto }: { linhas: LinhaCampanha
     <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] border-collapse text-[12.5px]">
         <thead>
-          <tr className="border-b border-linha font-mono text-[10px] uppercase tracking-[0.04em] text-mute">
-            <th className="pb-1.5 text-left font-normal">Campanha</th>
-            <th className="pb-1.5 text-right font-normal">Leads</th>
-            <th className="pb-1.5 text-right font-normal">Investido</th>
-            <th className="pb-1.5 pl-4 text-left font-normal">CPL</th>
+          <tr className="border-b border-linha text-ui-11 font-medium text-muted-foreground">
+            <th className="pb-2 text-left font-medium">Campanha</th>
+            <th className="pb-2 text-right font-medium">Leads</th>
+            <th className="pb-2 text-right font-medium">Investido</th>
+            <th className="pb-2 pl-4 text-left font-medium">CPL</th>
           </tr>
         </thead>
         <tbody>
@@ -32,12 +32,12 @@ export function TabelaCampanhas({ linhas, estadoCusto }: { linhas: LinhaCampanha
                   </span>
                   {l.cidades.length > 0 && <span className="block truncate pl-[17px] text-[11px] text-mute">{l.cidades.join(" · ")}</span>}
                 </td>
-                <td className="py-2 text-right font-mono tabular-nums text-tinta">{inteiro(l.leads)}</td>
-                <td className="py-2 text-right font-mono tabular-nums text-tinta">{brl(l.gasto)}</td>
+                <td className="py-2 text-right tabular-nums text-tinta">{inteiro(l.leads)}</td>
+                <td className="py-2 text-right tabular-nums text-tinta">{brl(l.gasto)}</td>
                 <td className="py-2 pl-4">
                   {l.cpl != null ? (
                     <span className="flex items-center gap-2">
-                      <span className="w-16 font-mono tabular-nums text-tinta">{brl(l.cpl)}</span>
+                      <span className="w-16 tabular-nums text-tinta">{brl(l.cpl)}</span>
                       <span className="h-[6px] w-[72px] overflow-hidden rounded-[2px] bg-fundo" aria-hidden>
                         <span className="block h-full rounded-[2px]" style={{ width: `${maxCpl > 0 ? (l.cpl / maxCpl) * 100 : 0}%`, background: cor }} />
                       </span>

@@ -56,7 +56,11 @@ import { lerFila } from "@/app/(app)/fila/dados";
 export interface DadosDashboardDono extends DadosDashboardCeo {
   aba: Aba;
   departamento: DepartamentoFiltro;
-  /** false = o recorte de departamento NÃO foi aplicado às leituras (as views não têm `area`). */
+  /**
+   * true = o recorte de departamento foi aplicado aos blocos que TÊM departamento (atenção, equipe,
+   * canais). KPIs, funil e série nunca são recortados: as views `v_dashboard_*` não têm `area`.
+   * false = nada foi recortado (produção, até a migration).
+   */
   departamentoAplicado: boolean;
   atencao: Atencao;
   jarvis: JarvisDiz;
@@ -148,7 +152,7 @@ export async function lerDashboardDono(
     itens: ordenarAtencao([
       conversas ? atencaoSemResposta(conversas.conversas, agoraMs) : null,
       tarefas ? atencaoTarefasVencidas(tarefas.tarefas) : null,
-      funil ? atencaoLeadsParados(funil.cards, funil.sla, agoraMs) : null,
+      funil ? atencaoLeadsParados(funil.cards, funil.sla, agoraMs, funil.todasEtapas) : null,
       fila && fila.total != null ? atencaoPropostasJarvis(fila.total, (fila.porAgente ?? []).map((a) => ({ nome: a.rotulo || a.agente, n: a.qtd }))) : null,
     ]),
     indisponiveis,
