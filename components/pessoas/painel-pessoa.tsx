@@ -284,7 +284,7 @@ export function PainelPessoa({
         </SheetBody>
 
         {gestao && membro.id !== eu && membro.papel !== "owner" && (
-          <SheetFooter className="border-t border-border sm:justify-between">
+          <SheetFooter className="flex-row items-center justify-between border-t border-border px-6 py-4">
             <div className="flex items-center gap-2">
               <Select
                 value={cargoAtual?.chave ?? ""}

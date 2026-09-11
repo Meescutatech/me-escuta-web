@@ -38,7 +38,8 @@ export default function ConfiguracoesLayout({ children }: { children: ReactNode 
         ? { texto: convites.length === 1 ? "1 convite" : `${convites.length} convites`, atencao: true }
         : { texto: String(comAcesso) },
     "/configuracoes/cargos": { texto: `${CARGOS_ATIVOS.length} ativos` },
-    "/configuracoes/canais": { texto: `${noAr} no ar` },
+    // "3 no ar" fazia "Números conectados" truncar em 240px — o rótulo vence o estado.
+    "/configuracoes/canais": { texto: String(noAr) },
     "/configuracoes/agentes": { texto: `${ligados} de ${agentes.length}` },
     "/configuracoes/claude": { texto: "2" },
     "/configuracoes/conexoes":

@@ -86,10 +86,10 @@ export function CanaisEnsaio({
   return (
     <CascaConfig
       largo
-      titulo="Números de WhatsApp"
+      titulo="Números conectados"
       descricao={
         gestao
-          ? "Por quais números a empresa fala. Cada número pertence a um departamento e tem uma dona; o nível diz quem pode responder por ele."
+          ? "Por quais números a empresa fala. Cada número pertence a um departamento e tem uma dona; o nível diz quem pode responder por ele. O app da Meta e o servidor do Lite ficam em Inteligência › Conexões."
           : "O número pelo qual você atende. Você pode ligar, desligar e reconectar; o departamento e o nível são da gestão."
       }
       acao={

@@ -277,10 +277,10 @@ export function CartaoPessoa({
         <Numeros numeros={numeros} />
       </div>
       {metricas && metricas.length > 0 && (
-        // largura fixa idêntica à do cabeçalho (`w-[188px]` = 3 × 52 + 2 × gap-4) para as três
+        // largura fixa idêntica à do cabeçalho (`w-[198px]` = 3 × 58 + 2 × gap-3) para as três
         // colunas de números ficarem no mesmo eixo em todas as linhas, com qualquer valor.
-        <div className="hidden w-[188px] shrink-0 lg:block">
-          <MetricasPessoa metricas={metricas} className="gap-4 [&>div]:w-[52px]" />
+        <div className="hidden w-[198px] shrink-0 lg:block">
+          <MetricasPessoa metricas={metricas} className="gap-3 [&>div]:w-[58px]" />
         </div>
       )}
       <div className="w-[104px] shrink-0 text-right text-[13px] text-muted-foreground">{desdeQuando(pessoa.ultimoAcessoEm, agora)}</div>
@@ -307,7 +307,7 @@ export function CabecalhoCartaoPessoa({ className }: { className?: string }) {
       <span className="min-w-0 flex-[1.6]">Pessoa e cargo</span>
       <span className="hidden min-w-0 flex-1 md:block">Departamentos</span>
       <span className="hidden min-w-0 flex-1 xl:block">Números de que é dona</span>
-      <span className="hidden w-[188px] shrink-0 lg:block">Últimos 7 dias</span>
+      <span className="hidden w-[198px] shrink-0 lg:block">Últimos 7 dias</span>
       <span className="w-[104px] shrink-0 text-right">Último acesso</span>
       <span className="w-8 shrink-0" />
     </div>

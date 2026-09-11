@@ -15,7 +15,7 @@ import type { Departamento } from "@/lib/departamentos/escopo";
 import { expiraEm, type ConviteEnsaio, type MembroEnsaio } from "@/lib/ensaio/fixtures/membros";
 import type { CanalEnsaio } from "@/lib/ensaio/fixtures/canais";
 import { formatarE164 } from "@/lib/ensaio/fixtures/canais";
-import { CARGOS_ATIVOS, cargoDe, cargoPorChave, conviteDoCargo, type Cargo } from "@/lib/ensaio/fixtures/cargos";
+import { CARGOS_ATIVOS, cargoDe, cargoDoConvite, cargoPorChave, conviteDoCargo, type Cargo } from "@/lib/ensaio/fixtures/cargos";
 import { gerarAtividadeMembro } from "@/lib/ensaio/fixtures/membro-atividade";
 import { fotosEnsaio } from "@/lib/ensaio/fotos";
 import { CabecalhoCartaoPessoa, CartaoPessoa, desdeQuando, type NumeroDaPessoa, type Pessoa } from "@/components/pessoas/cartao-pessoa";
@@ -163,7 +163,13 @@ export function MembrosEnsaio({
           </label>
           {/* Filtrar por cargo: é o filtro que o Linear tem em Members (lá por papel) — aqui pelo
               nome que a operação usa. */}
-          <Select value={cargoFiltro} onValueChange={(v) => setCargoFiltro(String(v))}>
+          <Select
+            value={cargoFiltro}
+            onValueChange={(v) => setCargoFiltro(String(v))}
+            // `items` faz o gatilho mostrar o RÓTULO e não o valor cru — sem ele o filtro exibia
+            // "todos" em minúscula, que é a chave, não o nome da opção.
+            items={[{ value: "todos", label: "Todos os cargos" }, ...CARGOS_ATIVOS.map((c) => ({ value: c.chave, label: c.nome }))]}
+          >
             <SelectTrigger aria-label="Filtrar por cargo" className="w-[170px]">
               <SelectValue />
             </SelectTrigger>
@@ -232,14 +238,7 @@ export function MembrosEnsaio({
           <h2 className="text-ui-13 font-semibold text-foreground">Convites pendentes</h2>
           <div className="overflow-hidden rounded-lg border border-border bg-card">
             {pendentes.map((c, i) => {
-              const cargo = CARGOS_ATIVOS.find((x) => {
-                const alvo = conviteDoCargo(x);
-                return (
-                  alvo.papel === c.papel &&
-                  alvo.departamentos.length === c.departamentos.length &&
-                  alvo.departamentos.every((d, k) => d.departamento === c.departamentos[k]?.departamento)
-                );
-              });
+              const cargo = cargoDoConvite(c);
               const prazo = expiraEm(c.expira_em, agora);
               return (
                 <div key={c.id} className={cn("flex items-center gap-4 px-4 py-3", i > 0 && "border-t border-border")}>

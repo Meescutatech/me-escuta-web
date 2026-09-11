@@ -16,6 +16,12 @@ export interface Integracao {
   papel: string;
   estado: EstadoIntegracao;
   resumo: string;
+  /**
+   * UM número por conexão — o que se olha de relance para saber se ela está servindo.
+   * A tela de Conexões é uma lista, não um mural (Twenty: catálogo é card, conectado é linha de
+   * tabela — `SettingsConnectedAccountsTableRow.tsx:30-56`), e numa lista cabe um número só.
+   */
+  metrica: { valor: string; rotulo: string };
   campos: Array<{ rotulo: string; valor: string; estado?: "ok" | "atencao" | "erro"; mono?: boolean }>;
   acoes: Array<{ rotulo: string; primaria?: boolean }>;
   /** Constituição §1.3 — fica (integrar) ou morre (substituir). */
@@ -41,6 +47,7 @@ export function gerarIntegracoesEnsaio(agora: Date = new Date()): Integracao[] {
       papel: "Recebe e envia as mensagens dos números oficiais. É o app da Meta — dele nascem os números WABA.",
       estado: "conectada",
       resumo: "App em produção · webhook assinado · qualidade do número alta",
+      metrica: { valor: "143", rotulo: "conversas em 7 dias" },
       campos: [
         { rotulo: "Conta comercial (WABA)", valor: "1067455192551392", mono: true },
         { rotulo: "App da Meta", valor: "Me Escuta Atendimento · 8843…2210", mono: true },
@@ -61,6 +68,7 @@ export function gerarIntegracoesEnsaio(agora: Date = new Date()): Integracao[] {
       papel: "Pareia celulares da equipe por QR. Cada fono ganha o próprio número sem precisar da Meta.",
       estado: "conectada",
       resumo: "2 instâncias pareadas · admin fechado",
+      metrica: { valor: "2", rotulo: "números pareados" },
       campos: [
         { rotulo: "Servidor", valor: "vps · rede interna · v1.4.2", mono: true },
         { rotulo: "Instâncias", valor: "lite:sara · lite:ana-paula", mono: true },
@@ -72,11 +80,12 @@ export function gerarIntegracoesEnsaio(agora: Date = new Date()): Integracao[] {
     },
     {
       chave: "claude",
-      nome: "Adicionar ao Claude",
-      fornecedor: "MCP remoto",
+      nome: "Servidor MCP",
+      fornecedor: "próprio · para o Claude",
       papel: "Deixa o Claude (Desktop, Code, cowork) ler os relatórios e o funil com o seu login — sem senha compartilhada.",
       estado: "atencao",
       resumo: "Servidor no ar · 1 pessoa conectada (Fernando) · OAuth pendente para o cowork",
+      metrica: { valor: "2", rotulo: "pessoas conectadas" },
       campos: [
         { rotulo: "Endereço do MCP", valor: "https://mcp.meescuta.com/sse", mono: true },
         { rotulo: "Ferramentas expostas", valor: "captacao · funil · relatorios (12 tools)" },
@@ -93,6 +102,7 @@ export function gerarIntegracoesEnsaio(agora: Date = new Date()): Integracao[] {
       papel: "O sistema antigo. Fica ligado só para importar o histórico (7.100 leads, 361 mil eventos).",
       estado: "atencao",
       resumo: "Renovado · importação 92 % · webhook de saída desligado",
+      metrica: { valor: "92 %", rotulo: "do histórico importado" },
       campos: [
         { rotulo: "Conta", valor: "meescuta.kommo.com", mono: true },
         { rotulo: "Token de API", valor: `válido até ${em(83 * 24 * H)} · …7d1c`, estado: "ok", mono: true },
@@ -109,6 +119,7 @@ export function gerarIntegracoesEnsaio(agora: Date = new Date()): Integracao[] {
       papel: "E-mail transacional. Hoje só o convite usaria — e o convite é por link, então está em espera.",
       estado: "desconectada",
       resumo: "Chave configurada · envio de convite por e-mail desligado (V1 é link)",
+      metrica: { valor: "0", rotulo: "e-mails em 30 dias" },
       campos: [
         { rotulo: "Domínio remetente", valor: "meescuta.com · DKIM ok", estado: "ok" },
         { rotulo: "Convite por e-mail", valor: "desligado — `convite.envio_email_ativo=false`", mono: true },
@@ -123,6 +134,7 @@ export function gerarIntegracoesEnsaio(agora: Date = new Date()): Integracao[] {
       papel: "Cobrança e boletos. É de onde a Priscila vai ler quem está em atraso.",
       estado: "nao_configurada",
       resumo: "Chave no cofre · nunca chamado pelo sistema",
+      metrica: { valor: "—", rotulo: "nunca chamado" },
       campos: [{ rotulo: "Ambiente", valor: "produção (não conectado)" }],
       acoes: [{ rotulo: "Conectar", primaria: true }],
       destino: "fica",
@@ -134,6 +146,7 @@ export function gerarIntegracoesEnsaio(agora: Date = new Date()): Integracao[] {
       papel: "Consulta de crédito para o Levindo. Sem ela não há score.",
       estado: "nao_configurada",
       resumo: "Credencial não configurada",
+      metrica: { valor: "—", rotulo: "nunca chamado" },
       campos: [{ rotulo: "Contrato", valor: "RAF · pendente" }],
       acoes: [{ rotulo: "Conectar", primaria: true }],
       destino: "fica",
