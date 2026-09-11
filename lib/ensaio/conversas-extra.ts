@@ -89,9 +89,11 @@ export interface EstadoConversasEnsaio {
   etapas: Record<string, { etapa: string; em: string }>;
   /** W-D3 v3 · tarefas concluídas pelo painel. */
   concluidas: string[];
+  /** W-D3 v6 · tarefas adiadas no modo foco (tarefa_id → novo prazo ISO). */
+  prazos: Record<string, string>;
 }
 
-const VAZIO: EstadoConversasEnsaio = { conversas: [], tarefas: [], canceladas: [], propostas: [], ficha: {}, etapas: {}, concluidas: [] };
+const VAZIO: EstadoConversasEnsaio = { conversas: [], tarefas: [], canceladas: [], propostas: [], ficha: {}, etapas: {}, concluidas: [], prazos: {} };
 
 export function lerEstadoConversasEnsaio(): EstadoConversasEnsaio {
   try {
@@ -106,6 +108,7 @@ export function lerEstadoConversasEnsaio(): EstadoConversasEnsaio {
       ficha: j.ficha && typeof j.ficha === "object" ? j.ficha : {},
       etapas: j.etapas && typeof j.etapas === "object" ? j.etapas : {},
       concluidas: Array.isArray(j.concluidas) ? j.concluidas : [],
+      prazos: j.prazos && typeof j.prazos === "object" ? j.prazos : {},
     };
   } catch {
     return VAZIO;
@@ -122,6 +125,7 @@ export function gravarEstadoConversasEnsaio(estado: EstadoConversasEnsaio): void
     ficha: estado.ficha,
     etapas: estado.etapas,
     concluidas: estado.concluidas.slice(-LIMITE_POR_LISTA * 2),
+    prazos: estado.prazos,
   };
   cookies().set(COOKIE_ESTADO_CONVERSAS, JSON.stringify(enxuto), {
     path: "/",

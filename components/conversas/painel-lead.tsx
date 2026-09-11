@@ -19,8 +19,6 @@ import type { PainelLead, TarefaLead } from "@/lib/dados/lead-painel";
 import type { EtapaFunil } from "@/lib/dados/funil";
 import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 import type { Mencionavel } from "@/lib/conversas/mencao";
-import { ReguaFunil } from "@/components/regua-funil";
-import { segmentosReguaLead } from "@/lib/dados/funil-calculos";
 import { AbaHistorico } from "@/components/lead/aba-historico";
 import { mapaDeAgentes, mapaDeEtapas, mapaDePessoas } from "@/components/lead/regras/historico.ts";
 import { inputParaValor, valorParaInput, valorParaTexto, type CampoFicha } from "@/lib/dados/ficha-calculos";
@@ -53,11 +51,16 @@ import { concluirTarefaEnsaio, moverEtapaEnsaio, salvarCampoFichaEnsaio } from "
  * No ensaio as escritas vão para o cookie de estado; fora dele, para as actions da porta.
  */
 
-type Aba = "ficha" | "funil" | "tarefas" | "agendadas" | "historico" | "midias";
+/**
+ * W-D3 v5 (Diogo, 00:12) · A ABA "FUNIL" SAIU. A pergunta dele mata o caso: "se tem esse aviso,
+ * para que ter algo só para o funil?" — mover etapa virou ação do CABEÇALHO (clicar na etapa abre
+ * o seletor) e o resto do funil já está a um clique no ↗ do lead. Uma aba a menos é uma linha a
+ * menos de navegação para o mesmo trabalho.
+ */
+type Aba = "ficha" | "tarefas" | "agendadas" | "historico" | "midias";
 
 const ABAS: Array<[Aba, string]> = [
   ["ficha", "Ficha"],
-  ["funil", "Funil"],
   ["tarefas", "Tarefas"],
   ["agendadas", "Agendadas"],
   ["historico", "Histórico"],
@@ -172,57 +175,51 @@ export function PainelLead({
             ))}
           </div>
         )}
-        <div className="mt-2.5 flex items-baseline justify-between gap-2 text-[12px]">
-          <span className="min-w-0 truncate">
-            <span className="font-medium text-tinta">{conversa.etapa_nome ?? "sem etapa"}</span>
-            {dias != null && <span className="text-suave"> · {dias === 0 ? "entrou hoje" : dias === 1 ? "há 1 dia na etapa" : `há ${dias} dias na etapa`}</span>}
-          </span>
-          <span className="shrink-0 text-suave">{quemAtende} atende</span>
-        </div>
-        <div className="mt-1.5">
-          <ReguaFunil segmentos={segmentosReguaLead(etapas.filter((e) => e.tipo === "aberto"), conversa.etapa ?? null)} rotulo={`Progresso no funil: ${conversa.etapa_nome ?? "sem etapa"}`} />
+        {/* W-D3 v5 · UMA linha: etapa (clicável = mover) · tempo na etapa · quem atende. A régua
+            de progresso saiu — ela custava 14px de altura para dizer o que a palavra já diz. */}
+        <div className="mt-1.5 flex items-center gap-2 text-[12px]">
+          <SeletorEtapa conversa={conversa} etapas={etapas} ensaio={ensaio} avisar={avisar} />
+          {dias != null && <span className="shrink-0 text-suave">{dias === 0 ? "entrou hoje" : dias === 1 ? "1 dia" : `${dias} dias`}</span>}
+          <span className="ml-auto shrink-0 truncate text-suave">{quemAtende} atende</span>
         </div>
       </div>
 
-      {/* ── destaques ─────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-1.5 px-4 pt-3">
-        <Destaque rotulo="Próxima tarefa" icone={<CalendarClockIcon />}>
-          {proxima ? (
-            <>
-              <span className="line-clamp-2 text-[12px] font-medium leading-snug text-tinta">{proxima.titulo}</span>
-              {proxima.prazo && (
-                <span className={cn("text-[11px]", estadoDoPrazo(proxima.prazo, agora) === "vencida" ? "text-vermelho" : "text-suave")}>
-                  {estadoDoPrazo(proxima.prazo, agora) === "vencida" ? "venceu " : "vence "}
-                  {dataHoraCurta(proxima.prazo)}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-[11.5px] text-mute">nenhuma pendente</span>
-          )}
-        </Destaque>
-        <Destaque rotulo="Último contato" icone={<ClockIcon />}>
-          {ultimaEntrada ? (
-            <>
-              <span className="text-[13px] font-medium text-tinta">{tempoDesde(ultimaEntrada.criado_em, agora)}</span>
-              <span className="text-[11px] text-suave">
-                {ultimaSaida && new Date(ultimaSaida.criado_em) > new Date(ultimaEntrada.criado_em) ? "respondida" : "sem resposta"}
+      {/* ── destaques: UMA linha (Diogo, 00:12: "não precisa desses cards gigantes de tarefa") ── */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-4 pt-2 text-[11.5px] leading-[16px] text-suave">
+        {proxima ? (
+          <button type="button" onClick={() => setAba("tarefas")} className="min-w-0 max-w-full truncate text-left underline-offset-2 hover:text-tinta hover:underline">
+            <span className="text-mute">Próxima: </span>
+            <span className="text-tinta">{proxima.titulo}</span>
+            {proxima.prazo && (
+              <span className={cn(estadoDoPrazo(proxima.prazo, agora) === "vencida" ? "text-vermelho" : "text-suave")}>
+                {" "}
+                · {estadoDoPrazo(proxima.prazo, agora) === "vencida" ? "venceu" : "vence"} {dataHoraCurta(proxima.prazo)}
               </span>
-            </>
-          ) : (
-            <span className="text-[11.5px] text-mute">nunca escreveu</span>
-          )}
-        </Destaque>
-        <Destaque rotulo="Valor" icone={<WalletIcon />}>
-          {valor ? (
-            <>
-              <span className="text-[13px] font-medium tabular-nums text-tinta">{valor}</span>
-              <span className="text-[11px] text-suave">{conversa.etapa === "ganho" ? "fechado" : "estimado"}</span>
-            </>
-          ) : (
-            <span className="text-[11.5px] text-mute">sem proposta</span>
-          )}
-        </Destaque>
+            )}
+          </button>
+        ) : (
+          <span className="text-mute">Sem tarefa pendente</span>
+        )}
+        <span aria-hidden className="text-linha-forte">|</span>
+        {ultimaEntrada ? (
+          <span className="shrink-0">
+            Último contato {tempoDesde(ultimaEntrada.criado_em, agora)}
+            <span className="text-mute">
+              {" "}
+              · {ultimaSaida && new Date(ultimaSaida.criado_em) > new Date(ultimaEntrada.criado_em) ? "respondida" : "sem resposta"}
+            </span>
+          </span>
+        ) : (
+          <span className="shrink-0 text-mute">Nunca escreveu</span>
+        )}
+        <span aria-hidden className="text-linha-forte">|</span>
+        {valor ? (
+          <button type="button" onClick={() => setAba("ficha")} className="shrink-0 tabular-nums underline-offset-2 hover:text-tinta hover:underline">
+            {valor} <span className="text-mute">{conversa.etapa === "ganho" ? "fechado" : "estimado"}</span>
+          </button>
+        ) : (
+          <span className="shrink-0 text-mute">sem proposta</span>
+        )}
       </div>
 
       {/* ── abas ──────────────────────────────────────────────────────────────── */}
@@ -249,7 +246,6 @@ export function PainelLead({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {aba === "ficha" && <AbaFicha leadId={leadId} painel={painel} ensaio={ensaio} avisar={avisar} />}
-        {aba === "funil" && <AbaFunil conversa={conversa} etapas={etapas} ensaio={ensaio} avisar={avisar} />}
         {aba === "tarefas" && <AbaTarefas leadId={leadId} tarefas={painel?.tarefas ?? []} pessoas={pessoas} ensaio={ensaio} avisar={avisar} agora={agora} />}
         {aba === "agendadas" && <AbaAgendadas programadas={programadas} onCancelar={onCancelarProgramado} agora={agora} />}
         {aba === "historico" && (
@@ -270,18 +266,6 @@ export function PainelLead({
         {aba === "midias" && <AbaMidias mensagens={mensagens} />}
       </div>
     </div>
-  );
-}
-
-function Destaque({ rotulo, icone, children }: { rotulo: string; icone: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="flex min-w-0 flex-col rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
-      <header className="flex items-center gap-1 text-[10.5px] text-mute [&_svg]:size-3 [&_svg]:shrink-0">
-        <span className="min-w-0 flex-1 truncate">{rotulo}</span>
-        {icone}
-      </header>
-      <div className="mt-1 flex min-w-0 flex-col gap-0.5">{children}</div>
-    </section>
   );
 }
 
@@ -336,8 +320,8 @@ function AbaFicha({ leadId, painel, ensaio, avisar }: { leadId: string | null; p
             const emEdicao = editando === c.slug;
             const texto = textoDoCampo(c, valores[c.slug]);
             return (
-              <div key={c.slug} className="flex min-h-[32px] items-center gap-3 border-b border-linha/80 py-0.5 last:border-b-0">
-                <dt className="w-[44%] shrink-0 truncate text-[12px] text-suave" title={c.nome}>
+              <div key={c.slug} className="flex min-h-[28px] items-center gap-3 border-b border-linha/60 last:border-b-0">
+                <dt className="w-[44%] shrink-0 truncate text-[13px] text-mute" title={c.nome}>
                   {c.nome}
                 </dt>
                 <dd className="min-w-0 flex-1 text-right">
@@ -359,7 +343,7 @@ function AbaFicha({ leadId, painel, ensaio, avisar }: { leadId: string | null; p
                       disabled={!c.editavel || pending}
                       title={c.editavel ? "Clique para editar" : "Campo sem editor"}
                       className={cn(
-                        "max-w-full whitespace-pre-line rounded px-1.5 py-0.5 text-right text-[12.5px] leading-snug text-tinta transition-colors",
+                        "max-w-full whitespace-pre-line rounded px-1.5 py-0.5 text-right text-[13px] leading-[17px] text-tinta transition-colors",
                         c.editavel ? "hover:bg-hover" : "cursor-default",
                         texto === "—" && "text-mute",
                       )}
@@ -409,18 +393,19 @@ function textoDoCampo(c: CampoFicha, valor: unknown): string {
 function GrupoFicha({ grupo, valores, unico, children }: { grupo: { chave: string; nome: string; campos: CampoFicha[] }; valores: Record<string, unknown>; unico: boolean; children: React.ReactNode }) {
   const total = grupo.campos.length;
   const preenchidos = grupo.campos.filter((c) => valores[c.slug] != null && valores[c.slug] !== "").length;
-  const [aberto, setAberto] = useState(unico || preenchidos > 0);
+  // v5 · Identificação e os grupos COM dado abrem; grupo vazio nasce fechado, mostrando "0 de 8"
+  const [aberto, setAberto] = useState(unico || grupo.chave === "identificacao" || preenchidos > 0);
   return (
     <section className="border-b border-linha py-1 last:border-b-0">
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
-        className="flex w-full items-center gap-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+        className="flex h-7 w-full items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
       >
-        <span className="text-[12px] font-medium text-tinta">{grupo.nome}</span>
-        <span className={cn("text-[11px] tabular-nums", preenchidos === total ? "text-verde" : preenchidos === 0 ? "text-mute" : "text-suave")}>
-          {preenchidos} de {total} preenchidos
+        <span className="text-[12.5px] font-medium text-tinta">{grupo.nome}</span>
+        <span className="text-[11px] tabular-nums text-mute">
+          {preenchidos} de {total}
         </span>
         <ChevronDownIcon className={cn("ml-auto size-3.5 text-mute transition-transform", !aberto && "-rotate-90")} strokeWidth={2} aria-hidden />
       </button>
@@ -506,73 +491,78 @@ function Editor({
   );
 }
 
-// ───────────────────────────── Funil ─────────────────────────────
+// ────────────────────── etapa no cabeçalho (era a aba Funil) ──────────────────────
 
-function AbaFunil({ conversa, etapas, ensaio, avisar }: { conversa: ConversaResumo; etapas: EtapaFunil[]; ensaio: boolean; avisar: (m: string) => void }) {
+/**
+ * A ETAPA É O BOTÃO. Clicar abre a lista das etapas do board com a atual marcada; escolher move
+ * (`etapa_alterada` pela porta; no ensaio, cookie). "Perdido" não entra: ele pede motivo, e o
+ * motivo se escolhe no funil — a tela diz isso em vez de abrir um caminho que recusa depois.
+ */
+function SeletorEtapa({ conversa, etapas, ensaio, avisar }: { conversa: ConversaResumo; etapas: EtapaFunil[]; ensaio: boolean; avisar: (m: string) => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [alvo, setAlvo] = useState<string | null>(null);
+  const [aberto, setAberto] = useState(false);
   const leadId = conversa.lead_id ?? null;
-  if (!leadId) return <Vazio>Conversa sem lead vinculado — o funil aparece quando o lead existir.</Vazio>;
-  // perdido fica de fora: pede motivo, e o motivo se escolhe no funil (D-motivo de perda)
-  const candidatas = etapas.filter((e) => !e.no_board && e.tipo !== "perdido" && e.chave !== conversa.etapa).sort((a, b) => a.ordem - b.ordem);
-  const abertas = etapas.filter((e) => e.tipo === "aberto" && !e.no_board).sort((a, b) => a.ordem - b.ordem);
-  const dias = diasNaEtapa(conversa.entrou_etapa_em ?? null, Date.now());
+  const doBoard = etapas.filter((e) => !e.no_board).sort((a, b) => a.ordem - b.ordem);
+  const atual = etapas.find((e) => e.chave === conversa.etapa) ?? null;
 
-  function mover() {
-    if (!alvo) return;
-    const de = conversa.etapa ?? "";
+  function mover(chave: string) {
+    setAberto(false);
+    if (!leadId || chave === conversa.etapa) return;
     startTransition(async () => {
-      const r = ensaio ? await moverEtapaEnsaio(leadId!, alvo) : await moverCardEtapa(leadId!, de, alvo);
+      const r = ensaio ? await moverEtapaEnsaio(leadId, chave) : await moverCardEtapa(leadId, conversa.etapa ?? "", chave);
       if (!r.ok) avisar(`Não moveu: ${r.motivo}`);
       else {
-        avisar(`Movido para ${etapas.find((e) => e.chave === alvo)?.nome ?? alvo}.`);
-        setAlvo(null);
+        avisar(`Movido para ${etapas.find((e) => e.chave === chave)?.nome ?? chave}.`);
         router.refresh();
       }
     });
   }
 
+  if (!leadId) return <span className="min-w-0 truncate font-medium text-tinta">{conversa.etapa_nome ?? "sem etapa"}</span>;
   return (
-    <div className="px-4 py-3">
-      <ol className="space-y-0.5">
-        {abertas.map((e, i) => {
-          const atual = e.chave === conversa.etapa;
-          const passada = abertas.findIndex((x) => x.chave === conversa.etapa) > i;
-          return (
-            <li key={e.chave} className={cn("flex items-center gap-2.5 py-1 text-[12.5px]", atual ? "text-tinta" : "text-mute")}>
-              <span className={cn("grid size-4 shrink-0 place-items-center rounded-full border text-[9px]", atual ? "border-navy bg-navy text-branco" : passada ? "border-linha-forte bg-hover text-suave" : "border-linha")} aria-hidden>
-                {passada ? <CheckIcon className="size-2.5" strokeWidth={3} /> : atual ? "" : ""}
-              </span>
-              <span className={cn("flex-1", atual && "font-medium")}>{e.nome}</span>
-              {atual && dias != null && <span className="text-[11px] text-suave">{dias === 0 ? "hoje" : `${dias} d`}</span>}
-            </li>
-          );
-        })}
-      </ol>
-      <div className="mt-3 flex items-center gap-2 border-t border-linha pt-3">
-        <Select value={alvo} onValueChange={(v) => setAlvo(v ? String(v) : null)} items={Object.fromEntries(candidatas.map((e) => [e.chave, e.nome]))}>
-          <SelectTrigger aria-label="Mover para a etapa" className="h-8 flex-1 text-[12.5px]">
-            <SelectValue placeholder="Mover para…" />
-          </SelectTrigger>
-          <SelectContent>
-            {candidatas.map((e) => (
-              <SelectItem key={e.chave} value={e.chave}>
-                {e.nome}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <button
-          type="button"
-          onClick={mover}
-          disabled={!alvo || pending}
-          className="h-8 rounded-lg bg-navy px-3 text-[12.5px] font-semibold text-branco transition-colors hover:bg-navy-esc disabled:opacity-40"
-        >
-          Mover
-        </button>
-      </div>
-      <p className="mt-2 text-[11px] text-mute">Marcar como perdido pede o motivo — isso se faz no funil.</p>
+    <div className="relative min-w-0 shrink">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        disabled={pending}
+        aria-haspopup="listbox"
+        aria-expanded={aberto}
+        title="Mover de etapa"
+        className="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 -mx-1 transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40 disabled:opacity-60"
+      >
+        <span className="size-1.5 shrink-0 rounded-full" style={{ background: atual?.cor ?? "#252F63" }} aria-hidden />
+        <span className="min-w-0 truncate font-medium text-tinta">{conversa.etapa_nome ?? "sem etapa"}</span>
+        <svg viewBox="0 0 24 24" className="size-3 shrink-0 text-mute" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setAberto(false)} aria-hidden />
+          <ul role="listbox" aria-label="Mover de etapa" className="absolute left-0 top-full z-30 mt-1 w-[220px] overflow-hidden rounded-lg border border-linha-forte bg-branco py-1 shadow-forte animate-rise">
+            {doBoard.map((e) => {
+              const perdida = e.tipo === "perdido";
+              return (
+                <li key={e.chave}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={e.chave === conversa.etapa}
+                    onClick={() => (perdida ? (setAberto(false), router.push(`/funil?lead=${leadId}`)) : mover(e.chave))}
+                    className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-hover", e.chave === conversa.etapa && "bg-board font-semibold")}
+                  >
+                    <span className="size-1.5 shrink-0 rounded-full" style={{ background: e.cor }} aria-hidden />
+                    <span className="min-w-0 flex-1 truncate text-tinta">{e.nome}</span>
+                    {e.chave === conversa.etapa && <CheckIcon className="size-3.5 shrink-0 text-navy" strokeWidth={2.5} />}
+                    {perdida && <span className="shrink-0 text-[10.5px] text-mute">pede motivo</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

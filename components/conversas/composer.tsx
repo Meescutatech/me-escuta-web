@@ -110,6 +110,7 @@ export function Composer({
   onCancelarProgramado,
   canaisEnvio = null,
   canalConversaId = null,
+  onPedirAoJarvis = null,
 }: {
   modoClara: boolean;
   pending: boolean;
@@ -157,6 +158,13 @@ export function Composer({
    */
   canaisEnvio?: CanalEnvioComposer[] | null;
   canalConversaId?: string | null;
+  /**
+   * W-D3 v6 (Diogo, 00:45) · `@jarvis` DENTRO DE NOTA INTERNA aciona ele nesta conversa: a nota é
+   * salva como qualquer outra (fica o registro de quem pediu) e o pedido segue para o Jarvis, que
+   * responde no fio como nota dele. `null` = a tela não sabe pedir (fora do ensaio) e a menção
+   * vira só texto, como antes — nunca some silenciosamente.
+   */
+  onPedirAoJarvis?: ((pergunta: string) => void) | null;
 }) {
   // W-D2 · canal escolhido para ENVIAR: começa no canal da conversa (R3); null = ainda sem canal.
   const [canalEscolhidoId, setCanalEscolhidoId] = useState<string | null>(null);
@@ -414,6 +422,19 @@ export function Composer({
     if (!texto) return;
     const vivas = mencoesVivas(rascunho, mencoes);
 
+    /*
+     * W-D3 v6 · O PEDIDO AO JARVIS SAI ANTES DA GRAVAÇÃO, e isto é deliberado: são dois efeitos
+     * independentes — a nota é o registro de quem pediu, a resposta dele é trabalho. Se a
+     * gravação falhar (e ela falha com banco fora do ar), quem pediu continua recebendo a
+     * resposta e vê o aviso do que não gravou. Amarrar os dois faria uma falha de escrita comer
+     * silenciosamente a pergunta que a pessoa acabou de fazer.
+     */
+    const pedido = modo === "nota" && onPedirAoJarvis ? perguntaAoJarvis(texto) : null;
+    if (pedido !== null) {
+      onPedirAoJarvis?.(pedido);
+      sairDoModo();
+    }
+
     setSalvando(true);
     try {
       const r =
@@ -437,13 +458,13 @@ export function Composer({
             });
 
       if (!r.ok) {
-        avisar(`Não deu pra salvar: ${r.motivo ?? "erro"}`);
+        avisar(pedido !== null ? `Perguntei ao Jarvis, mas a nota não gravou: ${r.motivo ?? "erro"}` : `Não deu pra salvar: ${r.motivo ?? "erro"}`);
         return;
       }
       // C8: a escrita nunca é bloqueada por permissão — o aviso é efêmero e só pro autor
       const aviso = avisoSemAcesso(vivas);
-      avisar(aviso ?? (modo === "nota" ? "Nota salva — só a equipe vê." : "Tarefa criada."));
-      sairDoModo();
+      avisar(aviso ?? (pedido !== null ? "Pedido ao Jarvis — a resposta entra no fio." : modo === "nota" ? "Nota salva — só a equipe vê." : "Tarefa criada."));
+      if (pedido === null) sairDoModo();
       aoPublicar();
     } finally {
       setSalvando(false);
@@ -983,6 +1004,12 @@ export function Composer({
               {interno ? (
                 <>
                   Digite <Tecla>@</Tecla> para {modo === "nota" ? "avisar alguém" : "atribuir a outra pessoa"}
+                  {modo === "nota" && onPedirAoJarvis ? (
+                    <>
+                      {" · "}
+                      <Tecla>@jarvis</Tecla> pergunta a ele
+                    </>
+                  ) : null}
                 </>
               ) : comandos.length > 0 ? (
                 <>
@@ -1040,6 +1067,17 @@ export function Composer({
       )}
     </div>
   );
+}
+
+/**
+ * W-D3 v6 · a nota menciona o Jarvis? Devolve a PERGUNTA (o texto sem a menção) ou `null`.
+ * Aceita `@jarvis` e `/jarvis` em qualquer posição — quem escreve "vou perguntar ao @jarvis o que
+ * fazer" está pedindo, e exigir que a menção venha no começo seria regra de máquina, não de gente.
+ */
+export function perguntaAoJarvis(texto: string): string | null {
+  const re = /(^|\s)[@/]jarvis\b/i;
+  if (!re.test(texto)) return null;
+  return texto.replace(new RegExp(re.source, "gi"), "$1").replace(/\s{2,}/g, " ").trim();
 }
 
 /** "Oficial" para o WABA de produção; o primeiro segmento do apelido para os outros (Diogo, 23:10). */

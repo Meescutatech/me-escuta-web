@@ -41,6 +41,11 @@ import { PropostaJarvisInline } from "@/components/jarvis/proposta-inline";
 import { MarcaJarvis } from "@/components/jarvis/marca";
 import type { AjusteProposta, MotivoDescarte } from "@/components/jarvis/tipos";
 import { BotaoNovaConversa } from "@/components/conversas/nova-conversa";
+import { BotaoFoco, ContagemFoco, FimDaFila, useAtalhosFoco } from "@/components/conversas/foco";
+import { ItemListaFoco } from "@/components/tarefas/item-lista-foco";
+import { FaixaTarefaConversa } from "@/components/tarefas/faixa-tarefa-conversa";
+import type { ConversaEmFoco } from "@/lib/tarefas/foco";
+import { adiarTarefaEnsaio, concluirTarefaEnsaio } from "@/app/(app)/conversas/ensaio-actions";
 import { marcaDoCanal, nomeCurtoDoNumero } from "@/lib/conversas/cor-canal";
 import {
   aceitarPropostaJarvisEnsaio,
@@ -164,6 +169,8 @@ export function Inbox({
   ensaio = false,
   pessoasPorEmail = null,
   fotos = null,
+  foco = false,
+  linhasFoco = [],
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -225,6 +232,10 @@ export function Inbox({
   pessoasPorEmail?: Record<string, string> | null;
   /** W-D3 v4 · foto de perfil por id/e-mail/primeiro nome ("Clara" = avatar ilustrado). Vazio = iniciais. */
   fotos?: Record<string, string> | null;
+  /** W-D3 v6 · `?foco=1` — a lista vira a fila de tarefas e o fio ganha a faixa da tarefa. */
+  foco?: boolean;
+  /** W-D3 v6 · as conversas em foco, já ordenadas (vencidas → hoje → futuras) por `lib/tarefas/foco`. */
+  linhasFoco?: ConversaEmFoco[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -244,6 +255,9 @@ export function Inbox({
   const [atendenteFiltro, setAtendenteFiltro] = useState<string | null>(null);
   // W-D3 v4 · largura do painel: normal (440px) ou metade da tela
   const [painelLargo, setPainelLargo] = useState(false);
+  // W-D3 v6 · o que a rodada de foco já fechou ou pulou — local; zera ao sair do foco
+  const [feitasFoco, setFeitasFoco] = useState<string[]>([]);
+  const [puladasFoco, setPuladasFoco] = useState<string[]>([]);
   const [numeroFiltro, setNumeroFiltro] = useState<string | null>(null);
   // W-D3 · decisões locais sobre as propostas do fio (aceita → nota vira histórico; descartada → some)
   const [decisoes, setDecisoes] = useState<Map<string, PropostaDoJarvis | "descartada">>(new Map());
@@ -262,12 +276,15 @@ export function Inbox({
   const fimRef = useRef<HTMLDivElement>(null);
   // W-D3 · proposta MANUAL (gatilho do menu ⋯): nasce agora, no fim do fio; null = nada pedido.
   const [propostaManual, setPropostaManual] = useState<PropostaDoJarvis | "lendo" | null>(null);
-  const pedirAoJarvis = () => {
+  const pedirAoJarvis = (pergunta?: string) => {
     if (!selecionada) return;
     setMenuCabecalho(false);
     setPropostaManual("lendo");
     setTimeout(() => {
-      setPropostaManual(gerarPropostaJarvis(selecionada, mensagens));
+      const p = gerarPropostaJarvis(selecionada, mensagens);
+      // W-D3 v6 · pedido por `@jarvis` numa nota: a pergunta de quem pediu vira o POR QUE da
+      // proposta — a resposta dele fica presa ao que foi perguntado, não a um palpite solto.
+      setPropostaManual(pergunta?.trim() ? { ...p, por_que: `${pergunta.trim()} — ${p.por_que}` } : p);
       setTimeout(() => fimRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 50);
     }, 1400);
   };
@@ -626,7 +643,75 @@ export function Inbox({
   }, [carregadas, busca, aba, atendenteFiltro, numeroFiltro, autorEmail, autorId]);
 
   function abrir(id: string) {
-    router.push(`/conversas?c=${id}`);
+    router.push(`/conversas?c=${id}${foco ? "&foco=1" : ""}`);
+  }
+
+  /**
+   * W-D3 v6 · A FILA DO FOCO. O que a pessoa já fechou ou pulou nesta rodada sai da lista na hora
+   * (o servidor confirma no refresh seguinte) — a fila anda sem esperar ida e volta, que é o que
+   * faz o modo parecer um percurso e não uma consulta.
+   */
+  const filaFoco = useMemo(
+    () => linhasFoco.filter((l) => !feitasFoco.includes(l.tarefa.id) && !puladasFoco.includes(l.tarefa.id)),
+    [linhasFoco, feitasFoco, puladasFoco],
+  );
+  const linhaFocoDaSelecionada = selecionadaId ? linhasFoco.find((l) => l.conversa_id === selecionadaId) ?? null : null;
+  const posicaoNaFila = linhaFocoDaSelecionada ? filaFoco.findIndex((l) => l.conversa_id === selecionadaId) : -1;
+
+  function alternarFoco() {
+    const alvo = foco ? `/conversas${selecionadaId ? `?c=${selecionadaId}` : ""}` : `/conversas?foco=1${selecionadaId ? `&c=${selecionadaId}` : ""}`;
+    setFeitasFoco([]);
+    setPuladasFoco([]);
+    router.push(alvo);
+  }
+
+  /** vai para a próxima da fila (ou fica onde está quando acabou) — usado ao concluir e ao pular. */
+  function proximaDaFila(tarefaId: string) {
+    const restante = filaFoco.filter((l) => l.tarefa.id !== tarefaId);
+    const proxima = restante[Math.max(0, Math.min(posicaoNaFila, restante.length - 1))] ?? restante[0] ?? null;
+    if (proxima) router.push(`/conversas?c=${proxima.conversa_id}&foco=1`);
+    else router.push("/conversas?foco=1");
+  }
+
+  async function concluirDoFoco(resultado: string): Promise<boolean> {
+    const l = linhaFocoDaSelecionada;
+    if (!l) return false;
+    if (!ensaio) {
+      avisar("Concluir tarefa ainda não grava fora do ensaio.");
+      return false;
+    }
+    const r = await concluirTarefaEnsaio(l.tarefa.id);
+    if (!r.ok) {
+      avisar(`Não concluiu: ${r.motivo}`);
+      return false;
+    }
+    setFeitasFoco((v) => [...v, l.tarefa.id]);
+    avisar(`Feito: ${l.tarefa.titulo}`);
+    proximaDaFila(l.tarefa.id);
+    return true;
+  }
+  async function adiarDoFoco(prazoIso: string, motivo: string): Promise<boolean> {
+    const l = linhaFocoDaSelecionada;
+    if (!l) return false;
+    if (!ensaio) {
+      avisar("Adiar tarefa ainda não grava fora do ensaio.");
+      return false;
+    }
+    const r = await adiarTarefaEnsaio(l.tarefa.id, prazoIso, motivo);
+    if (!r.ok) {
+      avisar(`Não adiou: ${r.motivo}`);
+      return false;
+    }
+    setFeitasFoco((v) => [...v, l.tarefa.id]);
+    avisar("Adiada — sai da fila de hoje.");
+    proximaDaFila(l.tarefa.id);
+    return true;
+  }
+  function pularDoFoco() {
+    const l = linhaFocoDaSelecionada;
+    if (!l) return;
+    setPuladasFoco((v) => [...v, l.tarefa.id]);
+    proximaDaFila(l.tarefa.id);
   }
 
   function trocarModo(alvo: ModoConversa) {
@@ -810,6 +895,15 @@ export function Inbox({
     });
   }
 
+  // ⏎ concluir · A adiar · P pular · Esc sai — só fora de campo de texto (ver components/conversas/foco.tsx)
+  useAtalhosFoco({
+    ligado: foco && !!linhaFocoDaSelecionada,
+    onConcluir: () => document.querySelector<HTMLButtonElement>("[data-foco-concluir]")?.click(),
+    onAdiar: () => document.querySelector<HTMLButtonElement>("[data-foco-adiar]")?.click(),
+    onPular: pularDoFoco,
+    onSair: alternarFoco,
+  });
+
   const modoClara = mode === "IA";
   const titulo = selecionada
     ? nomeRuim(selecionada.nome)
@@ -859,14 +953,14 @@ export function Inbox({
                 key={c.id}
                 onClick={() => abrir(c.id)}
                 className={cn(
-                  "relative flex w-full gap-2.5 rounded-[9px] p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
+                  "relative flex w-full gap-2.5 rounded-[9px] px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
                   ativa ? "bg-hover" : "hover:bg-hover",
                 )}
               >
-                {ativa && <span className="absolute inset-y-[9px] left-0 w-[2px] rounded bg-laranja" />}
+                {ativa && <span className="absolute inset-y-[7px] left-0 w-[2px] rounded bg-laranja" />}
                 <span className="relative shrink-0">
                   {/* W-D3 v4 · o avatar é do PACIENTE (iniciais até existir foto); quem atende vai no badge */}
-                  <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-navy text-[0.72rem] font-semibold text-branco" title={rotulo}>
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-navy text-[0.72rem] font-semibold text-branco" title={rotulo}>
                     {c.nome && !ruim ? iniciais(c.nome) : "?"}
                   </span>
                   {/* W-D3 v3 · QUEM ATENDE no canto do avatar (C = Clara, S = Sara, A = Ana Paula);
@@ -889,7 +983,7 @@ export function Inbox({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className={cn("flex-1 truncate text-[0.86rem] font-semibold text-navy", ruim && "tabular-nums")}>
+                    <span className={cn("flex-1 truncate text-[14px] font-semibold leading-[18px] text-navy", ruim && "tabular-nums")}>
                       {rotulo}
                     </span>
                     {/* F21: a hora da MENSAGEM (dataDaLista), nunca `atualizado_em` — sem data
@@ -899,39 +993,77 @@ export function Inbox({
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5">
-                    <span className={cn("min-w-0 flex-1 truncate text-[0.78rem]", c.previa ? "text-suave" : "text-mute")}>{prev}</span>
+                    <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-[17px]", c.previa ? "text-suave" : "text-mute")}>{prev}</span>
                     {origemLegivel && c.phone_number_id ? <PontoNumero c={c} /> : null}
                   </div>
                   {/* M7 · os SELOS do número (teste / sem identidade / sem finalidade) continuam
                       na linha — o selo TESTE não se esconde por valor único (ARB-R18-05). O
-                      apelido saiu daqui e foi para a bolinha no avatar (W-D3). */}
+                      apelido saiu daqui e foi para a bolinha no avatar (W-D3); v5: só quando há
+                      selo, para a linha da conversa ter DUAS linhas e não três. */}
                   {origemLegivel ? <ChipNumeroLinha c={c} soSelos /> : null}
                 </div>
                 {(c.nao_lidas_qtd ?? 0) > 0 ? (
-                  <span className="mt-2.5 grid h-[17px] min-w-[17px] shrink-0 place-items-center self-start rounded-full bg-laranja px-1 text-[0.66rem] font-semibold leading-none text-branco">
+                  <span className="mt-1.5 grid h-[17px] min-w-[17px] shrink-0 place-items-center self-start rounded-full bg-laranja px-1 text-[0.66rem] font-semibold leading-none text-branco">
                     {c.nao_lidas_qtd! > 9 ? "9+" : c.nao_lidas_qtd}
                   </span>
                 ) : c.nao_lida ? (
-                  <span className="mt-3 h-[7px] w-[7px] shrink-0 self-start rounded-full bg-laranja" />
+                  <span className="mt-2 h-[7px] w-[7px] shrink-0 self-start rounded-full bg-laranja" />
                 ) : null}
               </button>
             );
+  }
+
+  /** Uma linha da fila do foco: mesma casca clicável da conversa, miolo do `ItemListaFoco`. */
+  function linhaDoFoco(l: ConversaEmFoco) {
+    const c = carregadas.find((x) => x.id === l.conversa_id) ?? null;
+    const ativa = l.conversa_id === selecionadaId;
+    const nome = c?.nome ?? l.lead_nome ?? null;
+    return (
+      <button
+        key={l.conversa_id}
+        onClick={() => abrir(l.conversa_id)}
+        className={cn(
+          "relative flex w-full gap-2.5 rounded-[9px] px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
+          ativa ? "bg-hover" : "hover:bg-hover",
+        )}
+      >
+        {ativa && <span className="absolute inset-y-[7px] left-0 w-[2px] rounded bg-laranja" />}
+        <span className="relative shrink-0">
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-navy text-[0.72rem] font-semibold text-branco">
+            {nome && !nomeRuim(nome) ? iniciais(nome) : "?"}
+          </span>
+          {c ? (
+            <span
+              title={`atendida por ${nomeDoAtendente(c)}`}
+              className={cn("absolute -bottom-0.5 -right-0.5 grid size-4 place-items-center overflow-hidden rounded-full text-[8.5px] font-bold leading-none text-branco ring-2 ring-branco", c.mode === "IA" ? "bg-laranja" : "bg-navy")}
+            >
+              {fotoDe(nomeDoAtendente(c)) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={fotoDe(nomeDoAtendente(c))!} alt="" className="size-full object-cover" />
+              ) : (
+                nomeDoAtendente(c).charAt(0).toUpperCase()
+              )}
+            </span>
+          ) : null}
+        </span>
+        <ItemListaFoco linha={l} agoraMs={Date.now()} previa={c?.previa ?? null} rotuloTipo={tiposTarefa.find((t) => t.chave === l.tarefa.tipo)?.rotulo ?? null} />
+      </button>
+    );
   }
 
   return (
     <div className="flex h-[calc(100vh-var(--altura-topo))] bg-board">
       {/* ═══════════ ZONA 1 · LISTA ═══════════ */}
       <aside className="flex w-[272px] shrink-0 flex-col border-r border-linha bg-branco">
-        <div className="px-4 pb-2.5 pt-3.5">
-          {/* M6: vira `h2` e FICA. Não é título de página — é o cabeçalho da coluna de 272px
-              (`<aside className="flex w-[272px] ...">`). Um critério que a apagasse quebraria a
-              coluna do inbox (SPEC-M6 §5.4, fronteira 2). */}
-          <div className="mb-2.5 flex items-center justify-between">
-            <h2 className="text-[15px] font-[650] leading-none text-tinta">Conversas</h2>
-            {/* W-D3 · nova conversa por número (só quando a tela sabe por quais números envia) */}
-            {canaisEnvio && canaisEnvio.length > 0 ? <BotaoNovaConversa canais={canaisEnvio} /> : null}
-          </div>
-          <label className="flex items-center gap-2 rounded-lg border border-linha bg-board px-2.5 py-1.5 focus-within:border-linha-forte">
+        {/*
+          W-D3 v5 (Diogo, 00:12) · O TÍTULO DUPLICADO SOME — e sai o da COLUNA, não o do header.
+          Medido: o header da página é uma barra fixa que existe em toda rota (departamento, sino,
+          Jarvis); apagar o texto dele não devolve um pixel de altura. O `h2` da coluna custava
+          30px NA COLUNA, que é justamente onde falta espaço. O "+" herda a linha da busca.
+          (A recomendação era o contrário; a medição inverteu, e o efeito pedido — altura — é este.)
+        */}
+        <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-2.5">
+          <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-linha bg-board px-2.5 focus-within:border-linha-forte">
             <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-[14px] w-[14px] shrink-0 stroke-mute" fill="none">
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
@@ -940,67 +1072,61 @@ export function Inbox({
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Buscar conversa, telefone…"
+              aria-label="Buscar conversa ou telefone"
               className="w-full bg-transparent text-[0.82rem] text-tinta outline-none placeholder:text-mute"
             />
           </label>
+          {/* v5 · a pilha vive na linha da BUSCA: as quatro abas já ocupam os 248px úteis da
+              coluna, e aqui ela não custa um pixel de altura — que era o pedido. */}
+          <PilhaFiltros
+            atendentes={railAtendentes}
+            numeros={railNumeros}
+            fotoDe={fotoDe}
+            atendenteFiltro={atendenteFiltro}
+            numeroFiltro={numeroFiltro}
+            onAtendente={(n) => setAtendenteFiltro((v) => (v === n ? null : n))}
+            onNumero={(id) => setNumeroFiltro((v) => (v === id ? null : id))}
+            onLimpar={() => {
+              setAtendenteFiltro(null);
+              setNumeroFiltro(null);
+            }}
+          />
+          <BotaoFoco ligado={foco} pendentes={linhasFoco.length} onAlternar={alternarFoco} />
+          {canaisEnvio && canaisEnvio.length > 0 ? <BotaoNovaConversa canais={canaisEnvio} /> : null}
         </div>
-        {/* W-D3 · quatro abas em 272px: gap e padding menores, sem quebra de linha */}
-        <div className="flex gap-2.5 px-3 pb-1.5 pt-2.5">
-          {([
-            ["todas", "Todas"],
-            ["minhas", "Minhas"],
-            ["nao_lidas", "Não lidas"],
-            ["sem_responsavel", "Sem resp."],
-          ] as [Aba, string][]).map(([k, rot]) => (
-            <button
-              key={k}
-              onClick={() => setAba(k)}
-              className={cn(
-                "whitespace-nowrap border-b-[1.5px] pb-1.5 text-[0.77rem] transition-colors focus-visible:outline-none",
-                aba === k ? "border-navy font-semibold text-navy" : "border-transparent text-mute hover:text-tinta",
-              )}
-            >
-              {rot}
-              <span className={cn("ml-1 text-[0.68rem] font-normal tabular-nums", aba === k ? "text-suave" : "text-mute")}>{rotuloContagem(k)}</span>
-            </button>
-          ))}
+        {/*
+          W-D3 v5 · UMA LINHA de 32px: abas à esquerda, filtros à direita. As duas propostas foram
+          desenhadas e medidas na coluna real de 272px: os avatares soltos ao lado das abas
+          estouram (as quatro abas já ocupam ~250px dos 272), então o que entra é a PILHA — três
+          rostos sobrepostos de 18px que abrem o popover com atende e números. Continua sendo cara,
+          continua dizendo quantos, e devolve a linha inteira que a régua de avatares comia.
+        */}
+        {foco ? (
+          <ContagemFoco linhas={filaFoco} feitas={feitasFoco.length} onSair={alternarFoco} />
+        ) : (
+        <div className="flex h-8 items-center border-b border-linha px-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            {([
+              ["todas", "Todas"],
+              ["minhas", "Minhas"],
+              ["nao_lidas", "Não lidas"],
+              ["sem_responsavel", "Sem dono"],
+            ] as [Aba, string][]).map(([k, rot]) => (
+              <button
+                key={k}
+                onClick={() => setAba(k)}
+                className={cn(
+                  "h-8 whitespace-nowrap border-b-[1.5px] text-[0.77rem] transition-colors focus-visible:outline-none",
+                  aba === k ? "border-navy font-semibold text-navy" : "border-transparent text-mute hover:text-tinta",
+                )}
+              >
+                {rot}
+                <span className={cn("ml-1 text-[0.68rem] font-normal tabular-nums", aba === k ? "text-suave" : "text-mute")}>{rotuloContagem(k)}</span>
+              </button>
+            ))}
+          </div>
         </div>
-
-        {/* W-D3 v4 (Diogo, 23:45) · os recortes viram uma linha de AVATARES: quem atende com foto
-            (Clara com o avatar ilustrado; paciente nunca aparece aqui) e os números como pontos de
-            cor com a inicial — sem palavra nenhuma. Clicar filtra; de novo, limpa. */}
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3 pb-2 pt-1.5">
-          {railAtendentes.map((a) => (
-            <AvatarRecorte
-              key={a.nome}
-              ativo={atendenteFiltro === a.nome}
-              onClick={() => setAtendenteFiltro((v) => (v === a.nome ? null : a.nome))}
-              foto={fotoDe(a.nome)}
-              nome={a.nome}
-              cor={a.nome === "Clara" ? "bg-laranja" : "bg-navy"}
-              qtd={a.qtd}
-              titulo={`atendidas por ${a.nome}`}
-            />
-          ))}
-          {railNumeros.length > 0 && <span aria-hidden className="mx-0.5 h-4 w-px bg-linha-forte" />}
-          {railNumeros.map((n) => {
-            const marca = marcaDoCanal({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade });
-            const nome = nomeCurtoDoNumero({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade });
-            return (
-              <AvatarRecorte
-                key={n.id}
-                ativo={numeroFiltro === n.id}
-                onClick={() => setNumeroFiltro((v) => (v === n.id ? null : n.id))}
-                foto={null}
-                nome={nome}
-                cor={marca.cheia}
-                qtd={n.qtd}
-                titulo={`pelo número ${nome}${n.numero ? ` · ${n.numero}` : ""}`}
-                ponto
-              />
-            );
-          })}
-        </div>
+        )}
 
         <div className="flex-1 overflow-y-auto px-2 pb-4 pt-0.5">
           {conversasVisiveis.length === 0 && (
@@ -1021,7 +1147,10 @@ export function Inbox({
                   : "Nenhuma conversa ainda."}
             </p>
           )}
-          {comDepartamento.map(linhaDaConversa)}
+          {/* W-D3 v6 · em FOCO a lista é a fila: item com a TAREFA no lugar da prévia, na ordem de
+              ataque. Fora do foco, a lista de sempre (com a faixa "Sem departamento"). */}
+          {foco ? filaFoco.map((l) => linhaDoFoco(l)) : comDepartamento.map(linhaDaConversa)}
+          {foco && filaFoco.length === 0 && <FimDaFila feitas={feitasFoco.length} onSair={alternarFoco} />}
 
           {/*
             FAIXA "SEM DEPARTAMENTO" (D6-g) — e ela é ESCOPO, não enfeite.
@@ -1034,7 +1163,7 @@ export function Inbox({
             APARECE QUANDO TEM ITEM, SOME QUANDO NÃO TEM — regra da casa: zero é silêncio, não "0"
             (`app/(app)/configuracoes/layout.tsx:14-17`).
           */}
-          {semDepartamento.length > 0 && (
+          {!foco && semDepartamento.length > 0 && (
             <div className="flex items-center gap-2 px-3 pb-1 pt-3">
               <span className="text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-mute">
                 Sem departamento
@@ -1042,7 +1171,7 @@ export function Inbox({
               <span aria-hidden className="h-px flex-1 bg-linha" />
             </div>
           )}
-          {semDepartamento.map(linhaDaConversa)}
+          {!foco && semDepartamento.map(linhaDaConversa)}
 
           {/* F22 · o corte é DECLARADO, no molde do aviso do funil. Enquanto a busca for local,
               isso precisa estar na cara: ela só encontra o que já veio. */}
@@ -1096,6 +1225,11 @@ export function Inbox({
                 {origemLegivel ? <ChipNumeroCabecalho c={selecionada} /> : null}
               </div>
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
+                {foco && posicaoNaFila >= 0 && (
+                  <span className="text-[0.72rem] tabular-nums text-mute" title="posição na fila do foco">
+                    {posicaoNaFila + 1} de {filaFoco.length}
+                  </span>
+                )}
                 <span
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border border-linha bg-board px-3 py-1 text-[0.78rem] text-suave",
@@ -1137,7 +1271,7 @@ export function Inbox({
                           <button
                             role="menuitem"
                             type="button"
-                            onClick={pedirAoJarvis}
+                            onClick={() => pedirAoJarvis()}
                             disabled={propostaManual === "lendo"}
                             className="flex w-full flex-col items-start px-3 py-2 text-left transition-colors hover:bg-hover disabled:opacity-60"
                           >
@@ -1151,6 +1285,19 @@ export function Inbox({
                 )}
               </div>
             </div>
+
+            {/* W-D3 v6 · a faixa da tarefa: 44px fixos colados ao topo do fio (zero deslocamento) */}
+            {foco && linhaFocoDaSelecionada && (
+              <FaixaTarefaConversa
+                linha={linhaFocoDaSelecionada}
+                agoraMs={Date.now()}
+                rotuloTipo={tiposTarefa.find((t) => t.chave === linhaFocoDaSelecionada.tarefa.tipo)?.rotulo ?? null}
+                onConcluir={concluirDoFoco}
+                onAdiar={adiarDoFoco}
+                onPular={pularDoFoco}
+                onVerNoFio={() => fimRef.current?.scrollIntoView({ behavior: "smooth" })}
+              />
+            )}
 
             {/* mensagens — thread real (RF-27..33) */}
             <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1420,6 +1567,7 @@ export function Inbox({
               onCancelarProgramado={cancelarProgramado}
               canaisEnvio={canaisEnvio}
               canalConversaId={selecionada.phone_number_id ?? null}
+              onPedirAoJarvis={jarvisSobDemanda ? (pergunta) => pedirAoJarvis(pergunta) : null}
             />
           </>
         )}
@@ -1615,46 +1763,139 @@ function PontoNumero({ c }: { c: ConversaResumo }) {
 }
 
 /**
- * W-D3 v4 · um recorte como avatar: foto (ou inicial na cor) + contagem pequena. O ativo ganha o
- * anel laranja; o resto fica levemente apagado quando há filtro. `ponto` = número (círculo menor).
+ * W-D3 v5 · A PILHA DE FILTROS: três rostos sobrepostos (18px) + chevron, na mesma linha das abas.
+ * Abre um popover com quem atende (foto + contagem) e os números (ponto de cor + contagem). Com
+ * filtro ligado, a pilha vira o rosto escolhido com anel laranja — o estado fica visível fechado.
  */
-function AvatarRecorte({
-  ativo,
-  onClick,
-  foto,
-  nome,
-  cor,
-  qtd,
-  titulo,
-  ponto = false,
+function PilhaFiltros({
+  atendentes,
+  numeros,
+  fotoDe,
+  atendenteFiltro,
+  numeroFiltro,
+  onAtendente,
+  onNumero,
+  onLimpar,
 }: {
-  ativo: boolean;
-  onClick: () => void;
-  foto: string | null;
-  nome: string;
-  cor: string;
-  qtd: number;
-  titulo: string;
-  ponto?: boolean;
+  atendentes: Array<{ nome: string; qtd: number }>;
+  numeros: Array<{ id: string; apelido: string; numero: string | null; finalidade: "producao" | "teste" | null; qtd: number }>;
+  fotoDe: (nome: string) => string | null;
+  atendenteFiltro: string | null;
+  numeroFiltro: string | null;
+  onAtendente: (nome: string) => void;
+  onNumero: (id: string) => void;
+  onLimpar: () => void;
 }) {
+  const [aberto, setAberto] = useState(false);
+  const filtrando = !!atendenteFiltro || !!numeroFiltro;
+  const numeroAtivo = numeros.find((n) => n.id === numeroFiltro) ?? null;
+  const pilha = atendenteFiltro ? atendentes.filter((a) => a.nome === atendenteFiltro) : atendentes.slice(0, 3);
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-haspopup="dialog"
+        aria-expanded={aberto}
+        aria-label={filtrando ? `Filtros ativos: ${[atendenteFiltro, numeroAtivo ? nomeCurtoDoNumero({ phone_number_id: numeroAtivo.id, numero_apelido: numeroAtivo.apelido, finalidade: numeroAtivo.finalidade }) : null].filter(Boolean).join(" e ")}` : "Filtrar por quem atende ou por número"}
+        title={filtrando ? "Filtros ativos" : "Filtrar por quem atende ou número"}
+        className="flex h-7 items-center gap-1 rounded-full pl-0.5 pr-1 transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+      >
+        <span className="flex items-center">
+          {pilha.map((a, i) => (
+            <span
+              key={a.nome}
+              className={cn(
+                "grid size-[18px] place-items-center overflow-hidden rounded-full bg-navy text-[8.5px] font-bold text-branco ring-[1.5px] ring-branco",
+                i > 0 && "-ml-1.5",
+                a.nome === atendenteFiltro && "ring-laranja",
+              )}
+            >
+              {fotoDe(a.nome) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={fotoDe(a.nome)!} alt="" className="size-full object-cover" />
+              ) : (
+                a.nome.charAt(0).toUpperCase()
+              )}
+            </span>
+          ))}
+          {numeroAtivo && (
+            <span className={cn("-ml-1.5 grid size-[18px] place-items-center rounded-full text-[8.5px] font-bold ring-[1.5px] ring-laranja", marcaDoCanal({ phone_number_id: numeroAtivo.id, numero_apelido: numeroAtivo.apelido, finalidade: numeroAtivo.finalidade }).cheia)}>
+              {nomeCurtoDoNumero({ phone_number_id: numeroAtivo.id, numero_apelido: numeroAtivo.apelido, finalidade: numeroAtivo.finalidade }).charAt(0)}
+            </span>
+          )}
+        </span>
+        <svg viewBox="0 0 24 24" className={cn("size-3 shrink-0 transition-colors", filtrando ? "text-laranja" : "text-mute")} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setAberto(false)} aria-hidden />
+          <div role="dialog" aria-label="Filtros" className="absolute right-0 top-full z-30 mt-1 w-[236px] overflow-hidden rounded-lg border border-linha-forte bg-branco py-1 shadow-forte animate-rise">
+            <div className="flex items-center px-3 pb-1 pt-1.5">
+              <span className="text-[11px] text-mute">Quem atende</span>
+              {filtrando && (
+                <button type="button" onClick={onLimpar} className="ml-auto text-[11px] font-medium text-laranja-esc underline-offset-2 hover:underline">
+                  limpar
+                </button>
+              )}
+            </div>
+            {atendentes.map((a) => (
+              <LinhaFiltro
+                key={a.nome}
+                ativo={atendenteFiltro === a.nome}
+                onClick={() => onAtendente(a.nome)}
+                qtd={a.qtd}
+                rotulo={a.nome}
+                marca={
+                  fotoDe(a.nome) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={fotoDe(a.nome)!} alt="" className="size-5 rounded-full object-cover" />
+                  ) : (
+                    <span className="grid size-5 place-items-center rounded-full bg-navy text-[9px] font-bold text-branco">{a.nome.charAt(0)}</span>
+                  )
+                }
+              />
+            ))}
+            {numeros.length > 0 && <div className="mt-1 border-t border-linha px-3 pb-1 pt-2 text-[11px] text-mute">Número</div>}
+            {numeros.map((n) => {
+              const marca = marcaDoCanal({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade });
+              const nome = nomeCurtoDoNumero({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade });
+              return (
+                <LinhaFiltro
+                  key={n.id}
+                  ativo={numeroFiltro === n.id}
+                  onClick={() => onNumero(n.id)}
+                  qtd={n.qtd}
+                  rotulo={nome}
+                  detalhe={n.numero}
+                  marca={<span className={cn("grid size-5 place-items-center rounded-full text-[9px] font-bold", marca.cheia)}>{nome.charAt(0)}</span>}
+                />
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LinhaFiltro({ ativo, onClick, marca, rotulo, detalhe, qtd }: { ativo: boolean; onClick: () => void; marca: React.ReactNode; rotulo: string; detalhe?: string | null; qtd: number }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={ativo}
-      aria-label={`${titulo} · ${qtd} ${qtd === 1 ? "conversa" : "conversas"}`}
-      title={titulo}
-      className="group inline-flex items-center gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+      className={cn("flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-hover", ativo && "bg-board")}
     >
-      <span className={cn("relative grid shrink-0 place-items-center rounded-full ring-2 transition-[box-shadow,opacity]", ponto ? "size-[18px]" : "size-6", ativo ? "ring-laranja" : "ring-transparent group-hover:ring-linha-forte")}>
-        {foto ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={foto} alt="" className="size-full rounded-full object-cover" />
-        ) : (
-          <span className={cn("grid size-full place-items-center rounded-full font-bold leading-none", ponto ? "text-[9px]" : "text-[10.5px]", cor.includes("text-") ? cor : `${cor} text-branco`)}>{nome.charAt(0).toUpperCase()}</span>
-        )}
+      {marca}
+      <span className="min-w-0 flex-1">
+        <span className={cn("block truncate text-[12.5px]", ativo ? "font-semibold text-tinta" : "text-tinta")}>{rotulo}</span>
+        {detalhe && <span className="block truncate font-mono text-[10.5px] tabular-nums text-mute">{detalhe}</span>}
       </span>
-      <span className={cn("text-[11px] tabular-nums", ativo ? "font-semibold text-tinta" : "text-mute")}>{qtd}</span>
+      <span className="shrink-0 text-[11px] tabular-nums text-mute">{qtd}</span>
     </button>
   );
 }

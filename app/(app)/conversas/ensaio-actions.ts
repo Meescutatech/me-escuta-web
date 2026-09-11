@@ -229,3 +229,15 @@ export async function concluirTarefaEnsaio(tarefaId: string): Promise<{ ok: true
   revalidatePath("/tarefas");
   return { ok: true };
 }
+
+/** W-D3 v6 · adiar do modo foco — `tarefa_prazo_repactuado` em produção; aqui, cookie. */
+export async function adiarTarefaEnsaio(tarefaId: string, prazoIso: string, motivo: string): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  const pessoa = lerSessaoEnsaio();
+  if (!pessoa) return { ok: false, motivo: "fora do modo ensaio" };
+  if (!motivo.trim()) return { ok: false, motivo: "escolha por que está adiando" };
+  const estado = lerEstadoConversasEnsaio();
+  gravarEstadoConversasEnsaio({ ...estado, prazos: { ...estado.prazos, [tarefaId]: prazoIso } });
+  revalidatePath("/conversas");
+  revalidatePath("/tarefas");
+  return { ok: true };
+}

@@ -39,6 +39,7 @@ import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 import { PESSOAS } from "@/lib/ensaio/modo";
 import { GRUPOS_FICHA_COMPLETA, valoresFichaCompletaEnsaio } from "@/lib/ensaio/ficha-completa";
 import { fotosEnsaio } from "@/lib/ensaio/fotos";
+import { conversasComTarefaPendente } from "@/lib/tarefas/foco";
 import { visaoTarefasDeEnsaio } from "@/lib/dados/tarefas-ensaio";
 import type { CanalEnvioComposer } from "@/components/conversas/composer";
 
@@ -61,7 +62,7 @@ export const dynamic = "force-dynamic";
 export default async function ConversasPage({
   searchParams,
 }: {
-  searchParams: { c?: string; lead?: string; em?: string };
+  searchParams: { c?: string; lead?: string; em?: string; foco?: string };
 }) {
   // W-D2 · MODO ENSAIO: o mesmo <Inbox>, alimentado pela fixture. Visibilidade = R4 do contrato
   // (por papel + lotação + canal próprio) e escopo do header, os dois aplicados no servidor.
@@ -136,6 +137,10 @@ export default async function ConversasPage({
         },
       };
     }
+    // W-D3 v6 · `?foco=1`: a lista vira a fila de tarefas desta pessoa (ordem vencida→hoje→futura).
+    // A leitura é a MESMA de /tarefas (fixture do ensaio); em produção troca a origem em foco.ts.
+    const foco = searchParams.foco === "1";
+    const linhasFoco = conversasComTarefaPendente(ensaio.id, {}, agora).filter((l) => visiveisIds.has(l.conversa_id));
     const envio = canaisDeEnvio(ensaio, canais);
     const canaisEnvio: CanalEnvioComposer[] = envio.canais.map((c) => ({
       id: c.canal_id,
@@ -175,6 +180,8 @@ export default async function ConversasPage({
         ensaio
         pessoasPorEmail={Object.fromEntries(PESSOAS.map((p) => [p.email, p.nome.split(" ")[0]]))}
         fotos={fotosEnsaio()}
+        foco={foco}
+        linhasFoco={linhasFoco}
       />
     );
   }
