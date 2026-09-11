@@ -33,7 +33,7 @@ export default function ConfiguracoesIndex() {
     "/configuracoes/inteligencia": { linha: "3 números → 2 agentes ligados → 2 validadoras" },
     "/configuracoes/claude": { linha: "2 pessoas conectadas", atencao: "OAuth do cowork pendente" },
     "/configuracoes/regras": { linha: "SLA por etapa no padrão · janela 24 h" },
-    "/configuracoes/identidades": { linha: "745 leads aguardando de-para do Kommo" },
+    "/configuracoes/identidades": { linha: "88 % do acervo com dono", atencao: "2 contas do Kommo sem decisão" },
     "/configuracoes/suporte": { linha: "1 relato aberto" },
     "/configuracoes/membros": {
       linha: `${membros.filter((m) => m.ativo).length} pessoas com acesso`,
@@ -44,9 +44,9 @@ export default function ConfiguracoesIndex() {
       linha: `${agentes.filter((a) => a.ativo).length} de ${agentes.length} ligados`,
       atencao: agentes.some((a) => a.pendencias.length) ? "Levindo e Priscila esperam credencial" : undefined,
     },
-    "/configuracoes/funil": { linha: "7 etapas · prazo por etapa no padrão" },
-    "/configuracoes/templates": { linha: "6 mensagens prontas ativas" },
-    "/configuracoes/avancado": { linha: "12 configurações publicadas · última há 2 dias" },
+    "/configuracoes/funil": { linha: "5 etapas abertas · v4 publicada há 18 dias" },
+    "/configuracoes/templates": { linha: "6 mensagens prontas · 2 aprovadas na Meta", atencao: "1 com texto mudado desde a aprovação" },
+    "/configuracoes/auditoria": { linha: "8 configurações publicadas · última há 5 dias" },
   };
 
   return <HubConfiguracoes resumo={resumo} />;

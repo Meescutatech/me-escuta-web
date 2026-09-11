@@ -12,9 +12,9 @@ import {
   HandIcon,
   UploadIcon,
   StickyNoteIcon,
-  SparklesIcon,
   BotIcon,
 } from "lucide-react";
+import { IconeJarvis } from "@/components/header/icone-jarvis";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -302,7 +302,7 @@ function LinhaComIa({ c }: { c: ComIa }) {
   return (
     <li className="flex items-start gap-3 px-1 py-2.5">
       <span className={cn("mt-0.5 grid size-7 shrink-0 place-items-center rounded-full [&_svg]:size-3.5", c.agente === "jarvis" ? "bg-[#EAECF5] text-navy" : "bg-laranja-cl text-laranja-esc")}>
-        {c.agente === "jarvis" ? <SparklesIcon /> : <BotIcon />}
+        {c.agente === "jarvis" ? <IconeJarvis className="size-3.5" /> : <BotIcon />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">

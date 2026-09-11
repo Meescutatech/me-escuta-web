@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
-import { LockIcon, ExternalLinkIcon } from "lucide-react";
+import { LockIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -13,6 +12,13 @@ import type { AgenteEnsaio, Autonomia } from "@/lib/ensaio/fixtures/agentes";
 import { haQuantoTempo } from "@/lib/ensaio/fixtures/membros";
 import { CascaConfig } from "./casca-config";
 import { FluxoAgente } from "./fluxo-agente";
+import { IconeJarvis } from "@/components/header/icone-jarvis";
+
+const AUTONOMIA: Record<Autonomia, { rotulo: string; descricao: string }> = {
+  auto: { rotulo: "sozinho", descricao: "executa e registra o evento" },
+  propor: { rotulo: "propõe", descricao: "cria sugestão; alguém valida" },
+  desligado: { rotulo: "desligado", descricao: "nem propõe" },
+};
 
 /**
  * /configuracoes/agentes (ensaio) — o hub dos quatro agentes.
@@ -28,12 +34,6 @@ import { FluxoAgente } from "./fluxo-agente";
  * (anatomia da sheet: header com avatar+badge, body em seções, footer dividido).
  */
 
-const AUTONOMIA: Record<Autonomia, { rotulo: string; descricao: string }> = {
-  auto: { rotulo: "sozinho", descricao: "executa e registra o evento" },
-  propor: { rotulo: "propõe", descricao: "cria sugestão; alguém valida" },
-  desligado: { rotulo: "desligado", descricao: "nem propõe" },
-};
-
 const AREA_COR: Record<AgenteEnsaio["chave"], string> = {
   clara: "bg-laranja-cl text-laranja-esc",
   jarvis: "bg-[#EAECF5] text-navy",
@@ -41,15 +41,21 @@ const AREA_COR: Record<AgenteEnsaio["chave"], string> = {
   priscila: "bg-amarelo-bg text-amarelo",
 };
 
-const ROTA_EDICAO: Partial<Record<AgenteEnsaio["chave"], string>> = {
-  clara: "/configuracoes/clara",
-  jarvis: "/configuracoes/agentes/jarvis",
-};
-
-export function AgentesEnsaio({ agentes: iniciais, gestao, agoraIso }: { agentes: AgenteEnsaio[]; gestao: boolean; agoraIso: string }) {
+export function AgentesEnsaio({
+  agentes: iniciais,
+  gestao,
+  agoraIso,
+  abrirInicial = null,
+}: {
+  agentes: AgenteEnsaio[];
+  gestao: boolean;
+  agoraIso: string;
+  /** `?agente=clara` — as rotas antigas (`/configuracoes/clara`, `/agentes/jarvis`) caem aqui com a sheet aberta. */
+  abrirInicial?: AgenteEnsaio["chave"] | null;
+}) {
   const agora = useMemo(() => new Date(agoraIso), [agoraIso]);
   const [agentes, setAgentes] = useState(iniciais);
-  const [abertoChave, setAbertoChave] = useState<AgenteEnsaio["chave"] | null>(null);
+  const [abertoChave, setAbertoChave] = useState<AgenteEnsaio["chave"] | null>(abrirInicial);
   const aberto = agentes.find((a) => a.chave === abertoChave) ?? null;
 
   const ligar = (chave: AgenteEnsaio["chave"], ativo: boolean) => {
@@ -69,6 +75,11 @@ export function AgentesEnsaio({ agentes: iniciais, gestao, agoraIso }: { agentes
       xs.map((x) => (x.chave === chave ? { ...x, capacidades: x.capacidades.map((c) => (c.chave === cap ? { ...c, autonomia } : c)) } : x)),
     );
     toast.success("Autonomia publicada.", { description: "É config, não deploy — vale na próxima decisão." });
+  };
+  const publicarPrompt = (chave: AgenteEnsaio["chave"], prompt: string) => {
+    setAgentes((xs) => xs.map((x) => (x.chave === chave ? { ...x, prompt, versao_prompt: x.versao_prompt + 1, prompt_publicado_em: agora.toISOString() } : x)));
+    const a = agentes.find((x) => x.chave === chave)!;
+    toast.success(`Prompt v${a.versao_prompt + 1} publicado.`, { description: "Vale a partir do próximo gatilho. A versão anterior fica no Auditoria." });
   };
 
   return (
@@ -93,7 +104,7 @@ export function AgentesEnsaio({ agentes: iniciais, gestao, agoraIso }: { agentes
           >
             <div className="flex items-start gap-3">
               <span className={cn("grid size-10 shrink-0 place-items-center rounded-full text-ui-13 font-bold", AREA_COR[a.chave])} aria-hidden>
-                {a.nome[0]}
+                {a.chave === "jarvis" ? <IconeJarvis className="size-5" /> : a.nome[0]}
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -153,6 +164,7 @@ export function AgentesEnsaio({ agentes: iniciais, gestao, agoraIso }: { agentes
         onFechar={() => setAbertoChave(null)}
         onLigar={ligar}
         onMudarAutonomia={mudarAutonomia}
+        onPublicarPrompt={publicarPrompt}
       />
     </CascaConfig>
   );
@@ -175,6 +187,7 @@ export function SheetAgente({
   onFechar,
   onLigar,
   onMudarAutonomia,
+  onPublicarPrompt,
 }: {
   agente: AgenteEnsaio | null;
   gestao: boolean;
@@ -182,10 +195,23 @@ export function SheetAgente({
   onFechar: () => void;
   onLigar: (chave: AgenteEnsaio["chave"], ativo: boolean) => void;
   onMudarAutonomia: (chave: AgenteEnsaio["chave"], cap: string, autonomia: Autonomia) => void;
+  /** edita o prompt AQUI (uma fonte só — as telas antigas de Clara/Jarvis caem nesta sheet). */
+  onPublicarPrompt?: (chave: AgenteEnsaio["chave"], prompt: string) => void;
 }) {
   const ligar = onLigar;
   const mudarAutonomia = onMudarAutonomia;
-  const setAbertoChave = (_: null) => onFechar();
+  const setAbertoChave = (_: null) => {
+    setEditandoPrompt(false);
+    onFechar();
+  };
+  const [editandoPrompt, setEditandoPrompt] = useState(false);
+  const [rascunho, setRascunho] = useState("");
+  const comecarEdicao = () => {
+    if (!aberto) return;
+    setRascunho(aberto.prompt);
+    setEditandoPrompt(true);
+  };
+  const oQueMudou = aberto && editandoPrompt ? rascunho.trim() !== aberto.prompt.trim() : false;
   return (
     <Sheet open={!!aberto} onOpenChange={(o) => !o && setAbertoChave(null)}>
         <SheetContent className="sm:max-w-[760px]">
@@ -194,7 +220,7 @@ export function SheetAgente({
               <SheetHeader>
                 <div className="flex items-center gap-3">
                   <span className={cn("grid size-10 shrink-0 place-items-center rounded-full text-ui-13 font-bold", AREA_COR[aberto.chave])} aria-hidden>
-                    {aberto.nome[0]}
+                    {aberto.chave === "jarvis" ? <IconeJarvis className="size-5" /> : aberto.nome[0]}
                   </span>
                   <div className="min-w-0 flex-1">
                     <SheetTitle className="flex items-center gap-2">
@@ -219,7 +245,7 @@ export function SheetAgente({
                 </section>
 
                 <section>
-                  <h3 className="mb-2 text-ui-12 font-semibold uppercase tracking-[0.06em] text-muted-foreground">Autonomia por capacidade</h3>
+                  <h3 className="mb-2 text-ui-12 font-semibold uppercase tracking-[0.06em] text-muted-foreground">Autonomia por tipo de ação</h3>
                   <div className="overflow-hidden rounded-xl border border-border">
                     {aberto.capacidades.map((c, i) => (
                       <div key={c.chave} className={cn("flex items-center gap-4 px-4 py-3", i > 0 && "border-t border-border")}>
@@ -228,7 +254,7 @@ export function SheetAgente({
                             {c.rotulo}
                             {c.travada && (
                               <span title="Constituição §1.2 — nunca sozinho" className="text-muted-foreground">
-                                <LockIcon className="size-3.5" />
+                                <LockIcon className="size-3" />
                               </span>
                             )}
                           </div>
@@ -271,11 +297,51 @@ export function SheetAgente({
                 <section>
                   <div className="mb-2 flex items-baseline justify-between">
                     <h3 className="text-ui-12 font-semibold uppercase tracking-[0.06em] text-muted-foreground">Prompt · v{aberto.versao_prompt}</h3>
-                    <span className="text-ui-11 text-muted-foreground">publicado {haQuantoTempo(aberto.prompt_publicado_em, agora)} · só leitura aqui</span>
+                    <span className="text-ui-11 text-muted-foreground">
+                      publicado {haQuantoTempo(aberto.prompt_publicado_em, agora)}
+                      {gestao && !editandoPrompt && (
+                        <>
+                          {" · "}
+                          <button type="button" onClick={comecarEdicao} className="font-medium text-foreground underline-offset-2 hover:underline">
+                            editar
+                          </button>
+                        </>
+                      )}
+                    </span>
                   </div>
-                  <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-muted/40 p-4 font-sans text-ui-13 leading-relaxed text-foreground">
-                    {aberto.prompt}
-                  </pre>
+                  {editandoPrompt ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={rascunho}
+                        onChange={(e) => setRascunho(e.target.value)}
+                        rows={16}
+                        aria-label={`Prompt de ${aberto.nome}`}
+                        className="w-full resize-y rounded-xl border border-input bg-background p-4 font-sans text-ui-13 leading-relaxed text-foreground outline-none focus:border-ring focus:ring-[3px] focus:ring-ring/30"
+                      />
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-ui-12 text-muted-foreground">{oQueMudou ? `vira v${aberto.versao_prompt + 1} · a v${aberto.versao_prompt} fica no Auditoria, dá para voltar` : "nada mudou ainda"}</span>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setEditandoPrompt(false)}>
+                            Cancelar
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={!oQueMudou}
+                            onClick={() => {
+                              onPublicarPrompt?.(aberto.chave, rascunho);
+                              setEditandoPrompt(false);
+                            }}
+                          >
+                            Publicar v{aberto.versao_prompt + 1}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-muted/40 p-4 font-sans text-ui-13 leading-relaxed text-foreground">
+                      {aberto.prompt}
+                    </pre>
+                  )}
                 </section>
 
                 {aberto.pendencias.length > 0 && (
@@ -289,15 +355,8 @@ export function SheetAgente({
                   </section>
                 )}
               </SheetBody>
-              <SheetFooter className="border-t border-border">
-                {ROTA_EDICAO[aberto.chave] ? (
-                  <Button variant="outline" render={<Link href={ROTA_EDICAO[aberto.chave]!} />}>
-                    <ExternalLinkIcon data-icon="inline-start" />
-                    Editar prompt e regras
-                  </Button>
-                ) : (
-                  <span className="text-ui-12 text-muted-foreground">Edição do prompt chega com a próxima rodada.</span>
-                )}
+              <SheetFooter className="border-t border-border sm:justify-between">
+                <span className="text-ui-12 text-muted-foreground">Prompt, autonomia e estado moram aqui — uma fonte só.</span>
                 <Button onClick={() => setAbertoChave(null)}>Fechar</Button>
               </SheetFooter>
             </>

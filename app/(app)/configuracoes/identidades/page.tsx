@@ -7,6 +7,10 @@ import {
   type LinhaDePara,
 } from "@/lib/dados/identidades";
 import { TabelaIdentidades } from "@/components/identidades/tabela-identidades";
+import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
+import { gerarDeParaKommo } from "@/lib/ensaio/fixtures/operacao";
+import { gerarMembrosEnsaio } from "@/lib/ensaio/fixtures/membros";
+import { IdentidadesEnsaio } from "@/components/ensaio/identidades";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +27,13 @@ export const dynamic = "force-dynamic";
  * irreversível quando ela FOI LIDA e fecha.
  */
 export default async function IdentidadesPage() {
+  // W-D2 (2ª passada) · modo ensaio: de-para Kommo ↔ pessoa, com cobertura do acervo.
+  const ensaio = lerSessaoEnsaio();
+  if (ensaio) {
+    const agora = new Date();
+    return <IdentidadesEnsaio linhas={gerarDeParaKommo(agora)} membros={gerarMembrosEnsaio(agora)} gestao={ensaio.papel === "owner" || ensaio.papel === "admin"} agoraIso={agora.toISOString()} />;
+  }
+
   const supabase = criarClienteServidor();
 
   const [{ data: papel }, linhasRes, coberturaRes, elegiveisRes] = await Promise.all([

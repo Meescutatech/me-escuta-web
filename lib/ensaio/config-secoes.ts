@@ -60,7 +60,7 @@ export const GRUPOS_CONFIG: { rotulo: string; secoes: SecaoConfig[] }[] = [
       { href: "/configuracoes/geral", rotulo: "Geral", descricao: "Nome, marca e fuso horário da empresa.", icone: "geral" },
       { href: "/configuracoes/identidades", rotulo: "Identidades", descricao: "O de-para entre as pessoas daqui e as contas do Kommo e do WhatsApp.", icone: "identidades" },
       { href: "/configuracoes/suporte", rotulo: "Suporte", descricao: "Relatos abertos por quem usa, com a tela de onde vieram.", icone: "suporte" },
-      { href: "/configuracoes/avancado", rotulo: "Auditoria e histórico", descricao: "Toda configuração publicada, com quem publicou, quando e o diff.", icone: "auditoria" },
+      { href: "/configuracoes/auditoria", rotulo: "Auditoria e histórico", descricao: "Toda configuração publicada, com quem publicou, quando e o diff.", icone: "auditoria", tambem: ["/configuracoes/avancado"] },
     ],
   },
 ];

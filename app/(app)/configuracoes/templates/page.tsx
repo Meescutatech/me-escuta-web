@@ -3,6 +3,9 @@ import { lerTemplates } from "@/lib/dados/templates";
 import { lerMencionaveis } from "@/lib/dados/mencionaveis";
 import type { Papel } from "@/lib/membros";
 import { TabelaTemplates } from "@/components/templates/tabela-templates";
+import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
+import { gerarMensagensProntas } from "@/lib/ensaio/fixtures/operacao";
+import { MensagensProntasEnsaio } from "@/components/ensaio/mensagens-prontas";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +16,13 @@ export const dynamic = "force-dynamic";
  * a UI esconde o que a porta recusaria, e a porta (0046) é quem recusa de verdade.
  */
 export default async function TemplatesPage() {
+  // W-D2 (2ª passada) · modo ensaio: respostas rápidas + templates HSM numa tela só.
+  const ensaio = lerSessaoEnsaio();
+  if (ensaio) {
+    const agora = new Date();
+    return <MensagensProntasEnsaio mensagens={gerarMensagensProntas(agora)} gestao={ensaio.papel === "owner" || ensaio.papel === "admin"} agoraIso={agora.toISOString()} eu={ensaio.nome} />;
+  }
+
   const supabase = criarClienteServidor();
   const [papelRes, lidos, mencionaveis] = await Promise.all([
     supabase.schema("api").rpc("papel_atual"),

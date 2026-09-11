@@ -1,5 +1,7 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { PainelClara, type VersaoPrompt, type LeadDemo } from "@/components/clara/painel-clara";
+import { redirect } from "next/navigation";
+import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +11,10 @@ export const dynamic = "force-dynamic";
  * Papel de gestão vem do banco (api.papel_atual) — sem ele, a página degrada pra leitura.
  */
 export default async function ClaraPage() {
+  // W-D2 (2ª passada): em ensaio a Clara mora na sheet de Agentes — uma fonte só (prompt v7 da
+  // fixture, sem o conflito com o "v1" de produção). Fora do ensaio, a tela antiga continua.
+  if (lerSessaoEnsaio()) redirect("/configuracoes/agentes?agente=clara");
+
   const supabase = criarClienteServidor();
 
   const [{ data: papel }, { data: agente }, { data: versoes }, { data: demoCfg }] =
