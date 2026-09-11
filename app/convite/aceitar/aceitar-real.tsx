@@ -38,7 +38,9 @@ function AceitarConvite() {
   }, [token]);
 
   function enviar(form: FormData) {
-    const email = String(form.get("email") ?? "").trim().toLowerCase();
+    // `email_do_convite`, e não `email`: o nome foi trocado justamente para o Chrome não
+    // reconhecer o campo como login e preencher a conta salva de outra pessoa.
+    const email = String(form.get("email_do_convite") ?? "").trim().toLowerCase();
     const nome = String(form.get("nome") ?? "").trim();
     const senha = String(form.get("senha") ?? "");
     if (!email || !email.includes("@")) return setErro("Informe o email do convite.");
@@ -97,31 +99,52 @@ function AceitarConvite() {
                 enviar(new FormData(e.currentTarget));
               }}
             >
-              <input
-                name="email"
-                type="email"
-                required
-                placeholder="Email do convite"
-                aria-label="Email do convite"
-                className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
-              />
-              <input
-                name="nome"
-                type="text"
-                required
-                placeholder="Seu nome"
-                aria-label="Seu nome"
-                className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
-              />
-              <input
-                name="senha"
-                type="password"
-                required
-                minLength={8}
-                placeholder="Crie uma senha (mín. 8 caracteres)"
-                aria-label="Senha"
-                className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
-              />
+              {/*
+                11/09 · RÓTULO ACIMA, E AUTOFILL DESLIGADO NO CAMPO DO E-MAIL.
+                O campo era só `placeholder`, e o Chrome preenchia nele o login SALVO de quem está
+                abrindo — vimos `admin@meescuta.com` entrar sozinho num convite de outra pessoa.
+                Como o aceite exige que o e-mail bata com o do convite, a pessoa digitava a senha,
+                clicava e levava um erro que parece convite quebrado. `autoComplete="off"` mais um
+                `name` que o navegador não reconhece como campo de login é o que o impede; o rótulo
+                acima resolve a outra metade, porque placeholder some no instante em que se digita
+                e deixa o campo sem nome justamente para quem parou no meio.
+              */}
+              <label className="grid gap-1">
+                <span className="text-[12px] text-mute">Seu e-mail (o mesmo do convite)</span>
+                <input
+                  name="email_do_convite"
+                  type="email"
+                  required
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  aria-label="Seu e-mail, o mesmo do convite"
+                  className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-[12px] text-mute">Seu nome</span>
+                <input
+                  name="nome"
+                  type="text"
+                  required
+                  autoComplete="name"
+                  aria-label="Seu nome"
+                  className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-[12px] text-mute">Crie uma senha — mínimo 8 caracteres</span>
+                <input
+                  name="senha"
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  aria-label="Crie uma senha, mínimo 8 caracteres"
+                  className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
+                />
+              </label>
               {erro && (
                 <p role="alert" className="rounded-md bg-[#FBEFED] px-3 py-2 text-[12.5px] text-vermelho">
                   {erro}
