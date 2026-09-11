@@ -38,8 +38,44 @@ export default async function AgentesPage({ searchParams }: { searchParams: { ag
     );
   }
 
-  const [reais, papel] = await Promise.all([lerAgentesReais(new Date()), lerPapelAtual()]);
+  // A Clara é o único agente que fala com paciente em tempo real, e por isso o interruptor dela
+  // abre um diálogo pedindo EM QUAL NÚMERO. Os insumos desse diálogo — os canais ativos e o escopo
+  // já gravado — são lidos aqui, junto do resto: nenhum depende do outro.
+  const supabase = criarClienteServidor();
+  const [reais, papel, lidosCanais, claraRes] = await Promise.all([
+    lerAgentesReais(new Date()),
+    lerPapelAtual(),
+    lerCanais(),
+    supabase.schema("core").from("agente").select("escopo_leitura").eq("id", "clara").maybeSingle(),
+  ]);
   if (!reais) redirect("/configuracoes/clara");
+
+  // só canal ATIVO entra na escolha: marcar um número desligado é escolher um caminho por onde
+  // nada chega. Mesma regra da tela da Clara, de propósito.
+  const canaisClara: CanalEscolhivel[] = lidosCanais.canais
+    .filter((c) => c.ativo)
+    .map((c) => ({
+      canal_id: c.canal_id,
+      nome: c.nome,
+      numero: c.numero,
+      area_efetiva: c.area_efetiva,
+      provedor: c.provedor,
+    }));
+
+  // ausente / não-array = vazio = TODOS os números, a mesma leitura que `src/clara/canal.ts` faz
+  // no runtime. Tela que mostra uma regra e worker que aplica outra é pior que não ter tela.
+  const escopo = ((claraRes.data?.escopo_leitura ?? {}) as Record<string, unknown>) ?? {};
+  const canaisEscolhidosClara: string[] = Array.isArray(escopo["canais"])
+    ? (escopo["canais"] as unknown[]).map(String).filter((c) => c.trim() !== "")
+    : [];
+
   // quem liga e desliga agente é gestão — o mesmo corte do ensaio, agora com o papel de verdade
-  return <CartoesAgentes agentes={reais} gestao={papel === "owner" || papel === "admin"} />;
+  return (
+    <CartoesAgentes
+      agentes={reais}
+      gestao={papel === "owner" || papel === "admin"}
+      canaisClara={canaisClara}
+      canaisEscolhidosClara={canaisEscolhidosClara}
+    />
+  );
 }
