@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { useJarvis } from "@/lib/jarvis/contexto";
 import { MarcaJarvis } from "./marca";
 import { ListaDeAcoes, type EstadoAcao, type ItemAcao } from "./lista-de-acoes";
 import { useMovimento } from "./movimento";
@@ -81,6 +82,7 @@ const LINK = "underline-offset-[3px] hover:underline focus-visible:outline-none 
 
 export function JarvisDiz({ frase, observacoes, perguntas, geradoEm, hrefPergunta, acoes, rotuloAcoes, visiveis = 3, className }: JarvisDizProps) {
   const mov = useMovimento();
+  const jarvis = useJarvis();
   const [aberto, setAberto] = useState(false);
   const hora = horaCurta(geradoEm);
   const href = hrefPergunta ?? ((q: string) => `/jarvis?contexto=${encodeURIComponent("/")}&pergunta=${encodeURIComponent(q)}`);
@@ -148,9 +150,21 @@ export function JarvisDiz({ frase, observacoes, perguntas, geradoEm, hrefPergunt
             <ul className="mt-1 space-y-0.5">
               {perguntas.slice(0, 3).map((q) => (
                 <li key={q}>
-                  <Link href={href(q)} className={cn("text-foreground", LINK)}>
-                    {q}
-                  </Link>
+                  {/*
+                    11/09 (W-JX): clicar NÃO navega mais. Com a presença montada, a pergunta abre o
+                    overlay ⌘K sobre a tela em que a pessoa já está e responde ali — "pergunto no
+                    dashboard, ele me responde no dashboard". Sem a presença montada (galeria, teste),
+                    degrada para o link de sempre.
+                  */}
+                  {jarvis.montado ? (
+                    <button type="button" onClick={() => jarvis.abrir(q)} className={cn("text-left text-foreground", LINK)}>
+                      {q}
+                    </button>
+                  ) : (
+                    <Link href={href(q)} className={cn("text-foreground", LINK)}>
+                      {q}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

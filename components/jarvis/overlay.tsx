@@ -1,0 +1,151 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import Link from "next/link";
+import { AnimatePresence, motion } from "motion/react";
+import { MaximizeIcon, XIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ondeEstou, useJarvis } from "@/lib/jarvis/contexto";
+import { avisoEnsaioDaTela, sugestoesEnsaioDaTela } from "@/lib/ensaio/jarvis-telas";
+import { MarcaJarvis } from "./marca";
+import { useMovimento } from "./movimento";
+import { SuperficieJarvis } from "./superficie";
+
+/**
+ * O OVERLAY DO JARVIS (W-JX, 11/09/2026) — "pergunto no dashboard, ele me responde no dashboard".
+ *
+ * ⌘K abre isto por cima de QUALQUER tela: campo de pergunta grande ancorado no alto (medida de
+ * paleta de comando, ~720px), a resposta no mesmo lugar, e Esc devolve a pessoa exatamente onde
+ * ela estava. Ninguém navega para lugar nenhum — e o véu é de propósito quase transparente, com um
+ * fio de desfoque: a tela de baixo continua legível, porque a resposta é SOBRE ela.
+ *
+ * A linha de cima diz onde o Jarvis acha que você está ("no funil · etapa qualificado"). É a
+ * diferença entre um chat genérico flutuando e um copiloto: a caixa de texto sozinha tem
+ * affordance indefinida (Wroblewski), e essa linha é o que a ancora.
+ *
+ * "Abrir em tela cheia" leva para `/jarvis`, que é a MESMA superfície em outra medida — nunca o
+ * destino de um atalho, sempre uma escolha.
+ */
+
+export function OverlayJarvis() {
+  const { aberto, fechar, contexto, contratoTela, papel, usuarioId, ensaio, perguntaPendente, consumirPergunta } = useJarvis();
+  const mov = useMovimento();
+  const painel = useRef<HTMLDivElement>(null);
+  const gatilho = useRef<Element | null>(null);
+  const pergunta = useRef<string | null>(null);
+
+  // congela a pergunta que veio do dock no momento da abertura (a superfície consome uma vez)
+  if (aberto && perguntaPendente && pergunta.current === null) pergunta.current = perguntaPendente;
+  if (!aberto && pergunta.current !== null) pergunta.current = null;
+
+  useEffect(() => {
+    if (!aberto) return;
+    gatilho.current = document.activeElement;
+    consumirPergunta();
+    const antes = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = antes;
+      (gatilho.current as HTMLElement | null)?.focus?.();
+    };
+    // `consumirPergunta` é estável (useCallback sem deps)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto]);
+
+  const onde = ondeEstou(contexto);
+  const href = `/jarvis?contexto=${encodeURIComponent(`${contexto.rota}${contexto.busca ?? ""}`)}`;
+  const sugestoes = contexto.sugestoes ?? (ensaio ? sugestoesEnsaioDaTela(contexto.rota) : null) ?? undefined;
+  const aviso = contexto.aviso ?? (ensaio ? avisoEnsaioDaTela(contexto.rota) : null);
+  const inicial = pergunta.current ?? null;
+
+  return (
+    <AnimatePresence>
+      {aberto && (
+        <div className="fixed inset-0 z-[60]" role="presentation">
+          <motion.button
+            type="button"
+            aria-label="Fechar o Jarvis"
+            onClick={fechar}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: mov.reduzido ? 0.1 : 0.18 }}
+            className="absolute inset-0 cursor-default bg-foreground/[0.07] supports-[backdrop-filter]:backdrop-blur-[1.5px]"
+          />
+          <div className="pointer-events-none absolute inset-0 flex justify-center px-4 pt-[11vh]">
+            <motion.div
+              ref={painel}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Jarvis"
+              initial={mov.reduzido ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.985 }}
+              animate={mov.reduzido ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+              exit={mov.reduzido ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.99 }}
+              transition={{ duration: mov.reduzido ? 0.12 : 0.2, ease: [0.2, 0.65, 0.3, 0.9] }}
+              className="pointer-events-auto flex max-h-[min(76vh,680px)] w-full max-w-[720px] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-[0_16px_48px_rgba(31,35,40,.18)]"
+            >
+              <header className="flex flex-none items-center gap-2 border-b border-border/60 px-4 py-2.5">
+                <MarcaJarvis tamanho={16} rotulo="Jarvis" className="text-foreground" />
+                <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">{onde}</span>
+                {aviso && (
+                  <span className="hidden shrink-0 items-center gap-1.5 text-[11.5px] text-muted-foreground sm:inline-flex">
+                    <span className="size-1.5 rounded-full bg-primary" aria-hidden />
+                    {aviso.quantidade != null ? `${aviso.quantidade} ${aviso.texto}` : aviso.texto}
+                  </span>
+                )}
+                <Link
+                  href={href}
+                  onClick={fechar}
+                  title="Abrir em tela cheia"
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <MaximizeIcon className="size-3.5" aria-hidden />
+                  <span className="sr-only">Abrir em tela cheia</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={fechar}
+                  title="Fechar (Esc)"
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <XIcon className="size-4" aria-hidden />
+                  <span className="sr-only">Fechar</span>
+                </button>
+              </header>
+
+              <SuperficieJarvis
+                usuarioId={usuarioId}
+                papel={papel}
+                contexto={contexto}
+                contratoTela={contratoTela}
+                ensaio={ensaio}
+                medida="coluna"
+                sugestoes={sugestoes}
+                perguntaInicial={inicial}
+                enviarAoAbrir={Boolean(inicial)}
+                aoSair={fechar}
+                className="min-h-0 flex-1"
+              />
+
+              <footer className={cn("flex flex-none items-center gap-3 border-t border-border/60 px-4 py-2 text-[11px] text-muted-foreground")}>
+                <span className="inline-flex items-center gap-1">
+                  <Tecla>↵</Tecla> perguntar
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Tecla>Esc</Tecla> fechar
+                </span>
+                <span className="ml-auto">O Jarvis só consulta — o que ele propõe, você decide.</span>
+              </footer>
+            </motion.div>
+          </div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function Tecla({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="rounded-[4px] border border-border bg-muted px-1 py-px font-sans text-[10px] leading-[14px] text-muted-foreground">{children}</kbd>
+  );
+}

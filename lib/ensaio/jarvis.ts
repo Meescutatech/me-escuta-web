@@ -1,7 +1,9 @@
 import type { ObservacaoJarvis } from "@/components/jarvis/jarvis-diz";
 import type { ItemAcao } from "@/components/jarvis/lista-de-acoes";
 import type { LinhaAutonomia } from "@/components/jarvis/regua-autonomia";
-import type { RespostaJarvis } from "@/components/jarvis/resposta";
+import type { AcaoResposta, RespostaJarvis } from "@/lib/jarvis/resposta-tipos";
+import type { ContextoJarvisTela } from "@/lib/jarvis/contexto";
+import { passos, responderTela } from "./jarvis-telas";
 import type { Pessoa, PropostaJarvis } from "@/components/jarvis/tipos";
 
 /**
@@ -300,7 +302,7 @@ export function atencaoEnsaio(): ItemAcao[] {
   ];
 }
 
-// ─── /jarvis em ensaio: as 5 perguntas do roteiro do Rodolfo ─────────────────────────────────────
+// ─── O Jarvis em ensaio: o roteiro do Rodolfo + o que a tela pergunta ───────────────────────────
 
 function normalizar(s: string): string {
   return s
@@ -327,11 +329,21 @@ export const PERGUNTAS_ROTEIRO = [
 
 export const RESPOSTA_NAO_SEI = "Ainda não sei responder isso — pergunte sobre funil, equipe, tarefas ou marketing.";
 
+const VER_CONVERSAS: AcaoResposta = { id: "ver-conversas", tipo: "abrir", rotulo: "Abrir a fila de conversas", href: "/conversas?filtro=sem_resposta" };
+
 /**
- * Responde por REGRA sobre a fixture (nada de modelo): casa por palavras-chave, devolve a resposta
- * em blocos com os links para a tela onde se resolve. Qualquer outra pergunta devolve o "não sei".
+ * Responde por REGRA sobre a fixture (nada de modelo). Ordem: primeiro a resposta da TELA em que a
+ * pessoa está (`responderTela` — "o que eu faço agora?", "o que o Jarvis sugere aqui?"), depois as
+ * cinco do roteiro do Rodolfo, que valem de qualquer lugar. Qualquer outra devolve o "não sei".
+ *
+ * Toda resposta traz `passos` (o trabalho que a tela mostra acontecendo) e, quando cabe, `acoes`
+ * (o que dá para fazer sem sair da tela). O contexto é opcional: quem chamava com dois argumentos
+ * continua chamando com dois.
  */
-export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
+export function responderEnsaio(pergunta: string, agora: Date, contexto: ContextoJarvisTela | null = null): RespostaJarvis {
+  const daTela = responderTela(pergunta, contexto, agora);
+  if (daTela) return daTela;
+
   const q = normalizar(pergunta);
   const em = agora.toISOString();
 
@@ -339,6 +351,11 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
     return {
       em,
       consultas: [{ nome: "consultar_conversa", resumo: "31 conversas abertas" }],
+      passos: passos(
+        ["abriu as conversas do seu escopo", "31 abertas, 12 com mensagem de hoje", 190],
+        ["viu quem falou por último em cada uma", "4 terminam com o paciente falando", 240],
+        ["mediu contra o SLA de 2 h", "as 4 passaram; a mais antiga tem 3 h", 110],
+      ),
       frase: "Quatro conversas estão sem resposta nossa há mais de 2 h. A mais antiga é a de Maria Aparecida, há 3 h.",
       blocos: [
         {
@@ -350,8 +367,8 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
             { id: "c4", titulo: "Sebastiana Lima — perguntou o horário da consulta", estado: "andamento", badge: "Sara digitando", href: "/conversas?c=c-0005" },
           ],
         },
-        { tipo: "linhas", itens: [{ texto: "Ver as quatro na fila, ordenadas pela mais antiga", href: "/conversas?filtro=sem_resposta", destino: "conversas" }] },
       ],
+      acoes: [VER_CONVERSAS, { id: "f-sem-resposta", tipo: "filtrar", rotulo: "Filtrar esta tela pelas sem resposta", filtro: "filtro=sem_resposta" }],
     };
   }
 
@@ -359,6 +376,11 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
     return {
       em,
       consultas: [{ nome: "consultar_tarefas", resumo: "42 abertas · 7 vencidas" }],
+      passos: passos(
+        ["listou as tarefas abertas", "42 abertas em 3 responsáveis", 150],
+        ["separou as que passaram do prazo", "7 vencidas; a mais antiga há 3 dias", 220],
+        ["agrupou por responsável", "Sara 4 · Ana Paula 2 · Rodolfo 1", 100],
+      ),
       frase: "Sete tarefas vencidas: quatro da Sara, duas da Ana Paula e uma do Rodolfo. A mais antiga venceu há 3 dias.",
       blocos: [
         {
@@ -379,6 +401,10 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
           ],
         },
       ],
+      acoes: [
+        { id: "ver-vencidas", tipo: "abrir", rotulo: "Abrir as vencidas", href: "/tarefas?filtro=vencidas" },
+        { id: "f-vencidas", tipo: "filtrar", rotulo: "Filtrar esta tela pelas vencidas", filtro: "filtro=vencidas" },
+      ],
     };
   }
 
@@ -386,6 +412,11 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
     return {
       em,
       consultas: [{ nome: "consultar_funil", resumo: "40 leads em 10 etapas" }],
+      passos: passos(
+        ["contou os leads por etapa", "40 abertos em 10 etapas", 170],
+        ["comparou com a semana anterior", "23 novos, 4 a mais que a semana passada", 200],
+        ["mediu o tempo parado em cada etapa", "Qualificado concentra o atraso: 3 acima de 5 dias", 180],
+      ),
       frase: "Entraram 23 leads esta semana, 9 estão em AGORA e o gargalo segue em Qualificado: 12 leads, 3 deles parados há mais de 5 dias.",
       blocos: [
         {
@@ -400,6 +431,10 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
         },
         { tipo: "linhas", itens: [{ texto: "Terezinha Souza, Geraldo Nunes e Antônio Ferreira são os três parados há mais de 5 dias", href: "/funil?etapa=qualificado&ordem=parado", destino: "funil" }] },
       ],
+      acoes: [
+        { id: "ver-funil", tipo: "abrir", rotulo: "Abrir o funil", href: "/funil" },
+        { id: "f-qualificado", tipo: "filtrar", rotulo: "Filtrar esta tela por Qualificado", filtro: "etapa=qualificado" },
+      ],
     };
   }
 
@@ -407,6 +442,10 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
     return {
       em,
       consultas: [{ nome: "consultar_dashboard", resumo: "3 canais · 7 dias" }],
+      passos: passos(
+        ["somou as mensagens recebidas por canal", "675 mensagens em 7 dias", 160],
+        ["conferiu as quedas de conexão", "uma: lite:ana-paula, 24 min hoje cedo", 210],
+      ),
       frase: "O WhatsApp oficial recebeu 61% das mensagens da semana; o número da Sara, 31%; o da Ana Paula, 8%.",
       blocos: [
         {
@@ -419,6 +458,7 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
         },
         { tipo: "linhas", itens: [{ texto: "O número da Ana Paula ficou desconectado das 07:50 às 08:14 de hoje", href: "/configuracoes/canais/meu-numero", destino: "canais" }] },
       ],
+      acoes: [{ id: "ver-canais", tipo: "abrir", rotulo: "Abrir os canais", href: "/configuracoes/canais" }],
     };
   }
 
@@ -426,6 +466,11 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
     return {
       em,
       consultas: [{ nome: "consultar_marketing", resumo: "109 linhas de custo · 30 dias" }],
+      passos: passos(
+        ["somou o custo de mídia dos últimos 30 dias", "109 linhas, R$ 7.369,42", 230],
+        ["cruzou com os leads que chegaram por origem", "190 leads com origem, 36 sem", 260],
+        ["dividiu custo por lead em cada plataforma", "Meta R$ 36 · Google R$ 61", 120],
+      ),
       frase: "R$ 7.369 em mídia nos últimos 30 dias, 84% na Meta. O CPL médio ficou em R$ 38; o Google está em R$ 61.",
       blocos: [
         {
@@ -437,8 +482,12 @@ export function responderEnsaio(pergunta: string, agora: Date): RespostaJarvis {
         },
         { tipo: "linhas", itens: [{ texto: "36 leads da semana ainda estão sem origem — o Tintim responde por telefone e pode recuperar", href: "/marketing?filtro=sem_origem", destino: "marketing" }] },
       ],
+      acoes: [
+        { id: "ver-marketing", tipo: "abrir", rotulo: "Abrir marketing", href: "/marketing" },
+        { id: "f-sem-origem", tipo: "filtrar", rotulo: "Filtrar esta tela por sem origem", filtro: "filtro=sem_origem" },
+      ],
     };
   }
 
-  return { em, consultas: [], frase: null, blocos: [{ tipo: "texto", texto: RESPOSTA_NAO_SEI }] };
+  return { em, consultas: [], passos: [], frase: null, blocos: [{ tipo: "texto", texto: RESPOSTA_NAO_SEI }] };
 }
