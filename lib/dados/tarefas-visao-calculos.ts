@@ -94,7 +94,21 @@ export interface FiltrosTarefas {
    * do Kommo por vir, rolar a coluna deixa de ser caminho.
    */
   busca: string;
+  /**
+   * W-T v2 (11/09, 00:15 — "eu melhoraria MUITO os filtros") · QUEM CRIOU.
+   * `jarvis` = `origem = 'jarvis_conversa'` (D62: o Jarvis cria direto, e a pergunta "o que ele
+   * criou hoje?" é de quem confere o agente); `pessoa` = todo o resto. Não é sinônimo de
+   * "proposta pendente" — proposta ainda não é tarefa e vive noutro bloco da tela.
+   */
+  origem: OrigemFiltro;
+  /** um paciente, pelo nome exato como ele aparece na lista (o lead não tem id em toda leitura) */
+  leadNome: string | null;
+  /** prazo numa FAIXA escolhida no calendário (YYYY-MM-DD em SP). Vence o `prazo` de preset. */
+  de: string | null;
+  ate: string | null;
 }
+
+export type OrigemFiltro = "todas" | "jarvis" | "pessoa";
 
 export const FILTROS_PADRAO: FiltrosTarefas = {
   exibicao: "funil",
@@ -106,6 +120,10 @@ export const FILTROS_PADRAO: FiltrosTarefas = {
   prazo: "todos",
   tipo: null,
   busca: "",
+  origem: "todas",
+  leadNome: null,
+  de: null,
+  ate: null,
 };
 
 // ─────────────── URL ⇄ filtros (visão compartilhável por link) ───────────────
@@ -127,7 +145,15 @@ export function parseFiltros(params: Record<string, string | string[] | undefine
     prazo: prazo === "hoje" || prazo === "amanha" || prazo === "semana" || prazo === "sem_prazo" ? prazo : "todos",
     tipo: um(params.tipo),
     busca: (um(params.q) ?? "").trim(),
+    origem: um(params.origem) === "jarvis" ? "jarvis" : um(params.origem) === "pessoa" ? "pessoa" : "todas",
+    leadNome: um(params.lead),
+    de: ehYmd(um(params.de)) ? um(params.de) : null,
+    ate: ehYmd(um(params.ate)) ? um(params.ate) : null,
   };
+}
+
+function ehYmd(v: string | null): boolean {
+  return !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 }
 
 /** Só o que difere do padrão entra na URL — link limpo é link legível. */
@@ -142,6 +168,10 @@ export function serializarFiltros(f: FiltrosTarefas): string {
   if (f.prazo !== FILTROS_PADRAO.prazo) p.set("prazo", f.prazo);
   if (f.tipo) p.set("tipo", f.tipo);
   if (f.busca.trim()) p.set("q", f.busca.trim());
+  if (f.origem !== FILTROS_PADRAO.origem) p.set("origem", f.origem);
+  if (f.leadNome) p.set("lead", f.leadNome);
+  if (f.de) p.set("de", f.de);
+  if (f.ate) p.set("ate", f.ate);
   return p.toString();
 }
 
@@ -153,7 +183,11 @@ export function temFiltroAtivo(f: FiltrosTarefas): boolean {
     f.vencidas ||
     f.prazo !== FILTROS_PADRAO.prazo ||
     f.tipo != null ||
-    f.busca.trim() !== ""
+    f.busca.trim() !== "" ||
+    f.origem !== FILTROS_PADRAO.origem ||
+    f.leadNome != null ||
+    f.de != null ||
+    f.ate != null
   );
 }
 
@@ -252,7 +286,18 @@ export function aplicarFiltros(
     if (f.vencidas && !t.vencida) return false;
     if (f.tipo && t.tipo !== f.tipo) return false;
     if (f.busca.trim() && !casaBusca(t, f.busca)) return false;
-    if (f.prazo !== "todos") {
+    if (f.origem !== "todas") {
+      const doJarvis = t.origem === "jarvis_conversa";
+      if (f.origem === "jarvis" ? !doJarvis : doJarvis) return false;
+    }
+    if (f.leadNome && (t.lead_nome ?? "") !== f.leadNome) return false;
+    // a FAIXA do calendário vence o preset: quem abriu o calendário escolheu dias, não "amanhã"
+    if (f.de || f.ate) {
+      if (!t.prazo) return false;
+      const dia = diaSP(new Date(t.prazo).getTime());
+      if (f.de && dia < f.de) return false;
+      if (f.ate && dia > f.ate) return false;
+    } else if (f.prazo !== "todos") {
       if (f.prazo === "sem_prazo") return !t.prazo;
       if (!t.prazo) return false;
       const d = diffDiasSP(t.prazo, agoraMs);

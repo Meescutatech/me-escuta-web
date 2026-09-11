@@ -10,7 +10,6 @@ import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import type { DadosVisaoTarefas } from "@/lib/dados/tarefas-visao";
 import {
   aplicarFiltros,
-  contadores,
   ordenarLista,
   serializarFiltros,
   type FiltrosTarefas,
@@ -57,6 +56,7 @@ import { dataHoraCurta } from "@/lib/dados/tarefa-calculos";
 import type { PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
 import { AbasTarefas } from "@/components/tarefas/abas";
 import { FiltrosTarefas as BarraFiltros } from "@/components/tarefas/filtros";
+import { fotosEnsaio } from "@/lib/ensaio/fotos";
 import { LinhaTarefa, type PainelLinha } from "@/components/tarefas/linha";
 import { DialogoEAgora, type ConcluidaAgora } from "@/components/tarefas/e-agora";
 import { BlocoPropostas } from "@/components/tarefas/proposta-tarefa";
@@ -384,7 +384,7 @@ export function VisaoTarefas({
   );
 
   // ── recortes ──
-  const cont = useMemo(() => contadores(tarefas), [tarefas]);
+  const fotos = useMemo(() => (ensaio ? fotosEnsaio() : {}), [ensaio]);
   const filtradas = useMemo(() => aplicarFiltros(tarefas, filtros, meuId, agora), [tarefas, filtros, meuId, agora]);
   const modoHoje = !quadro && filtros.exibicao === "hoje";
   const aba = quadro ? null : abaAtiva(filtros);
@@ -571,29 +571,32 @@ export function VisaoTarefas({
         <div className="mx-auto flex max-w-[1600px] flex-col gap-3">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-linha">
             <AbasTarefas ativa={aba} contagem={contagem} onEscolher={escolherAba} semMeuId={!meuId} />
-            <span className="ml-auto pb-1.5 text-[12px] text-mute">
-              {cont.abertas.toLocaleString("pt-BR")} abertas
-              {cont.vencidas > 0 && (
-                <>
-                  {" · "}
-                  <span className="text-vermelho">{cont.vencidas.toLocaleString("pt-BR")} vencidas</span>
-                </>
-              )}
-              {dados.corte && (
-                <span className="ml-2 text-laranja-esc" title="A leitura bateu no teto (500 abertas / 200 do histórico): a lista e a busca são parciais.">
-                  · lista parcial
-                </span>
-              )}
-            </span>
+            {/* W-T v2 · o carimbo "16 abertas · 4 vencidas" SAIU daqui (Diogo, 00:15): contagem
+                longe do que ela conta é enfeite. As abas contam o recorte, e o popover Situação
+                conta por linha. Fica só o aviso de LISTA PARCIAL, que não é contagem — é a
+                leitura dizendo que bateu no teto. */}
+            {dados.corte && (
+              <span
+                className="ml-auto pb-1.5 text-[12px] text-laranja-esc"
+                title="A leitura bateu no teto (500 abertas / 200 do histórico): a lista e a busca são parciais."
+              >
+                lista parcial
+              </span>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-start gap-2">
             <BarraFiltros
               filtros={filtros}
               onMudar={mudar}
               pessoas={pessoasAtivas}
               tiposTarefa={tiposTarefa}
+              tarefas={tarefas}
+              agora={agora}
+              meuId={meuId}
+              fotos={fotos}
               mostrarResponsavel={!modoHoje && !filtros.minhas}
               mostrarStatus={!modoHoje && !quadro}
+              resultado={quadro ? tarefasQuadro.length : filtradas.length}
             />
             {/* v3 · Lista | Quadro — o quadro por estado (F8) de volta à vista */}
             {!modoHoje && (
