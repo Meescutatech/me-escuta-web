@@ -6,11 +6,13 @@ import {
   ArrowUpRightIcon,
   CalendarClockIcon,
   CheckIcon,
+  ChevronDownIcon,
   ClockIcon,
   FileTextIcon,
   PlayIcon,
   WalletIcon,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { ConversaResumo, Mensagem } from "@/lib/dados/conversas";
 import type { PainelLead, TarefaLead } from "@/lib/dados/lead-painel";
@@ -62,6 +64,11 @@ const ABAS: Array<[Aba, string]> = [
   ["midias", "Mídias"],
 ];
 
+const ORIGEM: Record<string, string> = {
+  wa: "WhatsApp", whatsapp: "WhatsApp", ig: "Instagram", instagram: "Instagram",
+  meta: "Meta Ads", "meta ads": "Meta Ads", facebook: "Meta Ads", ind: "Indicação", indicacao: "Indicação",
+};
+
 function fmtTelefone(t: string | null): string {
   if (!t) return "—";
   let d = t.replace(/\D/g, "");
@@ -90,6 +97,7 @@ export function PainelLead({
   programadas,
   mencionaveis,
   quemAtende,
+  dono,
   ensaio,
   onCancelarProgramado,
   avisar,
@@ -102,6 +110,8 @@ export function PainelLead({
   mencionaveis: Mencionavel[];
   /** "Clara" | "Sara" | … — quem conduz a conversa agora */
   quemAtende: string;
+  /** dono do lead (core.lead.dono) — null = sem dono */
+  dono: string | null;
   ensaio: boolean;
   onCancelarProgramado: (id: string) => void;
   avisar: (m: string) => void;
@@ -147,6 +157,11 @@ export function PainelLead({
           <span className="font-mono tabular-nums">{fmtTelefone(conversa.telefone)}</span>
           {cidade && <span> · {cidade}</span>}
           {conversa.idade != null && <span> · {conversa.idade} anos</span>}
+        </p>
+        <p className="mt-0.5 text-[12px] text-suave">
+          {conversa.origem ? <span>origem {ORIGEM[conversa.origem.toLowerCase()] ?? conversa.origem}</span> : <span className="text-mute">origem não registrada</span>}
+          <span> · </span>
+          {dono ? <span>dono {dono}</span> : <span className="text-mute">sem dono</span>}
         </p>
         {(conversa.tags ?? []).length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
@@ -314,19 +329,29 @@ function AbaFicha({ leadId, painel, ensaio, avisar }: { leadId: string | null; p
   }
 
   return (
-    <dl className="px-4 py-2">
+    <div className="px-4 py-1">
       {grupos.map((g) => (
-        <div key={g.chave}>
-          {grupos.length > 1 && <div className="pb-1 pt-3 text-[11px] text-mute">{g.nome}</div>}
+        <GrupoFicha key={g.chave} grupo={g} valores={valores} unico={grupos.length === 1}>
           {g.campos.map((c) => {
             const emEdicao = editando === c.slug;
-            const texto = valorParaTexto(c.tipo, valores[c.slug]);
+            const texto = textoDoCampo(c, valores[c.slug]);
             return (
-              <div key={c.slug} className="flex min-h-[34px] items-center gap-3 border-b border-linha/80 py-1 last:border-b-0">
-                <dt className="w-[42%] shrink-0 truncate text-[12px] text-suave">{c.nome}</dt>
+              <div key={c.slug} className="flex min-h-[32px] items-center gap-3 border-b border-linha/80 py-0.5 last:border-b-0">
+                <dt className="w-[44%] shrink-0 truncate text-[12px] text-suave" title={c.nome}>
+                  {c.nome}
+                </dt>
                 <dd className="min-w-0 flex-1 text-right">
                   {emEdicao ? (
                     <Editor campo={c} valor={rascunho} onChange={setRascunho} onSalvar={(v) => salvar(c, v)} onCancelar={() => setEditando(null)} />
+                  ) : c.tipo === "url" && texto !== "—" ? (
+                    <span className="inline-flex max-w-full items-center gap-1">
+                      <a href={String(valores[c.slug])} target="_blank" rel="noreferrer" className="truncate text-[12.5px] text-navy underline-offset-2 hover:underline">
+                        abrir pasta
+                      </a>
+                      <button type="button" onClick={() => abrir(c)} className="rounded px-1 text-[11px] text-mute hover:bg-hover hover:text-tinta" aria-label={`Editar ${c.nome}`}>
+                        editar
+                      </button>
+                    </span>
                   ) : (
                     <button
                       type="button"
@@ -334,7 +359,7 @@ function AbaFicha({ leadId, painel, ensaio, avisar }: { leadId: string | null; p
                       disabled={!c.editavel || pending}
                       title={c.editavel ? "Clique para editar" : "Campo sem editor"}
                       className={cn(
-                        "max-w-full truncate rounded px-1.5 py-0.5 text-[12.5px] text-tinta transition-colors",
+                        "max-w-full whitespace-pre-line rounded px-1.5 py-0.5 text-right text-[12.5px] leading-snug text-tinta transition-colors",
                         c.editavel ? "hover:bg-hover" : "cursor-default",
                         texto === "—" && "text-mute",
                       )}
@@ -346,9 +371,61 @@ function AbaFicha({ leadId, painel, ensaio, avisar }: { leadId: string | null; p
               </div>
             );
           })}
-        </div>
+        </GrupoFicha>
       ))}
-    </dl>
+    </div>
+  );
+}
+
+/** Endereço em objeto (`linha_0…`) vira linhas; arquivo vira o nome; o resto segue `valorParaTexto`. */
+function textoDoCampo(c: CampoFicha, valor: unknown): string {
+  if (valor && typeof valor === "object" && !Array.isArray(valor)) {
+    const o = valor as Record<string, unknown>;
+    const linhas = Object.keys(o)
+      .filter((k) => /^linha_\d+$/.test(k))
+      .sort()
+      .map((k) => String(o[k]))
+      .filter(Boolean);
+    if (linhas.length) return linhas.join("\n");
+    if (typeof o.arquivo === "string") return o.arquivo;
+    if (typeof o.nome === "string") return o.nome;
+  }
+  const t = valorParaTexto(c.tipo, valor);
+  if (c.slug === "data_de_nascimento" && t !== "—") {
+    const m = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      const idade = Math.floor((Date.now() - new Date(+m[1], +m[2] - 1, +m[3]).getTime()) / (365.25 * 86_400_000));
+      return `${t} · ${idade} anos`;
+    }
+  }
+  if (c.slug === "orcamento" && t !== "—" && typeof valor === "number") return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+  return t;
+}
+
+/**
+ * Grupo colapsável com "4 de 11 preenchidos" (Diogo): campo vazio mostra "—" e AINDA ASSIM
+ * aparece — o vendedor precisa ver o que falta. Começa fechado só quando não tem nada preenchido.
+ */
+function GrupoFicha({ grupo, valores, unico, children }: { grupo: { chave: string; nome: string; campos: CampoFicha[] }; valores: Record<string, unknown>; unico: boolean; children: React.ReactNode }) {
+  const total = grupo.campos.length;
+  const preenchidos = grupo.campos.filter((c) => valores[c.slug] != null && valores[c.slug] !== "").length;
+  const [aberto, setAberto] = useState(unico || preenchidos > 0);
+  return (
+    <section className="border-b border-linha py-1 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        className="flex w-full items-center gap-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+      >
+        <span className="text-[12px] font-medium text-tinta">{grupo.nome}</span>
+        <span className={cn("text-[11px] tabular-nums", preenchidos === total ? "text-verde" : preenchidos === 0 ? "text-mute" : "text-suave")}>
+          {preenchidos} de {total} preenchidos
+        </span>
+        <ChevronDownIcon className={cn("ml-auto size-3.5 text-mute transition-transform", !aberto && "-rotate-90")} strokeWidth={2} aria-hidden />
+      </button>
+      {aberto && <dl className="pb-1">{children}</dl>}
+    </section>
   );
 }
 
@@ -389,6 +466,26 @@ function Editor({
           ))}
         </SelectContent>
       </Select>
+    );
+  }
+  if (campo.tipo === "texto_longo") {
+    return (
+      <Textarea
+        autoFocus
+        rows={3}
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => onSalvar(valor)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onSalvar(valor);
+          }
+          if (e.key === "Escape") onCancelar();
+        }}
+        aria-label={campo.nome}
+        className="min-h-0 w-full text-left text-[12.5px]"
+      />
     );
   }
   const tipo = campo.tipo === "data" ? "date" : campo.tipo === "data_hora" ? "datetime-local" : campo.tipo === "numero" ? "text" : campo.tipo === "url" ? "url" : "text";

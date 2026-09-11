@@ -37,6 +37,8 @@ import {
 import { CONVERSA_JOSE_CARLOS, TAREFA_JOSE_CARLOS, propostasJarvisEnsaio, tarefaDaPropostaAceitaEnsaio } from "@/lib/ensaio/jarvis-propostas";
 import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 import { PESSOAS } from "@/lib/ensaio/modo";
+import { GRUPOS_FICHA_COMPLETA, valoresFichaCompletaEnsaio } from "@/lib/ensaio/ficha-completa";
+import { fotosEnsaio } from "@/lib/ensaio/fotos";
 import { visaoTarefasDeEnsaio } from "@/lib/dados/tarefas-ensaio";
 import type { CanalEnvioComposer } from "@/components/conversas/composer";
 
@@ -124,23 +126,14 @@ export default async function ConversasPage({
       painel.tarefas = [...aceitas, ...painel.tarefas, ...daFila]
         .filter((t) => (vistos.has(t.id) ? false : (vistos.add(t.id), true)))
         .map((t) => (estado.concluidas.includes(t.id) ? { ...t, status: "concluida", concluida_em: t.concluida_em ?? agora.toISOString() } : t));
-      // ficha: os campos do paciente que o Diogo pediu (quem é o paciente, é de BH…) + o que a pessoa editou
-      const grupo = painel.ficha.grupos?.[0];
-      if (grupo) {
-        grupo.campos.push(
-          { slug: "quem_e_paciente", nome: "Quem é o paciente", tipo: "selecao", opcoes: ["A própria pessoa", "Mãe", "Pai", "Cônjuge", "Outro familiar"], editavel: true },
-          { slug: "e_de_bh", nome: "É de BH ou região", tipo: "booleano", opcoes: [], editavel: true },
-          { slug: "idade_paciente", nome: "Idade do paciente", tipo: "numero", opcoes: [], editavel: true },
-          { slug: "indicado_por", nome: "Indicado por", tipo: "texto", opcoes: [], editavel: true },
-        );
-      }
-      painel.ficha.valores = {
-        ...(painel.ficha.valores ?? {}),
-        quem_e_paciente: lead?.tags?.includes("familiar decide") ? "Mãe" : "A própria pessoa",
-        e_de_bh: true,
-        idade_paciente: lead?.idade ?? null,
-        indicado_por: lead?.origem === "ind" ? "Geraldo Nunes" : null,
-        ...(selecionada.lead_id ? estado.ficha[selecionada.lead_id] ?? {} : {}),
+      // W-D3 v4 · a FICHA COMPLETA: os slugs de `core.lead_campo` de produção, nos 7 grupos do
+      // Diogo, com valores verossímeis por lead (`lib/ensaio/ficha-completa.ts`) + o que a pessoa editou
+      painel.ficha = {
+        grupos: GRUPOS_FICHA_COMPLETA,
+        valores: {
+          ...(lead ? valoresFichaCompletaEnsaio(lead, agora) : {}),
+          ...(selecionada.lead_id ? estado.ficha[selecionada.lead_id] ?? {} : {}),
+        },
       };
     }
     const envio = canaisDeEnvio(ensaio, canais);
@@ -181,6 +174,7 @@ export default async function ConversasPage({
         tarefasPorProposta={tarefasPorProposta}
         ensaio
         pessoasPorEmail={Object.fromEntries(PESSOAS.map((p) => [p.email, p.nome.split(" ")[0]]))}
+        fotos={fotosEnsaio()}
       />
     );
   }

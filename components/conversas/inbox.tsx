@@ -135,7 +135,6 @@ function tempoLista(iso: string | null): string {
  * os "Números" — dois recortes que se combinam com qualquer atalho.
  */
 type Aba = "todas" | "minhas" | "nao_lidas" | "sem_responsavel";
-type QuemAtende = "IA" | "HUMANO";
 
 export function Inbox({
   conversas,
@@ -164,6 +163,7 @@ export function Inbox({
   tarefasPorProposta = null,
   ensaio = false,
   pessoasPorEmail = null,
+  fotos = null,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -223,6 +223,8 @@ export function Inbox({
   ensaio?: boolean;
   /** W-D3 v3 · e-mail (dono_atual legado) → primeiro nome, para dizer QUEM atende no card. */
   pessoasPorEmail?: Record<string, string> | null;
+  /** W-D3 v4 · foto de perfil por id/e-mail/primeiro nome ("Clara" = avatar ilustrado). Vazio = iniciais. */
+  fotos?: Record<string, string> | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -238,7 +240,10 @@ export function Inbox({
   const [editando, setEditando] = useState<{ id: string; texto: string } | null>(null);
   const [toast, setToast] = useState<{ texto: string; link?: { href: string; rotulo: string } } | null>(null);
   // W-D3 · recortes do rail (combinam com a aba): quem atende e por qual número entrou
-  const [quemAtende, setQuemAtende] = useState<QuemAtende | null>(null);
+  // W-D3 v4 · filtro por QUEM atende (nome: "Clara", "Sara"…), escolhido pelos avatares
+  const [atendenteFiltro, setAtendenteFiltro] = useState<string | null>(null);
+  // W-D3 v4 · largura do painel: normal (440px) ou metade da tela
+  const [painelLargo, setPainelLargo] = useState(false);
   const [numeroFiltro, setNumeroFiltro] = useState<string | null>(null);
   // W-D3 · decisões locais sobre as propostas do fio (aceita → nota vira histórico; descartada → some)
   const [decisoes, setDecisoes] = useState<Map<string, PropostaDoJarvis | "descartada">>(new Map());
@@ -570,11 +575,17 @@ export function Inbox({
     [carregadas, autorEmail, autorId],
   );
 
-  // W-D3 · o rail: quem atende e por qual número entrou, com contagem sobre o que está carregado.
-  const railQuem = useMemo(
-    () => ({ IA: carregadas.filter((c) => c.mode === "IA").length, HUMANO: carregadas.filter((c) => c.mode === "HUMANO").length }),
-    [carregadas],
-  );
+  // W-D3 v4 · quem atende, um avatar por pessoa presente na caixa (Clara primeiro), com contagem.
+  const railAtendentes = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const c of carregadas) {
+      const n = nomeDoAtendente(c);
+      mapa.set(n, (mapa.get(n) ?? 0) + 1);
+    }
+    return [...mapa.entries()].map(([nome, qtd]) => ({ nome, qtd })).sort((a, b) => (a.nome === "Clara" ? -1 : b.nome === "Clara" ? 1 : b.qtd - a.qtd));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregadas, mencionaveis, pessoasPorEmail]);
+  const fotoDe = (nome: string): string | null => fotos?.[nome] ?? null;
   const railNumeros = useMemo(() => {
     const mapa = new Map<string, { id: string; apelido: string; numero: string | null; finalidade: "producao" | "teste" | null; qtd: number }>();
     for (const c of carregadas) {
@@ -606,13 +617,13 @@ export function Inbox({
       if (aba === "minhas" && !ehMinha(c)) return false;
       if (aba === "nao_lidas" && !c.nao_lida) return false;
       if (aba === "sem_responsavel" && !semResponsavel(c)) return false;
-      if (quemAtende && c.mode !== quemAtende) return false;
+      if (atendenteFiltro && nomeDoAtendente(c) !== atendenteFiltro) return false;
       if (numeroFiltro && c.phone_number_id !== numeroFiltro) return false;
       if (!q) return true;
       return (c.nome ?? "").toLowerCase().includes(q) || (c.telefone ?? "").includes(q);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [carregadas, busca, aba, quemAtende, numeroFiltro, autorEmail, autorId]);
+  }, [carregadas, busca, aba, atendenteFiltro, numeroFiltro, autorEmail, autorId]);
 
   function abrir(id: string) {
     router.push(`/conversas?c=${id}`);
@@ -854,25 +865,25 @@ export function Inbox({
               >
                 {ativa && <span className="absolute inset-y-[9px] left-0 w-[2px] rounded bg-laranja" />}
                 <span className="relative shrink-0">
-                  <span
-                    className={cn(
-                      "grid h-[30px] w-[30px] place-items-center rounded-full text-[0.72rem] font-semibold text-branco",
-                      ia ? "bg-laranja" : "bg-navy",
-                    )}
-                    title={ia ? "Clara (IA)" : "Humano"}
-                  >
-                    {ia ? "C" : c.nome ? iniciais(c.nome) : "S"}
+                  {/* W-D3 v4 · o avatar é do PACIENTE (iniciais até existir foto); quem atende vai no badge */}
+                  <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-navy text-[0.72rem] font-semibold text-branco" title={rotulo}>
+                    {c.nome && !ruim ? iniciais(c.nome) : "?"}
                   </span>
                   {/* W-D3 v3 · QUEM ATENDE no canto do avatar (C = Clara, S = Sara, A = Ana Paula);
                       o número por onde entrou virou o ponto no fim da linha de prévia. */}
                   <span
                     title={`atendida por ${nomeDoAtendente(c)}`}
                     className={cn(
-                      "absolute -bottom-0.5 -right-0.5 grid size-[15px] place-items-center rounded-full text-[8.5px] font-bold leading-none ring-2 ring-branco",
+                      "absolute -bottom-0.5 -right-0.5 grid size-4 place-items-center overflow-hidden rounded-full text-[8.5px] font-bold leading-none ring-2 ring-branco",
                       ia ? "bg-laranja text-branco" : "bg-navy text-branco",
                     )}
                   >
-                    {nomeDoAtendente(c).charAt(0).toUpperCase()}
+                    {fotoDe(nomeDoAtendente(c)) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={fotoDe(nomeDoAtendente(c))!} alt="" className="size-full object-cover" />
+                    ) : (
+                      nomeDoAtendente(c).charAt(0).toUpperCase()
+                    )}
                     <span className="sr-only">atendida por {nomeDoAtendente(c)}</span>
                   </span>
                 </span>
@@ -955,33 +966,40 @@ export function Inbox({
           ))}
         </div>
 
-        {/* W-D3 · os recortes (Diogo, 22:40): uma linha de chips discretos abaixo das abas — ponto de
-            6px, nome, contagem muted; sem caixa, sem fundo, sem rótulo. Clicar filtra; de novo, limpa. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2 pt-1.5">
-          <span className="text-[11px] text-mute">atende:</span>
-          {(["IA", "HUMANO"] as QuemAtende[]).map((k) => (
-            <ChipRecorte
-              key={k}
-              ativo={quemAtende === k}
-              onClick={() => setQuemAtende((v) => (v === k ? null : k))}
-              cor={k === "IA" ? "bg-laranja" : "bg-navy"}
-              rotulo={k === "IA" ? "Clara" : "Humano"}
-              qtd={railQuem[k]}
+        {/* W-D3 v4 (Diogo, 23:45) · os recortes viram uma linha de AVATARES: quem atende com foto
+            (Clara com o avatar ilustrado; paciente nunca aparece aqui) e os números como pontos de
+            cor com a inicial — sem palavra nenhuma. Clicar filtra; de novo, limpa. */}
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3 pb-2 pt-1.5">
+          {railAtendentes.map((a) => (
+            <AvatarRecorte
+              key={a.nome}
+              ativo={atendenteFiltro === a.nome}
+              onClick={() => setAtendenteFiltro((v) => (v === a.nome ? null : a.nome))}
+              foto={fotoDe(a.nome)}
+              nome={a.nome}
+              cor={a.nome === "Clara" ? "bg-laranja" : "bg-navy"}
+              qtd={a.qtd}
+              titulo={`atendidas por ${a.nome}`}
             />
           ))}
-          {railNumeros.length > 0 && <span aria-hidden className="h-3 w-px bg-linha-forte" />}
-          {railNumeros.length > 0 && <span className="text-[11px] text-mute">número:</span>}
-          {railNumeros.map((n) => (
-            <ChipRecorte
-              key={n.id}
-              ativo={numeroFiltro === n.id}
-              onClick={() => setNumeroFiltro((v) => (v === n.id ? null : n.id))}
-              cor={marcaDoCanal({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade }).ponto}
-              rotulo={nomeCurtoDoNumero({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade })}
-              titulo={n.numero ? `${n.apelido} · ${n.numero}` : n.apelido}
-              qtd={n.qtd}
-            />
-          ))}
+          {railNumeros.length > 0 && <span aria-hidden className="mx-0.5 h-4 w-px bg-linha-forte" />}
+          {railNumeros.map((n) => {
+            const marca = marcaDoCanal({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade });
+            const nome = nomeCurtoDoNumero({ phone_number_id: n.id, numero_apelido: n.apelido, finalidade: n.finalidade });
+            return (
+              <AvatarRecorte
+                key={n.id}
+                ativo={numeroFiltro === n.id}
+                onClick={() => setNumeroFiltro((v) => (v === n.id ? null : n.id))}
+                foto={null}
+                nome={nome}
+                cor={marca.cheia}
+                qtd={n.qtd}
+                titulo={`pelo número ${nome}${n.numero ? ` · ${n.numero}` : ""}`}
+                ponto
+              />
+            );
+          })}
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 pb-4 pt-0.5">
@@ -1412,18 +1430,30 @@ export function Inbox({
         className={cn(
           "flex shrink-0 flex-col border-l border-linha bg-branco transition-[width] duration-150",
           // r9: painel do lead com anatomia Kommo — 368px (token w-painel)
-          ctxColapsado ? "w-[46px]" : "w-painel",
+          // W-D3 v4 · 440px por padrão; "expandir" leva a metade da tela; "recolher" a 46px
+          ctxColapsado ? "w-[46px]" : painelLargo ? "w-[50vw]" : "w-[440px]",
         )}
       >
-        <div className={cn("flex items-center gap-2 border-b border-linha px-4 py-3", ctxColapsado && "justify-center px-0")}>
-          {!ctxColapsado && <span className="text-[0.8rem] font-semibold text-tinta">Contexto do lead</span>}
+        <div className={cn("flex items-center gap-1 border-b border-linha px-4 py-3", ctxColapsado && "justify-center px-0")}>
+          {!ctxColapsado && <span className="mr-auto text-[0.8rem] font-semibold text-tinta">Contexto do lead</span>}
+          {!ctxColapsado && (
+            <button
+              onClick={() => setPainelLargo((v) => !v)}
+              title={painelLargo ? "Largura normal" : "Metade da tela"}
+              aria-label={painelLargo ? "Largura normal" : "Expandir para metade da tela"}
+              className="grid h-[26px] w-[26px] place-items-center rounded-md text-mute transition-colors hover:bg-hover hover:text-suave focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
+            >
+              <svg viewBox="0 0 24 24" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 stroke-current" fill="none">
+                <path d={painelLargo ? "M9 4H4v5M4 4l6 6M15 20h5v-5m0 5-6-6" : "M15 4h5v5m0-5-6 6M9 20H4v-5m0 5 6-6"} />
+              </svg>
+            </button>
+          )}
           <button
             onClick={() => setCtxColapsado((v) => !v)}
             title={ctxColapsado ? "Expandir" : "Recolher"}
             aria-label={ctxColapsado ? "Expandir contexto" : "Recolher contexto"}
             className={cn(
               "grid h-[26px] w-[26px] place-items-center rounded-md text-mute transition-colors hover:bg-hover hover:text-suave focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
-              !ctxColapsado && "ml-auto",
             )}
           >
             <svg viewBox="0 0 24 24" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 stroke-current" fill="none">
@@ -1443,6 +1473,7 @@ export function Inbox({
             programadas={programadas}
             mencionaveis={mencionaveis}
             quemAtende={nomeDoAtendente(selecionada)}
+            dono={selecionada.dono_atual ? nomeDoAtendente(selecionada) : null}
             ensaio={ensaio}
             onCancelarProgramado={cancelarProgramado}
             avisar={avisar}
@@ -1583,24 +1614,47 @@ function PontoNumero({ c }: { c: ConversaResumo }) {
   );
 }
 
-/** W-D3 · um recorte: ponto de 6px + nome + contagem muted. Sem caixa; o ativo escurece o nome. */
-function ChipRecorte({ ativo, onClick, cor, rotulo, titulo, qtd }: { ativo: boolean; onClick: () => void; cor: string; rotulo: string; titulo?: string; qtd: number }) {
+/**
+ * W-D3 v4 · um recorte como avatar: foto (ou inicial na cor) + contagem pequena. O ativo ganha o
+ * anel laranja; o resto fica levemente apagado quando há filtro. `ponto` = número (círculo menor).
+ */
+function AvatarRecorte({
+  ativo,
+  onClick,
+  foto,
+  nome,
+  cor,
+  qtd,
+  titulo,
+  ponto = false,
+}: {
+  ativo: boolean;
+  onClick: () => void;
+  foto: string | null;
+  nome: string;
+  cor: string;
+  qtd: number;
+  titulo: string;
+  ponto?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={ativo}
-      title={titulo ?? rotulo}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded text-[12px] leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40",
-        ativo ? "font-semibold text-tinta" : "text-suave hover:text-tinta",
-      )}
+      aria-label={`${titulo} · ${qtd} ${qtd === 1 ? "conversa" : "conversas"}`}
+      title={titulo}
+      className="group inline-flex items-center gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-laranja/40"
     >
-      <span className={cn("size-1.5 shrink-0 rounded-full", cor, !ativo && "opacity-70")} aria-hidden />
-      <span>{rotulo}</span>
-      <span className="text-[11px] font-normal tabular-nums text-mute" aria-label={`${qtd} ${qtd === 1 ? "conversa" : "conversas"}`}>
-        {qtd}
+      <span className={cn("relative grid shrink-0 place-items-center rounded-full ring-2 transition-[box-shadow,opacity]", ponto ? "size-[18px]" : "size-6", ativo ? "ring-laranja" : "ring-transparent group-hover:ring-linha-forte")}>
+        {foto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={foto} alt="" className="size-full rounded-full object-cover" />
+        ) : (
+          <span className={cn("grid size-full place-items-center rounded-full font-bold leading-none", ponto ? "text-[9px]" : "text-[10.5px]", cor.includes("text-") ? cor : `${cor} text-branco`)}>{nome.charAt(0).toUpperCase()}</span>
+        )}
       </span>
+      <span className={cn("text-[11px] tabular-nums", ativo ? "font-semibold text-tinta" : "text-mute")}>{qtd}</span>
     </button>
   );
 }
