@@ -64,7 +64,7 @@ export function DialogoEAgora({
   return (
     <Dialog open={concluida != null} onOpenChange={(aberto) => !aberto && onFechar(false)}>
       {concluida && (
-        <Formulario
+        <CorpoEAgora
           key={concluida.tarefa.id}
           concluida={concluida}
           pessoas={pessoas}
@@ -79,7 +79,15 @@ export function DialogoEAgora({
   );
 }
 
-function Formulario({
+/**
+ * W-T (10/09 noite) · os CAMPOS do "e agora?", sem diálogo em volta.
+ *
+ * O modo foco (`/tarefas/foco`) mostra a mesma pergunta INLINE, na coluna da tarefa: lá a pessoa
+ * acabou de concluir e vai avançar no mesmo lugar — abrir um diálogo por cima seria tirá-la do
+ * percurso para devolvê-la ao mesmo ponto. `DialogoEAgora` continua sendo a versão da lista, e as
+ * duas partilham este corpo: a pergunta, as regras e o texto são um só.
+ */
+export function CorpoEAgora({
   concluida,
   pessoas,
   tiposTarefa,
@@ -87,6 +95,7 @@ function Formulario({
   agora,
   criar,
   onFechar,
+  compacto = false,
 }: {
   concluida: ConcluidaAgora;
   pessoas: PessoaAtiva[];
@@ -95,6 +104,8 @@ function Formulario({
   agora: number;
   criar: (dados: NovaTarefa) => Promise<ResultadoEvento>;
   onFechar: (criou: boolean) => void;
+  /** inline no modo foco: sem `DialogContent`, sem cabeçalho de diálogo */
+  compacto?: boolean;
 }) {
   const t = concluida.tarefa;
   const presets = useMemo(() => presetsAdiar(agora), [agora]);
@@ -142,21 +153,8 @@ function Formulario({
   const itensTipos: Record<string, string> = { [SEM_TIPO]: "Sem tipo", ...Object.fromEntries(tiposTarefa.map((x) => [x.chave, x.rotulo])) };
   if (tipo && !itensTipos[tipo]) itensTipos[tipo] = tipo;
 
-  return (
-    <DialogContent className="sm:max-w-[440px]" showCloseButton={false}>
-      <DialogHeader className="gap-1">
-        <p className="inline-flex items-center gap-1.5 text-[12px] font-medium text-verde">
-          <CheckIcon className="size-3.5" aria-hidden />
-          Concluída: <span className="truncate text-suave">{t.titulo}</span>
-        </p>
-        <DialogTitle className="text-[16px] font-semibold text-tinta">
-          E agora{t.lead_nome ? ` com ${primeiroNome(t.lead_nome)}` : ""}?
-        </DialogTitle>
-        <DialogDescription className="text-[12.5px] text-suave">
-          Lead sem próxima tarefa some da fila de todo mundo. Marque a próxima, ou diga que não há.
-        </DialogDescription>
-      </DialogHeader>
-
+  const campos = (
+    <>
       <div className="flex flex-col gap-2.5">
         <Input
           autoFocus
@@ -240,6 +238,40 @@ function Formulario({
           Sem próxima ação por agora
         </Button>
       </div>
+    </>
+  );
+
+  if (compacto) {
+    return (
+      <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-1">
+          <p className="inline-flex items-center gap-1.5 text-[12px] font-medium text-verde">
+            <CheckIcon className="size-3.5" aria-hidden />
+            Concluída
+          </p>
+          <p className="text-[15px] font-semibold text-tinta">E agora{t.lead_nome ? ` com ${primeiroNome(t.lead_nome)}` : ""}?</p>
+          <p className="text-[12.5px] text-suave">Lead sem próxima tarefa some da fila de todo mundo. Marque a próxima, ou diga que não há.</p>
+        </div>
+        {campos}
+      </div>
+    );
+  }
+
+  return (
+    <DialogContent className="sm:max-w-[440px]" showCloseButton={false}>
+      <DialogHeader className="gap-1">
+        <p className="inline-flex items-center gap-1.5 text-[12px] font-medium text-verde">
+          <CheckIcon className="size-3.5" aria-hidden />
+          Concluída: <span className="truncate text-suave">{t.titulo}</span>
+        </p>
+        <DialogTitle className="text-[16px] font-semibold text-tinta">
+          E agora{t.lead_nome ? ` com ${primeiroNome(t.lead_nome)}` : ""}?
+        </DialogTitle>
+        <DialogDescription className="text-[12.5px] text-suave">
+          Lead sem próxima tarefa some da fila de todo mundo. Marque a próxima, ou diga que não há.
+        </DialogDescription>
+      </DialogHeader>
+      {campos}
     </DialogContent>
   );
 }

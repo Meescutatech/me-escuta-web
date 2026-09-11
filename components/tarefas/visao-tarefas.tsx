@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, LayoutListIcon, PlayIcon, SquareKanbanIcon } from "lucide-react";
+import { CheckIcon, FocusIcon, LayoutListIcon, PlayIcon, SquareKanbanIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Mencionavel } from "@/lib/conversas/mencao";
@@ -595,6 +595,17 @@ export function VisaoTarefas({
               mostrarResponsavel={!modoHoje && !filtros.minhas}
               mostrarStatus={!modoHoje && !quadro}
             />
+            {/* W-T · MODO FOCO — uma tarefa por vez com a conversa ao lado (/tarefas/foco) */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/tarefas/foco")}
+              className="ml-auto text-[13px]"
+              title="Uma tarefa por vez, com a conversa do lead ao lado"
+            >
+              <FocusIcon aria-hidden />
+              Modo foco
+            </Button>
             {/* v3 · Lista | Quadro — o quadro por estado (F8) de volta à vista */}
             {!modoHoje && (
               <ToggleGroup
@@ -606,7 +617,6 @@ export function VisaoTarefas({
                 variant="outline"
                 size="sm"
                 aria-label="Forma de ver"
-                className="ml-auto"
               >
                 <ToggleGroupItem value="lista" aria-label="Lista" className="px-2.5 text-[13px]">
                   <LayoutListIcon aria-hidden />
@@ -685,7 +695,9 @@ export function VisaoTarefas({
                     </Button>
                   ) : (
                     fila.length > 0 && (
-                      <Button size="sm" onClick={() => setFoco(fila[0].id)}>
+                      // W-T · abre o MODO FOCO (rota própria, conversa ao lado). O percurso dentro da
+                      // lista (`?foco=`) continua existindo para quem chega por link.
+                      <Button size="sm" onClick={() => router.push("/tarefas/foco")}>
                         <PlayIcon className="fill-current" aria-hidden />
                         Começar as tarefas
                         <span className="font-mono text-[11px] opacity-80">{fila.length}</span>
