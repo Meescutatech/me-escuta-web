@@ -15,8 +15,8 @@ import type {
  * substituído. Nada é escrito em lugar nenhum.
  *
  * Determinística (PRNG com semente fixa): a mesma tela em duas aberturas, com 190 dias de
- * história, fim de semana mais fraco, Clara carregando o grosso do atendimento e a Sarah os
- * transbordos — os contrastes que o CEO precisa enxergar.
+ * história, fim de semana mais fraco, Clara carregando o grosso do atendimento e a Sara os
+ * transbordos — os contrastes que o dono precisa enxergar.
  */
 
 export function ensaioDashboardLigado(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -25,12 +25,23 @@ export function ensaioDashboardLigado(env: NodeJS.ProcessEnv = process.env): boo
 
 const DIAS = 190;
 
+/**
+ * Os atores são as MESMAS pessoas do modo ensaio (`lib/ensaio/modo.ts`): a Sara (gestora de
+ * Pré-venda, dona do `lite:sara`), a Ana Paula (fono, `lite:ana-paula`) e o Diogo — para o que a
+ * tabela "Equipe" diz bater com o que /conversas e /configuracoes/membros mostram.
+ */
 export const ATORES_ENSAIO: Ator[] = [
   { ator: "agente:clara", tipo: "agente", nome: "Clara", ativo: true },
   { ator: "agente:jarvis", tipo: "agente", nome: "Jarvis", ativo: true },
-  { ator: "humano:sarah", tipo: "humano", nome: "Sarah", ativo: true },
-  { ator: "humano:diogo", tipo: "humano", nome: "Diogo", ativo: true },
+  { ator: "humano:sara", tipo: "humano", nome: "Sara Oliveira", ativo: true },
+  { ator: "humano:ana-paula", tipo: "humano", nome: "Ana Paula Ferreira", ativo: true },
+  { ator: "humano:diogo", tipo: "humano", nome: "Diogo Tambasco", ativo: true },
 ];
+
+/** Por qual NÚMERO cada conversa entrou — a base da aba Canais (mesmos ids de `fixtures/canais.ts`). */
+export const CANAL_OFICIAL = "waba:1067455192551392";
+export const CANAL_SARA = "lite:sara";
+export const CANAL_FONO = "lite:ana-paula";
 
 const ETAPAS: Array<Pick<LinhaFunil, "etapa" | "nome" | "tipo" | "ordem"> & { peso: number }> = [
   { etapa: "incoming_leads", nome: "Entrada", tipo: "aberto", ordem: 10, peso: 26 },
@@ -64,6 +75,8 @@ export interface EnsaioDashboard {
   etapaDia: LinhaEtapaDia[];
   funil: LinhaFunil[];
   conversaAtor: LinhaConversaAtor[];
+  /** conversa_id → canal_id (W-D4): de onde a aba Canais tira 1ª resposta por número. */
+  conversaCanal: Map<string, string>;
 }
 
 export function gerarEnsaioDashboard(agora: Date = new Date(), semente = 41): EnsaioDashboard {
@@ -73,6 +86,7 @@ export function gerarEnsaioDashboard(agora: Date = new Date(), semente = 41): En
   const primeira: LinhaPrimeiraResposta[] = [];
   const etapaDia: LinhaEtapaDia[] = [];
   const conversaAtor: LinhaConversaAtor[] = [];
+  const conversaCanal = new Map<string, string>();
 
   let nConversa = 0;
   for (let d = DIAS - 1; d >= 0; d--) {
@@ -94,13 +108,16 @@ export function gerarEnsaioDashboard(agora: Date = new Date(), semente = 41): En
       conversas_novas: leadsNovos,
     });
 
-    // Clara atende o grosso; Sarah pega transbordo; Jarvis cria tarefas; Diogo pontual.
+    // Clara atende o grosso; Sara pega transbordo; a fono atende o pós-venda pelo número dela;
+    // Jarvis cria tarefas; Diogo pontual.
     const conversasClara = Math.round(leadsNovos * 1.2);
     const transbordos = Math.round(conversasClara * 0.25);
+    const conversasFono = Math.round((1 + rnd() * 3) * fds);
     const porAtor: Array<[string, Partial<LinhaAtorDia>]> = [
-      ["agente:clara", { mensagens_enviadas: Math.round(enviadas * 0.62), conversas_atendidas: conversasClara, tarefas_criadas: Math.round(rnd() * 2), tarefas_concluidas: 0, leads_movidos: Math.round(conversasClara * 0.5), transbordos_recebidos: 0, devolucoes: Math.round(transbordos * 0.3) }],
+      ["agente:clara", { mensagens_enviadas: Math.round(enviadas * 0.58), conversas_atendidas: conversasClara, tarefas_criadas: Math.round(rnd() * 2), tarefas_concluidas: 0, leads_movidos: Math.round(conversasClara * 0.5), transbordos_recebidos: 0, devolucoes: Math.round(transbordos * 0.3) }],
       ["agente:jarvis", { mensagens_enviadas: 0, conversas_atendidas: 0, tarefas_criadas: Math.round((3 + rnd() * 5) * fds * rampa), tarefas_concluidas: 0, leads_movidos: 0, transbordos_recebidos: 0, devolucoes: 0 }],
-      ["humano:sarah", { mensagens_enviadas: Math.round(enviadas * 0.3), conversas_atendidas: transbordos, tarefas_criadas: Math.round(rnd() * 3), tarefas_concluidas: Math.round((4 + rnd() * 6) * fds), leads_movidos: Math.round(transbordos * 0.8), transbordos_recebidos: transbordos, devolucoes: 0 }],
+      ["humano:sara", { mensagens_enviadas: Math.round(enviadas * 0.28), conversas_atendidas: transbordos, tarefas_criadas: Math.round(rnd() * 3), tarefas_concluidas: Math.round((4 + rnd() * 6) * fds), leads_movidos: Math.round(transbordos * 0.8), transbordos_recebidos: transbordos, devolucoes: 0 }],
+      ["humano:ana-paula", { mensagens_enviadas: Math.round(enviadas * 0.09), conversas_atendidas: conversasFono, tarefas_criadas: 0, tarefas_concluidas: Math.round((1 + rnd() * 3) * fds), leads_movidos: Math.round(conversasFono * 0.4), transbordos_recebidos: 0, devolucoes: 0 }],
       ["humano:diogo", { mensagens_enviadas: Math.round(enviadas * 0.05), conversas_atendidas: Math.round(rnd() * 2), tarefas_criadas: 0, tarefas_concluidas: Math.round(rnd() * 2), leads_movidos: 0, transbordos_recebidos: 0, devolucoes: 0 }],
     ];
     for (const [ator, v] of porAtor) {
@@ -108,29 +125,46 @@ export function gerarEnsaioDashboard(agora: Date = new Date(), semente = 41): En
       atorDia.push({ dia, ator, mensagens_enviadas: 0, conversas_atendidas: 0, transbordos_recebidos: 0, devolucoes: 0, tarefas_criadas: 0, tarefas_concluidas: 0, leads_movidos: 0, ...v });
     }
 
-    // 1ª resposta: Clara em minutos; Sarah quando transborda; algumas sem resposta (null)
+    // 1ª resposta: Clara em minutos (no número oficial); Sara quando transborda ou pelo número dela
+    // (dezenas de minutos); a fono pelo número dela; algumas sem resposta (null).
     for (let c = 0; c < conversasClara; c++) {
       nConversa++;
       const id = `c0nv0000-0000-4000-8000-${String(nConversa).padStart(12, "0")}`;
-      const daSarah = rnd() < 0.2;
+      const daSara = rnd() < 0.2;
+      const noLiteSara = rnd() < 0.18;
       const semResposta = rnd() < 0.07;
+      conversaCanal.set(id, noLiteSara ? CANAL_SARA : CANAL_OFICIAL);
       primeira.push({
         conversa_id: id,
         dia,
-        respondida_por: semResposta ? null : daSarah ? "humano:sarah" : "agente:clara",
-        minutos: semResposta ? null : daSarah ? Math.round(20 + rnd() * 180) : Math.round(1 + rnd() * 6),
+        respondida_por: semResposta ? null : daSara || noLiteSara ? "humano:sara" : "agente:clara",
+        minutos: semResposta ? null : daSara || noLiteSara ? Math.round(20 + rnd() * 180) : Math.round(1 + rnd() * 6),
       });
       if (!semResposta) {
-        conversaAtor.push({ conversa_id: id, ator: daSarah ? "humano:sarah" : "agente:clara", ator_tipo: daSarah ? "humano" : "agente", ator_id: null, primeiro_dia: dia, ultimo_dia: dia, mensagens: Math.round(2 + rnd() * 10) });
+        const ator = daSara || noLiteSara ? "humano:sara" : "agente:clara";
+        conversaAtor.push({ conversa_id: id, ator, ator_tipo: ator === "humano:sara" ? "humano" : "agente", ator_id: null, primeiro_dia: dia, ultimo_dia: dia, mensagens: Math.round(2 + rnd() * 10) });
       }
+    }
+    for (let c = 0; c < conversasFono; c++) {
+      nConversa++;
+      const id = `c0nv0000-0000-4000-8000-${String(nConversa).padStart(12, "0")}`;
+      conversaCanal.set(id, CANAL_FONO);
+      const semResposta = rnd() < 0.05;
+      primeira.push({ conversa_id: id, dia, respondida_por: semResposta ? null : "humano:ana-paula", minutos: semResposta ? null : Math.round(3 + rnd() * 12) });
+      if (!semResposta) conversaAtor.push({ conversa_id: id, ator: "humano:ana-paula", ator_tipo: "humano", ator_id: null, primeiro_dia: dia, ultimo_dia: dia, mensagens: Math.round(2 + rnd() * 6) });
     }
 
     for (const e of ETAPAS.filter((x) => x.tipo === "aberto").slice(0, 5)) {
       const entradas = Math.round((e.peso / 8) * fds * rampa * (0.5 + rnd()));
       if (entradas > 0) {
-        etapaDia.push({ dia, etapa: e.etapa, ator: rnd() < 0.6 ? "agente:clara" : "humano:sarah", entradas, leads_distintos: entradas });
+        etapaDia.push({ dia, etapa: e.etapa, ator: rnd() < 0.6 ? "agente:clara" : "humano:sara", entradas, leads_distintos: entradas });
       }
     }
+    // ganhos e perdas do dia — o KPI "Ganhos" e a meta do mês saem daqui
+    const ganhos = rnd() < 0.55 * fds * rampa ? 1 + (rnd() < 0.25 ? 1 : 0) : 0;
+    if (ganhos > 0) etapaDia.push({ dia, etapa: "ganho", ator: "humano:sara", entradas: ganhos, leads_distintos: ganhos });
+    const perdas = rnd() < 0.4 * fds ? 1 : 0;
+    if (perdas > 0) etapaDia.push({ dia, etapa: "perdido", ator: rnd() < 0.5 ? "agente:clara" : "humano:sara", entradas: perdas, leads_distintos: perdas });
   }
 
   const funil: LinhaFunil[] = ETAPAS.map((e) => {
@@ -139,5 +173,5 @@ export function gerarEnsaioDashboard(agora: Date = new Date(), semente = 41): En
     return { etapa: e.etapa, nome: e.nome, tipo: e.tipo, ordem: e.ordem, fora_do_board: e.tipo !== "aberto", leads, leads_com_valor: comValor, valor: comValor * (8500 + Math.round(rnd() * 4) * 750) };
   });
 
-  return { atores: ATORES_ENSAIO, atorDia, primeira, dias, etapaDia, funil, conversaAtor };
+  return { atores: ATORES_ENSAIO, atorDia, primeira, dias, etapaDia, funil, conversaAtor, conversaCanal };
 }
