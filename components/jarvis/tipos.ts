@@ -131,3 +131,47 @@ export function dePropostaPendente(p: PropostaPendenteEstrutural, responsaveis: 
     estado: "proposta",
   };
 }
+
+/**
+ * ADAPTADOR para o tipo do W-D3 (`lib/conversas/jarvis-proposta.ts` → `PropostaJarvis` em
+ * camelCase, com `aceita_por/aceita_em`), também por forma estrutural. O fio chama
+ * `daPropostaDoFio(p)` e monta `<PropostaJarvisInline proposta={…} />`.
+ */
+export interface PropostaDoFioEstrutural {
+  id: string;
+  conversa_id: string;
+  criado_em: string;
+  porQue: string;
+  fazer: string;
+  trecho: string | null;
+  prazo: PrazoCurto;
+  responsavelId: string | null;
+  responsavelNome: string;
+  estado: "proposta" | "aceita" | "descartada";
+  aceita_por?: string | null;
+  aceita_em?: string | null;
+  tarefa_id?: string | null;
+  motivo_descarte?: string | null;
+}
+
+export function daPropostaDoFio(p: PropostaDoFioEstrutural, extra: { lead_nome?: string | null; lead_id?: string | null } = {}): PropostaJarvis {
+  const motivo = (["ja_resolvido", "nao_faz_sentido", "outro"] as const).find((m) => m === p.motivo_descarte) ?? (p.motivo_descarte ? "outro" : null);
+  return {
+    id: p.id,
+    conversa_id: p.conversa_id,
+    lead_id: extra.lead_id ?? null,
+    lead_nome: extra.lead_nome ?? null,
+    fazer: p.fazer,
+    por_que: p.porQue,
+    trecho: p.trecho,
+    prazo: p.prazo,
+    responsavel_id: p.responsavelId,
+    responsavel_nome: p.responsavelNome,
+    criado_em: p.criado_em,
+    estado: p.estado,
+    decidido_por: p.aceita_por ?? null,
+    decidido_em: p.aceita_em ?? null,
+    motivo_descarte: motivo,
+    observacao_descarte: motivo === "outro" && p.motivo_descarte && !["outro"].includes(p.motivo_descarte) ? p.motivo_descarte : null,
+  };
+}
