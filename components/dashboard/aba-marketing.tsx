@@ -107,7 +107,7 @@ export function AbaMarketing({ visao, periodo }: { visao: VisaoMarketing; period
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <Kpi icone={UsersIcon} rotulo="Leads captados" valor={inteiro(visao.resumo.leads)} base={visao.periodo.rotulo} trajetoria={compactar(visao.serie.map((p) => p.total), 30)} />
         <Kpi icone={TargetIcon} rotulo="Vieram de anúncio" valor={pct(visao.resumo.fracaoPaga)} base={pagos ? `${inteiro(pagos.leads)} / ${inteiro(visao.resumo.leads)} leads` : ""} />
         <Kpi icone={CoinsIcon} rotulo="Investido" valor={brl(visao.resumo.gasto)} base={gastoNota} />

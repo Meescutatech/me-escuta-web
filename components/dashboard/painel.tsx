@@ -51,7 +51,9 @@ export function PainelDashboard({
   const abas = ABAS.filter((a) => a.chave !== "marketing" || verMarketing);
 
   return (
-    <main className="mx-auto max-w-[1440px] px-6 pb-10 pt-3">
+    // Regra global do Diogo (23:20): largura FLUIDA — gutter 24px (32px em ≥1536), sem max-w. Os grids
+    // preenchem a largura; em telas largas os 6 KPIs ficam em uma linha e as tabelas esticam.
+    <main className="w-full px-6 pb-10 pt-3 2xl:px-8">
       <Toolbar estado={estado} janela={janela} livre={janelaLivre != null} atores={dados.atores} opcoes={dados.opcoes} mostrarDepartamento={mostrarDepartamento} />
       <div className="mt-1.5">
         <ChipsAtivos estado={estado} atores={dados.atores} opcoes={dados.opcoes} />
@@ -138,7 +140,7 @@ export function PainelDashboard({
           <div className="flex flex-col gap-3">
             <Kpis dados={dados} />
 
-            <div className="grid items-stretch gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
+            <div className="grid items-stretch gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,7fr)_minmax(0,2fr)]">
               <Bloco>
                 <CabecalhoBloco titulo="Evolução acumulada" />
                 <EvolucaoAcumulada serie={dados.serie} className="mt-1" />
