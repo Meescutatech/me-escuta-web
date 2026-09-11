@@ -7,6 +7,7 @@ import {
   publicarPrompt,
   zerarLeadDemo,
 } from "@/app/(app)/configuracoes/clara/actions";
+import { CanaisDaClara, type CanalEscolhivel } from "./canais-da-clara";
 import {
   PISO_JANELA_PRODUCAO_MIN,
   HORARIO_PRODUCAO,
@@ -52,6 +53,12 @@ interface Props {
   historico: VersaoPrompt[];
   telefonesDemo: string[];
   leadsDemo: LeadDemo[];
+  /** S12 · canais ATIVOS, para escolher em qual numero a Clara responde. */
+  canais: CanalEscolhivel[];
+  /** `escopo_leitura.canais` do agente. Vazio = todos os numeros. */
+  canaisEscolhidos: string[];
+  /** false = `core.v_canal_whatsapp` nao respondeu; a tela diz isso, nao finge lista vazia. */
+  canaisLegiveis: boolean;
 }
 
 function dataCurta(iso: string): string {
@@ -195,6 +202,17 @@ export function PainelClara(props: Props) {
           {aviso}
         </p>
       )}
+
+      {/* ===== S12 · em qual numero ela responde =====
+          Vem ANTES do prompt de proposito: a ordem da tela e a ordem das perguntas, e "onde ela
+          fala" se decide no mesmo instante que "ela esta ligada" — nao depois de ler o roteiro. */}
+      <CanaisDaClara
+        canais={props.canais}
+        escolhidos={props.canaisEscolhidos}
+        ativa={props.ativa}
+        gestor={props.gestor}
+        canaisLegiveis={props.canaisLegiveis}
+      />
 
       {/* ===== prompt versionado ===== */}
       <section className="mt-8 border-t border-linha pt-6">

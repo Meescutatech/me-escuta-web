@@ -1,4 +1,6 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
+import { lerCanais } from "@/components/configuracoes/dados/canais";
+import type { CanalEscolhivel } from "@/components/clara/canais-da-clara";
 import { PainelClara, type VersaoPrompt, type LeadDemo } from "@/components/clara/painel-clara";
 import { redirect } from "next/navigation";
 import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
@@ -17,13 +19,16 @@ export default async function ClaraPage() {
 
   const supabase = criarClienteServidor();
 
-  const [{ data: papel }, { data: agente }, { data: versoes }, { data: demoCfg }] =
+  // S12 · os canais entram no MESMO paralelo das outras leituras — a tela precisa deles para
+  // responder "em qual numero ela responde", e `lerCanais` ja traz o degrade honesto (sem a view,
+  // `indisponivel: true`, e a tela DIZ isso em vez de mostrar lista vazia).
+  const [{ data: papel }, { data: agente }, { data: versoes }, { data: demoCfg }, lidosCanais] =
     await Promise.all([
       supabase.schema("api").rpc("papel_atual"),
       supabase
         .schema("core")
         .from("agente")
-        .select("id, nome, ativo, prompt_sistema, prompt_versao, config_jsonb")
+        .select("id, nome, ativo, prompt_sistema, prompt_versao, config_jsonb, escopo_leitura")
         .eq("id", "clara")
         .maybeSingle(),
       supabase
@@ -40,6 +45,7 @@ export default async function ClaraPage() {
         .select("payload")
         .eq("nome", "demo_clara")
         .maybeSingle(),
+      lerCanais(),
     ]);
 
   const telefonesDemo: string[] = Array.isArray((demoCfg?.payload as { telefones?: unknown })?.telefones)
@@ -67,6 +73,26 @@ export default async function ClaraPage() {
     };
   });
 
+  // S12 · so canal ATIVO entra na escolha: marcar um canal desligado seria escolher um numero
+  // por onde nada chega, e a tela nao deve oferecer uma escolha que nao produz efeito.
+  const canaisEscolhiveis: CanalEscolhivel[] = lidosCanais.canais
+    .filter((c) => c.ativo)
+    .map((c) => ({
+      canal_id: c.canal_id,
+      nome: c.nome,
+      numero: c.numero,
+      area_efetiva: c.area_efetiva,
+      provedor: c.provedor,
+    }));
+
+  // `escopo_leitura.canais` como esta no banco. Ausente / nao-array = vazio = TODOS os numeros —
+  // a mesma regra que o runtime aplica em `src/clara/canal.ts`, e ela tem de ser a mesma nos dois
+  // lados: a tela que mostra uma regra e o worker que aplica outra e pior que nao ter tela.
+  const escopo = (agente?.escopo_leitura ?? {}) as Record<string, unknown>;
+  const canaisEscolhidos: string[] = Array.isArray(escopo["canais"])
+    ? (escopo["canais"] as unknown[]).map(String).filter((c) => c.trim() !== "")
+    : [];
+
   const cfg = (agente?.config_jsonb ?? {}) as Record<string, unknown>;
   const followup = (cfg["followup"] ?? {}) as Record<string, unknown>;
   const horario = (followup["horario_comercial"] ?? {}) as Record<string, unknown>;
@@ -88,6 +114,9 @@ export default async function ClaraPage() {
         // runtime) — o painel usa isso pra mostrar quando o salvo diverge do que roda.
         modo: followup["modo"] === "demo" ? "demo" : "producao",
       }}
+      canais={canaisEscolhiveis}
+      canaisEscolhidos={canaisEscolhidos}
+      canaisLegiveis={!lidosCanais.indisponivel}
       historico={historico}
       telefonesDemo={telefonesDemo}
       leadsDemo={leadsDemo}
