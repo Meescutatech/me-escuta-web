@@ -13,7 +13,24 @@
  */
 
 export function ensaioLigado(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.NEXT_PUBLIC_ENSAIO === "1" && env.NODE_ENV !== "production";
+  if (env.NEXT_PUBLIC_ENSAIO !== "1") return false;
+  if (env.NODE_ENV !== "production") return true;
+  // 11/09/2026 — a IMPLANTAÇÃO DE ENSAIO. A guarda mudou de eixo, e o eixo novo é mais estreito
+  // que o antigo, não mais largo.
+  //
+  // O problema: build de preview da Vercel roda com NODE_ENV="production", então a condição
+  // acima trancava também a implantação que EXISTE para ensaiar — e a saída fácil seria abrir o
+  // ensaio por parâmetro de URL no domínio real. Isso seria porta dos fundos de verdade: o modo
+  // ensaio troca a sessão por fixture, ou seja, entra SEM LOGIN. Dado real não vaza (ensaio não
+  // lê o banco), mas a interface inteira abriria para quem adivinhasse a string.
+  //
+  // O eixo novo: não é "onde não é produção", é "onde esta implantação foi DECLARADA de ensaio".
+  // Produção real não define nenhuma das duas variáveis, e por isso a guarda dela continua
+  // exatamente a de antes — sem superfície nova. O ensaio vive em outra URL, com fixtures.
+  //
+  // Continua não sendo configurável em tempo de execução: as duas são NEXT_PUBLIC_, lidas no
+  // BUILD. Não há como ligar isto sem um deploy declarado.
+  return env.NEXT_PUBLIC_ENSAIO_IMPLANTACAO === "1";
 }
 
 /** `?como=sara` é a porta de entrada; o cookie é a sede — mesmo desenho do departamento. */
