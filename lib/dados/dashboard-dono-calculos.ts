@@ -43,6 +43,16 @@ export function interpretarDepartamento(v: unknown): DepartamentoFiltro {
   return s === "pre_venda" || s === "pos_venda" ? s : null;
 }
 
+/** A URL do dashboard com os quatro recortes — a mesma para controles, abas e links internos. */
+export function montarHref(p: { periodo: 7 | 30 | 90; ator: string | null; aba: Aba; departamento: DepartamentoFiltro }): string {
+  const q = new URLSearchParams();
+  if (p.aba !== "geral") q.set("aba", p.aba);
+  q.set("periodo", String(p.periodo));
+  if (p.departamento) q.set("dep", p.departamento);
+  if (p.ator) q.set("ator", p.ator);
+  return `/?${q.toString()}`;
+}
+
 // ─────────────── trajetória (mini-barras) ───────────────
 
 /**
@@ -392,12 +402,24 @@ export function ritmoMeta(m: MetaMes): RitmoMeta {
 
 // ─────────────── Jarvis diz ───────────────
 
+/** O mesmo contrato do bloco do W-J (`components/jarvis/jarvis-diz.tsx`) — o Jarvis tem uma cara só no app. */
+export interface ObservacaoJarvisDono {
+  texto: string;
+  href: string;
+  destino: string;
+  origem?: string | null;
+  faixa?: "AGORA" | "HOJE" | "NA SEMANA" | null;
+}
+
 export interface JarvisDiz {
-  /** 3-4 frases, geradas. `null` = o Jarvis ainda não escreveu hoje. */
-  frases: string[] | null;
+  /** a frase do dia — uma sentença. `null` = o Jarvis ainda não olhou hoje. */
+  frase: string | null;
+  /** até três observações, cada uma com o link para a tela certa */
+  observacoes: ObservacaoJarvisDono[];
   /** cada uma abre `/jarvis` com o texto preenchido */
   perguntas: string[];
-  tarefasHoje: { criadas: number; aceitas: number; ajustadas: number; recusadas: number } | null;
+  /** ISO da última passada; null = nunca */
+  geradoEm: string | null;
 }
 
 export const PERGUNTAS_PADRAO = ["Quantas conversas estão sem resposta?", "Quais tarefas venceram e de quem são?", "Como está o funil esta semana?"];

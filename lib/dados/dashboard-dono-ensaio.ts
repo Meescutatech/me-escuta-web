@@ -2,7 +2,7 @@ import { gerarCanaisEnsaio, formatarE164 } from "@/lib/ensaio/fixtures/canais";
 import { gerarConversasEnsaio, gerarFunilEnsaio } from "@/lib/ensaio/fixtures/conversas";
 import { visaoTarefasDeEnsaio } from "./tarefas-ensaio";
 import { ymdEmSaoPaulo } from "./dashboard-calculos.ts";
-import { fmtInt, fmtMinutos, noAnterior, noAtual, type Janela, type LinhaAtorDia, type LinhaEtapaDia, type LinhaPrimeiraResposta } from "./dashboard-ceo-calculos.ts";
+import { fmtMinutos, noAnterior, noAtual, type Janela, type LinhaAtorDia, type LinhaEtapaDia, type LinhaPrimeiraResposta } from "./dashboard-ceo-calculos.ts";
 import {
   atencaoCanais,
   atencaoLeadsParados,
@@ -18,6 +18,7 @@ import {
   type JarvisDiz,
   type LinhaCanal,
   type MetaMes,
+  type ObservacaoJarvisDono,
 } from "./dashboard-dono-calculos.ts";
 import type { EnsaioDashboard } from "./dashboard-ensaio";
 
@@ -29,8 +30,6 @@ import type { EnsaioDashboard } from "./dashboard-ensaio";
  * lista de atenção a partir das OUTRAS fixtures do ensaio — conversas, tarefas e funil — para o
  * número que o dono lê aqui ser o mesmo que ele encontra ao clicar.
  */
-
-const H = 3_600_000;
 
 function prng(semente: number): () => number {
   let a = semente >>> 0;
@@ -146,8 +145,11 @@ export function atencaoDeEnsaio(canais: LinhaCanal[], agora: Date): Atencao {
 // ─────────────── Jarvis diz ───────────────
 
 /**
- * O resumo do dia em 3-4 frases, escrito A PARTIR dos números da tela — nunca o contrário. Em
- * produção quem escreve é o Jarvis (F9) com a mesma leitura; aqui é o gabarito do que se espera.
+ * O que o Jarvis diz, escrito A PARTIR dos números da tela — nunca o contrário. A FRASE é o item
+ * mais grave da lista de atenção em uma sentença; as OBSERVAÇÕES são o que a lista de atenção NÃO
+ * diz (a leitura do dia, a meta, o que ele mesmo fez) — os dois blocos convivem lado a lado, então
+ * repetir aqui o que está ali seria ruído. Em produção quem escreve é o Jarvis (F9) com a mesma
+ * leitura; este é o gabarito do que se espera dele.
  */
 export function jarvisDizDeEnsaio(
   en: EnsaioDashboard,
@@ -163,43 +165,55 @@ export function jarvisDizDeEnsaio(
   const mediaLeads = diasJanela.length ? diasJanela.reduce((s, d) => s + d.leads_novos, 0) / diasJanela.length : 0;
   const semResposta = atencao.itens.find((i) => i.tipo === "sem_resposta");
   const vencidas = atencao.itens.find((i) => i.tipo === "tarefas_vencidas");
-  const parados = atencao.itens.find((i) => i.tipo === "leads_parados");
   const jarvisHoje: LinhaAtorDia | undefined = en.atorDia.find((l) => l.dia === hoje && l.ator === "agente:jarvis");
   const criadas = jarvisHoje?.tarefas_criadas ?? 0;
+  const aceitas = Math.max(0, criadas - 2);
+  const ajustadas = criadas >= 2 ? 1 : 0;
 
-  const frases: string[] = [];
+  const partes: string[] = [];
+  if (semResposta) partes.push(semResposta.titulo.replace(/^(\d+) conversas?/, (m) => m.toLowerCase()));
+  if (vencidas && vencidas.quebra[0]) partes.push(`${vencidas.quebra[0].rotulo} tem ${vencidas.quebra[0].quantidade} ${vencidas.quebra[0].quantidade === 1 ? "tarefa vencida" : "tarefas vencidas"}`);
+  const frase =
+    partes.length > 0
+      ? `${partes[0].charAt(0).toUpperCase()}${partes[0].slice(1)}${partes[1] ? `, e ${partes[1]}` : ""}.`
+      : "Nada gritando agora: nenhuma conversa esperando, tarefa vencida ou lead estourado.";
+
   const dif = Math.round(leadsHoje - mediaLeads);
-  frases.push(
-    leadsHoje === 0
-      ? `Nenhum lead novo até agora hoje; a média dos últimos ${j.dias} dias é ${mediaLeads.toFixed(1).replace(".", ",")} por dia.`
-      : `Entraram ${leadsHoje} leads hoje, ${dif === 0 ? "na média" : `${Math.abs(dif)} ${dif > 0 ? "acima" : "abaixo"} da média`} dos últimos ${j.dias} dias.`,
-  );
-  if (semResposta) {
-    const maior = semResposta.quebra[0];
-    frases.push(`${semResposta.titulo}${maior ? ` — ${maior.quantidade} delas no número ${maior.rotulo}` : ""}. É o que mais pesa agora.`);
-  }
-  if (atendimento.fracaoAgente != null) {
-    frases.push(
-      `A Clara respondeu ${Math.round(atendimento.fracaoAgente * 100)}% das conversas em ${fmtMinutos(atendimento.primeiraResposta.agenteMin)}; quando cai para uma pessoa, a primeira resposta sobe para ${fmtMinutos(atendimento.primeiraResposta.humanoMin)}.`,
-    );
-  }
-  if (vencidas && vencidas.quebra[0]) {
-    frases.push(`${vencidas.quebra[0].rotulo} tem ${vencidas.quebra[0].quantidade} ${vencidas.quebra[0].quantidade === 1 ? "tarefa vencida" : "tarefas vencidas"}${parados ? `, e ${parados.titulo.toLowerCase()}` : ""}.`);
-  } else if (parados) {
-    frases.push(`${parados.titulo}: ${parados.detalhe}.`);
-  }
   const faltam = Math.max(0, meta.metaVendas - meta.vendas);
-  frases.push(
-    faltam === 0
-      ? `A meta do mês (${meta.metaVendas} vendas) já foi batida.`
-      : `Faltam ${faltam} vendas para a meta do mês, com ${meta.diasNoMes - meta.diasCorridos} dias pela frente.`,
-  );
+  const observacoes: ObservacaoJarvisDono[] = [
+    {
+      texto:
+        leadsHoje === 0
+          ? `Nenhum lead novo até agora hoje; a média dos últimos ${j.dias} dias é ${mediaLeads.toFixed(1).replace(".", ",")} por dia`
+          : `Entraram ${leadsHoje} leads hoje, ${dif === 0 ? "na média" : `${Math.abs(dif)} ${dif > 0 ? "acima" : "abaixo"} da média`} dos últimos ${j.dias} dias`,
+      href: "/funil",
+      destino: "funil",
+      origem: "consultar_dashboard",
+      faixa: "HOJE",
+    },
+    {
+      texto:
+        atendimento.fracaoAgente == null
+          ? "Nenhuma conversa respondida no período"
+          : `A Clara respondeu ${Math.round(atendimento.fracaoAgente * 100)}% das conversas em ${fmtMinutos(atendimento.primeiraResposta.agenteMin)}; quando cai para uma pessoa, a primeira resposta sobe para ${fmtMinutos(atendimento.primeiraResposta.humanoMin)}`,
+      href: "/?aba=equipe",
+      destino: "equipe",
+      origem: "consultar_dashboard",
+      faixa: "NA SEMANA",
+    },
+    {
+      texto:
+        faltam === 0
+          ? `A meta do mês (${meta.metaVendas} vendas) já foi batida; hoje ele criou ${criadas} ${criadas === 1 ? "tarefa" : "tarefas"} (${aceitas} aceitas, ${ajustadas} ajustadas)`
+          : `Faltam ${faltam} vendas para a meta do mês em ${meta.diasNoMes - meta.diasCorridos} dias; hoje ele criou ${criadas} ${criadas === 1 ? "tarefa" : "tarefas"} (${aceitas} aceitas, ${ajustadas} ajustadas)`,
+      href: "/tarefas?origem=jarvis",
+      destino: "tarefas",
+      origem: "consultar_tarefas",
+      faixa: null,
+    },
+  ];
 
-  return {
-    frases: frases.slice(0, 4),
-    perguntas: PERGUNTAS_PADRAO,
-    tarefasHoje: { criadas, aceitas: Math.max(0, criadas - 2), ajustadas: criadas >= 2 ? 1 : 0, recusadas: criadas >= 3 ? 1 : 0 },
-  };
+  return { frase, observacoes, perguntas: PERGUNTAS_PADRAO, geradoEm: new Date(agora.getTime() - 7 * 60_000).toISOString() };
 }
 
 // ─────────────── carga agora por pessoa ───────────────
@@ -226,8 +240,3 @@ export function cargaAgoraDeEnsaio(agora: Date): Map<string, number> {
   return out;
 }
 
-export function rotuloTarefasHoje(t: NonNullable<JarvisDiz["tarefasHoje"]>): string {
-  return `${fmtInt(t.criadas)} criadas · ${fmtInt(t.aceitas)} aceitas · ${fmtInt(t.ajustadas)} ajustadas · ${fmtInt(t.recusadas)} recusadas`;
-}
-
-export const HORAS_PARA_MS = H;

@@ -1,27 +1,13 @@
-import { lerPapelAtual, podeVerMarketing } from "@/components/configuracoes/dados/porta";
-import { lerFlagModuloMarketing, lerMarketing, periodoDaUrl } from "@/lib/dados/marketing";
-import { PainelMarketing } from "@/components/marketing/painel";
-import { RecusaMarketing } from "@/components/marketing/recusa";
+import { redirect } from "next/navigation";
 
 /**
- * `/marketing` — Server Component, sempre o estado atual (numero de marketing cacheado e
- * numero que ja foi verdade).
- *
- * A recusa mora na ROTA: quem digita a URL passa por cima de item de menu escondido. A defesa
- * do DADO e a RLS da `0251` (`core.captacao`/`core.custo_midia` so respondem a marketing/admin/
- * owner); a recusa aqui evita que "vazio por RLS" seja lido como "nao houve captacao".
- *
- * A flag `flag.modulo_marketing` e de release: `false` recusa; `null` (linha ausente) NAO desliga.
+ * `/marketing` virou a aba Marketing do dashboard do dono (W-D4, 10/09/2026): mesma leitura
+ * (`lerMarketing`, D68), mesma recusa por papel e por flag — só que dentro de `/`. A rota fica
+ * para não quebrar link antigo (sidebar, MCP do Fernando, favoritos) e só redireciona, levando o
+ * período junto.
  */
-export const dynamic = "force-dynamic";
-
-export default async function MarketingPage({ searchParams }: { searchParams?: { p?: string; de?: string; ate?: string } }) {
-  const [papel, flag] = await Promise.all([lerPapelAtual(), lerFlagModuloMarketing()]);
-
-  if (!podeVerMarketing(papel)) return <RecusaMarketing motivo="papel" papel={papel} />;
-  if (flag === false) return <RecusaMarketing motivo="flag" papel={papel} />;
-
-  const periodo = periodoDaUrl(searchParams ?? {});
-  const visao = await lerMarketing(periodo);
-  return <PainelMarketing visao={visao} />;
+export default function MarketingPage({ searchParams }: { searchParams?: { p?: string } }) {
+  const p = searchParams?.p;
+  const periodo = p === "7d" ? "7" : p === "90d" ? "90" : "30";
+  redirect(`/?aba=marketing&periodo=${periodo}`);
 }

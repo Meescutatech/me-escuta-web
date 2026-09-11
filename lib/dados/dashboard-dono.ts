@@ -160,7 +160,7 @@ export async function lerDashboardDono(
     departamento,
     departamentoAplicado: false,
     atencao,
-    jarvis: { frases: null, perguntas: PERGUNTAS_PADRAO, tarefasHoje: null },
+    jarvis: { frase: null, observacoes: [], perguntas: PERGUNTAS_PADRAO, geradoEm: null },
     canais: null,
     heatmap: null,
     meta: null,
