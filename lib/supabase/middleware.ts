@@ -25,7 +25,7 @@ export interface DepsMiddleware {
   agoraMs?: number;
 }
 
-const PREFIXOS_PUBLICOS = ["/login", "/auth", "/convite"];
+const PREFIXOS_PUBLICOS = ["/login", "/auth", "/convite", "/oauth"];
 
 /**
  * PRESET (10/09): a galeria de componentes `/design` e publica SO fora de producao — e uma
