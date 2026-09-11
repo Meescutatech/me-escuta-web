@@ -222,11 +222,18 @@ export function MapaInteligencia({
                 aria-label={clicavel ? `Abrir ${n.titulo}` : undefined}
               >
                 <rect width={W} height={H} rx={12} className={cn("fill-card", borda)} strokeWidth={n.coluna === "agente" ? 1.6 : 1} />
-                {n.coluna === "agente" && (
+                {n.coluna === "agente" && n.agente !== "jarvis" && (
                   <circle cx={22} cy={H / 2} r={9} className={cn(n.apagado ? "fill-muted" : "fill-success-tint")} />
                 )}
-                {n.coluna === "agente" && (
+                {n.coluna === "agente" && n.agente !== "jarvis" && (
                   <circle cx={22} cy={H / 2} r={3} className={cn(n.apagado ? "fill-muted-foreground" : "fill-success-ink")} />
+                )}
+                {/* o Jarvis leva a MARCA (glifo arco de `jarvis/marca.tsx`), desenhada aqui em SVG puro */}
+                {n.agente === "jarvis" && (
+                  <g transform={`translate(12, ${H / 2 - 10})`} className="stroke-foreground" fill="none" strokeWidth={1.5} strokeLinecap="round">
+                    <path d="M4.64 9.64A9 9 0 0 1 20 16" />
+                    <circle cx="11" cy="16" r="2.1" className={cn("stroke-none", n.apagado ? "fill-muted-foreground" : "fill-primary")} />
+                  </g>
                 )}
                 <text x={n.coluna === "agente" ? 40 : 14} y={26} className="fill-foreground text-[13px] font-semibold">
                   {n.titulo}

@@ -5,7 +5,6 @@ import {
   SmartphoneIcon,
   CloudCogIcon,
   WaypointsIcon,
-  BrainCircuitIcon,
   BotIcon,
   KanbanIcon,
   MessageSquareTextIcon,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { IconeSecao as NomeIcone } from "@/lib/ensaio/config-secoes";
+import { MarcaJarvis } from "@/components/jarvis/marca";
 
 /** Um ícone lucide por seção do hub — usado pela navegação (layout) e pelas linhas do índice (page). */
 export const ICONES_SECAO: Record<NomeIcone, ReactNode> = {
@@ -26,7 +26,7 @@ export const ICONES_SECAO: Record<NomeIcone, ReactNode> = {
   numeros: <SmartphoneIcon />,
   meta: <CloudCogIcon />,
   mapa: <WaypointsIcon />,
-  agentes: <BrainCircuitIcon />,
+  agentes: <MarcaJarvis />,
   claude: <BotIcon />,
   funil: <KanbanIcon />,
   templates: <MessageSquareTextIcon />,

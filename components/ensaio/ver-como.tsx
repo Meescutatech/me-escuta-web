@@ -1,26 +1,27 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ChavePessoa, PessoaEnsaio } from "@/lib/ensaio/modo";
 
 /**
  * "ver como…" — o seletor de pessoa do MODO ENSAIO. Só monta em ensaio (o layout decide).
  *
- * Fica no canto inferior direito, discreto, acima do carimbo de build: é ferramenta de quem está
- * criticando a tela, não parte do produto. Trocar de pessoa é navegar para `?como=<chave>` — o
- * middleware grava o cookie e devolve a URL limpa, e o servidor remonta a sessão inteira (papel,
- * departamentos, canais, o que a pessoa vê). Nada é filtrado no cliente.
+ * É o `Select` da casa (`components/ui/select.tsx`) — regra do Diogo (22:40): nenhum dropdown
+ * fora do design system. Trigger discreto no canto inferior direito, acima do carimbo de build:
+ * ferramenta de quem está criticando a tela, não parte do produto. Trocar de pessoa navega para
+ * `?como=<chave>` — o middleware grava o cookie, devolve a URL limpa e o servidor remonta a
+ * sessão inteira (papel, departamentos, canais). Nada é filtrado no cliente.
  */
 export function VerComo({ atual, pessoas }: { atual: PessoaEnsaio; pessoas: readonly PessoaEnsaio[] }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [aberto, setAberto] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const ir = (chave: ChavePessoa) => {
-    setAberto(false);
+    if (chave === atual.chave) return;
     startTransition(() => {
       router.push(`${pathname}?como=${chave}`);
       router.refresh();
@@ -28,56 +29,30 @@ export function VerComo({ atual, pessoas }: { atual: PessoaEnsaio; pessoas: read
   };
 
   return (
-    <div className="fixed bottom-9 right-4 z-40 flex flex-col items-end gap-1.5">
-      {aberto && (
-        <div
-          role="menu"
-          className="w-[264px] overflow-hidden rounded-lg border border-border bg-popover shadow-forte animate-rise"
-        >
-          <div className="border-b border-border px-3 py-2 text-ui-11 text-muted-foreground">
-            Modo ensaio · dado fictício, sem banco
-          </div>
+    <div className={cn("fixed bottom-9 right-4 z-40", pending && "opacity-60")}>
+      <Select value={atual.chave} onValueChange={(v) => ir(v as ChavePessoa)}>
+        <SelectTrigger size="sm" aria-label="Ver como" className="h-8 rounded-full border-border bg-card px-3 text-ui-12 shadow-forte">
+          <span className="flex items-center gap-2">
+            <span className="size-1.5 rounded-full bg-primary" aria-hidden />
+            <span className="text-muted-foreground">ver como</span>
+            <SelectValue>
+              <span className="font-medium text-foreground">{atual.nome.split(" ")[0]}</span>
+              <span className="ml-1.5 text-[10px] uppercase tracking-wide text-muted-foreground/80">{atual.papel}</span>
+            </SelectValue>
+          </span>
+        </SelectTrigger>
+        <SelectContent align="end" className="w-[280px]">
+          <div className="border-b border-border px-2 py-1.5 text-ui-11 text-muted-foreground">Modo ensaio · dado fictício, sem banco</div>
           {pessoas.map((p) => (
-            <button
-              key={p.chave}
-              role="menuitemradio"
-              aria-checked={p.chave === atual.chave}
-              onClick={() => ir(p.chave)}
-              className={cn(
-                "flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent",
-                p.chave === atual.chave && "bg-primary/10",
-              )}
-            >
-              <span
-                className={cn(
-                  "mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-semibold",
-                  p.chave === atual.chave ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-                )}
-              >
-                {p.nome.split(" ").map((n) => n[0]).slice(0, 2).join("")}
+            <SelectItem key={p.chave} value={p.chave}>
+              <span className="flex flex-col">
+                <span className="text-ui-13 font-medium text-foreground">{p.nome}</span>
+                <span className="text-ui-11 text-muted-foreground">{p.descricao}</span>
               </span>
-              <span className="min-w-0">
-                <span className="block text-ui-13 font-medium text-foreground">{p.nome}</span>
-                <span className="block truncate text-ui-11 text-muted-foreground">{p.descricao}</span>
-              </span>
-            </button>
+            </SelectItem>
           ))}
-        </div>
-      )}
-      <button
-        onClick={() => setAberto((v) => !v)}
-        aria-expanded={aberto}
-        aria-haspopup="menu"
-        className={cn(
-          "inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-ui-12 text-muted-foreground shadow-forte transition-colors hover:text-foreground",
-          pending && "opacity-60",
-        )}
-      >
-        <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
-        ver como
-        <span className="font-medium text-foreground">{atual.nome.split(" ")[0]}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80">{atual.papel}</span>
-      </button>
+        </SelectContent>
+      </Select>
     </div>
   );
 }

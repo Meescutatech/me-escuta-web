@@ -12,7 +12,7 @@ import type { AgenteEnsaio, Autonomia } from "@/lib/ensaio/fixtures/agentes";
 import { haQuantoTempo } from "@/lib/ensaio/fixtures/membros";
 import { CascaConfig } from "./casca-config";
 import { FluxoAgente } from "./fluxo-agente";
-import { IconeJarvis } from "@/components/header/icone-jarvis";
+import { MarcaJarvis } from "@/components/jarvis/marca";
 
 const AUTONOMIA: Record<Autonomia, { rotulo: string; descricao: string }> = {
   auto: { rotulo: "sozinho", descricao: "executa e registra o evento" },
@@ -104,7 +104,7 @@ export function AgentesEnsaio({
           >
             <div className="flex items-start gap-3">
               <span className={cn("grid size-10 shrink-0 place-items-center rounded-full text-ui-13 font-bold", AREA_COR[a.chave])} aria-hidden>
-                {a.chave === "jarvis" ? <IconeJarvis className="size-5" /> : a.nome[0]}
+                {a.chave === "jarvis" ? <MarcaJarvis tamanho={20} /> : a.nome[0]}
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -220,7 +220,7 @@ export function SheetAgente({
               <SheetHeader>
                 <div className="flex items-center gap-3">
                   <span className={cn("grid size-10 shrink-0 place-items-center rounded-full text-ui-13 font-bold", AREA_COR[aberto.chave])} aria-hidden>
-                    {aberto.chave === "jarvis" ? <IconeJarvis className="size-5" /> : aberto.nome[0]}
+                    {aberto.chave === "jarvis" ? <MarcaJarvis tamanho={20} /> : aberto.nome[0]}
                   </span>
                   <div className="min-w-0 flex-1">
                     <SheetTitle className="flex items-center gap-2">
