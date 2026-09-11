@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ptBR } from "react-day-picker/locale";
 import type { DateRange } from "react-day-picker";
 import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
@@ -81,6 +81,7 @@ export function FiltrosTarefas({
   mostrarResponsavel,
   mostrarStatus,
   resultado,
+  direita,
 }: {
   filtros: Filtros;
   onMudar: (parcial: Partial<Filtros>) => void;
@@ -96,6 +97,8 @@ export function FiltrosTarefas({
   mostrarStatus: boolean;
   /** quantas a tela mostra AGORA — a segunda metade da linha "entendi assim" */
   resultado: number;
+  /** v4 · o canto direito da MESMA barra: visões salvas · ordem · forma de ver */
+  direita?: React.ReactNode;
 }) {
   const [leitura, setLeitura] = useState<LeituraDaBusca | null>(null);
   const campo = useRef<HTMLInputElement>(null);
@@ -120,18 +123,12 @@ export function FiltrosTarefas({
     return c;
   }, [tarefas]);
 
-  // ⌘K / Ctrl+K põe o cursor na pergunta de qualquer lugar da tela
-  useEffect(() => {
-    function tecla(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        campo.current?.focus();
-        campo.current?.select();
-      }
-    }
-    window.addEventListener("keydown", tecla);
-    return () => window.removeEventListener("keydown", tecla);
-  }, []);
+  /*
+   * ⌘K é DESTA TELA, e quem entrega isso é o `data-jarvis-atalho-local` no campo (o handler global
+   * em components/jarvis/presenca.tsx procura por ele e foca aqui em vez de abrir o popup). O
+   * listener próprio que existia aqui foi removido: com os dois de pé, a mesma tecla tinha dois
+   * donos — e o segundo a rodar decidia. ⇧⌘K continua abrindo o Jarvis inteiro.
+   */
 
   function perguntar(frase: string) {
     const texto = frase.trim();
@@ -152,8 +149,8 @@ export function FiltrosTarefas({
     filtros.de || filtros.ate ? { from: filtros.de ? deYmd(filtros.de) : undefined, to: filtros.ate ? deYmd(filtros.ate) : undefined } : undefined;
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex w-full flex-col gap-2">
+      <div className="flex w-full flex-wrap items-center gap-1.5">
         {/* ── a pergunta ── */}
         <div className="relative">
           <MarcaJarvis tamanho={16} rotulo="Perguntar ao Jarvis" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-mute" />
@@ -168,6 +165,7 @@ export function FiltrosTarefas({
                 onMudar({ busca: "" });
               }
             }}
+            data-jarvis-atalho-local
             placeholder="Buscar ou perguntar ao Jarvis…"
             aria-label="Buscar tarefa ou perguntar ao Jarvis"
             className="h-8 w-[320px] rounded-md border border-linha bg-branco pl-8 pr-11 text-[13px] text-tinta outline-none placeholder:text-mute focus:border-linha-forte"
@@ -294,6 +292,9 @@ export function FiltrosTarefas({
             </Opcao>
           </div>
         </Gatilho>
+
+        {/* v4 · a direita da barra: visões salvas · ordem · Lista|Quadro|Calendário */}
+        {direita && <div className="ml-auto flex flex-wrap items-center gap-1.5">{direita}</div>}
       </div>
 
       {/* ── o que o Jarvis entendeu + os chips do que está ligado ── */}
@@ -382,7 +383,7 @@ function chipsAtivos(f: Filtros, ctx: { pessoas: PessoaAtiva[]; tiposTarefa: Tip
 }
 
 /** o gatilho mostra o VALOR escolhido, não o nome da dimensão */
-function Gatilho({ ativo, rotulo, children }: { ativo: boolean; rotulo: string; children: React.ReactNode }) {
+export function Gatilho({ ativo, rotulo, children }: { ativo: boolean; rotulo: string; children: React.ReactNode }) {
   return (
     <Popover>
       <PopoverTrigger
@@ -401,7 +402,7 @@ function Gatilho({ ativo, rotulo, children }: { ativo: boolean; rotulo: string; 
   );
 }
 
-function Opcao({ ativo, onClick, contagem, children }: { ativo: boolean; onClick: () => void; contagem?: number; children: React.ReactNode }) {
+export function Opcao({ ativo, onClick, contagem, children }: { ativo: boolean; onClick: () => void; contagem?: number; children: React.ReactNode }) {
   return (
     <button
       type="button"

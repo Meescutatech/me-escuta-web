@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, LayoutListIcon, PlayIcon, SquareKanbanIcon } from "lucide-react";
+import { CalendarDaysIcon, CheckIcon, LayoutListIcon, PlayIcon, SquareKanbanIcon, ZapIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Mencionavel } from "@/lib/conversas/mencao";
@@ -61,6 +61,11 @@ import { LinhaTarefa, type PainelLinha } from "@/components/tarefas/linha";
 import { DialogoEAgora, type ConcluidaAgora } from "@/components/tarefas/e-agora";
 import { BlocoPropostas } from "@/components/tarefas/proposta-tarefa";
 import type { AcoesDaTarefa, ExecutorTarefas, NovaTarefa } from "@/components/tarefas/executor";
+import { useContextoJarvis } from "@/lib/jarvis/contexto";
+import { ordenar, porQueEstaAqui, type ChaveOrdem, type PesoTarefa, type SinaisPorTarefa } from "@/lib/tarefas/prioridade";
+import { ehForma, type FormaVisao, type VisaoTarefasSalva } from "@/lib/tarefas/visoes";
+import { SeletorOrdem, VisoesSalvas } from "@/components/tarefas/ordem-e-visoes";
+import { CalendarioTarefas } from "@/components/tarefas/calendario-tarefas";
 import { cn } from "@/lib/utils";
 
 /*
@@ -106,6 +111,9 @@ export function VisaoTarefas({
   ensaio = false,
   estadoCookie = null,
   criadasDoCookie = [],
+  formaInicial,
+  ordemInicial = "urgencia",
+  sinais = {},
 }: {
   dados: DadosVisaoTarefas;
   filtrosIniciais: FiltrosTarefas;
@@ -126,10 +134,22 @@ export function VisaoTarefas({
   estadoCookie?: EstadoTarefasEnsaio | null;
   /** W-T · as tarefas criadas no cookie, já como `TarefaVisao` com resumo (o servidor monta) */
   criadasDoCookie?: TarefaVisao[];
+  /** v4 · `?forma=lista|quadro|calendario` — a forma de ver, independente do recorte (`?ver=hoje`) */
+  formaInicial?: FormaVisao;
+  /** v4 · `?ordem=` — "Mais urgente primeiro" é o padrão, e ele é explicável (prioridade.ts) */
+  ordemInicial?: ChaveOrdem;
+  /**
+   * v4 · o que se sabe do LEAD por tarefa (etapa, valor, espera) — entra no peso da urgência.
+   * Vazio em produção: a leitura ainda não existe, e sem ela a ordem cai para prazo + prioridade.
+   */
+  sinais?: SinaisPorTarefa;
 }) {
   const router = useRouter();
   const [filtros, setFiltros] = useState<FiltrosTarefas>(filtrosIniciais);
-  const [quadro, setQuadro] = useState<boolean>(quadroInicial);
+  const [forma, setForma] = useState<FormaVisao>(formaInicial ?? (quadroInicial ? "quadro" : "lista"));
+  const [ordem, setOrdem] = useState<ChaveOrdem>(ordemInicial);
+  const quadro = forma === "quadro";
+  const calendario = forma === "calendario";
   /** v3 · linhas com os detalhes abertos (chevron) */
   const [abertas, setAbertas] = useState<Set<string>>(() => new Set());
   const [foco, setFoco] = useState<string | null>(focoInicial);
@@ -150,16 +170,16 @@ export function VisaoTarefas({
 
   // A URL segue o estado, com 300 ms de folga (a busca filtra no cliente; a página é
   // force-dynamic e cada replace refaz a leitura) — ver a v1 para a medição.
-  const qsEscritaRef = useRef(comExtras(serializarFiltros(filtrosIniciais), quadroInicial, focoInicial));
+  const qsEscritaRef = useRef(comExtras(serializarFiltros(filtrosIniciais), formaInicial ?? (quadroInicial ? "quadro" : "lista"), ordemInicial, focoInicial));
   useEffect(() => {
-    const qs = comExtras(serializarFiltros(filtros), quadro, foco);
+    const qs = comExtras(serializarFiltros(filtros), forma, ordem, foco);
     if (qs === qsEscritaRef.current) return;
     const t = setTimeout(() => {
       qsEscritaRef.current = qs;
       router.replace(qs ? `/tarefas?${qs}` : "/tarefas", { scroll: false });
     }, 300);
     return () => clearTimeout(t);
-  }, [filtros, quadro, foco, router]);
+  }, [filtros, forma, ordem, foco, router]);
 
   const pessoas = useMemo(() => mencionaveis.filter((m) => m.tipo === "humano"), [mencionaveis]);
   const pessoasAtivas = useMemo<PessoaAtiva[]>(
@@ -391,8 +411,20 @@ export function VisaoTarefas({
   const contagem = useMemo(() => contagemAbas(tarefas, meuId, agora), [tarefas, meuId, agora]);
   const fechadas = filtros.status !== "abertas";
 
-  // Hoje = a fila do dia; as outras abas = a mesma lista, cortada por dia
-  const fila = useMemo(() => (modoHoje ? filaDoDia(filtradas, agora) : []), [modoHoje, filtradas, agora]);
+  /*
+   * v4 · A ORDEM. `ordenar` devolve a tarefa JUNTO com o peso que a pôs ali — calcular a ordem num
+   * lugar e a explicação noutro é como uma lista passa a discordar do próprio "por quê".
+   */
+  const ordenadas = useMemo(() => ordenar(filtradas, ordem, sinais, agora), [filtradas, ordem, sinais, agora]);
+  const pesos = useMemo(() => new Map(ordenadas.map((x) => [x.t.id, x.peso])), [ordenadas]);
+  const rank = useMemo(() => new Map(ordenadas.map((x, i) => [x.t.id, i])), [ordenadas]);
+  const ranqueada = ordem === "urgencia";
+
+  // Hoje = a fila do dia, na ordem escolhida; as outras abas = a mesma lista, cortada por dia
+  const fila = useMemo(
+    () => (modoHoje ? ordenar(filaDoDia(filtradas, agora), ordem, sinais, agora).map((x) => x.t) : []),
+    [modoHoje, filtradas, ordem, sinais, agora],
+  );
   const grupos = useMemo<GrupoDia[]>(() => {
     if (quadro) return [];
     if (modoHoje) {
@@ -406,8 +438,21 @@ export function VisaoTarefas({
       const chave: GrupoDia["chave"] = filtros.status === "concluidas" ? "concluidas" : "arquivadas";
       return lista.length ? [{ chave, rotulo: chave === "concluidas" ? "Concluídas" : "Arquivadas", tarefas: lista, vermelho: false }] : [];
     }
-    return agruparPorDia(filtradas, agora);
-  }, [quadro, modoHoje, fechadas, fila, filtradas, filtros.status, agora]);
+    /*
+     * "Mais urgente primeiro" desliga o agrupamento por dia, e isso é de propósito: uma fila que
+     * mistura o dia com o peso responde duas perguntas pela metade. Escolher "Prazo" (ou qualquer
+     * outra ordem) devolve os grupos Vencidas · Hoje · Amanhã · …, ordenados por dentro pela
+     * escolha feita.
+     */
+    if (ranqueada) {
+      const lista = ordenadas.map((x) => x.t);
+      return lista.length ? [{ chave: "hoje" as GrupoDia["chave"], rotulo: "Mais urgente primeiro", tarefas: lista, vermelho: false }] : [];
+    }
+    return agruparPorDia(filtradas, agora).map((g) => ({
+      ...g,
+      tarefas: [...g.tarefas].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)),
+    }));
+  }, [quadro, modoHoje, fechadas, fila, filtradas, filtros.status, agora, ranqueada, ordenadas, rank]);
 
   const tarefasQuadro = useMemo(() => {
     if (!quadro) return [];
@@ -418,6 +463,16 @@ export function VisaoTarefas({
     ];
   }, [quadro, tarefas, filtros, meuId, agora]);
 
+  /*
+   * O rank do QUADRO sai do universo do quadro, não do da lista: `tarefasQuadro` relaxa `vencidas`
+   * e `prazo` (o quadro é por ESTADO, não por prazo), então reaproveitar o rank da lista deixaria
+   * cards de fora do mapa — e card sem posição empata com todos os outros.
+   */
+  const rankQuadro = useMemo(
+    () => (quadro ? new Map(ordenar(tarefasQuadro, ordem, sinais, agora).map((x, i) => [x.t.id, i])) : null),
+    [quadro, tarefasQuadro, ordem, sinais, agora],
+  );
+
   const propostasDoRecorte = useMemo(
     () => (filtros.minhas && meuId ? propostasAbertas.filter((p) => p.responsavel_sugerido_id === meuId) : propostasAbertas),
     [propostasAbertas, filtros.minhas, meuId],
@@ -427,7 +482,8 @@ export function VisaoTarefas({
   function escolherAba(a: Aba) {
     setFiltros(filtrosDaAba(a, filtros));
     if (a !== "hoje") setFoco(null);
-    else setQuadro(false);
+    // Hoje é uma FILA — quadro e calendário não desenham fila, então a aba devolve a lista
+    else setForma("lista");
   }
 
   // ── painel aberto por linha (um por vez) ──
@@ -560,6 +616,36 @@ export function VisaoTarefas({
     });
     return [...passadas, ...restantes];
   }, [modoHoje, emFoco, percursoLog, fila, posicao]);
+  /*
+   * O JARVIS SABE ONDE ESTÁ (W-JX). O aviso prioriza o que DÓI — vencidas do recorte; se não há
+   * vencida, a fila do dia; se não há nem isso, `null`. Pílula calada é melhor que número
+   * inventado, e o número é o MESMO que a tela mostra (nunca uma segunda conta).
+   */
+  const vencidasNoRecorte = useMemo(() => filtradas.filter((t) => t.vencida).length, [filtradas]);
+  const primeira = ranqueada ? ordenadas[0] : null;
+  useContextoJarvis({
+    titulo: "Tarefas",
+    item: emFoco ? { tipo: "tarefa" as const, id: emFoco.id, rotulo: emFoco.titulo } : null,
+    sugestoes: [
+      "O que está vencido da Sara?",
+      "Quais tarefas vencem hoje?",
+      primeira ? `Por que “${primeira.t.titulo}” é a primeira?` : "O que o Jarvis criou hoje?",
+      "Quem está com mais tarefas abertas?",
+    ],
+    aviso:
+      vencidasNoRecorte > 0
+        ? {
+            texto: vencidasNoRecorte === 1 ? "tarefa vencida" : "tarefas vencidas",
+            quantidade: vencidasNoRecorte,
+            onde: "em tarefas",
+            previa: primeira ? `a mais urgente: ${primeira.t.titulo} — ${porQueEstaAqui(primeira.peso, 2)}` : null,
+            pergunta: "O que está vencido?",
+          }
+        : modoHoje && fila.length > 0
+          ? { texto: "para hoje", quantidade: fila.length, onde: "em tarefas", pergunta: "Por onde eu começo hoje?" }
+          : null,
+  });
+
   const nadaNoWorkspace = tarefas.length === 0;
   const nadaComFiltro = !nadaNoWorkspace && (quadro ? tarefasQuadro.length === 0 : grupos.length === 0);
   const filtroTexto = filtros.busca.trim() !== "" || filtros.tipo != null || (filtros.responsavelId != null && !filtros.minhas);
@@ -597,36 +683,63 @@ export function VisaoTarefas({
               mostrarResponsavel={!modoHoje && !filtros.minhas}
               mostrarStatus={!modoHoje && !quadro}
               resultado={quadro ? tarefasQuadro.length : filtradas.length}
+              direita={
+                <>
+                  <VisoesSalvas
+                    filtros={filtros}
+                    ordem={ordem}
+                    forma={forma}
+                    onAplicar={(v: VisaoTarefasSalva) => {
+                      setFiltros(v.filtros);
+                      setOrdem(v.ordem);
+                      setForma(v.forma);
+                    }}
+                  />
+                  <SeletorOrdem ordem={ordem} onMudar={setOrdem} />
+                  {/* v4 · TRÊS formas do mesmo dado: Lista · Quadro · Calendário */}
+                  <ToggleGroup
+                    value={[forma]}
+                    onValueChange={(v) => {
+                      const esc = (v as string[])[0];
+                      if (ehForma(esc)) setForma(esc);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    aria-label="Forma de ver"
+                  >
+                    <ToggleGroupItem value="lista" aria-label="Lista" className="px-2 text-[13px]">
+                      <LayoutListIcon aria-hidden />
+                      Lista
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="quadro" aria-label="Quadro" className="px-2 text-[13px]">
+                      <SquareKanbanIcon aria-hidden />
+                      Quadro
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="calendario" aria-label="Calendário" className="px-2 text-[13px]">
+                      <CalendarDaysIcon aria-hidden />
+                      Calendário
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </>
+              }
             />
-            {/* v3 · Lista | Quadro — o quadro por estado (F8) de volta à vista */}
-            {!modoHoje && (
-              <ToggleGroup
-                value={[quadro ? "quadro" : "lista"]}
-                onValueChange={(v) => {
-                  const esc = (v as string[])[0];
-                  if (esc === "quadro" || esc === "lista") setQuadro(esc === "quadro");
-                }}
-                variant="outline"
-                size="sm"
-                aria-label="Forma de ver"
-                className="ml-auto"
-              >
-                <ToggleGroupItem value="lista" aria-label="Lista" className="px-2.5 text-[13px]">
-                  <LayoutListIcon aria-hidden />
-                  Lista
-                </ToggleGroupItem>
-                <ToggleGroupItem value="quadro" aria-label="Quadro" className="px-2.5 text-[13px]">
-                  <SquareKanbanIcon aria-hidden />
-                  Quadro
-                </ToggleGroupItem>
-              </ToggleGroup>
-            )}
           </div>
         </div>
       </div>
 
       {/* ── conteúdo ── */}
-      {quadro ? (
+      {calendario ? (
+        <CalendarioTarefas
+          tarefas={filtradas}
+          agora={agora}
+          replanejar={(t, prazoIso, motivo) => executor.adiar(t, prazoIso, motivo)}
+          aoAbrir={(t) => {
+            const d = destinoDaTarefa(t);
+            if (d) router.push(d);
+          }}
+          aoMudar={refrescar}
+        />
+      ) : quadro ? (
         <QuadroStatus
           tarefas={tarefasQuadro}
           emAndamento={idsEmAndamento}
@@ -635,6 +748,7 @@ export function VisaoTarefas({
           nomes={nomes}
           aoMudar={refrescar}
           executor={executorQuadro}
+          rank={rankQuadro}
         />
       ) : (
         <div className="flex-1 overflow-y-auto px-6 pb-16 pt-4">
@@ -652,7 +766,7 @@ export function VisaoTarefas({
                       </span>
                     ) : emFoco ? (
                       <span className="font-medium text-tinta">
-                        Tarefa {posicao + 1} de {fila.length}
+                        Nº {posicao + 1} de {fila.length} do dia
                       </span>
                     ) : fila.length === 0 ? (
                       "Nada vencido e nada para hoje."
@@ -680,7 +794,21 @@ export function VisaoTarefas({
                     )}
                   </p>
                 </div>
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center gap-1.5">
+                  {/* o MODO FOCO virou estado de /conversas (decisão de 11/09 00:20): o botão leva
+                      para lá, e não recria a tela aqui. */}
+                  {fila.length > 0 && !emFoco && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push("/conversas?foco=1")}
+                      title="Uma conversa por vez, com a tarefa em cima do fio"
+                      className="text-suave hover:text-tinta"
+                    >
+                      <ZapIcon aria-hidden />
+                      Modo foco
+                    </Button>
+                  )}
                   {emFoco ? (
                     <Button variant="ghost" size="sm" onClick={() => setFoco(null)} className="text-suave">
                       Sair do percurso
@@ -783,6 +911,9 @@ export function VisaoTarefas({
                               return n;
                             })
                           }
+                          posicao={ranqueada ? (rank.get(t.id) ?? 0) + 1 : undefined}
+                          totalNaOrdem={ordenadas.length}
+                          peso={ranqueada ? pesos.get(t.id) : undefined}
                           painel={painelDa(t.id)}
                           onPainel={(p) => abrirPainel(t.id, p)}
                           aoConcluida={(resultado) => aoConcluida(t, resultado)}
@@ -818,11 +949,20 @@ function horaAgora(): string {
   return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date());
 }
 
-/** `?ver=quadro` e `?foco=<id>` entram na URL por fora de `serializarFiltros`. */
-function comExtras(qs: string, quadro: boolean, foco: string | null): string {
-  if (!quadro && !foco) return qs;
+/**
+ * `?forma=`, `?ordem=` e `?foco=<id>` entram na URL por fora de `serializarFiltros`.
+ *
+ * ⚠️ A forma NÃO usa mais `?ver=`: aquele parâmetro já era do `exibicao` (funil/lista/hoje), e
+ * `?ver=quadro` funcionava por cima dele, por acidente. Com três formas isso quebraria — `?ver=hoje`
+ * e `?ver=calendario` são perguntas diferentes. `?ver=quadro` continua sendo aceito na ENTRADA,
+ * porque é o link que já circula; o que a tela escreve daqui para frente é `?forma=`.
+ */
+function comExtras(qs: string, forma: FormaVisao, ordem: ChaveOrdem, foco: string | null): string {
+  if (forma === "lista" && ordem === "urgencia" && !foco) return qs;
   const p = new URLSearchParams(qs);
-  if (quadro) p.set("ver", "quadro");
+  p.delete("ver_quadro");
+  if (forma !== "lista") p.set("forma", forma);
+  if (ordem !== "urgencia") p.set("ordem", ordem);
   if (foco) p.set("foco", foco);
   return p.toString();
 }

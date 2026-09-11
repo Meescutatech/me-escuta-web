@@ -11,7 +11,9 @@ import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 import { visaoTarefasDeEnsaio } from "@/lib/dados/tarefas-ensaio";
 import { propostasDeEnsaio } from "@/lib/dados/tarefas-ensaio-dia";
 import { tarefasAceitasComoVisao } from "@/lib/ensaio/conversas-extra";
-import { comResumosDeEnsaio } from "@/lib/ensaio/tarefas-foco";
+import { comResumosDeEnsaio, sinaisDeEnsaio } from "@/lib/ensaio/tarefas-foco";
+import { ehChaveOrdem } from "@/lib/tarefas/prioridade";
+import { ehForma } from "@/lib/tarefas/visoes";
 import { lerEstadoTarefasEnsaio } from "@/lib/ensaio/tarefas-sessao";
 import { tarefaDoCookie } from "@/lib/tarefas/sessao-foco";
 
@@ -44,6 +46,8 @@ export default async function TarefasPage({
     const criadasDoCookie = comResumosDeEnsaio(estadoCookie.criadas.map((c) => tarefaDoCookie(c, nomesEnsaio)), agora);
     const ver = Array.isArray(searchParams.ver) ? searchParams.ver[0] : searchParams.ver;
     const foco = Array.isArray(searchParams.foco) ? searchParams.foco[0] : searchParams.foco;
+    const forma = umParam(searchParams.forma);
+    const ordem = umParam(searchParams.ordem);
     // W-D5 · a SDR entra pela view do dia (benchmark §4 item 7: "redirect pós-login para SDR").
     // Só quando a URL não pede nada: `?ver=`, `?minhas=` etc. vencem. Admin/owner entram no
     // "Do time" de sempre — o dia deles não é uma fila, é o time.
@@ -61,6 +65,11 @@ export default async function TarefasPage({
         quadroInicial={ver === "quadro"}
         propostas={propostasDeEnsaio(agora)}
         focoInicial={foco ?? null}
+        formaInicial={ehForma(forma) ? forma : ver === "quadro" ? "quadro" : undefined}
+        ordemInicial={ehChaveOrdem(ordem) ? ordem : "urgencia"}
+        /* v4 · os sinais do LEAD que entram no peso da urgência (etapa, valor, espera). Só no
+           ensaio: a leitura real não os traz, e sem eles a ordem cai para prazo + prioridade. */
+        sinais={sinaisDeEnsaio(dados.tarefas, agora)}
         ensaio
         estadoCookie={estadoCookie}
         criadasDoCookie={criadasDoCookie}
@@ -79,6 +88,8 @@ export default async function TarefasPage({
   ]);
   const ver = Array.isArray(searchParams.ver) ? searchParams.ver[0] : searchParams.ver;
   const foco = Array.isArray(searchParams.foco) ? searchParams.foco[0] : searchParams.foco;
+  const forma = umParam(searchParams.forma);
+  const ordem = umParam(searchParams.ordem);
 
   return (
     <VisaoTarefas
@@ -93,6 +104,15 @@ export default async function TarefasPage({
       // não existe neste caminho; a tela sabe desenhar e decidir, o banco ainda não é lido.
       propostas={[]}
       focoInicial={foco ?? null}
+      formaInicial={ehForma(forma) ? forma : ver === "quadro" ? "quadro" : undefined}
+      ordemInicial={ehChaveOrdem(ordem) ? ordem : "urgencia"}
+      /* produção: sem sinais do lead (etapa/valor/espera ainda não são lidos por tarefa) — o peso
+         da urgência cai, honesto, para vencida → hoje → prioridade → prazo. */
+      sinais={{}}
     />
   );
+}
+
+function umParam(v: string | string[] | undefined): string | null {
+  return (Array.isArray(v) ? v[0] : v) ?? null;
 }

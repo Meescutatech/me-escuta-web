@@ -91,6 +91,14 @@ export function distribuir<T extends TarefaQuadro>(
   tarefas: readonly T[],
   emAndamento: ReadonlySet<string>,
   overrides: ReadonlyMap<string, ColunaStatus>,
+  /**
+   * v4 (11/09) · a ordem ESCOLHIDA na barra (id → posição). Sem ela, a ordem de sempre: vencida →
+   * prazo → criação. Com ela, o quadro obedece o mesmo seletor da lista e do calendário — um
+   * seletor que diz "Mais urgente primeiro" e uma coluna que ignora isso é a tela mentindo.
+   * A coluna CONCLUÍDA fica fora: peso de tarefa fechada não quer dizer nada, e ali o que importa
+   * é o desfecho mais recente.
+   */
+  ordem?: ReadonlyMap<string, number> | null,
 ): Record<ColunaStatus, T[]> {
   const r: Record<ColunaStatus, T[]> = { a_fazer: [], em_andamento: [], concluida: [] };
   for (const t of tarefas) {
@@ -98,7 +106,9 @@ export function distribuir<T extends TarefaQuadro>(
     if (col) r[col].push(t);
   }
   const abertas = (a: T, b: T) =>
-    Number(b.vencida) - Number(a.vencida) || prazoMs(a) - prazoMs(b) || a.criado_em.localeCompare(b.criado_em);
+    ordem
+      ? (ordem.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (ordem.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+      : Number(b.vencida) - Number(a.vencida) || prazoMs(a) - prazoMs(b) || a.criado_em.localeCompare(b.criado_em);
   r.a_fazer.sort(abertas);
   r.em_andamento.sort(abertas);
   r.concluida.sort((a, b) => (b.concluida_em ?? b.criado_em).localeCompare(a.concluida_em ?? a.criado_em));

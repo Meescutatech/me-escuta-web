@@ -62,6 +62,7 @@ export function QuadroStatus({
   nomes,
   aoMudar,
   executor,
+  rank,
 }: {
   /** pendentes + concluídas já filtradas pela barra (arquivadas não entram no quadro) */
   tarefas: TarefaVisao[];
@@ -74,6 +75,8 @@ export function QuadroStatus({
   aoMudar: () => void;
   /** v3 · quem escreve (ensaio = estado local). Ausente = `iniciarTarefa` / `reabrirTarefa` reais. */
   executor?: ExecutorQuadro;
+  /** v4 · a ordem escolhida na barra (id → posição) — o quadro obedece o mesmo seletor da lista */
+  rank?: ReadonlyMap<string, number> | null;
 }) {
   const router = useRouter();
   const [overrides, setOverrides] = useState<Map<string, ColunaStatus>>(() => new Map());
@@ -95,7 +98,7 @@ export function QuadroStatus({
     });
   }, [tarefas, emAndamento]);
 
-  const colunas = useMemo(() => distribuir(tarefas, emAndamento, overrides), [tarefas, emAndamento, overrides]);
+  const colunas = useMemo(() => distribuir(tarefas, emAndamento, overrides, rank), [tarefas, emAndamento, overrides, rank]);
   const porId = useMemo(() => new Map(tarefas.map((t) => [t.id, t])), [tarefas]);
 
   function colunaAtual(t: TarefaVisao): ColunaStatus | null {
