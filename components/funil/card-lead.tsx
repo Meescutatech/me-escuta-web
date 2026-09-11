@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { CardLead, Origem } from "@/lib/dados/funil";
+import { classificarPrazo, textoPrazoCurto, type EstadoPrazo } from "@/lib/dados/funil-calculos";
 import { textoTempoCurto } from "@/lib/tempo";
 import {
   dataUltimaMensagem,
@@ -57,6 +58,16 @@ import { cn } from "@/lib/utils";
  * globals.css, claro e escuro). O trilho fica como reforço. O rótulo "AGORA +771d" desceu um tom:
  * o papel já grita, o rótulo só nomeia (WCAG 1.4.1 continua atendido — ele é o canal escrito).
  * Faixa `sem_prazo` (etapa de entrada, workshop §6): papel neutro, sem rótulo, nunca AGORA.
+ *
+ * ── W-D6 (10/09) · a PRÓXIMA TAREFA entrou no card, e é a linha que mais pesa ───────────────
+ * Benchmark de tarefas §4 itens 1-2: o Kommo tem a régua "todo lead tem tarefa" e 97,9% das
+ * abertas lá estão vencidas — régua sem UI não pune ninguém. Agora cada card diz QUAL é a próxima
+ * ação, PARA QUANDO e DE QUEM, com o prazo em três tons: vermelho = vencida (falha), âmbar = hoje
+ * (urgência), neutro = futura (meta). E o card SEM tarefa pendente ganha a linha "sem próxima ação"
+ * em cinza: discreta porque não é urgência, presente porque é o lead que some em silêncio.
+ * Também: cidade declarada (H5) na linha do telefone; origem virou ícone (o nome ia por extenso e
+ * roubava a linha inteira); audiometria ✓/✗ (G4) só quando a ficha SABE — nunca pinta no escuro.
+ * Estrutura do kanban aprovada em 31/08 preservada: faixa, título, valor, última mensagem, rodapé.
  */
 
 const ORIGEM_ROTULO: Record<Origem, string> = { wa: "WhatsApp", ig: "Instagram", meta: "Meta Ads", ind: "Indicação" };
@@ -99,6 +110,50 @@ function iniciais(nome: string): string {
   return ((p[0]?.[0] ?? "?") + (p[1] ? p[1][0] : "")).toUpperCase();
 }
 
+/**
+ * Origem como GLIFO de 12px, não por extenso: "Meta Ads" ocupava a linha inteira do rodapé e
+ * empurrava o timer. O nome continua acessível (`title` + sr-only) — o ícone é o canal rápido,
+ * o texto é o canal completo. Um traço só, sem cor própria: cor no card é prioridade (D55).
+ */
+function IconeOrigem({ origem }: { origem: Origem }) {
+  const comum = "h-3 w-3 shrink-0 stroke-current";
+  if (origem === "wa")
+    return (
+      <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={comum} fill="none" aria-hidden>
+        <path d="M21 12a9 9 0 0 1-13.3 7.9L3 21l1.2-4.5A9 9 0 1 1 21 12z" />
+      </svg>
+    );
+  if (origem === "ig")
+    return (
+      <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={comum} fill="none" aria-hidden>
+        <rect x="3" y="3" width="18" height="18" rx="5" />
+        <circle cx="12" cy="12" r="3.5" />
+        <circle cx="17.2" cy="6.8" r="0.6" fill="currentColor" />
+      </svg>
+    );
+  if (origem === "meta")
+    return (
+      <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={comum} fill="none" aria-hidden>
+        <path d="M3 11v2a1 1 0 0 0 1 1h2l6 4V6L6 10H4a1 1 0 0 0-1 1z" />
+        <path d="M16 9a3.5 3.5 0 0 1 0 6M18.5 6.5a7 7 0 0 1 0 11" />
+      </svg>
+    );
+  return (
+    <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={comum} fill="none" aria-hidden>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20a6 6 0 0 1 12 0M16 4.5a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6" />
+    </svg>
+  );
+}
+
+/** Tom do prazo da próxima tarefa: vermelho = falha, âmbar = urgência, neutro = meta. */
+const TOM_PRAZO: Record<EstadoPrazo, string> = {
+  vencida: "bg-vermelho-bg text-vermelho",
+  hoje: "bg-amarelo-bg text-amarelo",
+  futura: "bg-hover text-suave",
+  sem_prazo: "bg-hover text-mute",
+};
+
 function ChipResp({ nome, tipo }: { nome: string; tipo: "dm" | "sara" | "fono" }) {
   const ia = respEhIA(nome);
   return (
@@ -123,6 +178,7 @@ export function CartaoLead({
   selecionado,
   onAbrir,
   onResolverSugestao,
+  nomePorId,
 }: {
   card: CardLead;
   agora: number;
@@ -131,6 +187,8 @@ export function CartaoLead({
   selecionado: boolean;
   onAbrir: (leadId: string) => void;
   onResolverSugestao?: (leadId: string, decisao: "aprovada" | "descartada") => void;
+  /** uuid → primeiro nome, para o dono da próxima tarefa (o board monta dos mencionáveis) */
+  nomePorId?: ReadonlyMap<string, string>;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `card:${card.lead_id}`,
@@ -149,6 +207,21 @@ export function CartaoLead({
   const ultima = card.ultima_mensagem ?? null;
   const dataUltima = dataUltimaMensagem(ultima?.em, agora);
 
+  // W-D6 · próxima tarefa: `undefined` = não sabemos (linha não desenha); `null` = sem próxima ação
+  const proxima = card.proxima_tarefa;
+  const estadoPrazo = proxima ? classificarPrazo(proxima.prazo, agora) : null;
+  const donoTarefaBruto = proxima
+    ? (proxima.responsavel_id && nomePorId?.get(proxima.responsavel_id)) ||
+      (proxima.responsavel ? proxima.responsavel.split("@")[0] : null)
+    : null;
+  // o dono da tarefa só aparece quando NÃO é o responsável do lead — esse já está no chip do
+  // rodapé, e repetir "Sara" em cada linha comia o título da tarefa (medido no print: 3 palavras)
+  const donoTarefa =
+    donoTarefaBruto && card.responsavel && card.responsavel.nome.split(" ")[0].toLowerCase() === donoTarefaBruto.toLowerCase()
+      ? null
+      : donoTarefaBruto;
+  const fechado = card.etapa === "ganho" || card.etapa === "perdido";
+
   // Por que esta prioridade, em palavras — o card nunca deve exigir que se adivinhe a conta.
   // Inclui o aviso de prazo NÃO declarado: etapa fora de `sla_etapas` cai no padrão, e isso
   // precisa ser dizível, senão o rótulo afirma uma urgência que ninguém definiu.
@@ -166,10 +239,9 @@ export function CartaoLead({
     .filter(Boolean)
     .join(" · ");
 
-  // 1 sinal significativo (spec §4): quando o nome é lixo, o sinal é "Lead · <origem>";
-  // com nome real, o sinal é a própria origem. Nada além disso no card.
-  const sinal = ruim ? (origemLabel ? `Lead · ${origemLabel}` : "Lead") : origemLabel;
-  const sinalAds = card.origem === "meta";
+  // W-D6: a origem virou ÍCONE no rodapé; o texto só sobrevive quando o nome é lixo ("Lead"),
+  // porque aí o card precisa de alguma palavra dizendo o que aquele telefone é.
+  const sinal = ruim ? "Lead" : null;
 
   const titulo = [
     card.kommo_lead_id ? `kommo:${card.kommo_lead_id}` : null,
@@ -267,9 +339,19 @@ export function CartaoLead({
         {valor && <span className="shrink-0 pt-px text-[0.82rem] font-semibold tabular-nums text-tinta">{valor}</span>}
       </div>
 
-      {!ruim && card.telefone && (
-        <div className="mt-0.5 text-[0.78rem] tabular-nums text-suave">{fmtTelefone(card.telefone)}</div>
-      )}
+      {/* telefone + cidade DECLARADA (H5) na mesma linha: a cidade é o dado que a Sara usa para
+          indicar clínica, e sai como a pessoa digitou — sem rótulo, sem capitalizar. */}
+      {(!ruim && card.telefone) || card.cidade ? (
+        <div className="mt-0.5 flex items-baseline gap-1.5 overflow-hidden text-[0.78rem] text-suave">
+          {!ruim && card.telefone && <span className="shrink-0 whitespace-nowrap tabular-nums">{fmtTelefone(card.telefone)}</span>}
+          {card.cidade && (
+            <>
+              {!ruim && card.telefone && <span aria-hidden className="text-mute">·</span>}
+              <span className="min-w-0 truncate">{card.cidade}</span>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {/* ÚLTIMA MENSAGEM + DATA. A seta diz QUEM falou por último, que é o que separa "ele não
           respondeu" de "eu não respondi" — sem ela a linha mostra atividade e esconde a dívida.
@@ -303,16 +385,65 @@ export function CartaoLead({
         </div>
       )}
 
-      {(sinal || timer || card.responsavel) && (
+      {/* PRÓXIMA TAREFA — a linha que a régua do Kommo nunca teve (benchmark §4 itens 1-2).
+          Três verdades, três desenhos: conhecida (título + prazo em tom + dono); nenhuma pendente
+          ("sem próxima ação", cinza — alerta, não urgência); desconhecida (`undefined`: a leitura
+          de tarefas não voltou → linha some, o card não acusa ninguém por falha de consulta).
+          Lead fechado não tem próxima ação por definição e não ganha o alerta. */}
+      {proxima ? (
+        <div className="mt-[7px] flex items-center gap-1.5" title={`Próxima tarefa: ${proxima.titulo} · ${textoPrazoCurto(proxima.prazo, agora)}${donoTarefaBruto ? ` · ${donoTarefaBruto}` : ""}`}>
+          <svg viewBox="0 0 24 24" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 shrink-0 stroke-suave" fill="none" aria-hidden>
+            <path d="M9 11l3 3L22 4" />
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
+          <span className="min-w-0 flex-1 truncate text-[0.76rem] leading-snug text-tinta">{proxima.titulo}</span>
+          <span
+            className={cn(
+              "shrink-0 whitespace-nowrap rounded-[4px] px-1.5 py-px text-[10.5px] font-semibold leading-[1.35] tabular-nums",
+              TOM_PRAZO[estadoPrazo ?? "sem_prazo"],
+            )}
+          >
+            {textoPrazoCurto(proxima.prazo, agora)}
+          </span>
+          {donoTarefa && (
+            <span className="shrink-0 max-w-[56px] truncate text-[10.5px] text-mute">{donoTarefa}</span>
+          )}
+        </div>
+      ) : proxima === null && !fechado ? (
+        <div className="mt-[7px] flex items-center gap-1.5 text-[0.74rem] text-mute" title="Nenhuma tarefa pendente — ninguém tem próximo passo marcado com este lead">
+          <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeDasharray="2.6 2.2" className="h-3 w-3 shrink-0 stroke-current" fill="none" aria-hidden>
+            <circle cx="12" cy="12" r="8.5" />
+          </svg>
+          <span>sem próxima ação</span>
+        </div>
+      ) : null}
+
+      {(sinal || card.origem || card.audiometria !== undefined || timer || card.responsavel) && (
         <div className="mt-2 flex items-center gap-2">
-          {sinal && (
-            <span
-              className={cn(
-                "inline-flex min-w-0 items-center gap-1.5 truncate text-[0.74rem] text-suave",
-              )}
-            >
-              <span className={cn("h-[5px] w-[5px] shrink-0 rounded-full", sinalAds ? "bg-pt-ads" : "bg-mute")} />
-              {sinal}
+          {card.origem && (
+            <span className="inline-flex shrink-0 items-center text-mute" title={origemLabel ?? undefined}>
+              <IconeOrigem origem={card.origem} />
+              <span className="sr-only">{origemLabel}</span>
+            </span>
+          )}
+          {sinal && <span className="shrink-0 text-[0.74rem] text-suave">{sinal}</span>}
+          {/* AUDIOMETRIA (G4): o principal gate de decisão da Sara. ✓ verde quando fez, ✗ discreto
+              quando não fez, NADA quando a ficha não sabe — pintar "não fez" por ausência de dado
+              mandaria a fono pedir um exame que talvez já esteja na foto da conversa. */}
+          {card.audiometria === "fez" && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-[0.72rem] font-medium text-verde" title="Audiometria feita">
+              <svg viewBox="0 0 24 24" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 stroke-current" fill="none" aria-hidden>
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+              audiometria
+            </span>
+          )}
+          {card.audiometria === "nao_fez" && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-[0.72rem] text-mute" title="Ainda sem audiometria">
+              <svg viewBox="0 0 24 24" strokeWidth={2.4} strokeLinecap="round" className="h-3 w-3 stroke-current" fill="none" aria-hidden>
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+              audiometria
             </span>
           )}
           {timer && (

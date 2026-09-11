@@ -49,6 +49,14 @@ export interface FiltrosFunil {
    * relativa ao prazo da etapa. Um segundo limiar aqui recriaria o problema que D55 resolveu.
    */
   soAgora: boolean;
+  /**
+   * W-D6 (10/09) · o segmented "Pré-venda · Pós-venda · Todos" do admin/owner. `null` = Todos.
+   * É RECORTE do board, não escopo (o escopo é o seletor do header, D6-f): o admin olha o funil
+   * inteiro e separa o que é aquisição do que é pós-venda com um clique, sem trocar de mundo.
+   * Card com `departamento` desconhecido (`undefined`) PASSA — esconder por falta de dado é a
+   * falha silenciosa que este filtro não pode cometer.
+   */
+  departamento: string | null;
 }
 
 export const FILTROS_VAZIOS: FiltrosFunil = {
@@ -61,6 +69,7 @@ export const FILTROS_VAZIOS: FiltrosFunil = {
   meus: false,
   semProximaAcao: false,
   soAgora: false,
+  departamento: null,
 };
 
 /**
@@ -117,6 +126,8 @@ export function filtrarCards(
     // sem `faixaDe` o chip nem aparece na tela — e recortar sem saber calcular a faixa seria o
     // filtro afirmando uma urgência que ninguém mediu.
     if (f.soAgora && faixaDe && faixaDe(c) !== "agora") return false;
+    // departamento: só corta quando o card SABE de qual é (`undefined` passa, ver o campo)
+    if (f.departamento && c.departamento !== undefined && c.departamento !== f.departamento) return false;
     return true;
   });
 }
@@ -133,7 +144,14 @@ export function contarFiltrosAtivos(f: FiltrosFunil): number {
 
 /** Há qualquer filtro (painel, busca, meus OU sem-próxima-ação)? — controla o "X de N" do cabeçalho. */
 export function haFiltro(f: FiltrosFunil): boolean {
-  return f.busca.trim() !== "" || f.meus || f.semProximaAcao || f.soAgora || contarFiltrosAtivos(f) > 0;
+  return (
+    f.busca.trim() !== "" ||
+    f.meus ||
+    f.semProximaAcao ||
+    f.soAgora ||
+    f.departamento != null ||
+    contarFiltrosAtivos(f) > 0
+  );
 }
 
 /**

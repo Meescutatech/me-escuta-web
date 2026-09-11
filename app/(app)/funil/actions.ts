@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { confirmarProjecao, type RespostaRegistrarEvento } from "@/lib/eventos/confirmar-projecao";
 import { buscarLeads, type ResultadoBusca } from "@/lib/dados/funil";
+import { lerMensagens, type Mensagem } from "@/lib/dados/conversas";
 
 export interface ResultadoEvento {
   ok: boolean;
@@ -145,4 +146,48 @@ export async function criarLeadManual(dados: NovoLead): Promise<ResultadoEvento 
  */
 export async function buscarLeadsAcao(termo: string): Promise<ResultadoBusca> {
   return buscarLeads(termo);
+}
+
+/*
+ * ── W-D6 (10/09) · A CONVERSA DENTRO DO DRAWER (card G6 do board) ─────────────────────────────
+ *
+ * LEITURA PURA, como a busca acima: SELECT com a sessão/RLS de quem está logado, zero escrita.
+ * Existe porque o botão "Abrir conversa" do drawer empurrava a pessoa para /conversas e a tirava
+ * do funil — e a pergunta que ela tinha ("o que ele disse por último?") cabe numa aba. Responder
+ * continua sendo em /conversas: o composer, a janela de 24h e o seletor de número moram lá, e
+ * duplicá-los aqui seria dois lugares para o mesmo envio.
+ *
+ * A conversa MAIS RECENTE do lead (um lead pode ter mais de uma: número oficial + Lite da fono).
+ * `null` = não há conversa OU a leitura falhou — a aba diz "sem conversa registrada" nos dois
+ * casos, porque para quem lê o efeito é o mesmo e inventar a distinção seria chutar.
+ */
+export interface ConversaDoLeadLida {
+  conversaId: string;
+  mensagens: Mensagem[];
+  canal: string | null;
+}
+
+export async function lerConversaDoLeadAcao(leadId: string): Promise<ConversaDoLeadLida | null> {
+  try {
+    const supabase = criarClienteServidor();
+    const consulta = (colunas: string) =>
+      supabase
+        .schema("core")
+        .from("v_conversa")
+        .select(colunas)
+        .eq("lead_id", leadId)
+        .order("atualizado_em", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+    // mesmo degrau de `lerConversas`: o apelido do número vem da 0094 e pode não existir
+    let { data, error } = await consulta("id,numero_apelido,numero_e164");
+    if (error) ({ data, error } = await consulta("id"));
+    if (error || !data) return null;
+    const linha = data as any;
+    const conversaId = String(linha.id);
+    const mensagens = await lerMensagens(conversaId);
+    return { conversaId, mensagens, canal: linha.numero_apelido ?? linha.numero_e164 ?? null };
+  } catch {
+    return null;
+  }
 }

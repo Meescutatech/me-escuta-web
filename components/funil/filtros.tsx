@@ -251,6 +251,7 @@ export function FiltrosBoard({
                   meus: filtros.meus,
                   semProximaAcao: filtros.semProximaAcao,
                   soAgora: filtros.soAgora,
+                  departamento: filtros.departamento,
                 })
               }
               className={cn(

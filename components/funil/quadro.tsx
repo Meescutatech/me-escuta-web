@@ -42,6 +42,9 @@ import {
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
 import { CarimboVivo } from "@/components/dashboard/carimbo-vivo";
+import { SegmentoDepartamento } from "./segmento-departamento";
+import { moedaCurta, resumoColuna } from "@/lib/dados/funil-calculos";
+import type { EnsaioFunil } from "@/lib/ensaio/funil-extra";
 import { useProjecaoViva } from "@/components/projecao-viva";
 import { novosIds } from "@/lib/tempo-real";
 import { INTERVALOS, PISO_SEM_TEMPO_REAL } from "@/lib/intervalos-vivos";
@@ -55,9 +58,6 @@ import { cn } from "@/lib/utils";
  * terminais cobrem o caso). Board vivo da fase 1 preservado (polling + pulso-novo).
  */
 
-function somaValor(cards: CardLead[]): number {
-  return cards.reduce((s, c) => s + (c.valor ?? 0), 0);
-}
 function brl(v: number): string {
   return "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
@@ -77,6 +77,8 @@ function Coluna({
   pulsando,
   onAbrir,
   onResolverSugestao,
+  faixaDe,
+  nomePorId,
 }: {
   etapa: EtapaFunil;
   cards: CardLead[];
@@ -87,12 +89,17 @@ function Coluna({
   pulsando: ReadonlySet<string>;
   onAbrir: (id: string) => void;
   onResolverSugestao: (leadId: string, decisao: "aprovada" | "descartada") => void;
+  faixaDe: (c: CardLead) => FaixaPrioridade;
+  nomePorId: ReadonlyMap<string, string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${etapa.chave}` });
-  const soma = somaValor(cards);
+  // W-D6 · o cabeçalho diz o que a coluna PESA: quantos, quanto vale, quantos estouraram o prazo
+  // da etapa. A conta da faixa é a do board (`faixaDe`), nunca uma segunda (D55).
+  const resumo = resumoColuna(cards, faixaDe);
+  const soma = resumo.soma;
   return (
     <div className="flex h-full w-coluna shrink-0 flex-col">
-      <div className="flex items-center gap-2 px-1 pb-2.5 pt-1.5">
+      <div className="flex items-center gap-2 px-1 pb-1 pt-1.5">
         <span
           className={cn(
             "truncate text-[12.5px] font-semibold uppercase tracking-[0.05em]",
@@ -106,6 +113,20 @@ function Coluna({
           {cards.length}
         </span>
       </div>
+      {/* segunda linha: valor somado e os que passaram do prazo. Some inteira quando não há o que
+          dizer (coluna vazia, sem valor e sem estourado) — "R$ 0 · 0 além do prazo" é ruído. */}
+      {(soma > 0 || resumo.alemDoPrazo > 0) && (
+        <div className="flex items-center gap-1.5 px-1 pb-2 font-mono text-[10.5px] tabular-nums text-mute">
+          {soma > 0 && <span title={`${brl(soma)} em aberto nesta etapa`}>{moedaCurta(soma)}</span>}
+          {soma > 0 && resumo.alemDoPrazo > 0 && <span aria-hidden>·</span>}
+          {resumo.alemDoPrazo > 0 && (
+            <span className="font-semibold text-vermelho" title="Leads que passaram do prazo da etapa (faixa AGORA)">
+              {resumo.alemDoPrazo} além do prazo
+            </span>
+          )}
+        </div>
+      )}
+      {soma === 0 && resumo.alemDoPrazo === 0 && <div className="pb-1.5" aria-hidden />}
       <div
         ref={setNodeRef}
         className={cn(
@@ -122,6 +143,7 @@ function Coluna({
               selecionado={c.lead_id === selecionadoId}
               onAbrir={onAbrir}
               onResolverSugestao={onResolverSugestao}
+              nomePorId={nomePorId}
             />
           </div>
         ))}
@@ -185,6 +207,7 @@ export function Quadro({
   dados,
   geradoEm,
   abrirLead = null,
+  abaInicial = null,
   autorEmail = null,
   autorId = null,
   mencionaveis = [],
@@ -192,12 +215,16 @@ export function Quadro({
   motivosPerda = [],
   motivosDaConfig = false,
   semResponsavel = null,
+  papel = null,
+  ensaio = null,
 }: {
   dados: DadosFunil;
   /** hora da renderização server — carimbo "ao vivo · atualizado há Xs" */
   geradoEm: string;
   /** deep-link ?lead=<id> (vindo do painel da conversa): abre o drawer deste card ao montar */
   abrirLead?: string | null;
+  /** W-D6 · deep-link ?aba=conversa|tarefas|… — a aba do drawer ao abrir (LiderHub `?tab=`) */
+  abaInicial?: string | null;
   autorEmail?: string | null;
   autorId?: string | null;
   mencionaveis?: Mencionavel[];
@@ -207,6 +234,10 @@ export function Quadro({
   motivosDaConfig?: boolean;
   /** F5 · contagem de órfãos / aguardando de-para → chip ao lado do contador (R18/M3, era faixa) */
   semResponsavel?: LeadsSemResponsavel | null;
+  /** W-D6 · papel de quem olha: o segmented de departamento só existe para admin/owner */
+  papel?: "owner" | "admin" | "membro" | "marketing" | null;
+  /** W-D6 · modo ensaio: painel + conversa por lead já calculados — o drawer não vai ao banco */
+  ensaio?: EnsaioFunil | null;
 }) {
   const [cards, setCards] = useState<CardLead[]>(dados.cards);
   const [arrastando, setArrastando] = useState<string | null>(null);
@@ -294,6 +325,15 @@ export function Quadro({
     [cards, filtros, autorId, faixaDe],
   );
   const filtroAtivo = haFiltro(filtros);
+
+  // W-D6 · uuid → primeiro nome, para o dono da próxima tarefa no card. Dos mencionáveis humanos,
+  // que a página já injeta — nenhuma leitura a mais.
+  const nomePorId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of mencionaveis) if (p.tipo === "humano") m.set(p.id, p.nome.split(" ")[0]);
+    return m;
+  }, [mencionaveis]);
+  const podeRecortarDepartamento = papel === "admin" || papel === "owner";
 
 
   const porEtapa = useMemo(() => {
@@ -474,6 +514,14 @@ export function Quadro({
           <span className="rounded-full bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-semibold text-vermelho">{aviso}</span>
         )}
         <div className="ml-auto flex items-center gap-3.5 self-center">
+          {/* W-D6 · o recorte do admin: Pré-venda · Pós-venda · Todos. Membro não vê (escopo já o põe
+              dentro do departamento dele). */}
+          {podeRecortarDepartamento && (
+            <SegmentoDepartamento
+              valor={filtros.departamento}
+              onChange={(chave) => setFiltros((f) => ({ ...f, departamento: chave }))}
+            />
+          )}
           {/* R20 · sem próxima ação — o chip que responde "quem está largado". Só aparece quando
               HÁ lead nessa situação: zero é silêncio, não um "0" para alguém ignorar todo dia
               (mesma regra do contador de vencidas na sidebar). "—" = leitura de tarefas falhou. */}
@@ -577,6 +625,8 @@ export function Quadro({
               pulsando={pulsando}
               onAbrir={abrirCard}
               onResolverSugestao={resolverSugestao}
+              faixaDe={faixaDe}
+              nomePorId={nomePorId}
             />
           ))}
           {/* terminais: fora do fluxo operacional; seguem droppáveis (fechar = arrastar) */}
@@ -592,7 +642,7 @@ export function Quadro({
         <DragOverlay>
           {cardArrastado ? (
             <div className="w-coluna rotate-[1.5deg] opacity-50 shadow-[0_14px_40px_rgba(31,35,40,.18)]">
-              <CartaoLead card={cardArrastado} agora={agora} sla={dados.sla} selecionado={false} onAbrir={() => {}} />
+              <CartaoLead card={cardArrastado} agora={agora} sla={dados.sla} selecionado={false} onAbrir={() => {}} nomePorId={nomePorId} />
             </div>
           ) : null}
         </DragOverlay>
@@ -607,6 +657,9 @@ export function Quadro({
         mencionaveis={mencionaveis}
         tiposTarefa={tiposTarefa}
         onFechar={() => setCardAberto(null)}
+        agora={agora}
+        ensaio={ensaio}
+        abaInicial={abaInicial}
       />
 
       {perdaPendente && (

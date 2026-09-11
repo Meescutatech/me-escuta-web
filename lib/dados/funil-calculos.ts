@@ -174,3 +174,120 @@ export function segmentosReguaLead(
 export function segmentosReguaAgregada(faixas: Array<{ qtd: number | null }>): SegmentoRegua[] {
   return faixas.map((f) => ((f.qtd ?? 0) > 0 ? "ok" : "fraca"));
 }
+
+// ─────────────── W-D6 (10/09) · a PRÓXIMA TAREFA do lead, e o que ela diz no card ───────────────
+
+/**
+ * Benchmark de tarefas (10/09) §4 item 1: o Pipedrive tem `next_activity_date`, o LiderHub tem o
+ * card "Próxima atividade" — e o nosso board sabia só `tem_tarefa_pendente`, um booleano que joga
+ * fora o QUAL. Aqui é a regra pura de "qual tarefa é a próxima", separada da consulta pelo mesmo
+ * motivo de `montarUltimaMensagem`: enquanto viveu dentro de I/O, ninguém testou nada disto.
+ */
+export interface ProximaTarefa {
+  id: string;
+  titulo: string;
+  /** ISO ou null — tarefa sem prazo é "próxima" só quando não há nenhuma com prazo. */
+  prazo: string | null;
+  /** uuid de core.usuario (Bloco A); null nas tarefas antigas e nas sem dono. */
+  responsavel_id: string | null;
+  /** legado (e-mail) — o dado forte é o id. */
+  responsavel: string | null;
+}
+
+/**
+ * A próxima entre as PENDENTES: prazo mais cedo primeiro (vencida é o mais cedo de todos),
+ * sem prazo por último; desempate por id para ser estável entre renders. `null` = nenhuma
+ * pendente — que é o estado "sem próxima ação", e é ALERTA, não silêncio (item 2 do §4).
+ */
+export function escolherProximaTarefa<
+  T extends { id: string; status: string; prazo: string | null },
+>(tarefas: T[]): T | null {
+  let melhor: T | null = null;
+  for (const t of tarefas) {
+    if (t.status !== "pendente") continue;
+    if (!melhor) {
+      melhor = t;
+      continue;
+    }
+    const a = t.prazo ? Date.parse(t.prazo) : NaN;
+    const b = melhor.prazo ? Date.parse(melhor.prazo) : NaN;
+    const aOk = !Number.isNaN(a);
+    const bOk = !Number.isNaN(b);
+    if (aOk && !bOk) melhor = t;
+    else if (aOk && bOk && (a < b || (a === b && t.id < melhor.id))) melhor = t;
+    else if (!aOk && !bOk && t.id < melhor.id) melhor = t;
+  }
+  return melhor;
+}
+
+export type EstadoPrazo = "vencida" | "hoje" | "futura" | "sem_prazo";
+
+/**
+ * Vermelho é FALHA, âmbar é URGÊNCIA, neutro é meta (LiderHub `highlight-activity-card.tsx`).
+ * "Hoje" é o dia civil no fuso da operação (UTC-3, como o dashboard) — uma tarefa às 18h de hoje
+ * ainda é "hoje" às 17h59, e vira "vencida" só depois de passar.
+ */
+const FUSO_OPERACAO_MS = -3 * 3_600_000;
+
+function diaOperacao(ms: number): number {
+  return Math.floor((ms + FUSO_OPERACAO_MS) / 86_400_000);
+}
+
+export function classificarPrazo(prazoIso: string | null | undefined, agora: number): EstadoPrazo {
+  if (!prazoIso) return "sem_prazo";
+  const t = Date.parse(prazoIso);
+  if (Number.isNaN(t)) return "sem_prazo";
+  if (t < agora) return "vencida";
+  return diaOperacao(t) === diaOperacao(agora) ? "hoje" : "futura";
+}
+
+const DIAS_CURTOS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+/**
+ * O prazo em UMA palavra + hora quando a hora muda a decisão ("hoje 14h", "amanhã 9h"). Para
+ * mais de uma semana a hora é ruído e sai. Vencida diz há quanto tempo ("há 2d"), porque
+ * "vencida em 08/09" obriga a fazer a conta que o card existe para poupar.
+ */
+export function textoPrazoCurto(prazoIso: string | null | undefined, agora: number): string {
+  if (!prazoIso) return "sem prazo";
+  const t = Date.parse(prazoIso);
+  if (Number.isNaN(t)) return "sem prazo";
+  const d = new Date(t);
+  const hora = d.getMinutes() === 0 ? `${d.getHours()}h` : `${d.getHours()}h${String(d.getMinutes()).padStart(2, "0")}`;
+  const diffDias = diaOperacao(t) - diaOperacao(agora);
+  if (t < agora) {
+    const h = Math.floor((agora - t) / 3_600_000);
+    if (h < 1) return "venceu agora";
+    if (h < 24) return `há ${h}h`;
+    return `há ${Math.floor(h / 24)}d`;
+  }
+  if (diffDias === 0) return `hoje ${hora}`;
+  if (diffDias === 1) return `amanhã ${hora}`;
+  if (diffDias < 7) return `${DIAS_CURTOS[d.getDay()]} ${hora}`;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+/**
+ * O que o cabeçalho da coluna diz além do nome: quantos, quanto vale e quantos estouraram o
+ * prazo da etapa (faixa AGORA). `alemDoPrazo` conta sobre a faixa já calculada pelo board —
+ * nunca recalcula a prioridade aqui (D55: uma conta, um lugar).
+ */
+export function resumoColuna<T extends { valor: number | null; lead_id: string }>(
+  cards: T[],
+  faixaDe: (c: T) => string,
+): { qtd: number; soma: number; alemDoPrazo: number } {
+  let soma = 0;
+  let alemDoPrazo = 0;
+  for (const c of cards) {
+    soma += c.valor ?? 0;
+    if (faixaDe(c) === "agora") alemDoPrazo++;
+  }
+  return { qtd: cards.length, soma, alemDoPrazo };
+}
+
+/** "R$ 42 mil" / "R$ 980" — a soma da coluna cabe em três palavras ou não cabe no cabeçalho. */
+export function moedaCurta(v: number): string {
+  if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
+  if (v >= 1_000) return `R$ ${Math.round(v / 1_000).toLocaleString("pt-BR")} mil`;
+  return `R$ ${Math.round(v).toLocaleString("pt-BR")}`;
+}

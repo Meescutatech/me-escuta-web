@@ -8,6 +8,9 @@ import { lerMotivosPerda } from "@/lib/dados/motivo-perda";
 import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
 import { gerarFunilEnsaio } from "@/lib/ensaio/fixtures/conversas";
 import { mencionaveisEnsaio } from "@/lib/ensaio/fixtures/mencionaveis";
+// W-D6: cidade, audiometria, departamento e PRÓXIMA TAREFA dos 40 leads + painel/conversa por lead
+// para o drawer não ir ao banco em ensaio. `proximaTarefaDoLead` é stub do helper do W-D5.
+import { enriquecerCardsEnsaio, ensaioDoFunil } from "@/lib/ensaio/funil-extra";
 import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 
 // Sempre lê o estado atual do funil (sem cache) — projeção do ledger.
@@ -16,25 +19,30 @@ export const dynamic = "force-dynamic";
 export default async function FunilPage({
   searchParams,
 }: {
-  searchParams: { lead?: string };
+  searchParams: { lead?: string; aba?: string };
 }) {
   // W-D2 · modo ensaio: os 40 leads da fixture, zero leitura.
   const ensaio = lerSessaoEnsaio();
   if (ensaio) {
     const agora = new Date();
     const motivos = await lerMotivosPerda(); // degrada para a semente embutida (cliente sem banco)
+    const base = gerarFunilEnsaio(agora);
+    const cards = enriquecerCardsEnsaio(base.cards, agora);
     return (
       <Quadro
-        dados={gerarFunilEnsaio(agora)}
+        dados={{ ...base, cards }}
         geradoEm={agora.toISOString()}
         abrirLead={searchParams.lead ?? null}
+        abaInicial={searchParams.aba ?? null}
         autorEmail={ensaio.email}
         autorId={ensaio.id}
+        papel={ensaio.papel}
         mencionaveis={mencionaveisEnsaio(agora)}
         tiposTarefa={TIPOS_TAREFA_SEMENTE}
         motivosPerda={motivos.motivos}
         motivosDaConfig={motivos.daConfig}
         semResponsavel={{ orfaos: 9, aguardandoDePara: 0, lido: true }}
+        ensaio={ensaioDoFunil(cards, agora)}
       />
     );
   }
@@ -59,6 +67,7 @@ export default async function FunilPage({
       dados={dados}
       geradoEm={new Date().toISOString()}
       abrirLead={searchParams.lead ?? null}
+      abaInicial={searchParams.aba ?? null}
       autorEmail={user?.email ?? null}
       autorId={user?.id ?? null}
       mencionaveis={mencionaveis}

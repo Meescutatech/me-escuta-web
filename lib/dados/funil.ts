@@ -2,7 +2,9 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import {
   COLUNAS_CARD,
   COLUNAS_CARD_BASE,
+  escolherProximaTarefa,
   montarUltimaMensagem,
+  type ProximaTarefa,
   MINIMO_BUSCA,
   TETO_BUSCA,
   TETO_CARDS,
@@ -90,6 +92,27 @@ export interface CardLead {
    * mecânica está pronta e inerte, e é assim que ela deve ficar até haver compromisso de verdade.
    */
   compromisso_em?: string | null;
+  /** H5 · cidade DECLARADA pelo paciente (ficha) — `undefined` quando a view ainda não a expõe. */
+  cidade?: string | null;
+  /**
+   * W-D6 (10/09) · a PRÓXIMA TAREFA do lead (benchmark de tarefas §4 item 1). Três estados, como
+   * `tem_tarefa_pendente`: `undefined` = a leitura de tarefas não voltou (o card não afirma nada);
+   * `null` = nenhuma pendente — e isso é o alerta "sem próxima ação", em cinza, que a régua do
+   * Kommo nunca mostrou a ninguém; objeto = a de prazo mais cedo entre as pendentes.
+   */
+  proxima_tarefa?: ProximaTarefa | null;
+  /**
+   * W-D6 · AUDIOMETRIA no card (card G4 do board): o mesmo de-para do drawer (`Sim`/`Não` na
+   * projeção `core.lead_campo`, slug `audiometria`). `undefined` = projeção não lida; `null` =
+   * ficha sem o campo. O card só desenha ✓/✗ quando sabe — nunca pinta o gate no escuro.
+   */
+  audiometria?: "fez" | "nao_fez" | null;
+  /**
+   * W-D6 · departamento do lead para o segmented "Pré-venda · Pós-venda · Todos". Hoje só a fixture
+   * de ensaio preenche — `core.lead` não carrega área; quem carrega é a conversa. `undefined` passa
+   * por todo recorte: recortar sem saber seria esconder lead por falta de dado.
+   */
+  departamento?: string | null;
 }
 
 export interface DadosFunil {
@@ -165,26 +188,58 @@ interface TarefasDoBoard {
   pendente: Set<string>;
   /** lead → prazo futuro mais PRÓXIMO (o compromisso que pausa o relógio, D55 item 4) */
   compromisso: Map<string, string>;
+  /** W-D6 · lead → a próxima tarefa (prazo mais cedo entre as pendentes; sem prazo por último) */
+  proxima: Map<string, ProximaTarefa>;
 }
+
+/**
+ * W-D6: as colunas que a linha "Próxima tarefa" do card precisa, em degrau. `responsavel_id` é
+ * do Bloco A e pode não existir num banco antigo — pedir coluna inexistente derruba a consulta,
+ * e derrubar a leitura de tarefas apagaria o chip "sem próxima ação" inteiro por causa de um
+ * nome de responsável. Desce um degrau por erro, como a escada de `lerCardsReais`.
+ */
+const DEGRAU_COLUNAS_TAREFA = [
+  "id,lead_id,prazo,titulo,responsavel_id,responsavel",
+  "id,lead_id,prazo,titulo,responsavel",
+  "lead_id,prazo",
+];
 
 async function lerLeadsComTarefaPendente(
   supabase: Supabase,
   agora: number,
 ): Promise<TarefasDoBoard | null> {
-  const { data, error } = await supabase
-    .schema("core")
-    .from("tarefa")
-    .select("lead_id,prazo")
-    .eq("status", "pendente")
-    .not("lead_id", "is", null)
-    .limit(TETO_TAREFAS_PENDENTES + 1);
+  const consulta = (colunas: string) =>
+    supabase
+      .schema("core")
+      .from("tarefa")
+      .select(colunas)
+      .eq("status", "pendente")
+      .not("lead_id", "is", null)
+      .limit(TETO_TAREFAS_PENDENTES + 1);
+  let { data, error } = await consulta(DEGRAU_COLUNAS_TAREFA[0]);
+  for (let i = 1; error && i < DEGRAU_COLUNAS_TAREFA.length; i++) {
+    ({ data, error } = await consulta(DEGRAU_COLUNAS_TAREFA[i]));
+  }
   if (error || !data || data.length > TETO_TAREFAS_PENDENTES) return null;
 
   const pendente = new Set<string>();
   const compromisso = new Map<string, string>();
+  const porLead = new Map<string, Array<{ id: string; status: string; prazo: string | null; titulo: string; responsavel_id: string | null; responsavel: string | null }>>();
   for (const r of data as any[]) {
     const id = String(r.lead_id);
     pendente.add(id);
+    if (r.id != null) {
+      const lista = porLead.get(id) ?? [];
+      lista.push({
+        id: String(r.id),
+        status: "pendente",
+        prazo: r.prazo ? String(r.prazo) : null,
+        titulo: r.titulo ? String(r.titulo) : "Tarefa sem título",
+        responsavel_id: r.responsavel_id ? String(r.responsavel_id) : null,
+        responsavel: r.responsavel ? String(r.responsavel) : null,
+      });
+      porLead.set(id, lista);
+    }
     // "compromisso marcado" = tarefa aberta com data no FUTURO. É a leitura que o benchmark §3.2
     // já dá como equivalente ("audiometria/consulta agendada com data, ou tarefa aberta com prazo
     // futuro"); prazo VENCIDO não pausa nada — vencido é justamente o oposto de agendado.
@@ -195,7 +250,40 @@ async function lerLeadsComTarefaPendente(
       if (!atual || t < new Date(atual).getTime()) compromisso.set(id, String(r.prazo));
     }
   }
-  return { pendente, compromisso };
+  const proxima = new Map<string, ProximaTarefa>();
+  for (const [id, lista] of porLead) {
+    const p = escolherProximaTarefa(lista);
+    if (p) proxima.set(id, { id: p.id, titulo: p.titulo, prazo: p.prazo, responsavel_id: p.responsavel_id, responsavel: p.responsavel });
+  }
+  return { pendente, compromisso, proxima };
+}
+
+/** Teto da leitura de audiometria. É uma linha por lead com o campo preenchido — folga larga. */
+const TETO_AUDIOMETRIA = 5000;
+
+/**
+ * W-D6 · a AUDIOMETRIA de cada lead, para o ✓/✗ do card (G4). Mesmo vocabulário do drawer
+ * (`components/funil/drawer-card.tsx`, `audiometriaDoValor`): "Sim"/"Não" na projeção
+ * `core.lead_campo`, slug `audiometria`. `null` = não deu para ler — e aí NENHUM card desenha o
+ * gate, em vez de todos aparecerem como "sem audiometria" por causa de uma consulta que não voltou.
+ */
+async function lerAudiometriaPorLead(
+  supabase: Supabase,
+): Promise<Map<string, "fez" | "nao_fez"> | null> {
+  const { data, error } = await supabase
+    .schema("core")
+    .from("lead_campo")
+    .select("lead_id,valor")
+    .eq("campo", "audiometria")
+    .limit(TETO_AUDIOMETRIA + 1);
+  if (error || !data || data.length > TETO_AUDIOMETRIA) return null;
+  const m = new Map<string, "fez" | "nao_fez">();
+  for (const r of data as any[]) {
+    const v = r.valor == null ? "" : String(r.valor).trim().toLowerCase();
+    if (v === "sim" || v === "true") m.set(String(r.lead_id), "fez");
+    else if (v === "nao" || v === "n\u00e3o" || v === "false") m.set(String(r.lead_id), "nao_fez");
+  }
+  return m;
 }
 
 /**
@@ -259,21 +347,28 @@ export async function lerCardsReais(
   // COLUNAS_CARD primeiro; sem as três de última mensagem (migration da view ainda não aplicada)
   // volta pro shape sem elas. O degrau é o que separa "board sem a linha de mensagem" de "board
   // VAZIO": pedir coluna inexistente ao PostgREST derruba a consulta inteira.
-  let [{ data, error }, comTarefa] = await Promise.all([
+  // W-D6: a audiometria entra como TERCEIRA leitura concorrente — nunca atrasa o board, e se
+  // falhar o card só deixa de desenhar o ✓/✗ (`audiometria = undefined`).
+  let [{ data, error }, comTarefa, audiometria] = await Promise.all([
     consulta(COLUNAS_CARD),
     lerLeadsComTarefaPendente(supabase, agora),
+    lerAudiometriaPorLead(supabase),
   ]);
   if (error) ({ data, error } = await consulta(COLUNAS_CARD_BASE));
   if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
-  const cards = (data as any[]).map((r: any) =>
+  const cards = (data as any[]).map((r: any) => {
+    const id = String(r.lead_id);
     // `tem_tarefa_pendente` só é conhecido quando a leitura de tarefas voltou; a busca (que não a
     // faz) passa `null` e o filtro "sem próxima ação" corretamente não acusa ninguém por ela.
-    montarCard(
+    const card = montarCard(
       r,
-      comTarefa == null ? null : comTarefa.pendente.has(String(r.lead_id)),
-      comTarefa?.compromisso.get(String(r.lead_id)) ?? null,
-    ),
-  );
+      comTarefa == null ? null : comTarefa.pendente.has(id),
+      comTarefa?.compromisso.get(id) ?? null,
+    );
+    if (comTarefa != null) card.proxima_tarefa = comTarefa.proxima.get(id) ?? null;
+    if (audiometria != null) card.audiometria = audiometria.get(id) ?? null;
+    return card;
+  });
   return { cards, corte: houveCorte(cards.length, TETO_CARDS) };
 }
 
