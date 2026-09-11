@@ -55,7 +55,7 @@ export function DialogoLigarClara({
     iniciar(async () => {
       const r = await salvarCanaisClara(marcados, true);
       if (r?.ok === false) {
-        toast.error("Não deu para ligar a Clara.", { description: r.erro ?? undefined });
+        toast.error("Não deu para ligar a Clara.", { description: r.motivo ?? undefined });
         return;
       }
       toast.success("Clara ligada.", {
