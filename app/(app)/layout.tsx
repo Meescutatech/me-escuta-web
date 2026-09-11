@@ -40,6 +40,21 @@ import { TooltipProvider } from "@/components/ui/tooltip";
  * `PLANO-TECNICO-M6.md` §5.3 previa "zero consulta a mais" para o ponto, e estava errado; o porquê
  * está no cabeçalho de `contarNaoLidasPorArea`.
  */
+/**
+ * 11/09/2026 — por que esta linha existe, e por que ela não muda nada em produção real.
+ *
+ * Com o modo ensaio ligado o layout NÃO chama `supabase.auth.getUser()`, e `lerSessaoEnsaio()`
+ * envolve o `cookies()` num try/catch — que engole o erro com que o Next sinaliza "esta rota é
+ * dinâmica". Resultado: o Next tentava PRÉ-RENDERIZAR as telas, e 7 delas usam `useSearchParams()`
+ * sem Suspense, o que é erro fatal na geração estática. O build da implantação de ensaio quebrava
+ * em /configuracoes, /marketing, /tarefas/foco e mais quatro.
+ *
+ * Em produção real o efeito é ZERO: todas estas rotas já são dinâmicas, porque leem sessão e
+ * cookie a cada requisição. Esta linha só declara o que já era verdade — e passa a valer também
+ * no caminho de ensaio, onde a verdade se perdia no catch.
+ */
+export const dynamic = "force-dynamic";
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // W-D2 · MODO ENSAIO: sessão da fixture, ZERO consulta ao Supabase. `lerSessaoEnsaio` só devolve
   // pessoa com `NEXT_PUBLIC_ENSAIO=1` E `NODE_ENV !== "production"` — fora disso é `null` e o
