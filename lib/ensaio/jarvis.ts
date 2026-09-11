@@ -171,9 +171,11 @@ export function jarvisDizEnsaio(agora: Date): {
   return {
     frase: "Quatro conversas estão sem resposta há mais de 2 h, e três audiometrias precisam de confirmação até amanhã.",
     observacoes: [
-      { texto: "4 conversas sem resposta nossa há mais de 2 h — a mais antiga é a de Maria Aparecida (3 h)", href: "/conversas?filtro=sem_resposta", destino: "conversas", origem: "consultar_conversa", faixa: "AGORA" },
-      { texto: "3 audiometrias marcadas para amanhã ainda sem confirmação do paciente", href: "/tarefas?tipo=confirmar_exame", destino: "tarefas", origem: "consultar_tarefas", faixa: "HOJE" },
-      { texto: "Terezinha Souza e mais 2 leads parados em Qualificado há mais de 5 dias", href: "/funil?etapa=qualificado", destino: "funil", origem: "consultar_funil", faixa: "NA SEMANA" },
+      { id: "o1", texto: "4 conversas sem resposta nossa há mais de 2 h — a mais antiga é a de Maria Aparecida (3 h)", href: "/conversas?filtro=sem_resposta", destino: "conversas", origem: "consultar_conversa", faixa: "AGORA" },
+      { id: "o2", texto: "3 audiometrias marcadas para amanhã ainda sem confirmação do paciente", href: "/tarefas?tipo=confirmar_exame", destino: "tarefas", origem: "consultar_tarefas", faixa: "HOJE" },
+      { id: "o3", texto: "Terezinha Souza e mais 2 leads parados em Qualificado há mais de 5 dias", href: "/funil?etapa=qualificado", destino: "funil", origem: "consultar_funil", faixa: "NA SEMANA" },
+      { id: "o4", texto: "Canal lite:ana-paula ficou desconectado das 07:50 às 08:14 — já reconectou", href: "/configuracoes/canais", destino: "canais", origem: "consultar_dashboard", estado: "feito" },
+      { id: "o5", texto: "2 propostas do Jarvis esperando decisão em /tarefas desde ontem", href: "/tarefas?filtro=propostas", destino: "tarefas", origem: "consultar_tarefas", faixa: "HOJE" },
     ],
     perguntas: ["Quem está parado há mais tempo em Qualificado?", "Quantas tarefas vencem hoje, por pessoa?", "Quantos leads chegaram esta semana, por origem?"],
     geradoEm: iso(agora, 7),
@@ -276,13 +278,13 @@ export function percursoTarefasEnsaio(): ItemAcao[] {
       estado: "andamento",
       href: "/conversas?c=c-0003",
       filhos: [
-        { id: "p3a", titulo: "Pegar o modelo do aparelho na ficha", estado: "feito" },
-        { id: "p3b", titulo: "Ligar (2 tentativas)", estado: "andamento", badge: "1 de 2" },
-        { id: "p3c", titulo: "Registrar o resultado na conversa", estado: "pendente" },
+        { id: "p3a", titulo: "Pegar o modelo do aparelho na ficha", estado: "feito", detalhe: "Signia Pure 312 7X, adaptado em 02/09 — a pilha é a 312." },
+        { id: "p3b", titulo: "Ligar (2 tentativas)", estado: "andamento", badge: "1 de 2", detalhe: "Primeira tentativa às 10:05, sem atender. A filha atende melhor à tarde." },
+        { id: "p3c", titulo: "Registrar o resultado na conversa", estado: "pendente", detalhe: "Nota interna no fio com o que foi combinado; o Jarvis lê dali." },
       ],
     },
     { id: "p4", titulo: "Mandar para Geraldo o laudo da audiometria em PDF", estado: "pendente", badge: "Ana Paula", href: "/tarefas?lead=l-0011" },
-    { id: "p5", titulo: "Cobrar de Antônio o comprovante do Pix", estado: "atencao", badge: "vencida ontem", href: "/tarefas?lead=l-0004" },
+    { id: "p5", titulo: "Cobrar de Antônio o comprovante do Pix", estado: "atencao", badge: "vencida ontem", href: "/tarefas?lead=l-0004", detalhe: "Antônio disse que pagou há 26 h; o Asaas não registrou. Pedir o comprovante antes de liberar o envio." },
     { id: "p6", titulo: "Retomar contato com Terezinha e oferecer dois horários", estado: "pendente", href: "/tarefas?lead=l-0012" },
   ];
 }

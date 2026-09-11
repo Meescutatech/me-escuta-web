@@ -1,8 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { LayoutGroup, motion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { rotuloFerramenta, type FerramentaUsada } from "@/lib/jarvis/contrato";
 import { ListaDeAcoes, type ItemAcao } from "./lista-de-acoes";
 import { MarcaJarvis } from "./marca";
+import { useMovimento } from "./movimento";
 
 /**
  * A RESPOSTA DO JARVIS EM BLOCOS (W-J, 10/09/2026 23:10). "Ele é o Sistema": a resposta não é
@@ -10,6 +14,9 @@ import { MarcaJarvis } from "./marca";
  * abaixo, números e linhas com link para a tela onde a coisa se resolve. O arco entra só como
  * assinatura da resposta, na linha discreta de cima, com o que foi consultado ("consultou o
  * funil · 42 leads") — o rastro do "não inventa número".
+ *
+ * Os blocos entram em STAGGER (`useMovimento().lista/item`), como a lista de ações — a resposta
+ * "se monta" de cima para baixo, sem pulo. `prefers-reduced-motion` = só opacidade.
  *
  * Blocos:
  *   texto    parágrafos curtos (a resposta livre do modelo, em produção)
@@ -68,9 +75,11 @@ function Texto({ texto }: { texto: string }) {
 }
 
 export function RespostaBlocos({ resposta: r, vivo = false, className }: { resposta: RespostaJarvis; vivo?: boolean; className?: string }) {
+  const mov = useMovimento();
   return (
-    <article className={cn("space-y-3", className)} aria-live="polite" aria-busy={vivo}>
-      <header className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-muted-foreground">
+    <LayoutGroup>
+    <motion.article key={r.em} variants={mov.lista} initial="hidden" animate="visible" className={cn("space-y-3", className)} aria-live="polite" aria-busy={vivo}>
+      <motion.header variants={mov.item} className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-muted-foreground">
         <MarcaJarvis tamanho={16} vivo={vivo} rotulo="Jarvis" className="text-foreground" />
         {r.consultas.length === 0 && !vivo && <span>{horaCurta(r.em)}</span>}
         {r.consultas.map((c, i) => (
@@ -83,18 +92,18 @@ export function RespostaBlocos({ resposta: r, vivo = false, className }: { respo
           </span>
         ))}
         {vivo && <span className="inline-flex items-center gap-1.5">{r.consultas.length > 0 && <span aria-hidden>·</span>}consultando…</span>}
-      </header>
+      </motion.header>
 
       {r.erro ? (
-        <p className="text-[13.5px] leading-normal text-muted-foreground">{r.erro}</p>
+        <motion.p variants={mov.item} className="text-[13.5px] leading-normal text-muted-foreground">{r.erro}</motion.p>
       ) : (
         <>
-          {r.frase && <p className="max-w-[64ch] text-[15px] font-medium leading-snug text-foreground">{r.frase}</p>}
+          {r.frase && <motion.p variants={mov.item} className="max-w-[64ch] text-[15px] font-medium leading-snug text-foreground">{r.frase}</motion.p>}
           {r.blocos.map((b, i) => {
-            if (b.tipo === "texto") return <Texto key={i} texto={b.texto} />;
+            if (b.tipo === "texto") return <motion.div key={i} variants={mov.item}><Texto texto={b.texto} /></motion.div>;
             if (b.tipo === "numeros") {
               return (
-                <dl key={i} className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]">
+                <motion.dl key={i} variants={mov.item} className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-border/60 pt-3 text-[13px]">
                   {b.itens.map((n, j) => (
                     <div key={j} className="contents">
                       <dt className="text-right font-medium tabular-nums text-foreground">{n.valor}</dt>
@@ -114,12 +123,12 @@ export function RespostaBlocos({ resposta: r, vivo = false, className }: { respo
                       </dd>
                     </div>
                   ))}
-                </dl>
+                </motion.dl>
               );
             }
             if (b.tipo === "linhas") {
               return (
-                <ul key={i} className="space-y-1.5">
+                <motion.ul key={i} variants={mov.item} className="space-y-1.5 border-t border-border/60 pt-3">
                   {b.itens.map((l, j) => (
                     <li key={j} className="flex items-baseline gap-3 text-[13px] leading-normal">
                       {l.href ? (
@@ -136,18 +145,19 @@ export function RespostaBlocos({ resposta: r, vivo = false, className }: { respo
                       )}
                     </li>
                   ))}
-                </ul>
+                </motion.ul>
               );
             }
             return (
-              <div key={i}>
+              <motion.div key={i} variants={mov.item} className="border-t border-border/60 pt-3">
                 {b.rotulo && <p className="mb-1 text-[12px] text-muted-foreground">{b.rotulo}</p>}
                 <ListaDeAcoes itens={b.itens} rotulo={b.rotulo ?? undefined} />
-              </div>
+              </motion.div>
             );
           })}
         </>
       )}
-    </article>
+    </motion.article>
+    </LayoutGroup>
   );
 }

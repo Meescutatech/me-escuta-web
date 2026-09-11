@@ -178,9 +178,8 @@ export function GaleriaJarvis({
 
       <Bloco titulo="4 · No dashboard" caminho="components/jarvis/jarvis-diz.tsx" assinatura="JarvisDiz({ frase, observacoes[], perguntas[], geradoEm, hrefPergunta?, acoes?: ItemAcao[], rotuloAcoes? })">
         <div className="space-y-3">
-          <JarvisDiz frase={diz.frase} observacoes={diz.observacoes} perguntas={diz.perguntas} geradoEm={diz.geradoEm} />
-          <p className="text-[12px] text-muted-foreground">expandido — as observações viram itens com estado (`acoes`)</p>
-          <JarvisDiz frase={diz.frase} observacoes={[]} acoes={atencao} rotuloAcoes="Precisa de atenção" perguntas={diz.perguntas} geradoEm={diz.geradoEm} />
+          <p className="text-[12px] text-muted-foreground">observações como itens com estado (o resolvido riscado); 3 à vista, "ver mais" abre o resto + "Precisa de atenção" sem pulo</p>
+          <JarvisDiz frase={diz.frase} observacoes={diz.observacoes} acoes={atencao} rotuloAcoes="Precisa de atenção" perguntas={diz.perguntas} geradoEm={diz.geradoEm} />
           <JarvisDiz frase={null} observacoes={[]} perguntas={diz.perguntas.slice(0, 2)} geradoEm={null} />
         </div>
       </Bloco>
@@ -188,7 +187,7 @@ export function GaleriaJarvis({
       <Bloco titulo="5 · Lista de ações com estado" caminho="components/jarvis/lista-de-acoes.tsx" assinatura="ListaDeAcoes({ itens: ItemAcao[], rotulo?, className? }) · ItemAcao = { id, titulo, estado: 'feito'|'andamento'|'pendente'|'atencao', badge?, href?, detalhe?, filhos? }">
         <div className="grid gap-6 rounded-md border border-border/60 bg-background p-4 lg:grid-cols-2">
           <div>
-            <p className="mb-2 text-[12px] text-muted-foreground">/tarefas · percurso "Começar as tarefas" (W-D5)</p>
+            <p className="mb-2 text-[12px] text-muted-foreground">/tarefas · percurso "Começar as tarefas" (W-D5) — clique numa linha com seta para abrir o detalhe</p>
             <ListaDeAcoes itens={percurso} rotulo="Percurso do dia" />
           </div>
           <div>

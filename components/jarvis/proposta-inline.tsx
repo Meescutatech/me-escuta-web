@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AnimatePresence, motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { MarcaJarvis } from "./marca";
+import { useMovimento } from "./movimento";
 import { linhaDoEstado, prazoUrgente, tempoDesde, textoDoOriginal, textoPrazo } from "./partes";
 import {
   ROTULO_MOTIVO,
@@ -79,6 +81,7 @@ export function PropostaJarvisInline({
   const [motivo, setMotivo] = useState<MotivoDescarte | null>(null);
   const [observacao, setObservacao] = useState("");
   const [aberta, setAberta] = useState(false);
+  const mov = useMovimento();
 
   const agora = agoraMs ?? Date.now();
   const fazer = ajuste.fazer ?? p.fazer;
@@ -110,17 +113,21 @@ export function PropostaJarvisInline({
             {aberta ? "fechar" : "ver proposta"}
           </button>
         </div>
-        {aberta && (
-          <div className="mt-2 border-t border-border/60 pt-2">
-            <p className={cn("text-[13.5px] font-medium leading-snug text-foreground", p.estado === "descartada" && "text-muted-foreground line-through")}>{p.fazer}</p>
-            {original && <p className="mt-0.5 text-[12px] text-muted-foreground">{original}</p>}
-            <p className="mt-1 text-[12.5px] leading-normal text-muted-foreground">
-              {p.por_que}
-              {p.trecho && <em> “{p.trecho}”</em>}
-            </p>
-            {p.observacao_descarte && <p className="mt-1 text-[12px] text-muted-foreground">motivo: {p.observacao_descarte}</p>}
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {aberta && (
+            <motion.div key="proposta" variants={mov.abrir} initial="hidden" animate="visible" exit="exit">
+              <div className="mt-2 border-t border-border/60 pt-2">
+                <p className={cn("text-[13.5px] font-medium leading-snug text-foreground", p.estado === "descartada" && "text-muted-foreground line-through")}>{p.fazer}</p>
+                {original && <p className="mt-0.5 text-[12px] text-muted-foreground">{original}</p>}
+                <p className="mt-1 text-[12.5px] leading-normal text-muted-foreground">
+                  {p.por_que}
+                  {p.trecho && <em> “{p.trecho}”</em>}
+                </p>
+                {p.observacao_descarte && <p className="mt-1 text-[12px] text-muted-foreground">motivo: {p.observacao_descarte}</p>}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
