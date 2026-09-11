@@ -17,6 +17,7 @@ import { gerarConversasEnsaio, conversasVisiveisPara, gerarLeadsEnsaio } from "@
 import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
 import { VerComo } from "@/components/ensaio/ver-como";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
  * Shell autenticado (r9): SIDEBAR de ícones retrátil — colapsada (60px) por padrão, expande no
@@ -141,6 +142,7 @@ async function AppLayoutEnsaio({
   const abertos = leads.filter((l) => !["ganho", "perdido"].includes(l.etapa)).length;
 
   return (
+    <TooltipProvider>
     <div className="min-h-screen pl-[60px]">
       <Sidebar
         contFunil={abertos}
@@ -165,5 +167,6 @@ async function AppLayoutEnsaio({
       <Toaster />
       <MarcaBuild />
     </div>
+    </TooltipProvider>
   );
 }

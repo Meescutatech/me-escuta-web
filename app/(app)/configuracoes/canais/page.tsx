@@ -3,6 +3,10 @@ import { lerCanais } from "@/components/configuracoes/dados/canais";
 import { lerSessao } from "@/components/configuracoes/dados/lite-sessao";
 import { lerDominioDepartamentos } from "@/lib/dados/departamentos";
 import { TabelaCanais, type CanalNaTela } from "@/components/configuracoes/tabela-canais";
+import { lerSessaoEnsaio, DEPARTAMENTOS_ENSAIO } from "@/lib/ensaio/sessao";
+import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
+import { gerarMembrosEnsaio } from "@/lib/ensaio/fixtures/membros";
+import { CanaisEnsaio } from "@/components/ensaio/canais";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +20,25 @@ export const dynamic = "force-dynamic";
  * FECHADO — o default é o lado seguro.
  */
 export default async function CanaisPage() {
+  // W-D2 · modo ensaio: tabela nova, com fixture. Membro só vê o próprio número (R4).
+  const ensaio = lerSessaoEnsaio();
+  if (ensaio) {
+    const agora = new Date();
+    const gestao = ensaio.papel === "owner" || ensaio.papel === "admin";
+    const lotada = new Set(ensaio.departamentos.map((d) => d.departamento));
+    const canais = gerarCanaisEnsaio(agora).filter(
+      (c) => gestao || c.responsavel_id === ensaio.id || lotada.has(c.departamento),
+    );
+    return (
+      <CanaisEnsaio
+        eu={ensaio}
+        canais={canais}
+        membros={gerarMembrosEnsaio(agora)}
+        departamentos={DEPARTAMENTOS_ENSAIO}
+        agoraIso={agora.toISOString()}
+      />
+    );
+  }
   // R22/A1 · o domínio de departamento vem do BANCO (`core.v_departamento`), no servidor, junto das
   // outras leituras. Era uma constante de quatro valores dentro do componente, e três dos quatro
   // não existiam no banco (D22-1 / ARB-R18-02).
