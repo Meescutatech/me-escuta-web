@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { rotuloFerramenta } from "@/lib/jarvis/contrato";
-import { MarcaJarvis, type VarianteMarca } from "./marca";
+import { MarcaJarvis } from "./marca";
 
 /**
- * "JARVIS DIZ" — o bloco do dashboard, v2 na dieta (W-J, 10/09/2026).
+ * "JARVIS DIZ" — o bloco do dashboard, dieta final (W-J, 10/09/2026 22:40).
  *
- * O que o Jarvis viu hoje e onde clicar, em tipo — sem chip, sem pastilha colorida:
- *   1. cabeçalho discreto: marca + "Jarvis diz" + hora da última passada (12px, muted);
+ * O que o Jarvis viu hoje e onde clicar, em tipo — sem chip, sem pastilha colorida. O arco é a
+ * assinatura; o nome não se repete ao lado dele:
+ *   1. cabeçalho discreto: arco + "olhou às 22:26" (12px, muted, uma linha);
  *   2. a frase do dia (15px, medium) — lida em 3 segundos;
  *   3. até três observações; cada uma é um link para a tela certa, com o destino em texto
  *      muted à direita e, no hover, a consulta de origem ("consultou o funil");
@@ -31,8 +32,9 @@ export interface JarvisDizProps {
   perguntas: string[];
   geradoEm: string | null;
   hrefPergunta?: (pergunta: string) => string;
-  marca?: VarianteMarca;
   className?: string;
+  /** aceita e IGNORADA — a marca está travada no arco */
+  marca?: string;
 }
 
 function horaCurta(iso: string | null): string | null {
@@ -44,20 +46,18 @@ function horaCurta(iso: string | null): string | null {
 
 const LINK = "underline-offset-[3px] hover:underline focus-visible:outline-none focus-visible:underline";
 
-export function JarvisDiz({ frase, observacoes, perguntas, geradoEm, hrefPergunta, marca = "arco", className }: JarvisDizProps) {
+export function JarvisDiz({ frase, observacoes, perguntas, geradoEm, hrefPergunta, className }: JarvisDizProps) {
   const hora = horaCurta(geradoEm);
   const href = hrefPergunta ?? ((q: string) => `/jarvis?contexto=${encodeURIComponent("/")}&pergunta=${encodeURIComponent(q)}`);
   const vazio = !frase && observacoes.length === 0;
 
   return (
-    <section className={cn("rounded-md border border-border bg-card px-4 py-3.5", className)} aria-labelledby="jarvis-diz-titulo">
+    <section className={cn("rounded-md border border-border/60 bg-muted/30 px-4 py-3", className)} aria-labelledby="jarvis-diz-titulo">
       <header className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        <MarcaJarvis variante={marca} tamanho={16} rotulo="Jarvis" className="text-foreground" />
-        <h2 id="jarvis-diz-titulo" className="font-medium text-foreground">
-          {marca === "palavra" ? "diz" : "Jarvis diz"}
+        <MarcaJarvis tamanho={16} rotulo="Jarvis" className="text-foreground" />
+        <h2 id="jarvis-diz-titulo" className="font-normal">
+          {hora ? `olhou às ${hora}` : "ainda não olhou hoje"}
         </h2>
-        <span aria-hidden>·</span>
-        <span>{hora ? `olhou às ${hora}` : "ainda não olhou hoje"}</span>
       </header>
 
       {vazio ? (
@@ -86,8 +86,8 @@ export function JarvisDiz({ frase, observacoes, perguntas, geradoEm, hrefPergunt
       )}
 
       {perguntas.length > 0 && (
-        <footer className="mt-3 border-t border-border pt-2.5 text-[12.5px] text-muted-foreground">
-          <p>Pergunte ao Jarvis</p>
+        <footer className="mt-3 border-t border-border/60 pt-2.5 text-[12.5px] text-muted-foreground">
+          <p>Pergunte</p>
           <ul className="mt-1 space-y-0.5">
             {perguntas.slice(0, 3).map((q) => (
               <li key={q}>

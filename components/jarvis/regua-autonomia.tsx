@@ -3,10 +3,13 @@
 import { LockIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintTooltip } from "@/components/ui/hint-tooltip";
-import { MarcaJarvis, type VarianteMarca } from "./marca";
+import { MarcaJarvis } from "./marca";
 
 /**
- * A RÉGUA DE AUTONOMIA DO JARVIS, por tipo de ação — v2 na dieta (W-J, 10/09/2026).
+ * A RÉGUA DE AUTONOMIA por tipo de ação — dieta final (W-J, 10/09/2026 22:40). Serve QUALQUER
+ * agente (`agente` no cabeçalho: Jarvis, Clara, Levindo, Priscila); para o Jarvis o arco é a
+ * assinatura e o nome não se repete, para os outros vai o nome em texto. Hairline `border/60`,
+ * sem fundo.
  *
  * Vocabulário do banco: nível ∈ auto | propor | proibido (0165) e TETO ∈ auto | propor (0161:
  * "teto ≠ configuração — declara o que é PERMITIDO configurar"). Uma linha por capacidade; à
@@ -43,27 +46,39 @@ function cabeNoTeto(nivel: NivelAutonomia, teto: TetoAutonomia): boolean {
   return nivel !== "auto" || teto === "auto";
 }
 
+export interface AgenteDaRegua {
+  /** `core.agente.id` — "jarvis", "clara", "levindo", "priscila" */
+  id: string;
+  nome: string;
+}
+
 export interface ReguaAutonomiaProps {
   linhas: LinhaAutonomia[];
   podeEditar: boolean;
   onMudar?: (chave: string, nivel: NivelAutonomia) => void;
-  marca?: VarianteMarca;
+  /** de quem é a régua — serve Clara, Levindo e Priscila também. Padrão: Jarvis. */
+  agente?: AgenteDaRegua;
   className?: string;
+  /** aceita e IGNORADA — a marca está travada no arco */
+  marca?: string;
 }
 
-export function ReguaAutonomia({ linhas, podeEditar, onMudar, marca = "arco", className }: ReguaAutonomiaProps) {
+const JARVIS: AgenteDaRegua = { id: "jarvis", nome: "Jarvis" };
+
+export function ReguaAutonomia({ linhas, podeEditar, onMudar, agente = JARVIS, className }: ReguaAutonomiaProps) {
+  const ehJarvis = agente.id === "jarvis";
   const livres = linhas.filter((l) => !l.travada);
   const travadas = linhas.filter((l) => l.travada);
 
   return (
-    <section className={cn("rounded-md border border-border bg-card", className)} aria-label="Autonomia do Jarvis por tipo de ação">
-      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <MarcaJarvis variante={marca} tamanho={16} className="text-foreground" />
-        <h2 className="text-[13.5px] font-medium text-foreground">O que o Jarvis faz sozinho e o que ele propõe</h2>
-        {!podeEditar && <span className="ml-auto text-[12px] text-muted-foreground">só leitura</span>}
+    <section className={cn("rounded-md border border-border/60", className)} aria-label={`Autonomia de ${agente.nome} por tipo de ação`}>
+      <header className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5 text-[12px] text-muted-foreground">
+        {ehJarvis ? <MarcaJarvis tamanho={16} rotulo="Jarvis" className="text-foreground" /> : <span className="font-medium text-foreground">{agente.nome}</span>}
+        <h2 className="font-medium text-foreground">{ehJarvis ? "o que faz sozinho e o que propõe" : "— o que faz sozinho e o que propõe"}</h2>
+        {!podeEditar && <span className="ml-auto">só leitura</span>}
       </header>
 
-      <ul className="divide-y divide-border">
+      <ul className="divide-y divide-border/60">
         {livres.map((l) => (
           <Linha key={l.chave} linha={l} podeEditar={podeEditar} onMudar={onMudar} />
         ))}
@@ -71,11 +86,11 @@ export function ReguaAutonomia({ linhas, podeEditar, onMudar, marca = "arco", cl
 
       {travadas.length > 0 && (
         <>
-          <p className="flex items-center gap-1.5 border-y border-border bg-muted/40 px-4 py-2 text-[12px] text-muted-foreground">
+          <p className="flex items-center gap-1.5 border-y border-border/60 px-4 py-2 text-[12px] text-muted-foreground">
             <LockIcon className="size-3.5" aria-hidden />
-            Nunca é do Jarvis — Constituição, Art. III.3. Muda por emenda, não por configuração.
+            Nunca {ehJarvis ? "" : `por ${agente.nome} `}— Constituição, Art. III.3. Muda por emenda, não por configuração.
           </p>
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-border/60">
             {travadas.map((l) => (
               <Linha key={l.chave} linha={l} podeEditar={false} />
             ))}
@@ -83,7 +98,7 @@ export function ReguaAutonomia({ linhas, podeEditar, onMudar, marca = "arco", cl
         </>
       )}
 
-      <footer className="border-t border-border px-4 py-2 text-[12px] text-muted-foreground">
+      <footer className="border-t border-border/60 px-4 py-2 text-[12px] text-muted-foreground">
         Cada mudança fica registrada com quem mudou e quando, e vale na hora.
       </footer>
     </section>

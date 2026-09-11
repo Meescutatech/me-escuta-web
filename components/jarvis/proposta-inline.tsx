@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { AssinaturaJarvis, MarcaJarvis, type VarianteMarca } from "./marca";
+import { MarcaJarvis } from "./marca";
 import { linhaDoEstado, prazoUrgente, tempoDesde, textoDoOriginal, textoPrazo } from "./partes";
 import {
   ROTULO_MOTIVO,
@@ -18,35 +18,26 @@ import {
 } from "./tipos";
 
 /**
- * A NOTA DO JARVIS NO FIO — v2 (W-J, 10/09/2026, reconstruída depois da reprovação das 22:30).
+ * A NOTA DO JARVIS NO FIO — a escolhida (Diogo, 10/09/2026 22:40: arco + sem lateral; "bem
+ * minimalista, clean — ele é o Sistema").
  *
- * Referências: mensagens de agente do Linear, Fin no composer do Intercom, blocos do Notion AI.
- * QUIETA e tipográfica, sem chrome: nada de rótulo em caixa alta, tracejado, selo colorido ou
- * rail de estado. O que dá hierarquia é o tipo — cinco linhas, cada uma com um tamanho:
+ * Quieta e tipográfica, referência Linear / Fin / Notion AI. O arco é a assinatura — o nome
+ * "Jarvis" não se repete ao lado dele. Cinco linhas, cada uma com um tamanho:
  *
- *   marca + "Jarvis sugere uma tarefa" + hora            12px, muted
- *   a AÇÃO em uma frase                                    15px, medium, foreground
- *   o porquê, com o trecho do paciente em itálico          13px, muted
- *   prazo · responsável                                    12px, muted
- *   Aceitar (botão pequeno) · Ajustar · Descartar (texto)
+ *   ◠ sugere uma tarefa · Maria Aparecida · há 12 min     12px, muted, uma linha
+ *   Ligar para Maria e confirmar a audiometria de sexta   15px, medium, foreground
+ *   o porquê, com o trecho do paciente em itálico          13px, muted  (+ "ver no fio")
+ *   Hoje · Sara                                            12px, muted
+ *   [Aceitar]  Ajustar  Descartar                          Button sm · texto muted
  *
- * Fundo `muted/40`, borda 1px `border`, raio md. Duas variantes para o Diogo escolher:
- *   (a) sem lateral colorida — a nota se distingue do resto do fio só pelo fundo e pelo tipo;
- *   (b) lateral esquerda de 2px na cor de acento (`primary`) enquanto espera decisão.
- *
- * Estados decididos (aceita / ajustada / descartada / feita) COLAPSAM numa linha —
- * "Aceita por Sara · 14:32 · ver tarefa" — que abre a proposta original ao clique. O ciclo
- * abre e fecha no mesmo lugar do fio; quem decide é sempre pessoa.
+ * Fundo `muted/30`, hairline `border/60`, raio md. Sem rótulo em caixa alta, sem lateral, sem
+ * selo. Estados decididos (aceita / ajustada / descartada / feita) COLAPSAM numa linha —
+ * "Aceita por Sara · 14:32 · ver tarefa" — que abre a proposta original ao clique. Quem decide
+ * é sempre pessoa.
  */
-
-export type VarianteNota = "a" | "b";
 
 export interface PropostaInlineProps {
   proposta: PropostaJarvis;
-  /** (a) sem lateral · (b) lateral de 2px em `primary` enquanto proposta */
-  variante?: VarianteNota;
-  /** qual marca vai no cabeçalho — em escolha; padrão `arco` */
-  marca?: VarianteMarca;
   /** mostra o nome do lead no cabeçalho (fora do fio, em /tarefas) */
   mostrarLead?: boolean;
   responsaveis?: Pessoa[];
@@ -60,14 +51,16 @@ export interface PropostaInlineProps {
   onVoltar?: () => void;
   agoraMs?: number;
   className?: string;
+  /** aceitas e IGNORADAS — a escolha do Diogo travou arco + sem lateral; ficam para não quebrar quem já passa */
+  marca?: string;
+  variante?: string;
 }
 
-const LINK = "text-[12.5px] text-muted-foreground underline-offset-[3px] hover:text-foreground hover:underline focus-visible:outline-none focus-visible:underline";
+const CAIXA = "rounded-md border border-border/60 bg-muted/30";
+const LINK = "text-muted-foreground underline-offset-[3px] hover:text-foreground hover:underline focus-visible:outline-none focus-visible:underline";
 
 export function PropostaJarvisInline({
   proposta: p,
-  variante = "a",
-  marca = "arco",
   mostrarLead = false,
   responsaveis = [],
   onIrAoTrecho,
@@ -95,16 +88,14 @@ export function PropostaJarvisInline({
   const houveAjuste =
     fazer.trim() !== p.fazer.trim() || (prazo ?? null) !== (p.prazo ?? null) || (responsavelId ?? null) !== (p.responsavel_id ?? null);
 
-  const caixa = "rounded-md border border-border bg-muted/40";
-
   // ── decidida: uma linha, que abre a proposta original ao clique ────────────────────────────
   if (p.estado !== "proposta") {
     const feitaOuAceita = p.estado !== "descartada";
     const original = textoDoOriginal(p);
     return (
-      <div className={cn(caixa, "px-3.5 py-2", className)} aria-label={`Proposta do Jarvis — ${linhaDoEstado(p)}`}>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
-          <MarcaJarvis variante={marca} tamanho={16} className="text-muted-foreground" />
+      <div className={cn(CAIXA, "px-3 py-2", className)} aria-label={`Proposta do Jarvis — ${linhaDoEstado(p)}`}>
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground">
+          <MarcaJarvis tamanho={16} />
           {feitaOuAceita && <CheckIcon className="size-3.5 text-success-ink" strokeWidth={2.25} aria-hidden />}
           <span>{linhaDoEstado(p)}</span>
           {feitaOuAceita && hrefTarefa && (
@@ -120,7 +111,7 @@ export function PropostaJarvisInline({
           </button>
         </div>
         {aberta && (
-          <div className="mt-2 border-t border-border pt-2">
+          <div className="mt-2 border-t border-border/60 pt-2">
             <p className={cn("text-[13.5px] font-medium leading-snug text-foreground", p.estado === "descartada" && "text-muted-foreground line-through")}>{p.fazer}</p>
             {original && <p className="mt-0.5 text-[12px] text-muted-foreground">{original}</p>}
             <p className="mt-1 text-[12.5px] leading-normal text-muted-foreground">
@@ -139,20 +130,20 @@ export function PropostaJarvisInline({
   const acoes = !somenteLeitura;
 
   return (
-    <article
-      className={cn(caixa, "px-3.5 py-3", variante === "b" && "border-l-2 border-l-primary", className)}
-      aria-label="Proposta do Jarvis esperando decisão"
-    >
-      <header className="flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground">
-        <AssinaturaJarvis variante={marca} tamanho={16} sufixo="sugere uma tarefa" />
+    <article className={cn(CAIXA, "px-3 py-2.5", className)} aria-label="Proposta do Jarvis esperando decisão">
+      <header className="flex items-center gap-1.5 truncate text-[12px] text-muted-foreground">
+        <MarcaJarvis tamanho={16} rotulo="Jarvis" />
+        <span>sugere uma tarefa</span>
         {mostrarLead && p.lead_nome && (
           <>
             <span aria-hidden>·</span>
-            <span className="text-foreground">{p.lead_nome}</span>
+            <span className="truncate text-foreground">{p.lead_nome}</span>
           </>
         )}
         <span aria-hidden>·</span>
-        <time dateTime={p.criado_em}>{tempoDesde(p.criado_em, agora)}</time>
+        <time dateTime={p.criado_em} className="shrink-0">
+          {tempoDesde(p.criado_em, agora)}
+        </time>
       </header>
 
       {editando ? (
@@ -203,7 +194,7 @@ export function PropostaJarvisInline({
                   role="radio"
                   aria-checked={prazo === k}
                   onClick={() => setAjuste((a) => ({ ...a, prazo: k }))}
-                  className={cn("underline-offset-[3px] hover:text-foreground", prazo === k ? "font-medium text-foreground underline" : "")}
+                  className={cn("underline-offset-[3px] hover:text-foreground", prazo === k && "font-medium text-foreground underline")}
                 >
                   {ROTULO_PRAZO[k]}
                 </button>
@@ -237,7 +228,7 @@ export function PropostaJarvisInline({
       </p>
 
       {acoes && modo !== "descartar" && (
-        <footer className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <footer className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px]">
           <Button
             size="sm"
             onClick={() => {
@@ -259,14 +250,14 @@ export function PropostaJarvisInline({
               Cancelar
             </button>
           ) : (
-            <button type="button" onClick={() => setModo("ajustar")} className={LINK}>
-              Ajustar
-            </button>
-          )}
-          {!editando && (
-            <button type="button" onClick={() => setModo("descartar")} className={LINK}>
-              Descartar
-            </button>
+            <>
+              <button type="button" onClick={() => setModo("ajustar")} className={LINK}>
+                Ajustar
+              </button>
+              <button type="button" onClick={() => setModo("descartar")} className={LINK}>
+                Descartar
+              </button>
+            </>
           )}
         </footer>
       )}
@@ -283,7 +274,7 @@ export function PropostaJarvisInline({
                   role="radio"
                   aria-checked={motivo === m}
                   onClick={() => setMotivo(m)}
-                  className={cn("underline-offset-[3px] hover:text-foreground", motivo === m ? "font-medium text-foreground underline" : "")}
+                  className={cn("underline-offset-[3px] hover:text-foreground", motivo === m && "font-medium text-foreground underline")}
                 >
                   {ROTULO_MOTIVO[m]}
                 </button>
