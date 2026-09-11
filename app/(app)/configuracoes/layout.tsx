@@ -6,6 +6,8 @@ import { gerarConvitesEnsaio, gerarMembrosEnsaio } from "@/lib/ensaio/fixtures/m
 import { gerarAgentesEnsaio } from "@/lib/ensaio/fixtures/agentes";
 import { gerarIntegracoesEnsaio } from "@/lib/ensaio/fixtures/integracoes";
 import type { EstadoSecao } from "@/lib/ensaio/config-secoes";
+import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
+import { lerEstadosSecoes } from "@/lib/dados/config-secoes-reais";
 
 /**
  * CONFIGURAÇÕES — nav à esquerda, tela à direita. Não existe página-índice.
@@ -17,7 +19,31 @@ import type { EstadoSecao } from "@/lib/ensaio/config-secoes";
  * Largura da área de conteúdo: regra global do Diogo (10/09, 23:20) — fluida, gutter 24px (32px em
  * ≥1536), `max-w` só em 1600. `pb-[120px]` é o respiro para a barra sticky de publicação.
  */
-export default function ConfiguracoesLayout({ children }: { children: ReactNode }) {
+/**
+ * 11/09/2026 · OS SELOS DESTE MENU ERAM FIXTURE — em produção também.
+ *
+ * Este layout montava "4 ativos", "2 de 4", "88 %", "1 aberto", "8" a partir das fixtures de
+ * ensaio, SEM guarda nenhuma: usuário real via número inventado em toda tela da seção. Era o
+ * único lugar do app que mentia sem pedir licença, e mentia no lugar mais difícil de perceber —
+ * ninguém confere um selo de menu contra nada.
+ *
+ * Agora a fonte segue o caminho: ensaio usa fixture (é para isso que ele existe), e o caminho
+ * real lê o banco. O que o banco ainda não sabe dizer fica SEM selo, nunca com um chutado.
+ */
+export default async function ConfiguracoesLayout({ children }: { children: ReactNode }) {
+  const ensaio = lerSessaoEnsaio();
+  if (!ensaio) {
+    const estadosReais = await lerEstadosSecoes();
+    return (
+      <div className="flex min-h-[calc(100vh-var(--altura-topo))] bg-background">
+        <NavConfiguracoes estados={estadosReais} />
+        <main className="min-w-0 flex-1 px-6 pb-[120px] pt-8 2xl:px-8">
+          <div className="max-w-[1600px]">{children}</div>
+        </main>
+      </div>
+    );
+  }
+
   const agora = new Date();
   const membros = gerarMembrosEnsaio(agora);
   const convites = gerarConvitesEnsaio(agora).filter((c) => c.status === "pendente" || c.status === "expirado");
