@@ -312,7 +312,9 @@ export function DrawerCard({
       />
       <aside
         className={cn(
-          "fixed right-0 top-0 z-50 flex h-full w-[560px] max-w-[96vw] flex-col bg-creme shadow-[-18px_0_50px_rgba(37,47,99,0.18)] transition-transform",
+          // largura acompanha a tela (regra 23:20): 560px em 1440, ~690px em 1920 — a conversa e a ficha
+          // ganham o espaço; teto de 720 para o fio não virar linha de 120 caracteres
+          "fixed right-0 top-0 z-50 flex h-full w-[clamp(560px,36vw,720px)] max-w-[96vw] flex-col bg-creme shadow-[-18px_0_50px_rgba(37,47,99,0.18)] transition-transform",
           aberto ? "translate-x-0" : "translate-x-full",
         )}
       >

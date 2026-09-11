@@ -98,7 +98,11 @@ function Coluna({
   const resumo = resumoColuna(cards, faixaDe);
   const soma = resumo.soma;
   return (
-    <div className="flex h-full w-coluna shrink-0 flex-col">
+    // Regra do Diogo (10/09 23:20): "o tanto de espaço que estamos perdendo". A coluna deixou de ter
+    // largura FIXA (w-coluna = 236px) e passou a PREENCHER: `flex-1` com `min-w-coluna`. Em 1920px
+    // as sete colunas abrem para ~230→300px cada; abaixo do mínimo elas param de encolher e o board
+    // rola na horizontal — a coluna nunca fica mais estreita do que o card foi desenhado para ter.
+    <div className="flex h-full min-w-coluna flex-1 basis-0 flex-col">
       <div className="flex items-center gap-2 px-1 pb-1 pt-1.5">
         <span
           className={cn(
@@ -477,7 +481,7 @@ export function Quadro({
   return (
     <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
       {/* ── cab do board (r9): título + total mono + busca + ao vivo ── */}
-      <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-5 pb-3 pt-4">
+      <div className="flex flex-shrink-0 flex-wrap items-baseline gap-x-3.5 gap-y-2 px-6 pb-3 pt-4">
         {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título, `lib/header/titulos.ts`).
             A LINHA fica — os instrumentos são da tela; só o nome saiu dela (SPEC-M6 §5.4). */}
         <span
@@ -612,7 +616,7 @@ export function Quadro({
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >
-        <div className="flex flex-1 items-stretch gap-3 overflow-x-auto px-5 pb-5">
+        <div className="flex flex-1 items-stretch gap-3 overflow-x-auto px-6 pb-5">
           {abertas.map((etapa) => (
             <Coluna
               key={etapa.chave}
@@ -631,7 +635,7 @@ export function Quadro({
           ))}
           {/* terminais: fora do fluxo operacional; seguem droppáveis (fechar = arrastar) */}
           {terminais.length > 0 && (
-            <div className="flex w-[200px] min-w-[200px] flex-col gap-2 pt-9">
+            <div className="flex w-[200px] min-w-[200px] shrink-0 flex-col gap-2 pt-9">
               {terminais.map((etapa) => (
                 <Terminal key={etapa.chave} etapa={etapa} quantidade={(porEtapa.get(etapa.chave) ?? []).length} />
               ))}
