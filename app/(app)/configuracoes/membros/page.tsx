@@ -5,6 +5,8 @@ import { lerSessaoEnsaio, DEPARTAMENTOS_ENSAIO } from "@/lib/ensaio/sessao";
 import { gerarConvitesEnsaio, gerarMembrosEnsaio } from "@/lib/ensaio/fixtures/membros";
 import { MembrosEnsaio } from "@/components/ensaio/membros";
 import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
+import { lerDadosMembros } from "@/lib/dados/membros-reais";
+import type { Papel } from "@/lib/membros";
 
 export const dynamic = "force-dynamic";
 
@@ -32,11 +34,34 @@ export default async function MembrosPage() {
     );
   }
 
+  // 11/09 · o caminho real passa a usar a MESMA tela do ensaio (`MembrosEnsaio`), com o painel
+  // lateral da pessoa. `TabelaMembros`, o componente antigo, fica só como degrade: se a leitura
+  // falhar, a lista ainda aparece em vez de a tela sumir.
+  const agora = new Date();
   const supabase = criarClienteServidor();
-  // getUser junto das leituras — vai à rede e não depende delas
-  const [userRes, { data: papelData }, { data: membros }, { data: convites }] = await Promise.all([
+  const [userRes, { data: papelData }, dados] = await Promise.all([
     supabase.auth.getUser(),
     supabase.schema("api").rpc("papel_atual"),
+    lerDadosMembros(),
+  ]);
+  const user = userRes.data.user;
+  const papel = ((papelData as Papel | null) ?? "membro") as "owner" | "admin" | "membro" | "marketing";
+
+  if (dados) {
+    return (
+      <MembrosEnsaio
+        meuId={user?.id ?? ""}
+        meuPapel={papel}
+        membros={dados.membros}
+        convites={dados.convites}
+        departamentos={dados.departamentos}
+        canais={dados.canais}
+        agoraIso={agora.toISOString()}
+      />
+    );
+  }
+
+  const [{ data: membros }, { data: convites }] = await Promise.all([
     supabase
       .schema("core")
       .from("v_membro")
@@ -49,8 +74,6 @@ export default async function MembrosPage() {
       .in("status", ["pendente", "expirado"])
       .order("criado_em", { ascending: true }),
   ]);
-
-  const user = userRes.data.user;
 
   return (
     <TabelaMembros
