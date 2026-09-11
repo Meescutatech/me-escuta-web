@@ -117,6 +117,13 @@ export function BuscaJarvis({
               ref.current?.blur();
             }
           }}
+          /*
+           * O ⌘K DESTA TELA É DESTE CAMPO (combinado com o dono do Jarvis global em 11/09). O
+           * handler global procura por `data-jarvis-atalho-local` e, achando, FOCA aqui em vez de
+           * abrir o popup — a tela que anuncia um atalho tem de cumpri-lo. `⇧⌘K` continua abrindo
+           * o Jarvis completo de qualquer lugar. Ver `components/jarvis/presenca.tsx`.
+           */
+          data-jarvis-atalho-local
           placeholder="Buscar ou perguntar ao Jarvis…"
           aria-label="Buscar lead ou perguntar ao Jarvis"
           className="min-w-0 flex-1 bg-transparent text-[13px] text-tinta outline-none placeholder:text-mute"

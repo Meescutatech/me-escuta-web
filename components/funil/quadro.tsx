@@ -46,6 +46,7 @@ import type { EnsaioFunil } from "@/lib/ensaio/funil-extra";
 import { BuscaJarvis, LinhaJarvis } from "./busca-jarvis";
 import { VisoesSalvas } from "./visoes-salvas";
 import { aplicarLeitura, interpretarBusca, type LeituraJarvis } from "@/lib/dados/funil-jarvis";
+import { useContextoJarvis } from "@/lib/jarvis/contexto";
 import { contarSituacao } from "./barra-filtros";
 import { opcoesCidade } from "@/lib/dados/funil-filtros";
 import { useProjecaoViva } from "@/components/projecao-viva";
@@ -492,6 +493,8 @@ export function Quadro({
   const fade = useFadeTrilho(trilhoRef);
   const cardNoAr = arraste ? (cards.find((c) => c.lead_id === arraste.leadId) ?? null) : null;
 
+
+
   function abrirCard(id: string) {
     setSelecionadoId(id);
     setCardAberto(id);
@@ -554,6 +557,49 @@ export function Quadro({
   // `todasEtapas` (e não `dados.etapas`) porque o lead achado pode estar numa etapa que não é
   // coluna — 'arquivado'. Procurar só entre as colunas devolveria null e o drawer perderia o nome.
   const etapaAberta = dados.todasEtapas.find((e) => e.chave === leadAberto?.etapa) ?? null;
+
+  /*
+   * ── O JARVIS SABE ONDE ESTÁ (11/09) ───────────────────────────────────────────────────────
+   * Diogo: "não pode ficar jogado no canto sem contexto". A pílula do Jarvis passa a dizer o que
+   * ESTA tela tem a dizer, e o número que ela mostra é o mesmo que o board já calcula — não uma
+   * segunda conta. A ordem do aviso é a da urgência que a Sara sente: quem passou do prazo vem
+   * antes de quem está sem próxima ação, e sem nenhum dos dois a pílula fica CALADA (o degrade
+   * certo: `aviso: null` — dock com o arco e nada a dizer é melhor que um número inventado).
+   * As sugestões são as frases que a busca desta tela sabe responder.
+   */
+  const avisoJarvis = useMemo(() => {
+    if (contagens.alemDoPrazo > 0) {
+      return {
+        onde: "no funil",
+        quantidade: contagens.alemDoPrazo,
+        texto: contagens.alemDoPrazo === 1 ? "lead além do prazo da etapa" : "leads além do prazo da etapa",
+        previa: "Passaram do prazo da própria etapa — a faixa vermelha do board.",
+        pergunta: "Quais leads passaram do prazo da etapa?",
+      };
+    }
+    if (contagens.sem != null && contagens.sem > 0) {
+      return {
+        onde: "no funil",
+        quantidade: contagens.sem,
+        texto: contagens.sem === 1 ? "lead sem próxima ação" : "leads sem próxima ação",
+        previa: "Ninguém marcou o próximo passo com eles — é como o lead some em silêncio.",
+        pergunta: "Quais leads estão sem próxima ação?",
+      };
+    }
+    return null;
+  }, [contagens.alemDoPrazo, contagens.sem]);
+
+  useContextoJarvis({
+    titulo: "Funil de vendas",
+    item: leadAberto ? { tipo: "lead" as const, id: leadAberto.lead_id, rotulo: leadAberto.nome ?? "Lead" } : null,
+    sugestoes: [
+      "Quais leads passaram do prazo da etapa?",
+      "Quem comprou e sumiu há mais de 5 dias?",
+      "Quais leads estão sem responsável?",
+      leadAberto ? `O que falta para fechar com ${(leadAberto.nome ?? "este lead").split(" ")[0]}?` : "Quais tarefas vencem hoje?",
+    ],
+    aviso: avisoJarvis,
+  });
 
   return (
     <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
