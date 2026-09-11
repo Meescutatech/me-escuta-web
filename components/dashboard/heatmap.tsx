@@ -11,13 +11,13 @@ const DIAS = [
 ] as const;
 const HORAS = Array.from({ length: 24 }, (_, h) => h);
 
-/** Hora × dia da semana, tinta preta em cinco degraus, número dentro da célula. Semana começa na segunda. */
+/** Hora × dia da semana: só cor (tinta preta em degraus), número no hover; células baixas. */
 export function HeatmapHoraDia({ heatmap }: { heatmap: Heatmap | null }) {
   if (!heatmap) return <p className="py-6 text-center text-[12px] text-muted-foreground">Sem leitura por hora — as views do dashboard são por dia.</p>;
   const max = maxHeatmap(heatmap);
   return (
     <div className="overflow-x-auto">
-      <div className="min-w-[680px]">
+      <div className="min-w-[560px]">
         <div className="grid grid-cols-[2rem_1fr] items-center">
           <span />
           <div className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-px">
@@ -38,15 +38,10 @@ export function HeatmapHoraDia({ heatmap }: { heatmap: Heatmap | null }) {
                 return (
                   <span
                     key={h}
-                    title={v > 0 ? `${d.rotulo} ${h}h–${h + 1}h: ${v}` : undefined}
-                    className="flex h-[22px] items-center justify-center rounded-[3px] text-[10px] font-medium tabular-nums"
-                    style={{
-                      backgroundColor: grau === 0 ? "var(--muted)" : `color-mix(in oklab, var(--foreground) ${Math.round(8 + grau * 82)}%, transparent)`,
-                      color: grau >= 0.55 ? "var(--background)" : "var(--foreground)",
-                    }}
-                  >
-                    {v > 0 ? v : ""}
-                  </span>
+                    title={`${d.rotulo} ${h}h–${h + 1}h: ${v} ${v === 1 ? "mensagem" : "mensagens"}`}
+                    className="block h-3.5 rounded-[2px]"
+                    style={{ backgroundColor: grau === 0 ? "var(--muted)" : `color-mix(in oklab, var(--foreground) ${Math.round(10 + grau * 85)}%, transparent)` }}
+                  />
                 );
               })}
             </div>

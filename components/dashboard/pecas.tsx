@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 /** A moldura de todo bloco: borda, raio 10px, branco. `denso` tira o padding para tabelas. */
 export function Bloco({ children, className, denso = false }: { children: React.ReactNode; className?: string; denso?: boolean }) {
-  return <section className={cn("rounded-lg border border-border bg-card", denso ? "" : "px-3.5 py-3", className)}>{children}</section>;
+  return <section className={cn("rounded-lg border border-border bg-card", denso ? "" : "px-3.5 py-3.5", className)}>{children}</section>;
 }
 
 /** Cabeçalho de bloco: título 13px semibold + descrição 11px apagada + controles à direita. */

@@ -42,9 +42,16 @@ export function interpretarLista(v: unknown): string[] {
 }
 
 /** Todos os recortes da toolbar, juntos — o que viaja na URL e o que cada bloco le. */
+export type TipoLead = "lead" | "paciente";
+
 export interface FiltrosDashboard {
   q: string;
+  /** quem ATENDEU (chave de ator) — recorta KPIs, evolução, funil e tabelas */
   pessoas: string[];
+  /** quem é DONO do lead (uuid de pessoa) — recorta leads parados e tarefas vencidas */
+  responsaveis: string[];
+  /** lead (ainda no funil) × paciente (já comprou) — recorta leads parados */
+  tipos: TipoLead[];
   numeros: string[];
   etapas: string[];
   origens: string[];
@@ -54,10 +61,14 @@ export interface FiltrosDashboard {
   comparar: boolean;
 }
 
+export const FILTROS_VAZIOS: FiltrosDashboard = { q: "", pessoas: [], responsaveis: [], tipos: [], numeros: [], etapas: [], origens: [], cidades: [], departamento: null, comparar: true };
+
 export function interpretarFiltros(sp: Record<string, string | string[] | undefined>): FiltrosDashboard {
   return {
     q: interpretarBusca(sp.q),
     pessoas: interpretarLista(sp.pessoa).filter((a) => /^(agente|humano):[A-Za-z0-9_.:-]+$/.test(a)),
+    responsaveis: interpretarLista(sp.responsavel),
+    tipos: interpretarLista(sp.tipo).filter((t): t is TipoLead => t === "lead" || t === "paciente"),
     numeros: interpretarLista(sp.numero),
     etapas: interpretarLista(sp.etapa),
     origens: interpretarLista(sp.origem),
@@ -65,6 +76,13 @@ export function interpretarFiltros(sp: Record<string, string | string[] | undefi
     departamento: interpretarDepartamento(sp.dep),
     comparar: String(Array.isArray(sp.comparar) ? sp.comparar[0] : (sp.comparar ?? "1")) !== "0",
   };
+}
+
+/** Um lead vira "paciente" quando comprou: etapa de ganho, ou tag de pós-venda. */
+export function tipoDoLead(card: { etapa: string; tags?: string[] }, etapasGanho: Set<string>): TipoLead {
+  if (etapasGanho.has(card.etapa)) return "paciente";
+  if ((card.tags ?? []).some((t) => /retorno|adapta|p[óo]s-venda/i.test(t))) return "paciente";
+  return "lead";
 }
 
 /** Busca livre (`?q=`) — recorta as tabelas por nome de pessoa, número ou etapa. */
@@ -118,6 +136,8 @@ export function montarHref(e: EstadoUrl, mudanca: Partial<Omit<EstadoUrl, "filtr
   } else q.set("periodo", String(periodo));
   if (f.q) q.set("q", f.q);
   if (f.pessoas.length) q.set("pessoa", f.pessoas.join(","));
+  if (f.responsaveis.length) q.set("responsavel", f.responsaveis.join(","));
+  if (f.tipos.length) q.set("tipo", f.tipos.join(","));
   if (f.numeros.length) q.set("numero", f.numeros.join(","));
   if (f.etapas.length) q.set("etapa", f.etapas.join(","));
   if (f.origens.length) q.set("origem", f.origens.join(","));

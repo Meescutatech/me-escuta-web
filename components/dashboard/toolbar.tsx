@@ -3,42 +3,58 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { CalendarIcon, CheckIcon, ChevronDownIcon, LayoutDashboardIcon, SearchIcon, TableIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { PERIODOS, type Ator, type Janela } from "@/lib/dados/dashboard-ceo-calculos";
-import { DEPARTAMENTOS_FILTRO, montarHref, type EstadoUrl, type FiltrosDashboard } from "@/lib/dados/dashboard-dono-calculos";
+import type { Ator, Janela } from "@/lib/dados/dashboard-ceo-calculos";
+import { DEPARTAMENTOS_FILTRO, montarHref, type EstadoUrl, type FiltrosDashboard, type TipoLead } from "@/lib/dados/dashboard-dono-calculos";
+import type { OpcoesFiltros } from "@/lib/dados/dashboard-dono";
 import { cn } from "@/lib/utils";
-import { ddmm } from "./pecas";
+import { SeletorPeriodo } from "./periodo";
 
 /**
- * A toolbar do dashboard (v3) — uma linha densa, 30px de altura, tudo na URL.
- *
- *   busca · Período (popover: presets + livre + comparar) · Pessoa · Número · Etapa · Origem · Cidade
- *   (multi, popover com caixas) · Departamento (segmented pequeno) · Tabela | Dashboard
- *
- * Referência: a toolbar do painel que o Diogo aprovou (refs/21st-advanced-stats.md §2) e as de
- * Stripe / Linear Insights / Vercel Analytics: controles baixos, rótulo + valor no próprio botão,
- * filtro ativo com fundo escuro, chips removíveis logo abaixo (em `chips.tsx`). Nenhum `<select>`
- * nativo; nenhuma cor além do preto do ativo.
+ * A toolbar do dashboard (v4) — uma linha, 30px, tudo na URL. Primários: busca · período (calendário
+ * com presets e dois meses) · Pessoa (quem atendeu) · Responsável (dono do lead) · Etapa ·
+ * Departamento. Secundários atrás de "Ver mais": Origem · Número · Cidade · Tipo de lead. Filtros
+ * ativos viram chips logo abaixo (`chips.tsx`). Nenhum `<select>` nativo, nenhuma cor além do preto.
  */
 
 const botao = "inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 data-[popup-open]:bg-muted";
 const ativo = "border-foreground bg-foreground text-background hover:bg-foreground";
 
-function Multi({
-  rotulo,
-  opcoes,
-  selecionados,
-  onChange,
-}: {
-  rotulo: string;
-  opcoes: Array<{ valor: string; rotulo: string; grupo?: string }>;
-  selecionados: string[];
-  onChange: (v: string[]) => void;
-}) {
-  const n = selecionados.length;
+type Opcao = { valor: string; rotulo: string; grupo?: string };
+
+function ListaMulti({ opcoes, selecionados, onChange }: { opcoes: Opcao[]; selecionados: string[]; onChange: (v: string[]) => void }) {
   const grupos = [...new Set(opcoes.map((o) => o.grupo ?? ""))];
+  return (
+    <div>
+      {grupos.map((g) => (
+        <div key={g}>
+          {g ? <p className="px-2 pb-0.5 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">{g}</p> : null}
+          {opcoes
+            .filter((o) => (o.grupo ?? "") === g)
+            .map((o) => {
+              const marcado = selecionados.includes(o.valor);
+              return (
+                <label key={o.valor} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] hover:bg-muted">
+                  <Checkbox checked={marcado} onCheckedChange={(c) => onChange(c ? [...selecionados, o.valor] : selecionados.filter((x) => x !== o.valor))} />
+                  <span className="truncate">{o.rotulo}</span>
+                </label>
+              );
+            })}
+        </div>
+      ))}
+      {selecionados.length > 0 ? (
+        <button type="button" onClick={() => onChange([])} className="mt-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground">
+          <XIcon className="size-3" aria-hidden /> Limpar
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function Multi({ rotulo, opcoes, selecionados, onChange }: { rotulo: string; opcoes: Opcao[]; selecionados: string[]; onChange: (v: string[]) => void }) {
+  const n = selecionados.length;
   return (
     <Popover>
       <PopoverTrigger className={cn(botao, n > 0 && ativo)} disabled={opcoes.length === 0} title={opcoes.length === 0 ? "sem opções nesta leitura" : undefined}>
@@ -47,36 +63,22 @@ function Multi({
         <ChevronDownIcon className="size-3.5 opacity-60" aria-hidden />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-56 p-1">
-        {grupos.map((g) => (
-          <div key={g}>
-            {g ? <p className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">{g}</p> : null}
-            {opcoes
-              .filter((o) => (o.grupo ?? "") === g)
-              .map((o) => {
-                const marcado = selecionados.includes(o.valor);
-                return (
-                  <label key={o.valor} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] hover:bg-muted">
-                    <Checkbox checked={marcado} onCheckedChange={(c) => onChange(c ? [...selecionados, o.valor] : selecionados.filter((x) => x !== o.valor))} />
-                    <span className="truncate">{o.rotulo}</span>
-                  </label>
-                );
-              })}
-          </div>
-        ))}
-        {n > 0 ? (
-          <button type="button" onClick={() => onChange([])} className="mt-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground">
-            <XIcon className="size-3" aria-hidden /> Limpar
-          </button>
-        ) : null}
+        <ListaMulti opcoes={opcoes} selecionados={selecionados} onChange={onChange} />
       </PopoverContent>
     </Popover>
   );
 }
 
+const TIPOS: Array<{ valor: TipoLead; rotulo: string }> = [
+  { valor: "lead", rotulo: "Lead (ainda no funil)" },
+  { valor: "paciente", rotulo: "Paciente (já comprou)" },
+];
+
 export function Toolbar({
   estado,
   janela,
   livre,
+  agoraIso,
   atores,
   opcoes,
   mostrarDepartamento,
@@ -84,23 +86,19 @@ export function Toolbar({
   estado: EstadoUrl;
   janela: Janela;
   livre: boolean;
+  agoraIso: string;
   atores: Ator[];
-  opcoes: { numeros: Array<{ id: string; rotulo: string }>; etapas: Array<{ chave: string; nome: string }>; origens: Array<{ chave: string; rotulo: string }>; cidades: string[] };
+  opcoes: OpcoesFiltros;
   mostrarDepartamento: boolean;
 }) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
   const [q, setQ] = useState(estado.filtros.q);
-  const [de, setDe] = useState(livre ? janela.inicio : "");
-  const [ate, setAte] = useState(livre ? janela.fim : "");
   const f = estado.filtros;
   const ir = (href: string) => iniciar(() => router.push(href));
   const setFiltros = (mud: Partial<FiltrosDashboard>) => ir(montarHref(estado, { filtros: mud }));
-
-  const hoje = janela.fim;
-  const inicioMes = `${hoje.slice(0, 7)}-01`;
-  const rotuloPeriodo = livre ? `${ddmm(janela.inicio)} – ${ddmm(janela.fim)}` : `Últimos ${estado.periodo} dias`;
   const ativos = atores.filter((a) => a.ativo);
+  const secundarios = f.origens.length + f.numeros.length + f.cidades.length + f.tipos.length;
 
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", pendente && "opacity-70")}>
@@ -117,64 +115,18 @@ export function Toolbar({
           onChange={(e) => setQ(e.target.value)}
           placeholder="Buscar…"
           aria-label="Buscar"
-          className="h-[30px] w-[170px] rounded-md border border-border bg-card pl-8 pr-2.5 text-[12.5px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="h-[30px] w-[160px] rounded-md border border-border bg-card pl-8 pr-2.5 text-[12.5px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         />
       </form>
 
-      <Popover>
-        <PopoverTrigger className={cn(botao, livre && ativo)}>
-          <CalendarIcon className="size-3.5 opacity-70" aria-hidden />
-          {rotuloPeriodo}
-          <ChevronDownIcon className="size-3.5 opacity-60" aria-hidden />
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 p-2">
-          <div className="grid grid-cols-2 gap-1">
-            {PERIODOS.map((p) => (
-              <Link key={p} href={montarHref(estado, { periodo: p, de: null, ate: null })} className={cn("rounded-md px-2 py-1.5 text-[12.5px] hover:bg-muted", !livre && estado.periodo === p && "bg-muted font-semibold")}>
-                Últimos {p} dias
-              </Link>
-            ))}
-            <Link href={montarHref(estado, { de: inicioMes, ate: hoje })} className={cn("rounded-md px-2 py-1.5 text-[12.5px] hover:bg-muted", livre && janela.inicio === inicioMes && janela.fim === hoje && "bg-muted font-semibold")}>
-              Este mês
-            </Link>
-          </div>
-          <form
-            className="mt-2 flex flex-col gap-1.5 border-t border-border pt-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (de && ate) ir(montarHref(estado, { de, ate }));
-            }}
-          >
-            <p className="text-[11px] font-medium text-muted-foreground">Período livre</p>
-            <div className="flex items-center gap-1">
-              <input type="date" value={de} onChange={(e) => setDe(e.target.value)} aria-label="De" className="h-7 min-w-0 flex-1 rounded-md border border-border bg-card px-1.5 text-[12px]" />
-              <span className="text-[11px] text-muted-foreground">a</span>
-              <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} aria-label="Até" className="h-7 min-w-0 flex-1 rounded-md border border-border bg-card px-1.5 text-[12px]" />
-            </div>
-            <button type="submit" className="h-7 rounded-md bg-foreground px-2 text-[12px] font-medium text-background">
-              Aplicar
-            </button>
-          </form>
-          <label className="mt-2 flex cursor-pointer items-center gap-2 border-t border-border pt-2 text-[12px]">
-            <Checkbox checked={f.comparar} onCheckedChange={(c) => setFiltros({ comparar: Boolean(c) })} />
-            Comparar com o período anterior
-          </label>
-        </PopoverContent>
-      </Popover>
+      <SeletorPeriodo estado={estado} janela={janela} livre={livre} agoraIso={agoraIso} />
 
-      <Multi
-        rotulo="Pessoa"
-        opcoes={ativos.map((a) => ({ valor: a.ator, rotulo: a.nome, grupo: a.tipo === "agente" ? "Agentes" : "Pessoas" }))}
-        selecionados={f.pessoas}
-        onChange={(v) => setFiltros({ pessoas: v })}
-      />
-      <Multi rotulo="Número" opcoes={opcoes.numeros.map((n) => ({ valor: n.id, rotulo: n.rotulo }))} selecionados={f.numeros} onChange={(v) => setFiltros({ numeros: v })} />
+      <Multi rotulo="Pessoa" opcoes={ativos.map((a) => ({ valor: a.ator, rotulo: a.nome, grupo: a.tipo === "agente" ? "Agentes" : "Pessoas" }))} selecionados={f.pessoas} onChange={(v) => setFiltros({ pessoas: v })} />
+      <Multi rotulo="Responsável" opcoes={opcoes.responsaveis.map((r) => ({ valor: r.id, rotulo: r.nome }))} selecionados={f.responsaveis} onChange={(v) => setFiltros({ responsaveis: v })} />
       <Multi rotulo="Etapa" opcoes={opcoes.etapas.map((e) => ({ valor: e.chave, rotulo: e.nome }))} selecionados={f.etapas} onChange={(v) => setFiltros({ etapas: v })} />
-      <Multi rotulo="Origem" opcoes={opcoes.origens.map((o) => ({ valor: o.chave, rotulo: o.rotulo }))} selecionados={f.origens} onChange={(v) => setFiltros({ origens: v })} />
-      <Multi rotulo="Cidade" opcoes={opcoes.cidades.map((c) => ({ valor: c, rotulo: c }))} selecionados={f.cidades} onChange={(v) => setFiltros({ cidades: v })} />
 
       {mostrarDepartamento && (
-        <div role="group" aria-label="Departamento" className="ml-1 flex h-[30px] items-center overflow-hidden rounded-md border border-border">
+        <div role="group" aria-label="Departamento" className="flex h-[30px] items-center overflow-hidden rounded-md border border-border">
           {DEPARTAMENTOS_FILTRO.map((d, i) => (
             <Link
               key={d.rotulo}
@@ -188,24 +140,30 @@ export function Toolbar({
         </div>
       )}
 
-      <div role="group" aria-label="Vista" className="ml-auto flex h-[30px] items-center overflow-hidden rounded-md border border-border">
-        {(
-          [
-            ["tabela", "Tabela", TableIcon],
-            ["dashboard", "Dashboard", LayoutDashboardIcon],
-          ] as const
-        ).map(([v, rotulo, Icone], i) => (
-          <Link
-            key={v}
-            href={montarHref(estado, { vista: v })}
-            aria-current={estado.vista === v ? "page" : undefined}
-            className={cn("inline-flex h-full items-center gap-1.5 px-3 text-[12px] font-medium transition-colors", i > 0 && "border-l border-border", estado.vista === v ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground")}
-          >
-            <Icone className="size-3.5" aria-hidden />
-            {rotulo}
-          </Link>
-        ))}
-      </div>
+      <Popover>
+        <PopoverTrigger className={cn(botao, secundarios > 0 && ativo)}>
+          <SlidersHorizontalIcon className="size-3.5 opacity-70" aria-hidden />
+          Ver mais
+          {secundarios > 0 ? <span className="rounded bg-background/20 px-1 text-[11px] tabular-nums">{secundarios}</span> : null}
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[560px] p-2">
+          <div className="grid grid-cols-4 gap-2">
+            {(
+              [
+                ["Origem", opcoes.origens.map((o) => ({ valor: o.chave, rotulo: o.rotulo })), f.origens, (v: string[]) => setFiltros({ origens: v })],
+                ["Número", opcoes.numeros.map((n) => ({ valor: n.id, rotulo: n.rotulo })), f.numeros, (v: string[]) => setFiltros({ numeros: v })],
+                ["Cidade", opcoes.cidades.map((c) => ({ valor: c, rotulo: c })), f.cidades, (v: string[]) => setFiltros({ cidades: v })],
+                ["Tipo", TIPOS.map((t) => ({ valor: t.valor, rotulo: t.rotulo })), f.tipos, (v: string[]) => setFiltros({ tipos: v.filter((x): x is TipoLead => x === "lead" || x === "paciente") })],
+              ] as const
+            ).map(([rotulo, ops, sel, onChange]) => (
+              <div key={rotulo} className="min-w-0">
+                <p className="px-2 pb-1 text-[11px] font-semibold text-foreground">{rotulo}</p>
+                {ops.length === 0 ? <p className="px-2 text-[11.5px] text-muted-foreground">sem opções nesta leitura</p> : <ListaMulti opcoes={ops} selecionados={sel} onChange={onChange} />}
+              </div>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -218,8 +176,4 @@ export function Chip({ href, children }: { href: string; children: React.ReactNo
       <XIcon className="size-3 text-muted-foreground" aria-hidden />
     </Link>
   );
-}
-
-export function IconeCheck() {
-  return <CheckIcon className="size-3" aria-hidden />;
 }

@@ -46,7 +46,7 @@ export function EvolucaoAcumulada({ serie, className }: { serie: PontoDia[]; cla
           </SelectContent>
         </Select>
       </div>
-      <ChartContainer config={CONFIG_EVOLUCAO} className="aspect-auto h-[220px] w-full">
+      <ChartContainer config={CONFIG_EVOLUCAO} className="aspect-auto h-[236px] w-full">
         <AreaChart data={dados} margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
           <defs>
             <linearGradient id="fill-leads" x1="0" y1="0" x2="0" y2="1">

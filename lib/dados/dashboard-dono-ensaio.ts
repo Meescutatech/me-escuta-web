@@ -14,6 +14,7 @@ import {
   MINUTOS_SLA_CANAL,
   ordenarAtencao,
   primeiraRespostaPorCanal,
+  tipoDoLead,
   PERGUNTAS_PADRAO,
   type Atencao,
   type FiltrosDashboard,
@@ -138,7 +139,7 @@ export function atencaoDeEnsaio(
   canais: LinhaCanal[],
   agora: Date,
   departamento: "pre_venda" | "pos_venda" | null = null,
-  filtros: Pick<FiltrosDashboard, "numeros" | "etapas" | "origens" | "pessoas"> = { numeros: [], etapas: [], origens: [], pessoas: [] },
+  filtros: Pick<FiltrosDashboard, "numeros" | "etapas" | "origens" | "pessoas" | "responsaveis" | "tipos"> = { numeros: [], etapas: [], origens: [], pessoas: [], responsaveis: [], tipos: [] },
 ): Atencao {
   const agoraMs = agora.getTime();
   const ehPre = (area: string | null | undefined) => area === "pre_venda" || area == null;
@@ -156,9 +157,17 @@ export function atencaoDeEnsaio(
       const d = departamentoDaPessoa(t.responsavel_id);
       return departamento === "pre_venda" ? d === "pre_venda" || d == null : d != null && d !== "pre_venda";
     })
-    .filter((t) => filtros.pessoas.length === 0 || (atorDaPessoa(t.responsavel_id) != null && filtros.pessoas.includes(atorDaPessoa(t.responsavel_id)!)));
+    .filter((t) => filtros.pessoas.length === 0 || (atorDaPessoa(t.responsavel_id) != null && filtros.pessoas.includes(atorDaPessoa(t.responsavel_id)!)))
+    .filter((t) => filtros.responsaveis.length === 0 || (t.responsavel_id != null && filtros.responsaveis.includes(t.responsavel_id)));
   const funil = gerarFunilEnsaio(agora);
-  funil.cards = funil.cards.filter((c) => (filtros.etapas.length === 0 || filtros.etapas.includes(c.etapa)) && (filtros.origens.length === 0 || (c.origem != null && filtros.origens.includes(String(c.origem)))));
+  const etapasGanho = new Set(funil.todasEtapas.filter((e) => e.tipo === "ganho").map((e) => e.chave));
+  funil.cards = funil.cards.filter(
+    (c) =>
+      (filtros.etapas.length === 0 || filtros.etapas.includes(c.etapa)) &&
+      (filtros.origens.length === 0 || (c.origem != null && filtros.origens.includes(String(c.origem)))) &&
+      (filtros.responsaveis.length === 0 || (c.dono_id != null && filtros.responsaveis.includes(c.dono_id))) &&
+      (filtros.tipos.length === 0 || filtros.tipos.includes(tipoDoLead(c, etapasGanho))),
+  );
   const nomeDe = (id: string | null, fallback: string | null) => pessoaPorId(id)?.nome.split(" ")[0] ?? (fallback ?? "sem responsável").replace(/@.*$/, "");
   const itens = ordenarAtencao([
     atencaoSemResposta(conversas, agoraMs),

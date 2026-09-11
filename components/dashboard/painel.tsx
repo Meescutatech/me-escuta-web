@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { AbaMarketing } from "./aba-marketing";
 import { PrecisaDeAtencao } from "./atencao";
 import { ChipsAtivos } from "./chips";
-import { BarrasPorHora, EvolucaoAcumulada, MensagensPorDia } from "./graficos";
+import { EvolucaoAcumulada } from "./graficos";
 import { HeatmapHoraDia } from "./heatmap";
 import { JarvisLinha } from "./jarvis-linha";
 import { Kpis } from "./kpis";
@@ -17,19 +17,16 @@ import { TabelaFunil, TabelaNumeros, TabelaPessoas } from "./tabelas";
 import { Toolbar } from "./toolbar";
 
 /*
- * Dashboard do DONO — v3 (10/09/2026, 22:45; depois de "tudo muito espaçado, cara de IA").
+ * Dashboard do DONO — v4 (10/09/2026, 23:30: "melhorou MUITO", ajustes finais).
  *
- * Fontes desta passada (pesquisa de 10 min, registradas no STATUS): Stephen Few — data-ink, sem
- * chartjunk, uma tela; Refactoring UI — hierarquia por peso/tamanho, não por caixa, e densidade;
- * Stripe / Linear Insights / Vercel Analytics / Metabase — toolbar de filtros densa, números
- * grandes com contexto pequeno, tabelas densas, quase nenhuma prosa. Indicadores do PRD
- * (Dashboards gerenciais · Comercial): leads e conversão por etapa, tempo por etapa vs SLA, taxa
- * e tempo de 1ª resposta, agendamentos, vendas vs meta, performance por SDR/fono, CPL.
- *
- * Regras que a v3 segue: largura fluida (gutter 24px, máx. 1440); card padding 12-14px; KPI ≤ 84px
- * em UMA linha; gráfico principal ≤ 260px; linha de tabela 32px; título de card 13px sem
- * subtítulo; nada de prosa flutuando — o Jarvis é UMA linha; "Precisa de atenção" é lista lateral
- * de 28px. Abas: Operação · Equipe · Marketing. Tudo na URL.
+ * O que a v4 muda sobre a v3: nada preto (a meta é um card claro como os outros, barra em
+ * `primary`); números enxutos (cada card só com o que responde a uma pergunta do dono); grade de
+ * 12 colunas com cards da mesma linha na mesma altura (`h-full`), mesmo título de 13px, mesmo
+ * padding; sem o toggle Tabela | Dashboard — tabela só onde a informação pede tabela (funil, por
+ * pessoa, por número); calendário de verdade (presets + dois meses) e mais filtros (Responsável,
+ * Tipo, "Ver mais" para Origem · Número · Cidade). Fontes da v3 continuam valendo: Few (data-ink),
+ * Refactoring UI (hierarquia por peso), Stripe/Linear/Vercel/Metabase (toolbar densa, números
+ * grandes com contexto pequeno, tabelas densas, quase nenhuma prosa), PRD l. 1453-1467.
  */
 
 export function PainelDashboard({
@@ -51,10 +48,8 @@ export function PainelDashboard({
   const abas = ABAS.filter((a) => a.chave !== "marketing" || verMarketing);
 
   return (
-    // Regra global do Diogo (23:20): largura FLUIDA — gutter 24px (32px em ≥1536), sem max-w. Os grids
-    // preenchem a largura; em telas largas os 6 KPIs ficam em uma linha e as tabelas esticam.
     <main className="w-full px-6 pb-10 pt-3 2xl:px-8">
-      <Toolbar estado={estado} janela={janela} livre={janelaLivre != null} atores={dados.atores} opcoes={dados.opcoes} mostrarDepartamento={mostrarDepartamento} />
+      <Toolbar estado={estado} janela={janela} livre={janelaLivre != null} agoraIso={dados.geradoEm} atores={dados.atores} opcoes={dados.opcoes} mostrarDepartamento={mostrarDepartamento} />
       <div className="mt-1.5">
         <ChipsAtivos estado={estado} atores={dados.atores} opcoes={dados.opcoes} />
       </div>
@@ -112,60 +107,35 @@ export function PainelDashboard({
             </Bloco>
           )
         ) : aba === "equipe" ? (
-          <div className="flex flex-col gap-3">
-            <TabelaPessoas dados={dados} />
-            <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              <Bloco>
-                <CabecalhoBloco titulo="Mensagens recebidas por hora e dia" />
-                <div className="mt-2">
-                  <HeatmapHoraDia heatmap={dados.heatmap} />
-                </div>
-              </Bloco>
-              <Bloco>
-                <CabecalhoBloco titulo="Mensagens enviadas por dia" />
-                <div className="mt-2">
-                  <MensagensPorDia serie={dados.serie} />
-                </div>
-              </Bloco>
-            </div>
-          </div>
-        ) : vista === "tabela" ? (
-          <div className="flex flex-col gap-3">
-            <Kpis dados={dados} />
-            <TabelaFunil dados={dados} />
-            <TabelaNumeros dados={dados} />
-            <TabelaPessoas dados={dados} />
+          <div className="grid grid-cols-12 gap-3">
+            <TabelaPessoas dados={dados} className="col-span-12" />
+            <Bloco className="col-span-12">
+              <CabecalhoBloco titulo="Mensagens recebidas por hora e dia" />
+              <div className="mt-2">
+                <HeatmapHoraDia heatmap={dados.heatmap} />
+              </div>
+            </Bloco>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            <Kpis dados={dados} />
-
-            <div className="grid items-stretch gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,7fr)_minmax(0,2fr)]">
-              <Bloco>
-                <CabecalhoBloco titulo="Evolução acumulada" />
-                <EvolucaoAcumulada serie={dados.serie} className="mt-1" />
-              </Bloco>
-              <div className="flex flex-col gap-3">
-                <MetaCompacta meta={dados.meta} />
-                <PrecisaDeAtencao atencao={dados.atencao} className="flex-1" />
-              </div>
+          <div className="grid grid-cols-12 gap-3">
+            <div className="col-span-12">
+              <Kpis dados={dados} />
             </div>
 
-            <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              <TabelaFunil dados={dados} />
-              <div className="flex flex-col gap-3">
-                <TabelaNumeros dados={dados} />
-                <Bloco>
-                  <CabecalhoBloco titulo="Mensagens recebidas por hora" />
-                  <div className="mt-2">
-                    <BarrasPorHora heatmap={dados.heatmap} />
-                  </div>
-                </Bloco>
-              </div>
+            <Bloco className="col-span-12 h-full xl:col-span-9">
+              <CabecalhoBloco titulo="Evolução acumulada" />
+              <EvolucaoAcumulada serie={dados.serie} className="mt-1" />
+            </Bloco>
+            <div className="col-span-12 grid grid-rows-[auto_1fr] gap-3 xl:col-span-3">
+              <MetaCompacta meta={dados.meta} />
+              <PrecisaDeAtencao atencao={dados.atencao} className="h-full" />
             </div>
+
+            <TabelaFunil dados={dados} className="col-span-12 h-full xl:col-span-7" />
+            <TabelaNumeros dados={dados} className="col-span-12 h-full xl:col-span-5" />
 
             {dados.indisponiveis.length > 0 && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="col-span-12 text-[11px] text-muted-foreground">
                 Sem leitura de {dados.indisponiveis.map((v) => v.replace("v_dashboard_", "")).join(", ")}.{" "}
                 <Link href="/suporte" className="underline underline-offset-2">
                   Relatar

@@ -9,6 +9,7 @@ import {
   ordenarAtencao,
   respondidasPorAtor,
   serieRespondidas,
+  tipoDoLead,
   MINUTOS_SLA_CANAL,
   PERGUNTAS_PADRAO,
   type Aba,
@@ -35,6 +36,7 @@ import { lerFunil } from "./funil";
 import { lerVisaoTarefas } from "./tarefas-visao";
 import { lerConversas } from "./conversas";
 import { lerFila } from "@/app/(app)/fila/dados";
+import { PESSOAS } from "@/lib/ensaio/modo";
 
 /**
  * Leitura do DASHBOARD DO DONO (W-D4, 10/09/2026) — `lerDashboardCeo` (as seis views 0300/0302)
@@ -81,7 +83,16 @@ export interface DadosDashboardDono extends DadosDashboardCeo {
   /** vendas ganhas NO PERÍODO e o valor delas; valor null = sem leitura */
   ganhosPeriodo: { vendas: Comparado; valor: number | null };
   /** opções dos filtros multi — o que existe para escolher */
-  opcoes: { numeros: Array<{ id: string; rotulo: string }>; etapas: Array<{ chave: string; nome: string }>; origens: Array<{ chave: string; rotulo: string }>; cidades: string[] };
+  opcoes: OpcoesFiltros;
+}
+
+export interface OpcoesFiltros {
+  numeros: Array<{ id: string; rotulo: string }>;
+  etapas: Array<{ chave: string; nome: string }>;
+  origens: Array<{ chave: string; rotulo: string }>;
+  cidades: string[];
+  /** donos possíveis de lead — pessoas (uuid) */
+  responsaveis: Array<{ id: string; nome: string }>;
 }
 
 /** Sem departamento na fixture, o filtro recorta pela LOTAÇÃO da pessoa e pelo departamento do canal. */
@@ -169,6 +180,7 @@ export async function lerDashboardDono(
         etapas: base.funil.filter((e) => e.tipo === "aberto").map((e) => ({ chave: e.etapa, nome: e.nome })),
         origens: ORIGENS_PADRAO,
         cidades: ["Campinas", "Valinhos", "Jundiaí", "Sorocaba"],
+        responsaveis: PESSOAS.filter((p) => p.papel !== "marketing").map((p) => ({ id: p.id, nome: p.nome })),
       },
     };
   }
@@ -188,13 +200,20 @@ export async function lerDashboardDono(
   if (!fila || fila.total == null) indisponiveis.push("propostas_jarvis");
   indisponiveis.push("canal");
 
+  const etapasGanho = new Set((funil?.todasEtapas ?? []).filter((e) => e.tipo === "ganho").map((e) => e.chave));
   const cards = funil
-    ? funil.cards.filter((c) => (filtros.etapas.length === 0 || filtros.etapas.includes(c.etapa)) && (filtros.origens.length === 0 || (c.origem != null && filtros.origens.includes(String(c.origem)))))
+    ? funil.cards.filter(
+        (c) =>
+          (filtros.etapas.length === 0 || filtros.etapas.includes(c.etapa)) &&
+          (filtros.origens.length === 0 || (c.origem != null && filtros.origens.includes(String(c.origem)))) &&
+          (filtros.responsaveis.length === 0 || (c.dono_id != null && filtros.responsaveis.includes(c.dono_id))) &&
+          (filtros.tipos.length === 0 || filtros.tipos.includes(tipoDoLead(c, etapasGanho))),
+      )
     : [];
   const atencao: Atencao = {
     itens: ordenarAtencao([
       conversas ? atencaoSemResposta(conversas.conversas.filter((c) => filtros.numeros.length === 0 || (c.phone_number_id != null && filtros.numeros.includes(c.phone_number_id))), agoraMs) : null,
-      tarefas ? atencaoTarefasVencidas(tarefas.tarefas) : null,
+      tarefas ? atencaoTarefasVencidas(tarefas.tarefas.filter((t) => filtros.responsaveis.length === 0 || (t.responsavel_id != null && filtros.responsaveis.includes(t.responsavel_id)))) : null,
       funil ? atencaoLeadsParados(cards, funil.sla, agoraMs, funil.todasEtapas) : null,
       fila && fila.total != null ? atencaoPropostasJarvis(fila.total, (fila.porAgente ?? []).map((a) => ({ nome: a.rotulo || a.agente, n: a.qtd }))) : null,
     ]),
@@ -228,6 +247,8 @@ export async function lerDashboardDono(
       etapas: base.funil.filter((e) => e.tipo === "aberto").map((e) => ({ chave: e.etapa, nome: e.nome })),
       origens: ORIGENS_PADRAO,
       cidades: [],
+      // donos possíveis: as pessoas do catálogo de atores (humano:<uuid>) — o nome vem das views
+      responsaveis: base.atores.filter((a) => a.tipo === "humano").map((a) => ({ id: a.ator.replace(/^humano:/, ""), nome: a.nome })),
     },
   };
 }
