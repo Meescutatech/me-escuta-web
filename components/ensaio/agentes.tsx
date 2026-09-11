@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LockIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -13,12 +12,31 @@ import { haQuantoTempo } from "@/lib/ensaio/fixtures/membros";
 import { CascaConfig } from "./casca-config";
 import { FluxoAgente } from "./fluxo-agente";
 import { MarcaJarvis } from "@/components/jarvis/marca";
+import { ReguaAutonomia, type LinhaAutonomia, type NivelAutonomia } from "@/components/jarvis/regua-autonomia";
 
-const AUTONOMIA: Record<Autonomia, { rotulo: string; descricao: string }> = {
-  auto: { rotulo: "sozinho", descricao: "executa e registra o evento" },
-  propor: { rotulo: "propõe", descricao: "cria sugestão; alguém valida" },
-  desligado: { rotulo: "desligado", descricao: "nem propõe" },
-};
+/**
+ * Ponte entre a fixture (`auto|propor|desligado`, `travada`) e a RÉGUA do W-J (`dfce286`):
+ * `auto|propor|proibido`, teto + fundamento. `travada` no sentido dela (Art. III.3: nasce e morre
+ * em "Nunca") = a nossa `travada` quando a capacidade está desligada; `teto = propor` para tudo o
+ * que a Constituição tranca. UMA régua no app inteiro.
+ */
+function linhasDaRegua(a: AgenteEnsaio): LinhaAutonomia[] {
+  return a.capacidades.map((c) => ({
+    chave: c.chave,
+    rotulo: c.rotulo,
+    descricao: c.descricao,
+    nivel: c.autonomia === "desligado" ? "proibido" : c.autonomia,
+    teto: c.travada ? "propor" : "auto",
+    fundamento: c.travada
+      ? "Constituição §1.2 (Art. III): crédito, conduta clínica e preço nunca têm autonomia automática."
+      : "Config `autonomia_jsonb` do agente — muda sem deploy, vale na próxima decisão.",
+    travada: c.travada && c.autonomia === "desligado",
+    alteradaPor: null,
+  }));
+}
+function nivelParaAutonomia(n: NivelAutonomia): Autonomia {
+  return n === "proibido" ? "desligado" : n;
+}
 
 /**
  * /configuracoes/agentes (ensaio) — o hub dos quatro agentes.
@@ -246,52 +264,12 @@ export function SheetAgente({
 
                 <section>
                   <h3 className="mb-2 text-ui-12 font-semibold uppercase tracking-[0.06em] text-muted-foreground">Autonomia por tipo de ação</h3>
-                  <div className="overflow-hidden rounded-xl border border-border">
-                    {aberto.capacidades.map((c, i) => (
-                      <div key={c.chave} className={cn("flex items-center gap-4 px-4 py-3", i > 0 && "border-t border-border")}>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 text-ui-13 font-medium text-foreground">
-                            {c.rotulo}
-                            {c.travada && (
-                              <span title="Constituição §1.2 — nunca sozinho" className="text-muted-foreground">
-                                <LockIcon className="size-3" />
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-ui-12 text-muted-foreground">{c.descricao}</div>
-                        </div>
-                        <div role="radiogroup" aria-label={`Autonomia de ${c.rotulo}`} className="inline-flex shrink-0 rounded-md border border-border p-0.5 text-ui-12">
-                          {(Object.keys(AUTONOMIA) as Autonomia[]).map((op) => {
-                            const bloqueada = c.travada && op === "auto";
-                            return (
-                              <button
-                                key={op}
-                                type="button"
-                                role="radio"
-                                aria-checked={c.autonomia === op}
-                                disabled={!gestao || bloqueada}
-                                title={bloqueada ? "Travado pela Constituição" : AUTONOMIA[op].descricao}
-                                onClick={() => mudarAutonomia(aberto.chave, c.chave, op)}
-                                className={cn(
-                                  "rounded-[5px] px-2.5 py-1 transition-colors",
-                                  c.autonomia === op
-                                    ? op === "auto"
-                                      ? "bg-success-ink text-success-foreground"
-                                      : op === "propor"
-                                        ? "bg-navy text-branco"
-                                        : "bg-foreground text-background"
-                                    : "text-muted-foreground hover:text-foreground",
-                                  bloqueada && "cursor-not-allowed opacity-40 line-through",
-                                )}
-                              >
-                                {AUTONOMIA[op].rotulo}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <ReguaAutonomia
+                    agente={{ id: aberto.chave, nome: aberto.nome }}
+                    linhas={linhasDaRegua(aberto)}
+                    podeEditar={gestao}
+                    onMudar={(chave, nivel) => mudarAutonomia(aberto.chave, chave, nivelParaAutonomia(nivel))}
+                  />
                 </section>
 
                 <section>
