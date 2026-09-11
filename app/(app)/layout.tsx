@@ -10,6 +10,7 @@ import { chavesComPendencia } from "@/lib/departamentos/escopo";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { PresencaBatimento } from "@/components/presenca-batimento";
+import { PresencaJarvis } from "@/components/jarvis/presenca";
 import { MarcaBuild } from "@/components/ui/marca-build";
 import { lerSessaoEnsaio, estadoEscopoEnsaio } from "@/lib/ensaio/sessao";
 import { PESSOAS } from "@/lib/ensaio/modo";
@@ -103,7 +104,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         shell que não está em toda tela não é elemento de shell. O custo real é 52px de 900 (≈5,8%),
         e ele vem junto com o pagamento do débito dos 58px.
       */}
-      <main className="pt-[var(--altura-topo)]">{children}</main>
+      {/*
+        PRESENÇA DO JARVIS (W-J, 11/09) — o provedor envolve o `<main>` nos DOIS shells.
+        Ele não muda markup nenhum: com `papel={null}` devolve os filhos intactos. O que ele
+        acrescenta é o que precisa existir em TODA tela — ⌘K global (⇧⌘K dentro de campo de
+        texto, `/` como secundário), o overlay ancorado, o dock no canto e o gesto de seleção.
+      */}
+      <PresencaJarvis usuarioId={user.id} papel={papel} ensaio={false}>
+        <main className="pt-[var(--altura-topo)]">{children}</main>
+      </PresencaJarvis>
       <PresencaBatimento />
       {/*
         CARIMBO DE BUILD (W4, 22/08) — o front passa a dizer qual commit esta no ar.
@@ -164,7 +173,9 @@ async function AppLayoutEnsaio({
         nome={pessoa.nome}
         meuPapel={pessoa.papel}
       />
-      <main className="pt-[var(--altura-topo)]">{children}</main>
+      <PresencaJarvis usuarioId={pessoa.id} papel={pessoa.papel} ensaio>
+        <main className="pt-[var(--altura-topo)]">{children}</main>
+      </PresencaJarvis>
       <VerComo atual={pessoa} pessoas={PESSOAS} />
       <Toaster />
       <MarcaBuild />
