@@ -41,7 +41,7 @@ export interface LeituraJarvis {
 /** Frases de exemplo que FUNCIONAM — as sugestões ao focar o campo saem daqui. */
 export const EXEMPLOS_JARVIS: string[] = [
   "quem comprou aparelho e sumiu há mais de 5 dias",
-  "leads de BH sem tarefa na proposta",
+  "leads de BH sem tarefa",
   "tarefa vencida do meu nome",
   "veio de anúncio e ainda não fez audiometria",
   "acima de 10 mil parado há 3 dias",
@@ -197,8 +197,13 @@ export function interpretarBusca(
   }
 
   // ── origem
+  //
+  // ⚠️ POR LIMITE DE PALAVRA, e não `includes`. Medido em 11/09: "leads de BH sem tarefa na
+  // proposta" acendia `origem: Meta Ads` — porque "le-ADS" contém "ads". Substring em vocabulário
+  // curto é o modo de falha clássico deste tipo de leitor, e ele é pior que não entender: a tela
+  // AFIRMA um recorte que a pessoa não pediu, com um chip que parece legítimo.
   for (const o of ORIGENS) {
-    if (o.termos.some((x) => t.includes(normalizar(x)))) {
+    if (o.termos.some((x) => new RegExp(`\\b${normalizar(x)}\\b`).test(t))) {
       filtros.origens = [...(filtros.origens ?? []), o.chave];
       termos.push({ rotulo: `origem: ${o.rotulo}`, trecho: o.termos[0] });
       break; // uma origem por frase — "veio de anúncio ou indicação" é outra conversa

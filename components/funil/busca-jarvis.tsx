@@ -186,7 +186,11 @@ export function LinhaJarvis({
       <MarcaJarvis tamanho={16} className="text-laranja" />
       <span className="min-w-0 truncate">
         entendi assim — <span className="text-tinta">{leitura.explicacao}</span> ·{" "}
+        {/* zero resultado com a interpretação CERTA é um caso real (e comum): a frase virou um
+            recorte que a operação não tem hoje. Dizer só "0 leads" deixaria a pessoa achando que a
+            busca falhou; a frase seguinte diz o que fazer. */}
         <span className="tabular-nums">{qtd === 1 ? "1 lead" : `${qtd.toLocaleString("pt-BR")} leads`}</span>
+        {qtd === 0 && <span className="text-mute"> — tire um chip para alargar</span>}
       </span>
       <button type="button" onClick={onDescartar} className="shrink-0 text-mute underline-offset-2 hover:text-tinta hover:underline">
         não era isso

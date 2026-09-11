@@ -114,7 +114,12 @@ function Coluna({
     // largura FIXA (w-coluna = 236px) e passou a PREENCHER: `flex-1` com `min-w-coluna`. Em 1920px
     // as sete colunas abrem para ~230→300px cada; abaixo do mínimo elas param de encolher e o board
     // rola na horizontal — a coluna nunca fica mais estreita do que o card foi desenhado para ter.
-    <div className="flex h-full min-w-coluna flex-1 basis-0 flex-col">
+    /*
+     * `flex-1` para PREENCHER (regra do Diogo 23:20) com `min-w-coluna` (236px) e um TETO de 420px:
+     * medido em 11/09, ao filtrar por uma etapa só a coluna esticava para ~1800px e o card virava
+     * uma faixa — coluna mais larga que 420px deixa de ser coluna.
+     */
+    <div className="flex h-full min-w-coluna max-w-[420px] flex-1 basis-0 flex-col">
       <div className="flex items-center gap-2 px-1 pb-1 pt-1.5">
         <span
           className={cn(
@@ -390,8 +395,16 @@ export function Quadro({
   // filtro de etapa esconde as colunas fora da seleção (terminais incluídos) — como no Kommo
   const etapasVisiveis =
     filtros.etapas.length > 0 ? dados.etapas.filter((e) => filtros.etapas.includes(e.chave)) : dados.etapas;
-  const abertas = etapasVisiveis.filter((e) => e.tipo === "aberto");
-  const terminais = etapasVisiveis.filter((e) => e.tipo !== "aberto");
+  /*
+   * W-D6 v4 · GANHO e PERDIDO são TILES (fora do fluxo operacional) — mas quando a pessoa PEDE
+   * explicitamente por eles (filtro de etapa, ou a pergunta ao Jarvis "quem comprou e sumiu"), o
+   * que ela quer ver são os LEADS, não um número. Pedido explícito vira coluna; o resto continua
+   * tile. Medido em 11/09: sem isto, "quem comprou aparelho e sumiu há mais de 5 dias" respondia
+   * com o tile "GANHO 3" e um board vazio — a interpretação certa e a resposta inútil.
+   */
+  const pedidoExplicito = (chave: string) => filtros.etapas.includes(chave);
+  const abertas = etapasVisiveis.filter((e) => e.tipo === "aberto" || pedidoExplicito(e.chave));
+  const terminais = etapasVisiveis.filter((e) => e.tipo !== "aberto" && !pedidoExplicito(e.chave));
 
   const chavesAbertas = useMemo(
     () => new Set(dados.etapas.filter((e) => e.tipo === "aberto").map((e) => e.chave)),

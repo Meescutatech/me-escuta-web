@@ -81,6 +81,17 @@ test("sem usuário logado, 'minhas tarefas' não casa nada (não inventar cartei
   assert.equal(r.filtros.tarefaVencida, true);
 });
 
+test("'leads' NÃO é 'ads': origem só casa por palavra inteira", () => {
+  // medido em 11/09 no ensaio: a frase abaixo acendia `origem: Meta Ads` por substring em "leADS",
+  // e o chip parecia legítimo. Afirmar um recorte que ninguém pediu é pior que não entender.
+  const r = interpretarBusca("leads de BH sem tarefa na proposta", CTX);
+  assert.equal(r.filtros.origens, undefined);
+  assert.ok(!r.termos.some((t: { rotulo: string }) => t.rotulo.startsWith("origem")));
+  // e a origem de verdade continua casando
+  assert.deepEqual(interpretarBusca("veio de anúncio", CTX).filtros.origens, ["meta"]);
+  assert.deepEqual(interpretarBusca("chegou por indicação", CTX).filtros.origens, ["ind"]);
+});
+
 test("frase sem nada reconhecível: entendeu=false e os filtros ficam INTOCADOS", () => {
   const r = interpretarBusca("xablau do zurupinho", CTX);
   assert.equal(r.entendeu, false);
