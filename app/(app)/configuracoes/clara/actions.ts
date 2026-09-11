@@ -41,6 +41,45 @@ export async function alternarClara(ligar: boolean): Promise<ResultadoAcao> {
   return registrarConfig({ ativo: ligar });
 }
 
+/**
+ * EM QUAL NÚMERO A CLARA RESPONDE (S12).
+ *
+ * ── Por que isto existe ───────────────────────────────────────────────────────────────────
+ * O roteador `core.agentes_para_gatilho(tipo, area)` filtra por `ativo`, `gatilhos_evento` e
+ * `areas` — e CANAL não está em nenhuma das três. Medido em produção 11/09/2026: ligar a Clara
+ * a punha para responder em TODO canal ativo da área dela, inclusive a WABA `627327023793464`
+ * (+15557252751), que é COMPARTILHADA COM O KOMMO. A Sara e a Clara na mesma conversa.
+ *
+ * ── Por que `escopo_patch`, e não campo novo ──────────────────────────────────────────────
+ * O caminho já existe inteiro e não pede migration: o projetor `porta.proj_config_agente`
+ * (0042, reescrito na 0107) faz MERGE de `escopo_patch` em `core.agente.escopo_leitura`, e a
+ * validação de `api.registrar_evento` (0104) só inspeciona `gatilhos_evento` e `areas` — chave
+ * nova passa. O runtime lê `escopo_leitura.canais` (`src/clara/canal.ts`).
+ *
+ * ⚠️ `core.agente` recusa UPDATE direto por trigger (0108). Evento é o único caminho, e é por
+ * isso que quem mudou o quê e quando fica no ledger sem ninguém precisar lembrar de registrar.
+ *
+ * ── Por que `ligar` vai no MESMO evento, e não em dois ─────────────────────────────────────
+ * Esta é a decisão que importa aqui. Ligar a Clara PRIMEIRO e escolher o número DEPOIS abre uma
+ * janela — de segundos, mas real — em que ela está ligada com o escopo antigo, ou seja
+ * respondendo no número do Kommo. Um evento só com as duas chaves fecha a janela: o projetor
+ * aplica os dois campos na mesma transação. Separar seria criar exatamente o risco que esta
+ * tela existe para tirar do caminho.
+ *
+ * `canais` vazio é uma escolha legítima e explícita: significa "todos os números", que é o
+ * comportamento de quem nunca configurou nada. A tela diz isso com todas as letras.
+ */
+export async function salvarCanaisClara(
+  canais: string[],
+  ligar?: boolean,
+): Promise<ResultadoAcao> {
+  const limpos = [...new Set(canais.map((c) => String(c).trim()).filter((c) => c !== ""))];
+  return registrarConfig({
+    ...(ligar === undefined ? {} : { ativo: ligar }),
+    escopo_patch: { canais: limpos },
+  });
+}
+
 export interface ConfigFollowupForm {
   ativo: boolean;
   janelasMin: number[];
