@@ -1,22 +1,13 @@
 import { redirect } from "next/navigation";
 import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
-import { gerarAgentesEnsaio } from "@/lib/ensaio/fixtures/agentes";
-import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
-import { MapaInteligencia } from "@/components/ensaio/mapa-inteligencia";
+import { mapaInteligenciaEnsaio } from "@/lib/ensaio/inteligencia";
+import { MapaInteligenciaTela } from "@/components/inteligencia/mapa";
 
 export const dynamic = "force-dynamic";
 
-/** /configuracoes/inteligencia — a entrada da seção: o Mapa (números → agentes → validadoras → saídas). */
+/** /configuracoes/inteligencia — o Mapa: números → agentes → quem valida → o que sai. */
 export default function InteligenciaPage() {
   const ensaio = lerSessaoEnsaio();
-  if (!ensaio) redirect("/configuracoes/clara");
-  const agora = new Date();
-  return (
-    <MapaInteligencia
-      agentes={gerarAgentesEnsaio(agora)}
-      canais={gerarCanaisEnsaio(agora)}
-      gestao={ensaio.papel === "owner" || ensaio.papel === "admin"}
-      agoraIso={agora.toISOString()}
-    />
-  );
+  if (!ensaio) redirect("/configuracoes/agentes");
+  return <MapaInteligenciaTela mapa={mapaInteligenciaEnsaio(new Date())} />;
 }
