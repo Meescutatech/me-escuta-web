@@ -81,7 +81,17 @@ export function OverlayJarvis() {
               role="dialog"
               aria-modal="true"
               aria-label="Jarvis"
-              layoutId={mov.reduzido ? undefined : "jarvis-casca"}
+              /*
+                11/09 · O `layoutId="jarvis-casca"` SAIU, e a causa é estrutural.
+                Ele fazia a morfose compartilhada com a pílula do dock: a pílula do canto VIRAVA
+                este painel. Com o dock desmontado (o Jarvis mudou para o centro do header), o
+                layoutId ficou órfão — o framer anima a partir de um par que não existe e o painel
+                nasce colapsado: uma caixa vazia debaixo do header, que foi exatamente o que
+                apareceu na tela.
+                Sem par, a entrada é a simples: aparece com opacidade. A morfose volta no dia em
+                que o arco do header receber o par — e aí ela nasce DO arco, que é de onde a pessoa
+                espera que saia.
+              */
               style={{ borderRadius: 14 }}
               initial={mov.reduzido ? { opacity: 0 } : false}
               animate={mov.reduzido ? { opacity: 1 } : undefined}

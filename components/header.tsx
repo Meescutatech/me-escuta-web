@@ -1,6 +1,6 @@
 "use client";
 
-import { ArcoHeader } from "@/components/jarvis/arco-header";
+import { ArcoHeader, NuvemJarvis } from "@/components/jarvis/arco-header";
 import { usePathname } from "next/navigation";
 import { lerTituloDaRota } from "@/lib/header/titulos";
 import type { Departamento } from "@/lib/departamentos/escopo";
@@ -118,6 +118,7 @@ export function Header({
           <ArcoHeader />
         </div>
       </div>
+      <NuvemJarvis />
     </header>
   );
 }

@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { AnimatePresence } from "framer-motion";
 import { useJarvis } from "@/lib/jarvis/contexto";
 import { MarcaJarvis } from "./marca";
+import { PequenoJarvis } from "./pequeno";
 
 /**
  * O ARCO NO CENTRO DO HEADER — a presença do Jarvis no sistema inteiro (Diogo, 11/09, 16:45:
@@ -86,5 +88,32 @@ export function ArcoHeader() {
       )}
       <MarcaJarvis tamanho={20} vivo={vivo} />
     </button>
+  );
+}
+
+/**
+ * A NUVENZINHA — o modo `pequeno`, ancorado NO ARCO e abrindo para baixo.
+ *
+ * Ela já existia (`PequenoJarvis`), mas quem a montava era o dock, e só ele. Quando o dock morreu,
+ * clicar no arco passava o modo para `pequeno` e **nada desenhava** — o `OverlayJarvis` só monta
+ * no `popup`. O sintoma era uma caixa vazia debaixo do header, e a causa era esta: a superfície
+ * não tinha mais dono.
+ *
+ * Fica num componente irmão, e não dentro do botão, por um motivo prático: o botão é `relative`
+ * dentro de um wrapper centrado de largura zero, e ancorar ali faria a nuvem herdar o
+ * `translate-x-1/2` do wrapper. Aqui ela se posiciona pelo header, que é o retângulo estável.
+ */
+export function NuvemJarvis() {
+  const { modo, fechar } = useJarvis();
+  return (
+    <AnimatePresence>
+      {modo === "pequeno" && (
+        <div className="pointer-events-none absolute left-1/2 top-full z-50 w-[min(560px,calc(100vw-32px))] -translate-x-1/2 pt-2">
+          <div className="pointer-events-auto">
+            <PequenoJarvis key="pequeno" aoFechar={fechar} />
+          </div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }

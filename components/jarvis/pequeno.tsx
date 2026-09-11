@@ -123,7 +123,7 @@ export function PequenoJarvis({ aoFechar }: { aoFechar: () => void }) {
   return (
     <motion.div
       ref={caixa}
-      layoutId={mov.reduzido ? undefined : "jarvis-casca"}
+      /* 11/09 · sem layoutId: o par era a pílula do dock, que morreu. Órfão, ele nascia colapsado. */
       style={{ borderRadius: 14 }}
       initial={mov.reduzido ? { opacity: 0 } : false}
       animate={mov.reduzido ? { opacity: 1 } : undefined}
