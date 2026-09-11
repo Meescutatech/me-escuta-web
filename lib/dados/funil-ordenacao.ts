@@ -448,7 +448,7 @@ export function textoExcedente(p: Prioridade): string {
 
 // ─────────────── ordenação ───────────────
 
-export type ChaveOrdem = "prioridade" | "parado" | "sem_resposta" | "recentes";
+export type ChaveOrdem = "prioridade" | "proxima_acao" | "parado" | "sem_resposta" | "recentes";
 
 export interface OpcaoOrdem {
   chave: ChaveOrdem;
@@ -459,6 +459,10 @@ export interface OpcaoOrdem {
 
 export const ORDENS: OpcaoOrdem[] = [
   { chave: "prioridade", rotulo: "Mais urgente primeiro", ajuda: "AGORA no topo, depois HOJE, NA SEMANA e SEM PRESSA" },
+  // W-D6 (10/09) · a ordem da PRÓXIMA TAREFA — "o que eu faço agora" (Close Inbox Today, benchmark
+  // §4 item 7): vencida, depois hoje, depois quem NÃO TEM próxima ação (largado pesa mais que
+  // agendado), depois as futuras por prazo. Card que não sabe da tarefa vai ao fim.
+  { chave: "proxima_acao", rotulo: "Próxima ação primeiro", ajuda: "Tarefa vencida, depois hoje, depois quem está sem próxima ação" },
   { chave: "parado", rotulo: "Mais parados primeiro", ajuda: "Quem está há mais tempo na mesma etapa" },
   { chave: "sem_resposta", rotulo: "Sem resposta há mais tempo", ajuda: "Última mensagem mais antiga no topo" },
   { chave: "recentes", rotulo: "Mais recentes primeiro", ajuda: "Quem entrou na etapa por último" },
@@ -529,6 +533,18 @@ export function ordenarCards(
         if (d === 0) d = maisAntigoPrimeiro(ms(a.entrou_etapa_em), ms(b.entrou_etapa_em));
         break;
       }
+      case "proxima_acao": {
+        d = balde(a, agora) - balde(b, agora);
+        // no mesmo balde, o prazo mais cedo manda (vencida há mais tempo / hoje mais cedo / futura
+        // mais próxima); sem tarefa, quem está mais parado
+        if (d === 0) {
+          d =
+            a.proxima_tarefa && b.proxima_tarefa
+              ? maisAntigoPrimeiro(ms(a.proxima_tarefa.prazo), ms(b.proxima_tarefa.prazo))
+              : maisAntigoPrimeiro(ms(a.entrou_etapa_em), ms(b.entrou_etapa_em));
+        }
+        break;
+      }
       case "parado":
         d = maisAntigoPrimeiro(ms(a.entrou_etapa_em), ms(b.entrou_etapa_em));
         break;
@@ -548,6 +564,19 @@ export function ordenarCards(
     return d !== 0 ? d : a.lead_id.localeCompare(b.lead_id);
   });
   return copia;
+}
+
+/** Balde da ordem "próxima ação": 0 vencida · 1 hoje · 2 sem próxima ação · 3 futura/sem prazo · 4 desconhecido. */
+function balde(c: CardLead, agora: number): number {
+  const p = c.proxima_tarefa;
+  if (p === undefined) return 4;
+  if (p === null) return 2;
+  const t = ms(p.prazo);
+  if (t == null) return 3;
+  if (t < agora) return 0;
+  // mesmo dia civil no fuso da operação (UTC-3, como o dashboard)
+  const dia = (x: number) => Math.floor((x - 3 * 3_600_000) / 86_400_000);
+  return dia(t) === dia(agora) ? 1 : 3;
 }
 
 /**
