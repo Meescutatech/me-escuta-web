@@ -7,7 +7,10 @@ import { JarvisDiz, type ObservacaoJarvis } from "./jarvis-diz";
 import { PropostaJarvisInline } from "./proposta-inline";
 import { PropostaTarefaCard } from "./proposta-tarefa-card";
 import { ReguaAutonomia, type LinhaAutonomia, type NivelAutonomia } from "./regua-autonomia";
+import { ListaDeAcoes, type ItemAcao } from "./lista-de-acoes";
+import { RespostaBlocos } from "./resposta";
 import type { AjusteProposta, MotivoDescarte, Pessoa, PropostaJarvis } from "./tipos";
+import { responderEnsaio } from "@/lib/ensaio/jarvis";
 
 /**
  * GALERIA TEMPORÁRIA — a ESCOLHIDA (Diogo, 10/09/2026 22:40): arco + nota sem lateral.
@@ -66,6 +69,8 @@ export function GaleriaJarvis({
   diz,
   regua,
   podeEditarRegua,
+  percurso,
+  atencao,
 }: {
   quem: string;
   responsaveis: Pessoa[];
@@ -74,6 +79,8 @@ export function GaleriaJarvis({
   diz: { frase: string; observacoes: ObservacaoJarvis[]; perguntas: string[]; geradoEm: string };
   regua: LinhaAutonomia[];
   podeEditarRegua: boolean;
+  percurso: ItemAcao[];
+  atencao: ItemAcao[];
 }) {
   const [fio, setFio] = useState(inline);
   const [fila, setFila] = useState(tarefas);
@@ -82,7 +89,7 @@ export function GaleriaJarvis({
   const anotar = (s: string) => setRegistro((r) => [`${new Date().toLocaleTimeString("pt-BR")} · ${s}`, ...r].slice(0, 8));
 
   return (
-    <div className="mx-auto max-w-[760px] space-y-10 px-6 py-8">
+    <div className="max-w-[1100px] space-y-10 px-6 py-8">
       <header className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-[20px] font-medium tracking-[-0.015em] text-foreground">Jarvis — a escolhida</h1>
@@ -169,14 +176,42 @@ export function GaleriaJarvis({
         </div>
       </Bloco>
 
-      <Bloco titulo="4 · No dashboard" caminho="components/jarvis/jarvis-diz.tsx" assinatura="JarvisDiz({ frase, observacoes[], perguntas[], geradoEm, hrefPergunta? })">
+      <Bloco titulo="4 · No dashboard" caminho="components/jarvis/jarvis-diz.tsx" assinatura="JarvisDiz({ frase, observacoes[], perguntas[], geradoEm, hrefPergunta?, acoes?: ItemAcao[], rotuloAcoes? })">
         <div className="space-y-3">
           <JarvisDiz frase={diz.frase} observacoes={diz.observacoes} perguntas={diz.perguntas} geradoEm={diz.geradoEm} />
+          <p className="text-[12px] text-muted-foreground">expandido — as observações viram itens com estado (`acoes`)</p>
+          <JarvisDiz frase={diz.frase} observacoes={[]} acoes={atencao} rotuloAcoes="Precisa de atenção" perguntas={diz.perguntas} geradoEm={diz.geradoEm} />
           <JarvisDiz frase={null} observacoes={[]} perguntas={diz.perguntas.slice(0, 2)} geradoEm={null} />
         </div>
       </Bloco>
 
-      <Bloco titulo="5 · Régua de autonomia — /configuracoes/inteligencia" caminho="components/jarvis/regua-autonomia.tsx" assinatura="ReguaAutonomia({ linhas: LinhaAutonomia[], podeEditar, onMudar?(chave, nivel) })">
+      <Bloco titulo="5 · Lista de ações com estado" caminho="components/jarvis/lista-de-acoes.tsx" assinatura="ListaDeAcoes({ itens: ItemAcao[], rotulo?, className? }) · ItemAcao = { id, titulo, estado: 'feito'|'andamento'|'pendente'|'atencao', badge?, href?, detalhe?, filhos? }">
+        <div className="grid gap-6 rounded-md border border-border/60 bg-background p-4 lg:grid-cols-2">
+          <div>
+            <p className="mb-2 text-[12px] text-muted-foreground">/tarefas · percurso "Começar as tarefas" (W-D5)</p>
+            <ListaDeAcoes itens={percurso} rotulo="Percurso do dia" />
+          </div>
+          <div>
+            <p className="mb-2 text-[12px] text-muted-foreground">dashboard · "Precisa de atenção" (W-D4)</p>
+            <ListaDeAcoes itens={atencao} rotulo="Precisa de atenção" />
+          </div>
+        </div>
+      </Bloco>
+
+      <Bloco titulo="6 · A resposta do /jarvis em blocos" caminho="components/jarvis/resposta.tsx · pergunta.tsx · app/(app)/jarvis/page.tsx" assinatura="RespostaBlocos({ resposta: RespostaJarvis, vivo? }) · PerguntaJarvis({ usuarioId, papel, contexto, perguntaInicial?, enviarAoAbrir?, ensaio?, sugestoes? }) · responderEnsaio(pergunta, agora) em lib/ensaio/jarvis.ts">
+        <div className="grid gap-6 rounded-md border border-border/60 bg-background p-4 lg:grid-cols-2">
+          <div>
+            <p className="mb-3 text-[12.5px] text-muted-foreground">Quais tarefas estão vencidas e de quem?</p>
+            <RespostaBlocos resposta={responderEnsaio("Quais tarefas estão vencidas e de quem?", new Date())} />
+          </div>
+          <div>
+            <p className="mb-3 text-[12.5px] text-muted-foreground">Como está o funil esta semana?</p>
+            <RespostaBlocos resposta={responderEnsaio("Como está o funil esta semana?", new Date())} />
+          </div>
+        </div>
+      </Bloco>
+
+      <Bloco titulo="7 · Régua de autonomia — /configuracoes/inteligencia" caminho="components/jarvis/regua-autonomia.tsx" assinatura="ReguaAutonomia({ linhas: LinhaAutonomia[], podeEditar, onMudar?(chave, nivel) })">
         <ReguaAutonomia
           linhas={linhas}
           podeEditar={podeEditarRegua}

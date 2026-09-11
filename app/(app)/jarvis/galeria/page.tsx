@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
 import { GaleriaJarvis } from "@/components/jarvis/galeria";
-import { RESPONSAVEIS_ENSAIO, jarvisDizEnsaio, propostasInlineEnsaio, propostasTarefaEnsaio, reguaJarvisEnsaio } from "@/lib/ensaio/jarvis";
+import { RESPONSAVEIS_ENSAIO, atencaoEnsaio, jarvisDizEnsaio, percursoTarefasEnsaio, propostasInlineEnsaio, propostasTarefaEnsaio, reguaJarvisEnsaio } from "@/lib/ensaio/jarvis";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,8 @@ export default function GaleriaJarvisPage() {
       diz={jarvisDizEnsaio(agora)}
       regua={reguaJarvisEnsaio()}
       podeEditarRegua={ensaio.papel === "owner" || ensaio.papel === "admin"}
+      percurso={percursoTarefasEnsaio()}
+      atencao={atencaoEnsaio()}
     />
   );
 }

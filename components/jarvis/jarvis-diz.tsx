@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { rotuloFerramenta } from "@/lib/jarvis/contrato";
 import { MarcaJarvis } from "./marca";
+import { ListaDeAcoes, type ItemAcao } from "./lista-de-acoes";
 
 /**
  * "JARVIS DIZ" — o bloco do dashboard, dieta final (W-J, 10/09/2026 22:40).
@@ -32,6 +33,9 @@ export interface JarvisDizProps {
   perguntas: string[];
   geradoEm: string | null;
   hrefPergunta?: (pergunta: string) => string;
+  /** expandido: as observações viram itens com estado (feito / em andamento / pendente / atenção) */
+  acoes?: ItemAcao[];
+  rotuloAcoes?: string;
   className?: string;
   /** aceita e IGNORADA — a marca está travada no arco */
   marca?: string;
@@ -46,10 +50,10 @@ function horaCurta(iso: string | null): string | null {
 
 const LINK = "underline-offset-[3px] hover:underline focus-visible:outline-none focus-visible:underline";
 
-export function JarvisDiz({ frase, observacoes, perguntas, geradoEm, hrefPergunta, className }: JarvisDizProps) {
+export function JarvisDiz({ frase, observacoes, perguntas, geradoEm, hrefPergunta, acoes, rotuloAcoes, className }: JarvisDizProps) {
   const hora = horaCurta(geradoEm);
   const href = hrefPergunta ?? ((q: string) => `/jarvis?contexto=${encodeURIComponent("/")}&pergunta=${encodeURIComponent(q)}`);
-  const vazio = !frase && observacoes.length === 0;
+  const vazio = !frase && observacoes.length === 0 && !(acoes && acoes.length > 0);
 
   return (
     <section className={cn("rounded-md border border-border/60 bg-muted/30 px-4 py-3", className)} aria-labelledby="jarvis-diz-titulo">
@@ -81,6 +85,12 @@ export function JarvisDiz({ frase, observacoes, perguntas, geradoEm, hrefPergunt
                 </li>
               ))}
             </ul>
+          )}
+          {acoes && acoes.length > 0 && (
+            <div className={cn(observacoes.length > 0 || frase ? "mt-3 border-t border-border/60 pt-2.5" : "mt-2")}>
+              {rotuloAcoes && <p className="mb-1 text-[12px] text-muted-foreground">{rotuloAcoes}</p>}
+              <ListaDeAcoes itens={acoes} rotulo={rotuloAcoes} />
+            </div>
           )}
         </>
       )}

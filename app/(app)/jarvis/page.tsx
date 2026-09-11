@@ -1,22 +1,22 @@
 import { redirect } from "next/navigation";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
-import { ConversaJarvis } from "@/components/jarvis/conversa";
+import { PerguntaJarvis } from "@/components/jarvis/pergunta";
 import { interpretarContexto } from "@/lib/jarvis/contrato";
 import { lerSessaoEnsaio } from "@/lib/ensaio/sessao";
+import { PERGUNTAS_ROTEIRO } from "@/lib/ensaio/jarvis";
 
 export const dynamic = "force-dynamic";
 
 /**
- * /jarvis (F9) — o chat. Lê `?contexto=` (contrato com a F4: `encodeURIComponent(pathname+search)`)
- * e injeta no primeiro turno. O painel de melhoria de prompt que vivia aqui foi para
- * /configuracoes/agentes/jarvis.
+ * /jarvis — pergunta e resposta em blocos (W-J, 10/09/2026 23:10, depois do "continua puro GPT").
  *
- * Identidade vem do servidor (uid + papel); o cliente nunca a informa.
+ * Lê `?contexto=` (contrato com a F4) e `?pergunta=` (o dashboard abre `/jarvis?pergunta=…`).
+ * Identidade vem do servidor; em modo ensaio (`lerSessaoEnsaio`) vem da fixture, e a resposta é
+ * por regra (`responderEnsaio`: as 5 perguntas do roteiro do Rodolfo; o resto devolve "ainda não
+ * sei"). Fora do ensaio, o componente usa o proxy SSE `/jarvis/perguntar` (F9), inalterado.
  *
- * `?pergunta=` (W-J, 10/09): o dashboard ("Jarvis diz") abre `/jarvis?pergunta=…` nas perguntas
- * sugeridas — a pergunta vai pré-preenchida no composer e, fora do ensaio, é enviada de uma vez.
- * Em modo ensaio (`lerSessaoEnsaio`) a identidade vem da fixture, como nas outras telas do W-D2.
+ * O chat de bolhas (`ConversaJarvis`) continua existindo para o painel lateral do header.
  */
 export default async function JarvisPage({ searchParams }: { searchParams: { contexto?: string; pergunta?: string } }) {
   const ensaio = lerSessaoEnsaio();
@@ -39,15 +39,23 @@ export default async function JarvisPage({ searchParams }: { searchParams: { con
 
   if (!papel) {
     return (
-      <section className="mx-auto max-w-[640px] px-6 py-10 text-[14px] text-suave">
+      <section className="px-6 py-10 text-[14px] text-muted-foreground">
         Sua conta ainda não tem papel ativo no workspace — peça a um admin em Configurações → Membros.
       </section>
     );
   }
 
   return (
-    <section className="h-[calc(100vh-var(--altura-topo))]">
-      <ConversaJarvis usuarioId={usuarioId} papel={papel} contextoInicial={contexto} perguntaInicial={pergunta} enviarAoAbrir={!ensaio} />
+    <section className="min-h-[calc(100vh-var(--altura-topo))]">
+      <PerguntaJarvis
+        usuarioId={usuarioId}
+        papel={papel}
+        contexto={contexto}
+        perguntaInicial={pergunta}
+        enviarAoAbrir
+        ensaio={Boolean(ensaio)}
+        sugestoes={ensaio ? PERGUNTAS_ROTEIRO : undefined}
+      />
     </section>
   );
 }

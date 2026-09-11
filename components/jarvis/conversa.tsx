@@ -328,7 +328,7 @@ export function ConversaJarvis({
         e.preventDefault();
         void enviar(texto);
       }}
-      className={cn("w-full", central ? "max-w-[560px]" : "mx-auto max-w-[640px]")}
+      className={cn("w-full", central ? "max-w-[760px]" : "max-w-[760px]")}
     >
       <div className="flex items-end gap-1.5 rounded-[26px] border border-linha bg-branco py-1.5 pl-4 pr-1.5 shadow-[0_1px_3px_rgba(31,35,40,.07)] transition-colors focus-within:border-foco-comp">
         <textarea
@@ -390,12 +390,12 @@ export function ConversaJarvis({
       {/* lista */}
       <div ref={listaRef} className={cn("min-h-0 flex-1 overflow-y-auto", px, compacto ? "py-4" : "py-6")} aria-live="polite" aria-busy={enviando}>
         {vazio ? (
-          <div className={cn("mx-auto flex h-full w-full max-w-[640px] flex-col items-center justify-center", compacto ? "gap-5" : "gap-6")}>
-            <h2 className={cn("text-balance text-center font-[650] tracking-[-0.01em] text-tinta", compacto ? "text-[20px]" : "text-[28px]")}>
+          <div className={cn("flex h-full w-full max-w-[760px] flex-col items-start justify-center", compacto ? "gap-5" : "gap-6")}>
+            <h2 className={cn("text-balance font-[650] tracking-[-0.01em] text-tinta", compacto ? "text-[20px]" : "text-[28px]")}>
               Por onde começamos?
             </h2>
             {composer(true)}
-            <ul className="flex flex-wrap justify-center gap-2" aria-label="Sugestões">
+            <ul className="flex flex-wrap gap-2" aria-label="Sugestões">
               {sugestoes.map((s) => (
                 <li key={s}>
                   <button
@@ -410,7 +410,7 @@ export function ConversaJarvis({
             </ul>
           </div>
         ) : (
-          <ol className="mx-auto flex max-w-[640px] flex-col gap-5">
+          <ol className="flex max-w-[760px] flex-col gap-5">
             {mensagens.map((m, i) => {
               const ultima = i === mensagens.length - 1;
               if (m.papel === "usuario") {

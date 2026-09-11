@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { MarcaJarvis } from "@/components/jarvis/marca";
 import { avaliarJarvis, validarPrompt, type PropostaJarvis } from "@/app/(app)/jarvis/actions";
 import { cn } from "@/lib/utils";
 
@@ -47,12 +48,10 @@ export function PainelJarvis() {
   }
 
   return (
-    <section className="mx-auto max-w-2xl space-y-5 px-6 py-6">
+    <section className="max-w-[760px] space-y-5 px-6 py-6">
       <div>
         <div className="flex items-center gap-2.5">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-navy text-sm font-bold text-branco">
-            J
-          </span>
+          <MarcaJarvis tamanho={20} rotulo="Jarvis" className="text-foreground" />
           <div>
             {/* M6: o NOME DA PÁGINA subiu para o header (fonte única rota→título). O que fica é a
                 identidade do agente ao lado do avatar — que é do painel, não do shell — e ela sai
