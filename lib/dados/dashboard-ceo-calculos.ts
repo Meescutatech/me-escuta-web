@@ -408,14 +408,21 @@ export function rotuloCurto(ymd: string): string {
 }
 
 /** Serie da janela atual com zero nos dias sem linha (a view nao emite dia vazio). */
-export function serieDiaria(dias: LinhaDia[], atorDia: LinhaAtorDia[], j: Janela, atorFiltro: string | null): PontoDia[] {
+/** Filtro de ator: uma chave, varias (W-D4: "Pessoa" multi) ou nenhuma. */
+export type FiltroAtor = string | string[] | null;
+export function casaAtor(ator: string, f: FiltroAtor): boolean {
+  if (f == null) return true;
+  return Array.isArray(f) ? f.length === 0 || f.includes(ator) : ator === f;
+}
+
+export function serieDiaria(dias: LinhaDia[], atorDia: LinhaAtorDia[], j: Janela, atorFiltro: FiltroAtor): PontoDia[] {
   const porDia = new Map(dias.map((d) => [d.dia, d] as const));
   return diasDaJanela(j).map((dia) => {
     const d = porDia.get(dia);
     let ag = 0, hu = 0;
     for (const l of atorDia) {
       if (l.dia !== dia) continue;
-      if (atorFiltro && l.ator !== atorFiltro) continue;
+      if (!casaAtor(l.ator, atorFiltro)) continue;
       const t = tipoDoAtor(l.ator);
       if (t === "agente") ag += l.mensagens_enviadas;
       else if (t === "humano") hu += l.mensagens_enviadas;
@@ -468,12 +475,12 @@ export function resumirFunil(
   funil: LinhaFunil[],
   etapaDia: LinhaEtapaDia[],
   j: Janela,
-  atorFiltro: string | null,
+  atorFiltro: FiltroAtor,
 ): EtapaResumo[] {
   const ordenado = [...funil].sort((a, b) => a.ordem - b.ordem || a.etapa.localeCompare(b.etapa));
   const entradas = (etapa: string, pred: (d: string) => boolean) =>
     etapaDia.reduce(
-      (s, l) => (l.etapa === etapa && pred(l.dia) && (!atorFiltro || l.ator === atorFiltro) ? s + l.entradas : s),
+      (s, l) => (l.etapa === etapa && pred(l.dia) && casaAtor(l.ator, atorFiltro) ? s + l.entradas : s),
       0,
     );
   const linhas = ordenado.map((f) => ({

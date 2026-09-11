@@ -22,7 +22,8 @@ import { PARAM_DEPARTAMENTO } from "@/lib/departamentos/cookie";
  * filtros (agente irmão, 22:15) — dois filtros na mesma tela seria pior que nenhum. Quando
  * conversas e dashboard ganharem o deles, esta lista esvazia e o header fica sem filtro nenhum.
  */
-export const ROTAS_COM_FILTRO = ["/", "/conversas"];
+// `/` saiu em 10/09 22:50 (W-D4): o dashboard ganhou o próprio segmented na toolbar de filtros.
+export const ROTAS_COM_FILTRO = ["/conversas"];
 
 export function rotaTemFiltro(pathname: string): boolean {
   return ROTAS_COM_FILTRO.some((r) => (r === "/" ? pathname === "/" : pathname === r || pathname.startsWith(r + "/")));

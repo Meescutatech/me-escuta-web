@@ -18,7 +18,7 @@ export function LeadsPorDia({ pontos }: { pontos: PontoSerie[] }) {
   const passo = Math.max(1, Math.ceil(pontos.length / 7));
   const temOutros = pontos.some((p) => p.outros > 0);
   return (
-    <ChartContainer config={CONFIG} className="aspect-auto h-[220px] w-full">
+    <ChartContainer config={CONFIG} className="aspect-auto h-[200px] w-full">
       <BarChart data={pontos} margin={{ left: 4, right: 4, top: 8, bottom: 0 }} barCategoryGap={pontos.length > 45 ? 1 : 3}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis dataKey="dia" tickLine={false} axisLine={false} tickMargin={6} interval={passo - 1} tickFormatter={(v: string) => diaMes(v)} />

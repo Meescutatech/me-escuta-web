@@ -2,6 +2,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { lerFunil } from "./funil";
 import { ensaioDashboardLigado, gerarEnsaioDashboard } from "./dashboard-ensaio";
 import {
+  casaAtor,
   janelaDoPeriodo,
   resumirAgora,
   resumirAtendimento,
@@ -13,6 +14,7 @@ import {
   type Ator,
   type Atendimento,
   type EtapaResumo,
+  type FiltroAtor,
   type Janela,
   type LinhaAtorDia,
   type LinhaConversaAtor,
@@ -39,8 +41,8 @@ export interface DadosDashboardCeo {
   periodo: PeriodoDias;
   janela: Janela;
   geradoEm: string;
-  /** filtro "ver como" — chave de ator, ou null = todos */
-  atorFiltro: string | null;
+  /** filtro "ver como" — chave de ator, lista (W-D4) ou null = todos */
+  atorFiltro: FiltroAtor;
   atores: Ator[];
   negocio: ReturnType<typeof somarDiasNegocio>;
   serie: PontoDia[];
@@ -81,7 +83,7 @@ async function lerView<T>(
 
 export async function lerDashboardCeo(
   periodo: PeriodoDias,
-  atorFiltro: string | null,
+  atorFiltro: FiltroAtor,
   agora = new Date(),
   cliente?: Supabase,
   /** W-D4: janela livre (`?de=&ate=`) no lugar do preset; a conta e a mesma */
@@ -90,8 +92,8 @@ export async function lerDashboardCeo(
   const janelaEnsaio = janelaLivre ?? janelaDoPeriodo(periodo, agora);
   if (ensaioDashboardLigado()) {
     const en = gerarEnsaioDashboard(agora);
-    const atorDiaF = atorFiltro ? en.atorDia.filter((l) => l.ator === atorFiltro) : en.atorDia;
-    const primeiraF = atorFiltro ? en.primeira.filter((p) => p.respondida_por === atorFiltro) : en.primeira;
+    const atorDiaF = en.atorDia.filter((l) => casaAtor(l.ator, atorFiltro));
+    const primeiraF = en.primeira.filter((p) => p.respondida_por == null ? atorFiltro == null || (Array.isArray(atorFiltro) && atorFiltro.length === 0) : casaAtor(p.respondida_por, atorFiltro));
     return {
       periodo,
       janela: janelaEnsaio,
@@ -130,8 +132,8 @@ export async function lerDashboardCeo(
     lerFunil(supabase).catch(() => null),
   ]);
 
-  const atorDiaFiltrado = atorFiltro ? atorDia.filter((l) => l.ator === atorFiltro) : atorDia;
-  const primeiraFiltrada = atorFiltro ? primeira.filter((p) => p.respondida_por === atorFiltro) : primeira;
+  const atorDiaFiltrado = atorDia.filter((l) => casaAtor(l.ator, atorFiltro));
+  const primeiraFiltrada = primeira.filter((p) => p.respondida_por == null ? atorFiltro == null || (Array.isArray(atorFiltro) && atorFiltro.length === 0) : casaAtor(p.respondida_por, atorFiltro));
 
   return {
     periodo,

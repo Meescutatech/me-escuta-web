@@ -1,15 +1,15 @@
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Faisca } from "./graficos";
-import { Delta, IconeRotulo } from "./pecas";
+import { Delta } from "./pecas";
 
 /**
- * O card de KPI do painel de referência: ícone + rótulo em caixa alta espaçada, valor grande em
- * `tracking-tighter`, o chip de variação, e embaixo em 11px apagado a base do número ("945 / 1.846").
- * A faísca fica no rodapé, preta e fina — é o formato da trajetória, não um gráfico para ler.
+ * KPI compacto (≤ 84px): rótulo 11px · valor 22px com a variação inline · contexto 11px. A faísca
+ * cabe em 24px à direita do valor. Hierarquia por peso e tamanho, não por caixa (Refactoring UI);
+ * tinta só onde há dado (Few).
  */
 export function Kpi({
-  icone,
+  icone: Icone,
   rotulo,
   valor,
   base,
@@ -17,29 +17,34 @@ export function Kpi({
   menorEhMelhor,
   trajetoria,
   tom,
+  comparar = true,
   className,
 }: {
   icone: LucideIcon;
   rotulo: string;
   valor: string;
-  /** "945 / 1.846" · "Total: R$ 1.230.565 · 1.123 ativas" */
   base?: string;
   delta?: number | null;
   menorEhMelhor?: boolean;
   trajetoria?: number[];
-  /** dinheiro ganho fica verde; débito (tarefas vencidas) fica vermelho */
   tom?: "verde" | "vermelho";
+  comparar?: boolean;
   className?: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 flex-col rounded-lg border border-border bg-card px-4 pt-3.5 pb-2.5", className)}>
-      <IconeRotulo icone={icone}>{rotulo}</IconeRotulo>
-      <div className="mt-2 flex items-baseline justify-between gap-2">
-        <span className={cn("truncate text-2xl font-semibold leading-none tracking-tighter tabular-nums", tom === "verde" ? "text-success-ink" : tom === "vermelho" ? "text-danger-ink" : "text-foreground")}>{valor}</span>
-        <Delta delta={delta} menorEhMelhor={menorEhMelhor} />
+    <div className={cn("flex min-w-0 flex-col rounded-lg border border-border bg-card px-3 py-2.5", className)}>
+      <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <Icone className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+        <span className="truncate">{rotulo}</span>
+      </span>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span className={cn("truncate text-[22px] font-semibold leading-none tracking-tight tabular-nums", tom === "verde" ? "text-success-ink" : tom === "vermelho" ? "text-danger-ink" : "text-foreground")}>{valor}</span>
+          {comparar ? <Delta delta={delta} menorEhMelhor={menorEhMelhor} /> : null}
+        </span>
+        {trajetoria && trajetoria.length > 1 ? <Faisca valores={trajetoria} className="h-6 w-16 shrink-0" /> : null}
       </div>
-      <div className="mt-1.5 truncate text-[11px] text-muted-foreground tabular-nums">{base ?? " "}</div>
-      <div className="mt-2 h-7">{trajetoria && trajetoria.length > 1 ? <Faisca valores={trajetoria} /> : null}</div>
+      <div className="mt-1 truncate text-[11px] text-muted-foreground tabular-nums">{base ?? " "}</div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 /** A moldura de todo bloco: borda, raio 10px, branco. `denso` tira o padding para tabelas. */
 export function Bloco({ children, className, denso = false }: { children: React.ReactNode; className?: string; denso?: boolean }) {
-  return <section className={cn("rounded-lg border border-border bg-card", denso ? "" : "px-5 py-4", className)}>{children}</section>;
+  return <section className={cn("rounded-lg border border-border bg-card", denso ? "" : "px-3.5 py-3", className)}>{children}</section>;
 }
 
 /** Cabeçalho de bloco: título 13px semibold + descrição 11px apagada + controles à direita. */
@@ -54,7 +54,7 @@ export function NumPct({ n, pct, className, tom }: { n: string; pct?: string | n
 
 export function Th({ children, direita = true, className, title }: { children?: React.ReactNode; direita?: boolean; className?: string; title?: string }) {
   return (
-    <th scope="col" title={title} className={cn("whitespace-nowrap px-2.5 py-2 text-[11px] font-medium text-muted-foreground", direita ? "text-right" : "text-left", className)}>
+    <th scope="col" title={title} className={cn("h-8 whitespace-nowrap px-2.5 text-[11px] font-medium text-muted-foreground", direita ? "text-right" : "text-left", className)}>
       {children}
     </th>
   );
@@ -62,7 +62,7 @@ export function Th({ children, direita = true, className, title }: { children?: 
 
 export function Td({ children, direita = true, className, title }: { children?: React.ReactNode; direita?: boolean; className?: string; title?: string }) {
   return (
-    <td title={title} className={cn("whitespace-nowrap px-2.5 py-2 text-[13px] tabular-nums text-foreground", direita ? "text-right" : "text-left", className)}>
+    <td title={title} className={cn("h-8 whitespace-nowrap px-2.5 py-0 text-[12.5px] tabular-nums text-foreground", direita ? "text-right" : "text-left", className)}>
       {children}
     </td>
   );

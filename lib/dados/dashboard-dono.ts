@@ -13,7 +13,7 @@ import {
   PERGUNTAS_PADRAO,
   type Aba,
   type Atencao,
-  type DepartamentoFiltro,
+  type FiltrosDashboard,
   type Heatmap,
   type JarvisDiz,
   type LinhaCanal,
@@ -47,23 +47,26 @@ import { lerFila } from "@/app/(app)/fila/dados";
  *   |----------------------|------------------|---------------------------------------------------|
  *   | atenção              | fixtures do W-D2 | tarefas (`v_tarefa`), funil (`v_lead_card` + SLA), |
  *   |                      |                  | conversas (1ª página do inbox), fila do Jarvis     |
- *   | Jarvis diz (frases)  | gabarito         | `null` até o F9 escrever o resumo                  |
+ *   | Jarvis diz (frase)   | gabarito         | `null` até o F9 escrever o resumo                  |
  *   | canais               | fixture          | `null` — as views não sabem por qual número entrou |
  *   | heatmap hora × dia   | fixture          | `null` — as views são por DIA                      |
  *   | meta do mês          | fixture          | `null` — `core.config` ainda não tem `meta_mensal` |
  *   | tempo médio na etapa | fixture          | `null` — a view não mede permanência              |
  *   | carga agora (equipe) | fixture          | `null`                                            |
+ *
+ * FILTROS (v3): `pessoas` recorta tudo que vem por ator (KPIs, evolução, funil, tabelas);
+ * `numeros` recorta a tabela por número e a atenção; `etapas` o funil e os leads parados;
+ * `origens` os leads parados (e o marketing, na aba dele); `departamento` atenção, pessoas e
+ * números. O que cada filtro NÃO alcança está dito na tela, não escondido.
  */
 
 export interface DadosDashboardDono extends DadosDashboardCeo {
   aba: Aba;
   vista: Vista;
-  busca: string;
-  departamento: DepartamentoFiltro;
+  filtros: FiltrosDashboard;
   /**
    * true = o recorte de departamento foi aplicado aos blocos que TÊM departamento (atenção, equipe,
    * canais). KPIs, funil e série nunca são recortados: as views `v_dashboard_*` não têm `area`.
-   * false = nada foi recortado (produção, até a migration).
    */
   departamentoAplicado: boolean;
   atencao: Atencao;
@@ -73,15 +76,16 @@ export interface DadosDashboardDono extends DadosDashboardCeo {
   meta: MetaMes | null;
   equipe: LinhaEquipe[];
   funilComTempo: Array<EtapaResumo & { tempoMedioDias: number | null }>;
-  /** trajetórias diárias já na ordem da janela — as mini-barras dos KPIs */
   trajetorias: { leads: number[]; recebidas: number[]; respondidas: number[]; enviadas: number[]; ganhos: number[] };
   ganhos: EtapaResumo | null;
-  /** vendas ganhas NO PERÍODO (entradas na etapa de ganho) e o valor delas; valor null = sem leitura */
+  /** vendas ganhas NO PERÍODO e o valor delas; valor null = sem leitura */
   ganhosPeriodo: { vendas: Comparado; valor: number | null };
+  /** opções dos filtros multi — o que existe para escolher */
+  opcoes: { numeros: Array<{ id: string; rotulo: string }>; etapas: Array<{ chave: string; nome: string }>; origens: Array<{ chave: string; rotulo: string }>; cidades: string[] };
 }
 
 /** Sem departamento na fixture, o filtro recorta pela LOTAÇÃO da pessoa e pelo departamento do canal. */
-const DEPARTAMENTO_DO_ATOR: Record<string, DepartamentoFiltro> = {
+const DEPARTAMENTO_DO_ATOR: Record<string, "pre_venda" | "pos_venda" | null> = {
   "agente:clara": "pre_venda",
   "agente:jarvis": null,
   "humano:sara": "pre_venda",
@@ -89,29 +93,43 @@ const DEPARTAMENTO_DO_ATOR: Record<string, DepartamentoFiltro> = {
   "humano:diogo": null,
 };
 
+const ORIGENS_PADRAO = [
+  { chave: "meta", rotulo: "Meta" },
+  { chave: "google", rotulo: "Google" },
+  { chave: "ind", rotulo: "Indicação" },
+  { chave: "ig", rotulo: "Instagram" },
+  { chave: "wa", rotulo: "WhatsApp direto" },
+  { chave: "site", rotulo: "Site" },
+];
+
 export async function lerDashboardDono(
   periodo: PeriodoDias,
-  atorFiltro: string | null,
   aba: Aba,
-  departamento: DepartamentoFiltro,
+  vista: Vista,
+  filtros: FiltrosDashboard,
   agora = new Date(),
-  vista: Vista = "dashboard",
-  busca = "",
   janelaLivre: Janela | null = null,
 ): Promise<DadosDashboardDono> {
+  const atorFiltro = filtros.pessoas.length > 0 ? filtros.pessoas : null;
   const base = await lerDashboardCeo(periodo, atorFiltro, agora, undefined, janelaLivre);
   const dias = diasDaJanela(base.janela);
   const ganhos = base.funil.find((e) => e.tipo === "ganho") ?? null;
+  const { departamento } = filtros;
+  const casaPessoa = (ator: string) => filtros.pessoas.length === 0 || filtros.pessoas.includes(ator);
+  const casaDep = (ator: string) => !departamento || DEPARTAMENTO_DO_ATOR[ator] === departamento || DEPARTAMENTO_DO_ATOR[ator] === null;
+  const funilRecortado = (f: EtapaResumo[]) => f.filter((e) => filtros.etapas.length === 0 || filtros.etapas.includes(e.etapa) || e.tipo !== "aberto");
 
   if (ensaioDashboardLigado()) {
     const en = gerarEnsaioDashboard(agora);
     const canaisTodos = canaisDeEnsaio(en, base.janela, agora);
-    const canais = departamento ? canaisTodos.filter((c) => (departamento === "pos_venda" ? c.departamento !== "pre_venda" : c.departamento === "pre_venda")) : canaisTodos;
-    const atencao = atencaoDeEnsaio(canais, agora, departamento);
+    const canais = canaisTodos
+      .filter((c) => !departamento || (departamento === "pos_venda" ? c.departamento !== "pre_venda" : c.departamento === "pre_venda"))
+      .filter((c) => filtros.numeros.length === 0 || filtros.numeros.includes(c.canal_id));
+    const atencao = atencaoDeEnsaio(canais, agora, departamento, filtros);
     const meta = metaDeEnsaio(en.etapaDia, agora);
     const carga = cargaAgoraDeEnsaio(agora);
     const equipe: LinhaEquipe[] = base.porAtor
-      .filter((r) => !departamento || DEPARTAMENTO_DO_ATOR[r.ator] === departamento || DEPARTAMENTO_DO_ATOR[r.ator] === null)
+      .filter((r) => casaDep(r.ator) && casaPessoa(r.ator))
       .map((r) => {
         const vendas = en.etapaDia.filter((l) => l.etapa === "ganho" && l.ator === r.ator && l.dia >= base.janela.inicio && l.dia <= base.janela.fim).reduce((s, l) => s + l.entradas, 0);
         return {
@@ -123,13 +141,12 @@ export async function lerDashboardDono(
           ganhos: { vendas, valor: vendas * 11_600 },
         };
       });
-    const ganhosDia = dias.map((d) => en.etapaDia.filter((l) => l.dia === d && l.etapa === "ganho").reduce((s, l) => s + l.entradas, 0));
+    const ganhosDia = dias.map((d) => en.etapaDia.filter((l) => l.dia === d && l.etapa === "ganho" && casaPessoa(l.ator)).reduce((s, l) => s + l.entradas, 0));
     return {
       ...base,
       aba,
       vista,
-      busca,
-      departamento,
+      filtros,
       departamentoAplicado: true,
       atencao,
       jarvis: jarvisDizDeEnsaio(en, base.janela, atencao, agora, base.atendimento, meta),
@@ -137,16 +154,22 @@ export async function lerDashboardDono(
       heatmap: heatmapDeEnsaio(),
       meta,
       equipe,
-      funilComTempo: base.funil.map((e) => ({ ...e, tempoMedioDias: TEMPO_ETAPA_ENSAIO[e.etapa] ?? null })),
+      funilComTempo: funilRecortado(base.funil).map((e) => ({ ...e, tempoMedioDias: TEMPO_ETAPA_ENSAIO[e.etapa] ?? null })),
       trajetorias: {
         leads: base.serie.map((p) => p.leadsNovos),
         recebidas: base.serie.map((p) => p.recebidas),
-        respondidas: serieRespondidas(en.primeira, dias),
+        respondidas: serieRespondidas(en.primeira.filter((p) => p.respondida_por == null || casaPessoa(p.respondida_por)), dias),
         enviadas: base.serie.map((p) => p.enviadasAgente + p.enviadasHumano),
         ganhos: ganhosDia,
       },
       ganhos,
       ganhosPeriodo: { vendas: ganhos?.entradas ?? { atual: 0, anterior: 0 }, valor: equipe.reduce((s, r) => s + (r.ganhos?.valor ?? 0), 0) },
+      opcoes: {
+        numeros: canaisTodos.map((c) => ({ id: c.canal_id, rotulo: c.apelido })),
+        etapas: base.funil.filter((e) => e.tipo === "aberto").map((e) => ({ chave: e.etapa, nome: e.nome })),
+        origens: ORIGENS_PADRAO,
+        cidades: ["Campinas", "Valinhos", "Jundiaí", "Sorocaba"],
+      },
     };
   }
 
@@ -165,11 +188,14 @@ export async function lerDashboardDono(
   if (!fila || fila.total == null) indisponiveis.push("propostas_jarvis");
   indisponiveis.push("canal");
 
+  const cards = funil
+    ? funil.cards.filter((c) => (filtros.etapas.length === 0 || filtros.etapas.includes(c.etapa)) && (filtros.origens.length === 0 || (c.origem != null && filtros.origens.includes(String(c.origem)))))
+    : [];
   const atencao: Atencao = {
     itens: ordenarAtencao([
-      conversas ? atencaoSemResposta(conversas.conversas, agoraMs) : null,
+      conversas ? atencaoSemResposta(conversas.conversas.filter((c) => filtros.numeros.length === 0 || (c.phone_number_id != null && filtros.numeros.includes(c.phone_number_id))), agoraMs) : null,
       tarefas ? atencaoTarefasVencidas(tarefas.tarefas) : null,
-      funil ? atencaoLeadsParados(funil.cards, funil.sla, agoraMs, funil.todasEtapas) : null,
+      funil ? atencaoLeadsParados(cards, funil.sla, agoraMs, funil.todasEtapas) : null,
       fila && fila.total != null ? atencaoPropostasJarvis(fila.total, (fila.porAgente ?? []).map((a) => ({ nome: a.rotulo || a.agente, n: a.qtd }))) : null,
     ]),
     indisponiveis,
@@ -179,16 +205,15 @@ export async function lerDashboardDono(
     ...base,
     aba,
     vista,
-    busca,
-    departamento,
+    filtros,
     departamentoAplicado: false,
     atencao,
     jarvis: { frase: null, observacoes: [], perguntas: PERGUNTAS_PADRAO, geradoEm: null },
     canais: null,
     heatmap: null,
     meta: null,
-    equipe: base.porAtor.map((r) => ({ ...r, respondidas: r.conversas, dentroDeSla: { atual: null, anterior: null }, cargaAgora: null, departamento: null, ganhos: null })),
-    funilComTempo: base.funil.map((e) => ({ ...e, tempoMedioDias: null })),
+    equipe: base.porAtor.filter((r) => casaPessoa(r.ator)).map((r) => ({ ...r, respondidas: r.conversas, dentroDeSla: { atual: null, anterior: null }, cargaAgora: null, departamento: null, ganhos: null })),
+    funilComTempo: funilRecortado(base.funil).map((e) => ({ ...e, tempoMedioDias: null })),
     trajetorias: {
       leads: base.serie.map((p) => p.leadsNovos),
       recebidas: base.serie.map((p) => p.recebidas),
@@ -198,5 +223,11 @@ export async function lerDashboardDono(
     },
     ganhos,
     ganhosPeriodo: { vendas: ganhos?.entradas ?? { atual: null, anterior: null }, valor: null },
+    opcoes: {
+      numeros: [],
+      etapas: base.funil.filter((e) => e.tipo === "aberto").map((e) => ({ chave: e.etapa, nome: e.nome })),
+      origens: ORIGENS_PADRAO,
+      cidades: [],
+    },
   };
 }

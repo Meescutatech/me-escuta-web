@@ -17,11 +17,10 @@ import { noAtual, noAnterior, type Comparado, type Janela, type LinhaPrimeiraRes
 
 // ─────────────── abas e filtros da URL ───────────────
 
-export type Aba = "geral" | "equipe" | "canais" | "marketing";
+export type Aba = "geral" | "equipe" | "marketing";
 export const ABAS: Array<{ chave: Aba; rotulo: string }> = [
-  { chave: "geral", rotulo: "Visão geral" },
+  { chave: "geral", rotulo: "Operação" },
   { chave: "equipe", rotulo: "Equipe" },
-  { chave: "canais", rotulo: "Canais" },
   { chave: "marketing", rotulo: "Marketing" },
 ];
 
@@ -34,6 +33,38 @@ export function interpretarAba(v: unknown): Aba {
 export type Vista = "dashboard" | "tabela";
 export function interpretarVista(v: unknown): Vista {
   return String(Array.isArray(v) ? v[0] : (v ?? "")).trim() === "tabela" ? "tabela" : "dashboard";
+}
+
+/** Lista de valores de um parametro multi (`?pessoa=a,b` ou repetido). Ate 20, sem vazios. */
+export function interpretarLista(v: unknown): string[] {
+  const bruto = Array.isArray(v) ? v.join(",") : String(v ?? "");
+  return [...new Set(bruto.split(",").map((x) => x.trim()).filter(Boolean))].slice(0, 20);
+}
+
+/** Todos os recortes da toolbar, juntos — o que viaja na URL e o que cada bloco le. */
+export interface FiltrosDashboard {
+  q: string;
+  pessoas: string[];
+  numeros: string[];
+  etapas: string[];
+  origens: string[];
+  cidades: string[];
+  departamento: DepartamentoFiltro;
+  /** false = esconde a variacao vs periodo anterior */
+  comparar: boolean;
+}
+
+export function interpretarFiltros(sp: Record<string, string | string[] | undefined>): FiltrosDashboard {
+  return {
+    q: interpretarBusca(sp.q),
+    pessoas: interpretarLista(sp.pessoa).filter((a) => /^(agente|humano):[A-Za-z0-9_.:-]+$/.test(a)),
+    numeros: interpretarLista(sp.numero),
+    etapas: interpretarLista(sp.etapa),
+    origens: interpretarLista(sp.origem),
+    cidades: interpretarLista(sp.cidade),
+    departamento: interpretarDepartamento(sp.dep),
+    comparar: String(Array.isArray(sp.comparar) ? sp.comparar[0] : (sp.comparar ?? "1")) !== "0",
+  };
 }
 
 /** Busca livre (`?q=`) — recorta as tabelas por nome de pessoa, número ou etapa. */
@@ -60,15 +91,39 @@ export function interpretarDepartamento(v: unknown): DepartamentoFiltro {
   return s === "pre_venda" || s === "pos_venda" ? s : null;
 }
 
-/** A URL do dashboard com os quatro recortes — a mesma para controles, abas e links internos. */
-export function montarHref(p: { periodo: 7 | 30 | 90; ator: string | null; aba: Aba; departamento: DepartamentoFiltro; vista?: Vista; q?: string }): string {
+/** O estado inteiro da URL do dashboard. `null`/vazio = padrao e nao entra na query. */
+export interface EstadoUrl {
+  aba: Aba;
+  vista: Vista;
+  periodo: 7 | 30 | 90;
+  de?: string | null;
+  ate?: string | null;
+  filtros: FiltrosDashboard;
+}
+
+/** A URL do dashboard com TODOS os recortes — a mesma para toolbar, chips, abas e links internos. */
+export function montarHref(e: EstadoUrl, mudanca: Partial<Omit<EstadoUrl, "filtros">> & { filtros?: Partial<FiltrosDashboard> } = {}): string {
+  const f: FiltrosDashboard = { ...e.filtros, ...(mudanca.filtros ?? {}) };
+  const aba = mudanca.aba ?? e.aba;
+  const vista = mudanca.vista ?? e.vista;
+  const periodo = mudanca.periodo ?? e.periodo;
+  const de = mudanca.de === undefined ? e.de : mudanca.de;
+  const ate = mudanca.ate === undefined ? e.ate : mudanca.ate;
   const q = new URLSearchParams();
-  if (p.aba !== "geral") q.set("aba", p.aba);
-  q.set("periodo", String(p.periodo));
-  if (p.departamento) q.set("dep", p.departamento);
-  if (p.ator) q.set("ator", p.ator);
-  if (p.vista === "tabela") q.set("vista", "tabela");
-  if (p.q) q.set("q", p.q);
+  if (aba !== "geral") q.set("aba", aba);
+  if (vista === "tabela") q.set("vista", "tabela");
+  if (de && ate) {
+    q.set("de", de);
+    q.set("ate", ate);
+  } else q.set("periodo", String(periodo));
+  if (f.q) q.set("q", f.q);
+  if (f.pessoas.length) q.set("pessoa", f.pessoas.join(","));
+  if (f.numeros.length) q.set("numero", f.numeros.join(","));
+  if (f.etapas.length) q.set("etapa", f.etapas.join(","));
+  if (f.origens.length) q.set("origem", f.origens.join(","));
+  if (f.cidades.length) q.set("cidade", f.cidades.join(","));
+  if (f.departamento) q.set("dep", f.departamento);
+  if (!f.comparar) q.set("comparar", "0");
   return `/?${q.toString()}`;
 }
 

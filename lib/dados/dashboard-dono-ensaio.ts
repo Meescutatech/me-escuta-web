@@ -16,6 +16,7 @@ import {
   primeiraRespostaPorCanal,
   PERGUNTAS_PADRAO,
   type Atencao,
+  type FiltrosDashboard,
   type Heatmap,
   type JarvisDiz,
   type LinhaCanal,
@@ -133,17 +134,31 @@ export const TEMPO_ETAPA_ENSAIO: Record<string, number> = {
  * lotação de quem é responsável (Sara = Pré-venda; a fono, Clínico, que cai no lado do Pós-venda).
  * Leads parados não recortam — o funil é um só, e o lead não carrega departamento.
  */
-export function atencaoDeEnsaio(canais: LinhaCanal[], agora: Date, departamento: "pre_venda" | "pos_venda" | null = null): Atencao {
+export function atencaoDeEnsaio(
+  canais: LinhaCanal[],
+  agora: Date,
+  departamento: "pre_venda" | "pos_venda" | null = null,
+  filtros: Pick<FiltrosDashboard, "numeros" | "etapas" | "origens" | "pessoas"> = { numeros: [], etapas: [], origens: [], pessoas: [] },
+): Atencao {
   const agoraMs = agora.getTime();
   const ehPre = (area: string | null | undefined) => area === "pre_venda" || area == null;
   const departamentoDaPessoa = (id: string | null) => pessoaPorId(id)?.departamentos[0]?.departamento ?? null;
-  const conversas = gerarConversasEnsaio(agora).conversas.filter((c) => !departamento || (departamento === "pre_venda" ? ehPre(c.area) : !ehPre(c.area)));
-  const tarefas = visaoTarefasDeEnsaio(agora).tarefas.filter((t) => {
-    if (!departamento) return true;
-    const d = departamentoDaPessoa(t.responsavel_id);
-    return departamento === "pre_venda" ? d === "pre_venda" || d == null : d != null && d !== "pre_venda";
-  });
+  const atorDaPessoa = (id: string | null) => {
+    const p = pessoaPorId(id);
+    return p ? `humano:${p.chave === "fono" ? "ana-paula" : p.chave}` : null;
+  };
+  const conversas = gerarConversasEnsaio(agora)
+    .conversas.filter((c) => !departamento || (departamento === "pre_venda" ? ehPre(c.area) : !ehPre(c.area)))
+    .filter((c) => filtros.numeros.length === 0 || (c.phone_number_id != null && filtros.numeros.includes(c.phone_number_id)));
+  const tarefas = visaoTarefasDeEnsaio(agora)
+    .tarefas.filter((t) => {
+      if (!departamento) return true;
+      const d = departamentoDaPessoa(t.responsavel_id);
+      return departamento === "pre_venda" ? d === "pre_venda" || d == null : d != null && d !== "pre_venda";
+    })
+    .filter((t) => filtros.pessoas.length === 0 || (atorDaPessoa(t.responsavel_id) != null && filtros.pessoas.includes(atorDaPessoa(t.responsavel_id)!)));
   const funil = gerarFunilEnsaio(agora);
+  funil.cards = funil.cards.filter((c) => (filtros.etapas.length === 0 || filtros.etapas.includes(c.etapa)) && (filtros.origens.length === 0 || (c.origem != null && filtros.origens.includes(String(c.origem)))));
   const nomeDe = (id: string | null, fallback: string | null) => pessoaPorId(id)?.nome.split(" ")[0] ?? (fallback ?? "sem responsável").replace(/@.*$/, "");
   const itens = ordenarAtencao([
     atencaoSemResposta(conversas, agoraMs),

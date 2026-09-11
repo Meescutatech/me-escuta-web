@@ -33,8 +33,8 @@ export function EvolucaoAcumulada({ serie, className }: { serie: PontoDia[]; cla
   const passo = Math.max(1, Math.ceil(dados.length / 7));
 
   return (
-    <div className={cn("flex flex-col gap-3", className)}>
-      <div className="flex items-center justify-end">
+    <div className={cn("flex flex-col gap-2", className)}>
+      <div className="-mt-7 flex items-center justify-end">
         <Select items={AGRUPAR} value={String(agrupar)} onValueChange={(v) => setAgrupar(Number(v) === 7 ? 7 : 1)}>
           <SelectTrigger size="sm" aria-label="Agrupar por" className="border-border bg-card text-[12px] font-medium">
             <SelectValue />
@@ -46,7 +46,7 @@ export function EvolucaoAcumulada({ serie, className }: { serie: PontoDia[]; cla
           </SelectContent>
         </Select>
       </div>
-      <ChartContainer config={CONFIG_EVOLUCAO} className="aspect-auto h-[240px] w-full">
+      <ChartContainer config={CONFIG_EVOLUCAO} className="aspect-auto h-[220px] w-full">
         <AreaChart data={dados} margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
           <defs>
             <linearGradient id="fill-leads" x1="0" y1="0" x2="0" y2="1">
@@ -72,9 +72,9 @@ const CONFIG_HORA = { total: { label: "Mensagens", color: "var(--foreground)" } 
 /** Mensagens recebidas por hora do dia — barras pretas, uma por hora. */
 export function BarrasPorHora({ heatmap, className }: { heatmap: Heatmap | null; className?: string }) {
   const dados = serieHoraria(heatmap);
-  if (dados.length === 0) return <p className="flex h-[180px] items-center justify-center text-[12.5px] text-muted-foreground">Sem leitura por hora — as views do dashboard são por dia.</p>;
+  if (dados.length === 0) return <p className="flex h-[160px] items-center justify-center text-[12.5px] text-muted-foreground">Sem leitura por hora — as views do dashboard são por dia.</p>;
   return (
-    <ChartContainer config={CONFIG_HORA} className={cn("aspect-auto h-[180px] w-full", className)}>
+    <ChartContainer config={CONFIG_HORA} className={cn("aspect-auto h-[160px] w-full", className)}>
       <BarChart data={dados} margin={{ left: 4, right: 4, top: 8, bottom: 0 }} barCategoryGap={3}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis dataKey="rotulo" tickLine={false} axisLine={false} tickMargin={6} interval={2} />
@@ -95,7 +95,7 @@ const CONFIG_MENSAGENS = {
 export function MensagensPorDia({ serie, className }: { serie: PontoDia[]; className?: string }) {
   const passo = Math.max(1, Math.ceil(serie.length / 7));
   return (
-    <ChartContainer config={CONFIG_MENSAGENS} className={cn("aspect-auto h-[180px] w-full", className)}>
+    <ChartContainer config={CONFIG_MENSAGENS} className={cn("aspect-auto h-[160px] w-full", className)}>
       <BarChart data={serie} margin={{ left: 4, right: 4, top: 8, bottom: 0 }} barCategoryGap={serie.length > 45 ? 1 : 3}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis dataKey="dia" tickLine={false} axisLine={false} tickMargin={6} interval={passo - 1} tickFormatter={(v: string) => diaMes(v)} />

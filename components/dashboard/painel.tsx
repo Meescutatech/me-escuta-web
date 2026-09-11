@@ -1,30 +1,35 @@
 import Link from "next/link";
-import { JarvisDiz } from "@/components/jarvis/jarvis-diz";
 import type { DadosDashboardDono } from "@/lib/dados/dashboard-dono";
 import type { VisaoMarketing } from "@/lib/dados/marketing";
-import { hrefPergunta, montarHref } from "@/lib/dados/dashboard-dono-calculos";
+import type { Janela } from "@/lib/dados/dashboard-ceo-calculos";
+import { ABAS, montarHref, type Aba, type EstadoUrl } from "@/lib/dados/dashboard-dono-calculos";
 import { cn } from "@/lib/utils";
 import { AbaMarketing } from "./aba-marketing";
 import { PrecisaDeAtencao } from "./atencao";
-import { Filtros } from "./filtros";
+import { ChipsAtivos } from "./chips";
 import { BarrasPorHora, EvolucaoAcumulada, MensagensPorDia } from "./graficos";
+import { HeatmapHoraDia } from "./heatmap";
+import { JarvisLinha } from "./jarvis-linha";
 import { Kpis } from "./kpis";
-import { MetaEscura } from "./meta-escura";
+import { MetaCompacta } from "./meta-compacta";
 import { Bloco, CabecalhoBloco, ddmm } from "./pecas";
 import { TabelaFunil, TabelaNumeros, TabelaPessoas } from "./tabelas";
+import { Toolbar } from "./toolbar";
 
 /*
- * Dashboard do DONO — v2 (10/09/2026, 22:35, depois da reprovação: "cara de IA").
+ * Dashboard do DONO — v3 (10/09/2026, 22:45; depois de "tudo muito espaçado, cara de IA").
  *
- * Duas referências do Diogo, misturadas: o "Advanced Stats" do 21st.dev (grid gráfico 2/3 + coluna
- * com card escuro de META e card de insight; KPIs com rótulo em caixa alta espaçada, valor grande
- * `tracking-tighter`, chip de variação) e um painel de administração denso (linha de filtros no
- * topo, Tabela | Dashboard, seis KPIs "51,2% · 945 / 1.846", linha acumulada preta fina, tabelas
- * por pessoa e por número com TOTAL em bold e % apagado ao lado, dinheiro verde/vermelho).
+ * Fontes desta passada (pesquisa de 10 min, registradas no STATUS): Stephen Few — data-ink, sem
+ * chartjunk, uma tela; Refactoring UI — hierarquia por peso/tamanho, não por caixa, e densidade;
+ * Stripe / Linear Insights / Vercel Analytics / Metabase — toolbar de filtros densa, números
+ * grandes com contexto pequeno, tabelas densas, quase nenhuma prosa. Indicadores do PRD
+ * (Dashboards gerenciais · Comercial): leads e conversão por etapa, tempo por etapa vs SLA, taxa
+ * e tempo de 1ª resposta, agendamentos, vendas vs meta, performance por SDR/fono, CPL.
  *
- * A ordem é a da pergunta das 8h: filtros → seis números → evolução + meta + atenção → Jarvis →
- * por pessoa → por número + funil → por hora + mensagens por dia. `?vista=tabela` tira os gráficos
- * e deixa só as tabelas. Marketing é `?aba=marketing`; `/marketing` só redireciona.
+ * Regras que a v3 segue: largura fluida (gutter 24px, máx. 1440); card padding 12-14px; KPI ≤ 84px
+ * em UMA linha; gráfico principal ≤ 260px; linha de tabela 32px; título de card 13px sem
+ * subtítulo; nada de prosa flutuando — o Jarvis é UMA linha; "Precisa de atenção" é lista lateral
+ * de 28px. Abas: Operação · Equipe · Marketing. Tudo na URL.
  */
 
 export function PainelDashboard({
@@ -38,34 +43,26 @@ export function PainelDashboard({
   marketing: VisaoMarketing | null;
   mostrarDepartamento: boolean;
   verMarketing: boolean;
-  janelaLivre: boolean;
+  janelaLivre: Janela | null;
 }) {
-  const { periodo, aba, departamento, vista, busca } = dados;
-  const atorNome = dados.atorFiltro ? dados.porAtor.find((r) => r.ator === dados.atorFiltro)?.nome ?? dados.atorFiltro : null;
+  const { aba, vista, filtros, janela } = dados;
+  const estado: EstadoUrl = { aba, vista, periodo: dados.periodo, de: janelaLivre?.inicio ?? null, ate: janelaLivre?.fim ?? null, filtros };
   const tudoIndisponivel = dados.indisponiveis.length >= 7;
-  const abas: Array<{ chave: "geral" | "marketing"; rotulo: string }> = [{ chave: "geral", rotulo: "Operação" }, ...(verMarketing ? [{ chave: "marketing" as const, rotulo: "Marketing" }] : [])];
+  const abas = ABAS.filter((a) => a.chave !== "marketing" || verMarketing);
 
   return (
-    <main className="mx-auto max-w-[1280px] px-6 pb-12 pt-4">
-      <Filtros
-        periodo={periodo}
-        janela={dados.janela}
-        livre={janelaLivre}
-        atorFiltro={dados.atorFiltro}
-        atores={dados.atores}
-        aba={aba}
-        departamento={departamento}
-        vista={vista}
-        busca={busca}
-        mostrarDepartamento={mostrarDepartamento}
-      />
+    <main className="mx-auto max-w-[1440px] px-6 pb-10 pt-3">
+      <Toolbar estado={estado} janela={janela} livre={janelaLivre != null} atores={dados.atores} opcoes={dados.opcoes} mostrarDepartamento={mostrarDepartamento} />
+      <div className="mt-1.5">
+        <ChipsAtivos estado={estado} atores={dados.atores} opcoes={dados.opcoes} />
+      </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border">
-        <nav aria-label="Seções" className="flex items-end gap-1">
+      <div className="mt-2 flex flex-wrap items-end gap-x-4 border-b border-border">
+        <nav aria-label="Seções" className="flex items-end gap-0.5">
           {abas.map((a) => (
             <Link
               key={a.chave}
-              href={montarHref({ periodo, ator: dados.atorFiltro, aba: a.chave, departamento, vista, q: busca })}
+              href={montarHref(estado, { aba: a.chave as Aba })}
               aria-current={aba === a.chave ? "page" : undefined}
               className={cn(
                 "-mb-px inline-flex h-8 items-center border-b-2 px-2.5 text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
@@ -76,38 +73,20 @@ export function PainelDashboard({
             </Link>
           ))}
         </nav>
-        <span className="ml-auto flex items-center gap-3 pb-1.5 text-[11px] text-muted-foreground tabular-nums">
-          {atorNome && (
-            <span>
-              como <b className="font-semibold text-foreground">{atorNome}</b>{" "}
-              <Link href={montarHref({ periodo, ator: null, aba, departamento, vista, q: busca })} className="underline underline-offset-2 hover:text-foreground">
-                limpar
-              </Link>
-            </span>
-          )}
-          {busca && (
-            <span>
-              busca <b className="font-semibold text-foreground">“{busca}”</b>{" "}
-              <Link href={montarHref({ periodo, ator: dados.atorFiltro, aba, departamento, vista })} className="underline underline-offset-2 hover:text-foreground">
-                limpar
-              </Link>
-            </span>
-          )}
-          <span>
-            {ddmm(dados.janela.inicio)} – {ddmm(dados.janela.fim)} · {dados.janela.dias} dias · vs. {dados.janela.dias} anteriores
-          </span>
+        <span className="ml-auto pb-1.5 text-[11px] text-muted-foreground tabular-nums">
+          {ddmm(janela.inicio)} – {ddmm(janela.fim)} · {janela.dias} dias{filtros.comparar ? ` · vs. ${janela.dias} anteriores` : ""}
         </span>
       </div>
 
-      {departamento && (
+      <JarvisLinha jarvis={dados.jarvis} />
+
+      {filtros.departamento && (
         <p className="mt-2 text-[11px] text-muted-foreground">
-          {dados.departamentoAplicado
-            ? "Recorte aplicado a atenção, pessoas e números. KPIs, funil e evolução seguem de toda a operação — as views do ledger ainda não separam por departamento."
-            : "As leituras do ledger ainda não separam por departamento: os números abaixo são de toda a operação."}
+          {dados.departamentoAplicado ? "Departamento recorta atenção, pessoas e números; KPIs, funil e evolução são de toda a operação (as views não separam por área)." : "As leituras do ledger ainda não separam por departamento."}
         </p>
       )}
 
-      <div className="mt-4">
+      <div className="mt-3">
         {tudoIndisponivel ? (
           <Bloco>
             <p className="py-6 text-center text-[13px] text-muted-foreground">
@@ -119,7 +98,7 @@ export function PainelDashboard({
           </Bloco>
         ) : aba === "marketing" ? (
           marketing ? (
-            <AbaMarketing visao={marketing} periodo={periodo} />
+            <AbaMarketing visao={marketing} periodo={dados.periodo} />
           ) : (
             <Bloco>
               <p className="py-6 text-center text-[13px] text-muted-foreground">
@@ -130,56 +109,57 @@ export function PainelDashboard({
               </p>
             </Bloco>
           )
-        ) : vista === "tabela" ? (
-          <div className="flex flex-col gap-4">
-            <Kpis dados={dados} />
+        ) : aba === "equipe" ? (
+          <div className="flex flex-col gap-3">
             <TabelaPessoas dados={dados} />
-            <div className="grid items-start gap-4 xl:grid-cols-2">
-              <TabelaNumeros dados={dados} />
-              <TabelaFunil dados={dados} />
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <Kpis dados={dados} />
-
-            <div className="grid items-stretch gap-4 xl:grid-cols-3">
-              <Bloco className="xl:col-span-2">
-                <CabecalhoBloco titulo="Evolução acumulada" descricao={`Leads e conversas recebidas, somados dia a dia nos últimos ${dados.janela.dias} dias.`} />
+            <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+              <Bloco>
+                <CabecalhoBloco titulo="Mensagens recebidas por hora e dia" />
                 <div className="mt-2">
-                  <EvolucaoAcumulada serie={dados.serie} />
-                </div>
-              </Bloco>
-              <MetaEscura meta={dados.meta} valorEmNegociacao={dados.valorNegociacao.total} />
-            </div>
-
-            <div className="grid items-start gap-4 xl:grid-cols-3">
-              <div className="xl:col-span-2">
-                <JarvisDiz frase={dados.jarvis.frase} observacoes={dados.jarvis.observacoes} perguntas={dados.jarvis.perguntas} geradoEm={dados.jarvis.geradoEm} hrefPergunta={hrefPergunta} />
-              </div>
-              <PrecisaDeAtencao atencao={dados.atencao} />
-            </div>
-
-            <TabelaPessoas dados={dados} />
-
-            <div className="grid items-start gap-4 xl:grid-cols-2">
-              <TabelaNumeros dados={dados} />
-              <TabelaFunil dados={dados} />
-            </div>
-
-            <div className="grid items-start gap-4 xl:grid-cols-2">
-              <Bloco>
-                <CabecalhoBloco titulo="Mensagens recebidas por hora" descricao={`Todas as semanas do período somadas · horário de Brasília`} />
-                <div className="mt-3">
-                  <BarrasPorHora heatmap={dados.heatmap} />
+                  <HeatmapHoraDia heatmap={dados.heatmap} />
                 </div>
               </Bloco>
               <Bloco>
-                <CabecalhoBloco titulo="Mensagens enviadas por dia" descricao="Agentes embaixo, pessoas em cima — um dia com muita pessoa é um dia em que a Clara não segurou." />
-                <div className="mt-3">
+                <CabecalhoBloco titulo="Mensagens enviadas por dia" />
+                <div className="mt-2">
                   <MensagensPorDia serie={dados.serie} />
                 </div>
               </Bloco>
+            </div>
+          </div>
+        ) : vista === "tabela" ? (
+          <div className="flex flex-col gap-3">
+            <Kpis dados={dados} />
+            <TabelaFunil dados={dados} />
+            <TabelaNumeros dados={dados} />
+            <TabelaPessoas dados={dados} />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <Kpis dados={dados} />
+
+            <div className="grid items-stretch gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
+              <Bloco>
+                <CabecalhoBloco titulo="Evolução acumulada" />
+                <EvolucaoAcumulada serie={dados.serie} className="mt-1" />
+              </Bloco>
+              <div className="flex flex-col gap-3">
+                <MetaCompacta meta={dados.meta} />
+                <PrecisaDeAtencao atencao={dados.atencao} className="flex-1" />
+              </div>
+            </div>
+
+            <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+              <TabelaFunil dados={dados} />
+              <div className="flex flex-col gap-3">
+                <TabelaNumeros dados={dados} />
+                <Bloco>
+                  <CabecalhoBloco titulo="Mensagens recebidas por hora" />
+                  <div className="mt-2">
+                    <BarrasPorHora heatmap={dados.heatmap} />
+                  </div>
+                </Bloco>
+              </div>
             </div>
 
             {dados.indisponiveis.length > 0 && (

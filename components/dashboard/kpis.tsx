@@ -1,7 +1,7 @@
 import { CalendarCheckIcon, CheckSquareIcon, InboxIcon, TimerIcon, TrophyIcon, UserPlusIcon } from "lucide-react";
 import type { DadosDashboardDono } from "@/lib/dados/dashboard-dono";
 import { fmtInt, fmtMoeda, fmtPct, variacao, MINUTOS_SLA_RESPOSTA } from "@/lib/dados/dashboard-ceo-calculos";
-import { compactar } from "@/lib/dados/dashboard-dono-calculos";
+import { compactar, fmtMoedaCurta } from "@/lib/dados/dashboard-dono-calculos";
 import { Kpi } from "./kpi";
 
 /**
@@ -22,8 +22,9 @@ export function Kpis({ dados }: { dados: DadosDashboardDono }) {
   const leads = negocio.leadsNovos.atual ?? 0;
 
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
       <Kpi
+        comparar={dados.filtros.comparar}
         icone={InboxIcon}
         rotulo="Conversas recebidas"
         valor={fmtInt(negocio.conversasComEntrada.atual)}
@@ -32,6 +33,7 @@ export function Kpis({ dados }: { dados: DadosDashboardDono }) {
         trajetoria={compactar(trajetorias.recebidas, 30)}
       />
       <Kpi
+        comparar={dados.filtros.comparar}
         icone={TimerIcon}
         rotulo={`Respondidas em ${MINUTOS_SLA_RESPOSTA} min`}
         valor={respondidas > 0 ? fmtPct(noSla / respondidas, 1) : "—"}
@@ -39,8 +41,9 @@ export function Kpis({ dados }: { dados: DadosDashboardDono }) {
         delta={variacao(atendimento.dentroDeSla)}
         trajetoria={compactar(trajetorias.respondidas, 30)}
       />
-      <Kpi icone={UserPlusIcon} rotulo="Leads novos" valor={fmtInt(leads)} base={`${(leads / janela.dias).toFixed(1).replace(".", ",")} por dia`} delta={variacao(negocio.leadsNovos)} trajetoria={compactar(trajetorias.leads, 30)} />
+      <Kpi comparar={dados.filtros.comparar} icone={UserPlusIcon} rotulo="Leads novos" valor={fmtInt(leads)} base={`${(leads / janela.dias).toFixed(1).replace(".", ",")} por dia`} delta={variacao(negocio.leadsNovos)} trajetoria={compactar(trajetorias.leads, 30)} />
       <Kpi
+        comparar={dados.filtros.comparar}
         icone={CalendarCheckIcon}
         rotulo="Agendamentos"
         valor={agend ? fmtInt(agend.entradas.atual) : "—"}
@@ -48,6 +51,7 @@ export function Kpis({ dados }: { dados: DadosDashboardDono }) {
         delta={agend ? variacao(agend.entradas) : null}
       />
       <Kpi
+        comparar={dados.filtros.comparar}
         icone={CheckSquareIcon}
         rotulo="Tarefas concluídas"
         valor={fmtInt(concluidas)}
@@ -55,12 +59,12 @@ export function Kpis({ dados }: { dados: DadosDashboardDono }) {
         delta={variacao({ atual: concluidas, anterior: concluidasAntes })}
       />
       <Kpi
+        comparar={dados.filtros.comparar}
         icone={TrophyIcon}
         rotulo="Ganhos"
-        valor={gp.valor != null ? fmtMoeda(gp.valor) : gp.vendas.atual != null ? `${fmtInt(gp.vendas.atual)} vendas` : "—"}
-        base={gp.valor != null ? `${fmtInt(gp.vendas.atual)} vendas${dados.meta && dados.meta.metaValor ? ` · mês: ${fmtPct(dados.meta.valor / dados.meta.metaValor)} da meta` : ""}` : gp.vendas.atual != null ? "valor sem leitura" : ""}
+        valor={gp.valor != null ? fmtMoedaCurta(gp.valor) : gp.vendas.atual != null ? `${fmtInt(gp.vendas.atual)} vendas` : "—"}
+        base={gp.valor != null ? `${fmtMoeda(gp.valor)} · ${fmtInt(gp.vendas.atual)} vendas${dados.meta && dados.meta.metaValor ? ` · ${fmtPct(dados.meta.valor / dados.meta.metaValor)} da meta` : ""}` : gp.vendas.atual != null ? "valor sem leitura" : ""}
         delta={variacao(gp.vendas)}
-        trajetoria={compactar(trajetorias.ganhos, 30)}
         tom="verde"
       />
     </div>
