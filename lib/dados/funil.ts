@@ -347,12 +347,9 @@ export async function lerCardsReais(
   // COLUNAS_CARD primeiro; sem as três de última mensagem (migration da view ainda não aplicada)
   // volta pro shape sem elas. O degrau é o que separa "board sem a linha de mensagem" de "board
   // VAZIO": pedir coluna inexistente ao PostgREST derruba a consulta inteira.
-  // W-D6: a audiometria entra como TERCEIRA leitura concorrente — nunca atrasa o board, e se
-  // falhar o card só deixa de desenhar o ✓/✗ (`audiometria = undefined`).
-  let [{ data, error }, comTarefa, audiometria] = await Promise.all([
+  let [{ data, error }, comTarefa] = await Promise.all([
     consulta(COLUNAS_CARD),
     lerLeadsComTarefaPendente(supabase, agora),
-    lerAudiometriaPorLead(supabase),
   ]);
   if (error) ({ data, error } = await consulta(COLUNAS_CARD_BASE));
   if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
@@ -366,7 +363,6 @@ export async function lerCardsReais(
       comTarefa?.compromisso.get(id) ?? null,
     );
     if (comTarefa != null) card.proxima_tarefa = comTarefa.proxima.get(id) ?? null;
-    if (audiometria != null) card.audiometria = audiometria.get(id) ?? null;
     return card;
   });
   return { cards, corte: houveCorte(cards.length, TETO_CARDS) };
@@ -416,7 +412,15 @@ export async function lerFunil(cliente?: Supabase): Promise<DadosFunil> {
     // falhar o board aparece igual, no padrão declarado e com o aviso na legenda.
     const [etapasLidas, sla] = await Promise.all([lerEtapasReais(cliente), lerSlaEtapas(cliente)]);
     const todasEtapas = etapasLidas ?? ETAPAS_PADRAO; // cards filtram pelas chaves da config
-    const { cards, corte } = await lerCardsReais(chavesDoBoard(todasEtapas), cliente);
+    // W-D6: a audiometria (✓/✗ do card) é leitura própria, concorrente com os cards, e mora AQUI e
+    // não dentro de `lerCardsReais` — o degrau de colunas daquela função é medido por um teste que
+    // conta as consultas à `v_lead_card`, e uma consulta a outra tabela no meio dele viraria ruído
+    // na régua. Falhou = `audiometria` fica `undefined` em todo card: nenhum gate pintado no escuro.
+    const [{ cards, corte }, audiometria] = await Promise.all([
+      lerCardsReais(chavesDoBoard(todasEtapas), cliente),
+      lerAudiometriaPorLead(cliente ?? criarClienteServidor()),
+    ]);
+    if (audiometria != null) for (const c of cards) c.audiometria = audiometria.get(c.lead_id) ?? null;
     return { etapas: etapasDoBoard(todasEtapas), todasEtapas, cards, corte, sla };
   } catch {
     return {
