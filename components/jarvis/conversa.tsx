@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { MarcaJarvis } from "@/components/jarvis/marca";
 import {
   lerEventosSse,
   rotuloFerramenta,
@@ -126,16 +127,12 @@ function Chips({ itens, consultando }: { itens: FerramentaUsada[]; consultando: 
   );
 }
 
+// 10/09 (W-J, pontual): o "J" em roundel navy saiu — o Diogo escolheu o arco como a marca do
+// Jarvis ("nada de avatar circular com letra"). Mesmo lugar, mesma largura de coluna (24px).
 function AvatarJarvis({ vivo }: { vivo?: boolean }) {
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "grid h-6 w-6 flex-none place-items-center rounded-full bg-navy text-[11px] font-bold text-branco",
-        vivo && "ring-2 ring-laranja/40",
-      )}
-    >
-      J
+    <span aria-hidden className="grid h-6 w-6 flex-none place-items-center text-muted-foreground">
+      <MarcaJarvis tamanho={20} vivo={vivo} />
     </span>
   );
 }
@@ -144,12 +141,18 @@ export function ConversaJarvis({
   usuarioId,
   papel,
   contextoInicial,
+  perguntaInicial = null,
+  enviarAoAbrir = false,
   compacto = false,
   autoFoco = true,
 }: {
   usuarioId: string;
   papel: PapelUsuario;
   contextoInicial: ContextoTela;
+  /** `?pergunta=` — pré-preenche o composer (uma vez só) */
+  perguntaInicial?: string | null;
+  /** com `perguntaInicial`: envia de uma vez. A página passa `false` no ensaio (o proxy exige sessão real). */
+  enviarAoAbrir?: boolean;
   compacto?: boolean;
   autoFoco?: boolean;
 }) {
@@ -273,6 +276,28 @@ export function ConversaJarvis({
     },
     [contexto, enviando, mensagens, sessaoId],
   );
+
+  // `?pergunta=` vinda do dashboard: uma vez só (ref), depois de carregar o histórico. Envia se a
+  // página mandou (`enviarAoAbrir`); senão só pré-preenche. Tira o parâmetro da URL para um
+  // reload não reenviar. (Não lê `ensaioLigado()` aqui: no cliente o `process.env` por objeto
+  // não é inlinado pelo Next — medido, mandou e tomou 401.)
+  const perguntaAplicada = useRef(false);
+  useEffect(() => {
+    if (!pronto || !perguntaInicial || perguntaAplicada.current) return;
+    perguntaAplicada.current = true;
+    setTexto(perguntaInicial);
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("pergunta")) {
+        url.searchParams.delete("pergunta");
+        window.history.replaceState(window.history.state, "", url.toString());
+      }
+    } catch {
+      /* sem URL para limpar */
+    }
+    if (enviarAoAbrir) void enviar(perguntaInicial);
+    else inputRef.current?.focus();
+  }, [pronto, perguntaInicial, enviarAoAbrir, enviar]);
 
   function novaConversa() {
     abortRef.current?.abort();
