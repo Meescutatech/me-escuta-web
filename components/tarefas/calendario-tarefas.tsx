@@ -185,7 +185,15 @@ export function CalendarioTarefas({
       )}
 
       {/* ── a grade ── */}
-      <div ref={arr.raizRef} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-linha bg-branco">
+      <div
+        ref={arr.raizRef}
+        className={cn(
+          "flex min-h-0 flex-col overflow-hidden rounded-lg border border-linha bg-branco",
+          /* no mês a grade preenche a tela; na SEMANA ela abraça as sete colunas e para — um
+             retângulo branco de 600px vazios embaixo não é "mostrar o vazio", é desperdício. */
+          modo === "mes" ? "flex-1" : "flex-none",
+        )}
+      >
         <div className="grid shrink-0 grid-cols-7 border-b border-linha">
           {NOMES_DOS_DIAS.map((d) => (
             <div key={d} className="px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide text-mute">
@@ -193,7 +201,15 @@ export function CalendarioTarefas({
             </div>
           ))}
         </div>
-        <div className={cn("grid min-h-0 flex-1 grid-cols-7 overflow-y-auto", modo === "mes" ? "grid-rows-6" : "grid-rows-1")}>
+        <div
+          className={cn(
+            "grid min-h-0 flex-1 grid-cols-7 overflow-y-auto",
+            /* mês: 6 linhas iguais preenchem a altura. SEMANA: a linha cresce com o conteúdo a
+               partir de 280px e para — medido no print, `grid-rows-1` esticava a semana até 900px
+               de vazio embaixo de cinco tarefas. */
+            modo === "mes" ? "grid-rows-6" : "auto-rows-[minmax(280px,auto)] content-start",
+          )}
+        >
           {dias.map((d) => {
             const lista = mapa.get(d.ymd) ?? [];
             const aceso = arr.destino === d.ymd && arr.arraste != null;

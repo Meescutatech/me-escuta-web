@@ -189,7 +189,7 @@ export function porQueEstaAqui(p: PesoTarefa, limite = 3): string {
 export type ChaveOrdem = "urgencia" | "prazo" | "prioridade" | "valor" | "espera";
 
 export const ORDENS: Array<{ chave: ChaveOrdem; rotulo: string; explica: string }> = [
-  { chave: "urgencia", rotulo: "Mais urgente primeiro", explica: "vencida, prazo, prioridade, etapa do lead, espera e valor — somados" },
+  { chave: "urgencia", rotulo: "Mais urgente primeiro", explica: "soma vencida + prazo + prioridade + etapa do lead + espera + valor" },
   { chave: "prazo", rotulo: "Prazo", explica: "a mais atrasada primeiro; sem prazo no fim" },
   { chave: "prioridade", rotulo: "Prioridade", explica: "alta → média → baixa" },
   { chave: "valor", rotulo: "Valor da proposta", explica: "o maior primeiro" },

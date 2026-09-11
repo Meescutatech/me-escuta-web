@@ -30,12 +30,14 @@ import { cn } from "@/lib/utils";
 export function SeletorOrdem({ ordem, onMudar }: { ordem: ChaveOrdem; onMudar: (o: ChaveOrdem) => void }) {
   return (
     <Gatilho ativo={ordem !== "urgencia"} rotulo={ROTULO_ORDEM[ordem]}>
-      <div className="flex w-[300px] flex-col gap-px p-1.5">
+      <div className="flex w-[320px] flex-col gap-px p-1.5">
         {ORDENS.map((o) => (
           <Opcao key={o.chave} ativo={ordem === o.chave} onClick={() => onMudar(o.chave)}>
             <span className="flex min-w-0 flex-col">
-              <span className="truncate">{o.rotulo}</span>
-              <span className="truncate text-[11.5px] font-normal text-mute">{o.explica}</span>
+              <span className="truncate font-medium">{o.rotulo}</span>
+              {/* a explicação PODE quebrar em duas linhas: truncada, "vencida, prazo, prioridade,
+                  etapa do lead, es…" some justamente na parte que responde a pergunta */}
+              <span className="text-[11.5px] font-normal leading-snug text-mute">{o.explica}</span>
             </span>
           </Opcao>
         ))}
