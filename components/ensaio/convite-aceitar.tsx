@@ -79,7 +79,7 @@ export function AceitarConviteEnsaio({
 
   return (
     <main className="grid min-h-screen place-items-center bg-background px-4 py-10">
-      <div className="w-full max-w-[420px]">
+      <div className="w-full max-w-[480px]">
         <div className="mb-8 flex justify-center">
           <Marca />
         </div>

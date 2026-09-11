@@ -110,7 +110,7 @@ export function MensagensProntasEnsaio({ mensagens: iniciais, gestao, agoraIso, 
       {mensagens.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card/60 px-6 py-12 text-center">
           <p className="text-[15px] font-semibold text-foreground">Escreva a primeira mensagem pronta</p>
-          <p className="mx-auto mt-1.5 max-w-[460px] text-ui-13 leading-relaxed text-muted-foreground">
+          <p className="mx-auto mt-1.5 max-w-[640px] text-ui-13 leading-relaxed text-muted-foreground">
             Digite uma vez e reuse no atendimento: no chat, /atalho insere o texto inteiro, já com o nome do cliente no lugar. Depois, se precisar falar fora da janela de 24 h, é só pedir aprovação da Meta.
           </p>
           <Button className="mt-5" onClick={() => setEditando("nova")}>

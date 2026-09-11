@@ -70,7 +70,7 @@ export function SuporteEnsaio({ relatos: iniciais, gestao, eu, agoraIso }: { rel
       {relatos.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card/60 px-6 py-12 text-center">
           <p className="text-[15px] font-semibold text-foreground">Nenhum relato ainda</p>
-          <p className="mx-auto mt-1.5 max-w-[420px] text-ui-13 leading-relaxed text-muted-foreground">Quando alguém da equipe tocar no "!" do topo e descrever o que travou, aparece aqui com a tela de onde veio.</p>
+          <p className="mx-auto mt-1.5 max-w-[640px] text-ui-13 leading-relaxed text-muted-foreground">Quando alguém da equipe tocar no "!" do topo e descrever o que travou, aparece aqui com a tela de onde veio.</p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-[340px_1fr]">

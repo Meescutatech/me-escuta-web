@@ -35,7 +35,7 @@ export function OauthAutorizar({ eu, escopo, escopoTitulo, volta }: { eu: Pessoa
 
   return (
     <main className="grid min-h-screen place-items-center bg-background px-4 py-10">
-      <div className="w-full max-w-[460px]">
+      <div className="w-full max-w-[520px]">
         <div className="mb-6 flex items-center justify-center gap-4">
           <span className="grid size-11 place-items-center rounded-xl border border-border bg-card text-ui-12 font-bold text-foreground" aria-label="Claude">
             Cl

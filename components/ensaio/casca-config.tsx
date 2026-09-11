@@ -20,7 +20,7 @@ export function CascaConfig({
   titulo: string;
   descricao: string;
   acao?: ReactNode;
-  /** tabela de 5+ colunas — pede os 960px do layout (`data-largo`). */
+  /** sem efeito desde 23:20 (largura fluida para todas) — fica por compatibilidade dos call sites. */
   largo?: boolean;
   children: ReactNode;
   className?: string;
@@ -28,7 +28,7 @@ export function CascaConfig({
   return (
     <div data-largo={largo ? "" : undefined} className={cn("flex flex-col gap-5", className)}>
       <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0 max-w-[560px]">
+        <div className="min-w-0 max-w-[760px]">
           <h1 className="text-h2 font-semibold text-foreground">{titulo}</h1>
           <p className="mt-1.5 text-ui-13 leading-relaxed text-muted-foreground">{descricao}</p>
         </div>

@@ -78,7 +78,7 @@ export function ClaudeMcpEnsaio({
       {/* ── O MEU ACESSO ── */}
       <section className={cn("rounded-xl border bg-card p-6", minha ? "border-success-line" : "border-border")}>
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 max-w-[560px]">
+          <div className="min-w-0 max-w-[760px]">
             <div className="flex items-center gap-2">
               <h2 className="text-h3 font-semibold text-foreground">{minha ? "Você está conectada" : "Adicionar ao Claude"}</h2>
               {minha && (

@@ -26,6 +26,7 @@ export default function ConfiguracoesLayout({ children }: { children: ReactNode 
   const ativa = (s: SecaoConfig) =>
     rota === s.href || rota.startsWith(s.href + "/") || (s.tambem ?? []).some((t) => rota === t || rota.startsWith(t + "/"));
   const noIndice = rota === "/configuracoes";
+  void noIndice;
 
   return (
     <div className="flex min-h-[calc(100vh-var(--altura-topo))] bg-background">
@@ -65,10 +66,12 @@ export default function ConfiguracoesLayout({ children }: { children: ReactNode 
           </div>
         ))}
       </nav>
-      {/* pb-[120px]: respiro para a barra de publicação (sticky) das telas antigas. `data-largo`
-          libera 960px para tabelas de 5+ colunas; o índice do hub pede a largura toda. */}
-      <main className="min-w-0 flex-1 px-12 pb-[120px] pt-10 max-md:px-5 max-md:pt-8">
-        <div className={cn("max-w-[720px] [&:has(>[data-largo])]:max-w-[960px]", noIndice && "max-w-[1040px]")}>{children}</div>
+      {/* REGRA GLOBAL (Diogo, 23:20): "olha o tanto de espaço que estamos perdendo" — nada de coluna
+          estreita centrada. Largura FLUIDA, gutter 24px (32px em ≥1536), `max-w` só em 1600px.
+          Era 720/960/1040px por tipo de tela — apagado. Tabelas e cards preenchem a tela.
+          pb-[120px]: respiro para a barra de publicação (sticky). */}
+      <main className="min-w-0 flex-1 px-6 pb-[120px] pt-8 2xl:px-8">
+        <div className="max-w-[1600px]">{children}</div>
       </main>
     </div>
   );
