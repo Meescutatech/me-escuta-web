@@ -11,6 +11,7 @@ import { mencionaveisEnsaio } from "@/lib/ensaio/fixtures/mencionaveis";
 // W-D6: cidade, audiometria, departamento e PRÓXIMA TAREFA dos 40 leads + painel/conversa por lead
 // para o drawer não ir ao banco em ensaio. `proximaTarefaDoLead` é stub do helper do W-D5.
 import { enriquecerCardsEnsaio, ensaioDoFunil } from "@/lib/ensaio/funil-extra";
+import { fotosEnsaio } from "@/lib/ensaio/fotos";
 import { TIPOS_TAREFA_SEMENTE } from "@/lib/tarefa-tipos";
 
 // Sempre lê o estado atual do funil (sem cache) — projeção do ledger.
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function FunilPage({
   searchParams,
 }: {
-  searchParams: { lead?: string; aba?: string };
+  searchParams: { lead?: string; aba?: string; pergunta?: string };
 }) {
   // W-D2 · modo ensaio: os 40 leads da fixture, zero leitura.
   const ensaio = lerSessaoEnsaio();
@@ -34,6 +35,7 @@ export default async function FunilPage({
         geradoEm={agora.toISOString()}
         abrirLead={searchParams.lead ?? null}
         abaInicial={searchParams.aba ?? null}
+        pergunta={searchParams.pergunta ?? null}
         autorEmail={ensaio.email}
         autorId={ensaio.id}
         papel={ensaio.papel}
@@ -43,6 +45,7 @@ export default async function FunilPage({
         motivosDaConfig={motivos.daConfig}
         semResponsavel={{ orfaos: 9, aguardandoDePara: 0, lido: true }}
         ensaio={ensaioDoFunil(cards, agora)}
+        fotos={fotosEnsaio()}
       />
     );
   }
@@ -68,6 +71,7 @@ export default async function FunilPage({
       geradoEm={new Date().toISOString()}
       abrirLead={searchParams.lead ?? null}
       abaInicial={searchParams.aba ?? null}
+      pergunta={searchParams.pergunta ?? null}
       autorEmail={user?.email ?? null}
       autorId={user?.id ?? null}
       mencionaveis={mencionaveis}

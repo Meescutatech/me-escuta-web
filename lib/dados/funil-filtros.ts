@@ -71,6 +71,22 @@ export interface FiltrosFunil {
   minhasTarefas: boolean;
   origens: string[];
   cidades: string[];
+  /**
+   * W-D6 v4 (11/09 00:05) · as dimensões que o Jarvis precisa saber APLICAR, e que o grupo
+   * "Situação" mostra como checkbox:
+   *  - `semResponsavel`: o que era carimbo no topo do board virou filtro (pedido do Diogo);
+   *  - `tarefaVencida`: a próxima tarefa já passou do prazo — diferente de "sem próxima ação"
+   *    (uma existe e está atrasada; a outra não existe), e é a diferença que o Kommo apagou;
+   *  - `paradoDiasMin`: "sumiu há mais de 5 dias" — dias desde a ÚLTIMA MENSAGEM quando há, e
+   *    desde a entrada na etapa quando não há (sem mensagem, o relógio que existe é o da etapa);
+   *  - `valorMin`: "acima de 10 mil";
+   *  - `audiometria`: o gate da Sara, em três estados (fez · não fez · tanto faz).
+   */
+  semResponsavel: boolean;
+  tarefaVencida: boolean;
+  paradoDiasMin: number | null;
+  valorMin: number | null;
+  audiometria: "fez" | "nao_fez" | null;
 }
 
 export const FILTROS_VAZIOS: FiltrosFunil = {
@@ -88,7 +104,25 @@ export const FILTROS_VAZIOS: FiltrosFunil = {
   minhasTarefas: false,
   origens: [],
   cidades: [],
+  semResponsavel: false,
+  tarefaVencida: false,
+  paradoDiasMin: null,
+  valorMin: null,
+  audiometria: null,
 };
+
+/**
+ * Há quantos dias este lead está PARADO. A última mensagem manda quando existe (é o relógio que a
+ * Sara usa: "sumiu há 5 dias"); sem ela, vale a entrada na etapa. `null` = não dá para saber, e
+ * card sem medida NUNCA é cortado por um filtro de tempo — seria acusar por falta de dado.
+ */
+export function diasParado(c: Pick<CardLead, "ultima_mensagem" | "entrou_etapa_em">, agora: number): number | null {
+  const iso = c.ultima_mensagem?.em ?? c.entrou_etapa_em;
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return Math.floor((agora - t) / 86_400_000);
+}
 
 /** "Belo Horizonte" ≡ "belo horizonte" ≡ "Belo Horizonte " — cidade é o que a pessoa digitou. */
 export function chaveCidade(c: string | null | undefined): string {
@@ -135,6 +169,8 @@ export function filtrarCards(
   f: FiltrosFunil,
   meuId: string | null = null,
   faixaDe?: (c: CardLead) => FaixaPrioridade,
+  /** relógio — só é lido pelos filtros de tempo (`paradoDiasMin`, `tarefaVencida`) */
+  agora: number = Date.now(),
 ): CardLead[] {
   return cards.filter((c) => {
     // meus leads: vínculo por uuid, nunca por nome. Sem usuário logado, "meus" não casa nada
@@ -161,6 +197,23 @@ export function filtrarCards(
     if (f.minhasTarefas && (meuId == null || c.proxima_tarefa?.responsavel_id !== meuId)) return false;
     if (f.origens.length > 0 && !f.origens.includes(c.origem ?? "")) return false;
     if (f.cidades.length > 0 && !f.cidades.map(chaveCidade).includes(chaveCidade(c.cidade))) return false;
+    // sem responsável: o vínculo por uuid é a verdade (o texto legado do import não conta como dono)
+    if (f.semResponsavel && c.dono_id != null) return false;
+    // vencida: a próxima tarefa passou do prazo. `undefined` (não sabemos) passa; `null` (não tem
+    // tarefa) NÃO passa — não ter tarefa é o outro filtro, e confundir os dois apagaria a diferença.
+    if (f.tarefaVencida) {
+      const prazo = c.proxima_tarefa?.prazo;
+      if (c.proxima_tarefa === undefined) return true;
+      const t = prazo ? Date.parse(prazo) : NaN;
+      if (Number.isNaN(t) || t >= agora) return false;
+    }
+    if (f.paradoDiasMin != null) {
+      const d = diasParado(c, agora);
+      if (d != null && d < f.paradoDiasMin) return false;
+    }
+    if (f.valorMin != null && (c.valor ?? 0) < f.valorMin) return false;
+    // audiometria: `undefined` (ficha não lida) passa — o card não afirma nada sobre o gate
+    if (f.audiometria && c.audiometria !== undefined && c.audiometria !== f.audiometria) return false;
     return true;
   });
 }
@@ -187,6 +240,11 @@ export function haFiltro(f: FiltrosFunil): boolean {
     f.minhasTarefas ||
     f.origens.length > 0 ||
     f.cidades.length > 0 ||
+    f.semResponsavel ||
+    f.tarefaVencida ||
+    f.paradoDiasMin != null ||
+    f.valorMin != null ||
+    f.audiometria != null ||
     contarFiltrosAtivos(f) > 0
   );
 }
@@ -221,6 +279,18 @@ export function chipsAtivos(
   if (f.comTarefa) chips.push({ chave: "comTarefa", rotulo: "Com tarefa", remover: (x) => ({ ...x, comTarefa: false }) });
   if (f.minhasTarefas) chips.push({ chave: "minhasTarefas", rotulo: "Minhas tarefas", remover: (x) => ({ ...x, minhasTarefas: false }) });
   if (f.semProximaAcao) chips.push({ chave: "semProximaAcao", rotulo: "Sem próxima ação", remover: (x) => ({ ...x, semProximaAcao: false }) });
+  if (f.tarefaVencida) chips.push({ chave: "tarefaVencida", rotulo: "Tarefa vencida", remover: (x) => ({ ...x, tarefaVencida: false }) });
+  if (f.semResponsavel) chips.push({ chave: "semResponsavel", rotulo: "Sem responsável", remover: (x) => ({ ...x, semResponsavel: false }) });
+  if (f.paradoDiasMin != null)
+    chips.push({ chave: "parado", rotulo: `Parado há ${f.paradoDiasMin}+ dias`, remover: (x) => ({ ...x, paradoDiasMin: null }) });
+  if (f.valorMin != null)
+    chips.push({ chave: "valorMin", rotulo: `Acima de R$ ${f.valorMin.toLocaleString("pt-BR")}`, remover: (x) => ({ ...x, valorMin: null }) });
+  if (f.audiometria)
+    chips.push({
+      chave: "audiometria",
+      rotulo: f.audiometria === "fez" ? "Fez audiometria" : "Sem audiometria",
+      remover: (x) => ({ ...x, audiometria: null }),
+    });
   if (f.soAgora) chips.push({ chave: "soAgora", rotulo: "Só os estourados", remover: (x) => ({ ...x, soAgora: false }) });
   if (f.de || f.ate)
     chips.push({

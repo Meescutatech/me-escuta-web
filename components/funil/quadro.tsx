@@ -40,10 +40,14 @@ import {
 } from "@/lib/dados/funil-filtros";
 import type { Mencionavel } from "@/lib/conversas/mencao";
 import type { TipoTarefa } from "@/lib/tarefa-tipos";
-import { CarimboVivo } from "@/components/dashboard/carimbo-vivo";
 import { SegmentoDepartamento } from "./segmento-departamento";
 import { moedaCurta, resumoColuna } from "@/lib/dados/funil-calculos";
 import type { EnsaioFunil } from "@/lib/ensaio/funil-extra";
+import { BuscaJarvis, LinhaJarvis } from "./busca-jarvis";
+import { VisoesSalvas } from "./visoes-salvas";
+import { aplicarLeitura, interpretarBusca, type LeituraJarvis } from "@/lib/dados/funil-jarvis";
+import { contarSituacao } from "./barra-filtros";
+import { opcoesCidade } from "@/lib/dados/funil-filtros";
 import { useProjecaoViva } from "@/components/projecao-viva";
 import { novosIds } from "@/lib/tempo-real";
 import { INTERVALOS, PISO_SEM_TEMPO_REAL } from "@/lib/intervalos-vivos";
@@ -211,6 +215,7 @@ export function Quadro({
   geradoEm,
   abrirLead = null,
   abaInicial = null,
+  pergunta = null,
   autorEmail = null,
   autorId = null,
   mencionaveis = [],
@@ -220,6 +225,7 @@ export function Quadro({
   semResponsavel = null,
   papel = null,
   ensaio = null,
+  fotos = {},
 }: {
   dados: DadosFunil;
   /** hora da renderização server — carimbo "ao vivo · atualizado há Xs" */
@@ -228,6 +234,12 @@ export function Quadro({
   abrirLead?: string | null;
   /** W-D6 · deep-link ?aba=conversa|tarefas|… — a aba do drawer ao abrir (LiderHub `?tab=`) */
   abaInicial?: string | null;
+  /**
+   * W-D6 v4 · deep-link `?pergunta=...`: abre o board com a pergunta JÁ interpretada pelo Jarvis.
+   * Serve para o link compartilhável ("olha esses aqui") e é o que torna o print reproduzível —
+   * a mesma frase, os mesmos chips, sempre.
+   */
+  pergunta?: string | null;
   autorEmail?: string | null;
   autorId?: string | null;
   mencionaveis?: Mencionavel[];
@@ -241,6 +253,8 @@ export function Quadro({
   papel?: "owner" | "admin" | "membro" | "marketing" | null;
   /** W-D6 · modo ensaio: painel + conversa por lead já calculados — o drawer não vai ao banco */
   ensaio?: EnsaioFunil | null;
+  /** W-D6 v4 · id/nome → foto de perfil (`lib/ensaio/fotos.ts`); vazio fora do ensaio → iniciais */
+  fotos?: Record<string, string>;
 }) {
   const [cards, setCards] = useState<CardLead[]>(dados.cards);
   const [arrastando, setArrastando] = useState<string | null>(null);
@@ -258,6 +272,8 @@ export function Quadro({
    * pergunta que a Sarah faz antes de qualquer outra.
    */
   const [ordem, setOrdem] = useState<ChaveOrdem>(ORDEM_PADRAO);
+  /** W-D6 v4 · a última leitura do Jarvis (para a linha "entendi assim" sobreviver a re-render) */
+  const [leitura, setLeitura] = useState<LeituraJarvis | null>(null);
   /** R20 — movimento para etapa `perdido` esperando o motivo. null = nenhum diálogo aberto. */
   const [perdaPendente, setPerdaPendente] = useState<{
     leadId: string;
@@ -272,6 +288,20 @@ export function Quadro({
     const t = setInterval(() => setAgora(Date.now()), 60000);
     return () => clearInterval(t);
   }, []);
+
+  // deep-link `?pergunta=`: interpreta UMA vez, ao montar — depois disso quem manda é a tela
+  useEffect(() => {
+    if (!pergunta) return;
+    const r = interpretarBusca(pergunta, {
+      etapas: dados.etapas,
+      cidadesConhecidas: opcoesCidade(dados.cards).map((o) => o.rotulo),
+      temUsuario: !!autorId,
+    });
+    if (!r.entendeu) return;
+    setLeitura(r);
+    setFiltros((f) => aplicarLeitura({ ...f, busca: pergunta }, r));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só ao montar: é uma porta de entrada
+  }, [pergunta]);
 
   // ── board VIVO (Rodada 9): dica realtime (estado_lead/lead) + polling → router.refresh().
   // A publication supabase_realtime TEM as 6 tabelas core.* (conferido na fonte em 26/07); o
@@ -376,15 +406,18 @@ export function Quadro({
     [cards, chavesAbertas],
   );
 
-  // W-D6 v3 · facetas do radio "Tarefas" (sobre os ativos, como o chip antigo)
-  const contagensTarefa = useMemo(() => {
-    const ativos = cards.filter((c) => chavesAbertas.has(c.etapa));
-    return {
-      com: ativos.filter((c) => c.tem_tarefa_pendente === true).length,
-      minhas: autorId ? ativos.filter((c) => c.proxima_tarefa?.responsavel_id === autorId).length : 0,
-      sem: semAcao,
-    };
-  }, [cards, chavesAbertas, autorId, semAcao]);
+  // W-D6 v4 · facetas do grupo "Situação" (sobre os leads ATIVOS), uma passada só
+  const contagens = useMemo(
+    () => contarSituacao(cards.filter((c) => chavesAbertas.has(c.etapa)), autorId, faixaDe, agora),
+    [cards, chavesAbertas, autorId, faixaDe, agora],
+  );
+  // vocabulário que o Jarvis pode citar — só o que existe no board de verdade
+  const cidadesConhecidas = useMemo(() => opcoesCidade(cards).map((o) => o.rotulo), [cards]);
+  const idPorNome = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of mencionaveis) if (p.tipo === "humano") m.set(p.nome.split(" ")[0], p.id);
+    return (nome: string) => m.get(nome.split(" ")[0]);
+  }, [mencionaveis]);
 
   const cardArrastado = cards.find((c) => c.lead_id === arrastando) ?? null;
 
@@ -489,77 +522,52 @@ export function Quadro({
 
   return (
     <div className="flex h-[calc(100vh-var(--altura-topo))] flex-col bg-board">
-      {/* ── cabeçalho do board, v3 (10/09 23:40) ──────────────────────────────────────────────
-          Linha 1: o estado ("31 leads ativos", órfãos, corte, aviso) e, no canto, o carimbo de
-          frescor em 11px. Linha 2: a BARRA — busca + um seletor por dimensão + segmented + ordem.
-          Linha 3 (só com filtro ativo): os chips. O que SAIU e por quê: "Novo lead" (quem cria lead
-          pelo kanban? o lead nasce de conversa; o manual continua existindo em /conversas), a pílula
-          "prazos no padrão declarado" (virou o `title` do contador — é aviso de gestão, não de fila)
-          e o popover "Filtros" com quatro dimensões escondidas (agora estão na barra). */}
-      <div className="flex flex-shrink-0 flex-col gap-2 px-6 pb-3 pt-3.5">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span
-            className="font-mono text-[12px] text-suave"
-            title={
-              dados.sla.daConfig
-                ? "Cor do card = prioridade: AGORA, HOJE, NA SEMANA, SEM PRESSA (razão entre o tempo parado e o prazo da etapa)"
-                : "Cor do card = prioridade. Os prazos por etapa são o PADRÃO DECLARADO — a config sla_etapas ainda não existe no banco."
-            }
-          >
-            {filtroAtivo
-              ? `${leadsAtivosFiltrados.toLocaleString("pt-BR")} de ${leadsAtivos.toLocaleString("pt-BR")} leads ativos`
-              : `${leadsAtivos.toLocaleString("pt-BR")} leads ativos`}
-          </span>
-          {semResponsavel && <ChipSemResponsavel dados={semResponsavel} />}
-          {dados.corte && (
-            <span
-              className="rounded-full bg-laranja-cl px-2.5 py-0.5 text-[11.5px] font-medium text-laranja-esc"
-              title="O board bateu no teto de leitura — paginação vem em rodada futura."
-            >
-              mostrando os {dados.cards.length} mais recentes
-            </span>
-          )}
-          {aviso && (
-            <span className="rounded-full bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-semibold text-vermelho">{aviso}</span>
-          )}
-          {/* o carimbo vira TEXTO de 11px no canto — é rodapé de página, não controle */}
-          <span className="ml-auto text-[11px] text-mute [&_span]:text-[11px] [&_span]:text-mute">
-            <CarimboVivo
-              geradoEm={geradoEm}
-              revalidar={false}
-              intervaloMs={INTERVALOS.funil}
-              aoVivo={tempoRealBoard.aoVivo}
-              conectando={tempoRealBoard.conectando}
-              falhas={tempoRealBoard.falhas}
-            />
-          </span>
-        </div>
+      {/* ── A BARRA, v4 (11/09 00:05) ──────────────────────────────────────────────────────────
+          A faixa de carimbos ("31 leads ativos", "9 sem responsável", "ao vivo · atualizado há 5s")
+          MORREU: nada ali era acionável. O que era útil virou filtro — "sem responsável" está em
+          Situação, com a contagem ao lado. O frescor da tela não sumiu: ele é o próprio board, que
+          se atualiza sozinho (`useProjecaoViva`); um carimbo dizendo "há 5s" era a tela pedindo
+          crédito por respirar.
 
+          UMA linha só, ocupando a largura: busca do Jarvis à esquerda (cresce), os cinco grupos de
+          filtro no centro, e à direita visões salvas · departamento · ordem · Quadro|Lista. A
+          segunda linha só existe quando há filtro: chips + "Limpar tudo" + a leitura do Jarvis. */}
+      <div className="flex flex-shrink-0 flex-col gap-2 px-6 pb-3 pt-3">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex h-8 w-56 items-center gap-2 rounded-[6px] border border-linha bg-branco px-2.5 transition-colors focus-within:border-linha-forte">
-            <svg viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5 shrink-0 stroke-mute" fill="none" aria-hidden>
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-3.5-3.5" />
-            </svg>
-            <input
-              value={filtros.busca}
-              onChange={(e) => setFiltros((f) => ({ ...f, busca: e.target.value }))}
-              placeholder="Buscar lead, telefone"
-              aria-label="Buscar lead por nome ou telefone"
-              className="w-full bg-transparent text-[13px] text-tinta outline-none placeholder:text-mute"
-            />
-          </label>
+          <BuscaJarvis
+            filtros={filtros}
+            onChange={setFiltros}
+            etapas={dados.etapas}
+            cidadesConhecidas={cidadesConhecidas}
+            temUsuario={!!autorId}
+            qtdResultado={cardsFiltrados.length}
+            leitura={leitura}
+            onLeitura={setLeitura}
+          />
           <BarraFiltros
             cards={cards}
             etapas={dados.etapas}
             filtros={filtros}
-            onChange={setFiltros}
+            onChange={(f) => {
+              setFiltros(f);
+              setLeitura(null); // mexeu num chip: a leitura do Jarvis deixou de descrever a tela
+            }}
             meuId={autorId}
-            contagens={contagensTarefa}
+            contagens={contagens}
+            fotos={fotos}
+            idPorNome={idPorNome}
           />
           <div className="ml-auto flex items-center gap-2">
-            {/* W-D6 · o recorte do admin: Pré-venda · Pós-venda · Todos. Membro não vê (escopo já o põe
-                dentro do departamento dele). */}
+            <VisoesSalvas
+              filtros={filtros}
+              ordem={ordem}
+              temFiltro={filtroAtivo}
+              onAplicar={(f, o) => {
+                setFiltros(f);
+                setOrdem(o);
+                setLeitura(null);
+              }}
+            />
             {podeRecortarDepartamento && (
               <SegmentoDepartamento
                 valor={filtros.departamento}
@@ -567,16 +575,64 @@ export function Quadro({
               />
             )}
             <SeletorOrdem ordem={ordem} onChange={setOrdem} />
+            {/* Quadro|Lista: a lista é a próxima rodada (visão em tabela, Twenty). O botão existe
+                DESABILITADO com o motivo, e não escondido, porque esconder faria a pessoa procurar. */}
+            <div className="flex h-9 items-center gap-px rounded-[8px] bg-hover p-[3px]" role="radiogroup" aria-label="Visão">
+              <span role="radio" aria-checked className="h-full rounded-[5px] bg-branco px-2.5 text-[12.5px] font-medium leading-[26px] text-tinta shadow-[0_1px_2px_rgba(31,35,40,.08)]">
+                Quadro
+              </span>
+              <span
+                role="radio"
+                aria-checked={false}
+                aria-disabled
+                title="A visão em lista chega na próxima rodada"
+                className="h-full cursor-not-allowed rounded-[5px] px-2.5 text-[12.5px] leading-[26px] text-mute"
+              >
+                Lista
+              </span>
+            </div>
           </div>
         </div>
 
-        <ChipsFiltros
-          filtros={filtros}
-          etapas={dados.etapas}
-          onChange={setFiltros}
-          qtdFiltrada={cardsFiltrados.length}
-          qtdTotal={cards.length}
-        />
+        {(filtroAtivo || leitura) && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            <ChipsFiltros
+              filtros={filtros}
+              etapas={dados.etapas}
+              onChange={(f) => {
+                setFiltros(f);
+                setLeitura(null);
+              }}
+              qtdFiltrada={cardsFiltrados.length}
+              qtdTotal={cards.length}
+            />
+            {leitura && (
+              <span className="ml-auto min-w-0">
+                <LinhaJarvis
+                  leitura={leitura}
+                  qtd={cardsFiltrados.length}
+                  naoEntendi={false}
+                  onDescartar={() => {
+                    setLeitura(null);
+                    setFiltros(FILTROS_VAZIOS);
+                  }}
+                />
+              </span>
+            )}
+            {dados.corte && (
+              <span
+                className="rounded-full bg-laranja-cl px-2.5 py-0.5 text-[11.5px] font-medium text-laranja-esc"
+                title="O board bateu no teto de leitura — paginação vem em rodada futura."
+              >
+                mostrando os {dados.cards.length} mais recentes
+              </span>
+            )}
+            {aviso && <span className="rounded-full bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-semibold text-vermelho">{aviso}</span>}
+          </div>
+        )}
+        {!filtroAtivo && aviso && (
+          <span className="rounded-full bg-vermelho-bg px-2.5 py-0.5 text-[11.5px] font-semibold text-vermelho">{aviso}</span>
+        )}
       </div>
 
       {/* R23 · o que a busca achou FORA do board — logo abaixo do cabeçalho, antes das colunas,
