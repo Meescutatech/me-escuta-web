@@ -120,7 +120,7 @@ export function MensagensProntasEnsaio({ mensagens: iniciais, gestao, agoraIso, 
       ) : visiveis.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card/60 px-6 py-10 text-center">
           <p className="text-[14px] font-medium text-foreground">Nenhuma mensagem combina com a busca e o filtro</p>
-          <p className="mt-1 text-ui-13 text-muted-foreground">Tente outro termo ou volte para "Todas".</p>
+          <p className="mt-1 text-ui-13 text-muted-foreground">Tente outro termo ou volte para &quot;Todas&quot;.</p>
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">

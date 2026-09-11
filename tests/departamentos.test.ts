@@ -291,7 +291,7 @@ test("rota conhecida devolve o nome em PT-BR", () => {
 test("subrota casa a mais ESPECÍFICA primeiro", () => {
   assert.equal(lerTituloDaRota("/configuracoes"), "Configurações");
   assert.equal(lerTituloDaRota("/configuracoes/membros"), "Membros");
-  assert.equal(lerTituloDaRota("/configuracoes/avancado/funil_vendas"), "Todas as configurações");
+  assert.equal(lerTituloDaRota("/configuracoes/avancado/funil_vendas"), "Auditoria e histórico");
 });
 
 test("rota FORA do mapa devolve VAZIO — nunca a rota crua na cara do usuário", () => {

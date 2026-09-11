@@ -195,7 +195,7 @@ export function FunilConfigEnsaio({ etapas: iniciais, motivos: motivosIniciais, 
         {motivos.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-card/60 px-6 py-8 text-center">
             <p className="text-[14px] font-medium text-foreground">Nenhum motivo de perda</p>
-            <p className="mt-1 text-ui-13 text-muted-foreground">Sem motivos, "Perdido" vira um balde. Crie pelo menos três: preço, sem retorno e outro.</p>
+            <p className="mt-1 text-ui-13 text-muted-foreground">Sem motivos, &quot;Perdido&quot; vira um balde. Crie pelo menos três: preço, sem retorno e outro.</p>
           </div>
         ) : (
           <ul className="overflow-hidden rounded-xl border border-border bg-card">

@@ -114,7 +114,7 @@ export function gerarConvitesEnsaio(agora: Date = new Date()): ConviteEnsaio[] {
       criado_em: new Date(t - 1 * D).toISOString(),
       expira_em: new Date(t + 6 * D).toISOString(),
       status: "pendente",
-      token: "cnv_7kQ2mHb9xR4tLp1Ze",
+      token: "cnv_exemplo_convite_fernando",
       criado_por: diogo,
     },
     {
@@ -126,7 +126,7 @@ export function gerarConvitesEnsaio(agora: Date = new Date()): ConviteEnsaio[] {
       criado_em: new Date(t - 6 * D).toISOString(),
       expira_em: new Date(t + 1 * D).toISOString(),
       status: "pendente",
-      token: "cnv_Ab3dE9fG7hJ2kL5mN",
+      token: "cnv_exemplo_convite_priscila",
       criado_por: rodolfo,
     },
   ];

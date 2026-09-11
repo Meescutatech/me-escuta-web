@@ -403,7 +403,7 @@ test("montarVisao: etapasLeads null propaga ate o funil (o `?? []` nao pode volt
    * tela volta a mentir. Este aqui e o que morre nesse caso.
    */
   const visao = montarVisao({
-    periodo: periodoDaUrl(new URLSearchParams("p=90d"), new Date("2026-09-03T12:00:00-03:00")),
+    periodo: periodoDaUrl({ p: "90d" }, new Date("2026-09-03T12:00:00-03:00")),
     toques: [toque({ lead_id: "a" }), toque({ lead_id: "b" })],
     custos: [],
     etapasLeads: null,
