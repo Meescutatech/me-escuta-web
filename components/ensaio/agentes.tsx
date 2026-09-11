@@ -146,7 +146,48 @@ export function AgentesEnsaio({ agentes: iniciais, gestao, agoraIso }: { agentes
         ))}
       </div>
 
-      <Sheet open={!!aberto} onOpenChange={(o) => !o && setAbertoChave(null)}>
+      <SheetAgente
+        agente={aberto}
+        gestao={gestao}
+        agora={agora}
+        onFechar={() => setAbertoChave(null)}
+        onLigar={ligar}
+        onMudarAutonomia={mudarAutonomia}
+      />
+    </CascaConfig>
+  );
+}
+
+function listar(itens: string[]): string {
+  if (itens.length === 0) return "—";
+  if (itens.length <= 3) return itens.join(", ");
+  return `${itens.slice(0, 2).join(", ")} e mais ${itens.length - 2}`;
+}
+
+/**
+ * A SHEET de um agente — fluxograma, autonomia por capacidade, prompt em leitura, pendências.
+ * Compartilhada entre os cards (`/configuracoes/agentes`) e o Mapa (`/configuracoes/inteligencia`).
+ */
+export function SheetAgente({
+  agente: aberto,
+  gestao,
+  agora,
+  onFechar,
+  onLigar,
+  onMudarAutonomia,
+}: {
+  agente: AgenteEnsaio | null;
+  gestao: boolean;
+  agora: Date;
+  onFechar: () => void;
+  onLigar: (chave: AgenteEnsaio["chave"], ativo: boolean) => void;
+  onMudarAutonomia: (chave: AgenteEnsaio["chave"], cap: string, autonomia: Autonomia) => void;
+}) {
+  const ligar = onLigar;
+  const mudarAutonomia = onMudarAutonomia;
+  const setAbertoChave = (_: null) => onFechar();
+  return (
+    <Sheet open={!!aberto} onOpenChange={(o) => !o && setAbertoChave(null)}>
         <SheetContent className="sm:max-w-[760px]">
           {aberto && (
             <>
@@ -263,12 +304,5 @@ export function AgentesEnsaio({ agentes: iniciais, gestao, agoraIso }: { agentes
           )}
         </SheetContent>
       </Sheet>
-    </CascaConfig>
   );
-}
-
-function listar(itens: string[]): string {
-  if (itens.length === 0) return "—";
-  if (itens.length <= 3) return itens.join(", ");
-  return `${itens.slice(0, 2).join(", ")} e mais ${itens.length - 2}`;
 }
