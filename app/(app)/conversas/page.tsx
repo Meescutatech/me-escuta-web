@@ -16,6 +16,9 @@ import { lerEstadoEscopo } from "@/lib/dados/departamentos";
 import { Inbox } from "@/components/conversas/inbox";
 import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 import { lerSessaoEnsaio, estadoEscopoEnsaio } from "@/lib/ensaio/sessao";
+import { lerCanaisDeEnvio } from "@/lib/dados/canais-envio";
+import { lerVisaoTarefas } from "@/lib/dados/tarefas-visao";
+import { focoDasTarefas } from "@/lib/tarefas/foco";
 import { mencionaveisEnsaio } from "@/lib/ensaio/fixtures/mencionaveis";
 import {
   conversasVisiveisPara,
@@ -208,6 +211,19 @@ export default async function ConversasPage({
   // {{atendente}} vem do NOME de core.v_membro — nunca do e-mail (spec §5.1)
   const nomeAtendente = await lerNomeMembro(user?.id ?? null);
 
+  // 11/09 · as duas peças que só o ramo de ensaio tinha, agora lidas de verdade.
+  // Em paralelo porque não dependem uma da outra nem da conversa selecionada.
+  //  · canaisEnvio → o seletor "Enviando por X ▾" e o botão "Nova conversa";
+  //  · foco/linhasFoco → `?foco=1` transforma a lista na fila de tarefas desta pessoa.
+  //    `focoDasTarefas` é a parte PURA que o autor deixou pronta para receber banco em vez de
+  //    fixture ("é esta que serve quando a leitura real existir" — lib/tarefas/foco.ts).
+  const foco = searchParams.foco === "1";
+  const [canaisEnvio, visaoTarefas] = await Promise.all([
+    lerCanaisDeEnvio(user?.id ?? null),
+    foco ? lerVisaoTarefas() : Promise.resolve(null),
+  ]);
+  const linhasFoco = visaoTarefas ? focoDasTarefas(visaoTarefas.tarefas, user?.id ?? null, {}, new Date()) : [];
+
   // conversa selecionada: ?c explícito → ?lead (do funil ou de uma TAREFA) → a primeira do inbox.
   //
   // 31/08 · quando o alvo foi PEDIDO e não está na caixa de entrada, a tela NÃO cai na primeira
@@ -264,6 +280,9 @@ export default async function ConversasPage({
       programadas={programadas}
       ancoraEm={searchParams.em ?? null}
       alvoNaoEncontrado={alvoNaoEncontrado}
+      canaisEnvio={canaisEnvio.length > 0 ? canaisEnvio : null}
+      foco={foco}
+      linhasFoco={linhasFoco}
     />
   );
 }
