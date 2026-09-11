@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import {
   UsersIcon,
-  NetworkIcon,
+  IdCardIcon,
   SmartphoneIcon,
-  CloudCogIcon,
+  CableIcon,
   WaypointsIcon,
   BotIcon,
   KanbanIcon,
@@ -19,15 +19,20 @@ import { cn } from "@/lib/utils";
 import type { IconeSecao as NomeIcone } from "@/lib/ensaio/config-secoes";
 import { MarcaJarvis } from "@/components/jarvis/marca";
 
-/** Um ícone lucide por seção do hub — usado pela navegação (layout) e pelas linhas do índice (page). */
+/**
+ * Um ícone lucide por seção — a nav lateral é o único lugar que os usa desde que o hub-índice
+ * morreu (11/09). `cargos` é o crachá e não mais o organograma: o que se escolhe é o cargo, e a
+ * árvore de departamentos virou sub-seção. `conexoes` é o cabo, e não a nuvem da Meta: a seção
+ * cobre cinco conexões, não só uma.
+ */
 export const ICONES_SECAO: Record<NomeIcone, ReactNode> = {
   membros: <UsersIcon />,
-  departamentos: <NetworkIcon />,
+  cargos: <IdCardIcon />,
   numeros: <SmartphoneIcon />,
-  meta: <CloudCogIcon />,
   mapa: <WaypointsIcon />,
   agentes: <MarcaJarvis />,
   claude: <BotIcon />,
+  conexoes: <CableIcon />,
   funil: <KanbanIcon />,
   templates: <MessageSquareTextIcon />,
   regras: <GaugeIcon />,
