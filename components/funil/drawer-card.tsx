@@ -134,6 +134,8 @@ export function DrawerCard({
   const [abaEstreita, setAbaEstreita] = useState<AbaEstreita>("conversa");
   const [painel, setPainel] = useState<PainelLead | null>(null);
   const [carregando, setCarregando] = useState(false);
+  /** v6 · a leitura do painel REJEITOU (não é "veio vazio"): separa erro de ausência de dado */
+  const [falhaPainel, setFalhaPainel] = useState(false);
   /** `undefined` = ainda não perguntamos; `null` = sem conversa (ou leitura falhou) */
   const [conversa, setConversa] = useState<{ conversaId: string; mensagens: Mensagem[]; canal: string | null } | null | undefined>(undefined);
   const [levindoSolicitado, setLevindoSolicitado] = useState(false);
@@ -168,9 +170,20 @@ export function DrawerCard({
     }
     let vivo = true;
     setCarregando(true);
+    setFalhaPainel(false);
     lerPainelLeadAction(leadId)
       .then((p) => {
         if (vivo) setPainel(p);
+      })
+      /*
+       * v6 (13/09) · o `.catch` que faltava. Sem ele, uma server action que rejeitasse — e ela
+       * rejeita: a função serverless devolve 503 quando está fria — virava rejeição não tratada e
+       * derrubava o BOARD INTEIRO no error boundary ("Esta tela não carregou"). Medido no QA de
+       * 13/09: 3 quedas em 6 aberturas de card. Falha de leitura de um lead não pode custar a tela.
+       */
+      .catch((e) => {
+        console.error("[drawer] falha ao ler o painel do lead", e);
+        if (vivo) setFalhaPainel(true);
       })
       .finally(() => {
         if (vivo) setCarregando(false);
@@ -188,9 +201,15 @@ export function DrawerCard({
       return;
     }
     let vivo = true;
-    lerConversaDoLeadAcao(leadId).then((c) => {
-      if (vivo) setConversa(c);
-    });
+    lerConversaDoLeadAcao(leadId)
+      .then((c) => {
+        if (vivo) setConversa(c);
+      })
+      // mesma razão do painel: sem conversa o drawer ainda serve, com a tela caída não serve nada
+      .catch((e) => {
+        console.error("[drawer] falha ao ler a conversa do lead", e);
+        if (vivo) setConversa(null);
+      });
     return () => {
       vivo = false;
     };
@@ -328,7 +347,22 @@ export function DrawerCard({
         {carregando && !painel ? (
           <p className="px-1 text-[13px] text-mute">Carregando…</p>
         ) : !painel ? (
-          <p className="px-1 text-[13px] text-mute">Não foi possível carregar o painel — tente reabrir o card.</p>
+          <div className="px-1 text-[13px] text-mute">
+            <p>
+              {falhaPainel
+                ? "A leitura do painel falhou — o card continua aberto e a conversa ao lado segue valendo."
+                : "Não foi possível carregar o painel — tente reabrir o card."}
+            </p>
+            {falhaPainel && (
+              <button
+                type="button"
+                onClick={recarregar}
+                className="mt-1.5 rounded-[6px] border border-linha-forte px-2 py-1 text-[12.5px] font-medium text-navy hover:bg-hover"
+              >
+                Tentar de novo
+              </button>
+            )}
+          </div>
         ) : (
           <>
             {abaDados === "ficha" && <FichaLead ficha={painel.ficha} onSalvar={salvarCampo} />}

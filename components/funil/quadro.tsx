@@ -101,7 +101,11 @@ function Coluna({
   propsCard: (leadId: string, etapa: string, indice: number) => Record<string, unknown>;
 }) {
   // W-D6 v5 · a lista SEM o card que está no ar: o buraco fecha, e o placeholder abre no destino.
-  const visiveis = arraste ? cards.filter((c) => c.lead_id !== arraste.leadId) : cards;
+  // v6 (13/09): só o arraste POR PONTEIRO tira o card da lista (ele vira overlay e segue o cursor).
+  // Pego por teclado o card FICA no lugar, com o anel tracejado do `pego` — que é o que o card-lead
+  // sempre esperou e nunca recebia. Desmontá-lo levava junto o foco e os handlers, e era por isso
+  // que setas/Espaço/Esc não respondiam depois de pegar.
+  const visiveis = arraste && !arraste.porTeclado ? cards.filter((c) => c.lead_id !== arraste.leadId) : cards;
   const alvoAqui = arraste && alvo?.etapa === etapa.chave ? alvo.indice : null;
   // o contador conta o DESTINO durante o arraste: −1 na origem, +1 no alvo
   const contagem =
