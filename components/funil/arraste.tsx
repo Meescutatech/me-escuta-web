@@ -32,6 +32,17 @@ import { cn } from "@/lib/utils";
 /** `gap-2` entre os cards da coluna. Precisa bater com o CSS — é a conta do snapshot. */
 export const GAP_CARDS = 8;
 
+/*
+ * v6 (13/09) · LIMIAR DE ARRASTE — o conserto do "card não abre".
+ *
+ * Até a v5 o `pointerdown` já criava o arraste, e o quadro tirava o card da lista no mesmo render.
+ * Resultado: o elemento que receberia o `click` era DESMONTADO entre o pointerdown e o pointerup,
+ * o clique nunca se completava e abrir um lead pelo board era impossível. Agora o pointerdown só
+ * registra a INTENÇÃO; o arraste nasce no primeiro movimento que passa deste limiar. Abaixo dele o
+ * gesto é clique, o card nunca sai do DOM e `onClick` acontece normalmente.
+ */
+const LIMIAR_ARRASTE = 4;
+
 /** Distância da borda do trilho em que o auto-scroll horizontal liga. */
 const BORDA_AUTOSCROLL = 72;
 const VELOCIDADE_AUTOSCROLL = 14;
@@ -138,6 +149,9 @@ export function useArrasteFunil({
   const [arraste, setArraste] = useState<EstadoArraste | null>(null);
   const [alvo, setAlvo] = useState<AlvoArraste | null>(null);
   const [anuncio, setAnuncio] = useState("");
+  /** houve pointerdown num card, mas o gesto ainda não passou do limiar — pode virar clique */
+  const [pendente, setPendente] = useState(false);
+  const pendenteRef = useRef<{ leadId: string; etapa: string; indice: number; x0: number; y0: number; el: HTMLElement } | null>(null);
   const trilhoRef = useRef<HTMLDivElement>(null!);
   const snapRef = useRef<Snapshot | null>(null);
   const pegaRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
@@ -227,66 +241,123 @@ export function useArrasteFunil({
     };
   }, [arraste, soltar, x, y]);
 
-  const começar = useCallback(
-    (e: React.PointerEvent, leadId: string, etapa: string, indice: number) => {
-      // só botão principal, e nunca a partir de um controle dentro do card
-      if (e.button !== 0) return;
-      const alvoEl = e.target as HTMLElement;
-      if (alvoEl.closest("button,a,input,select,textarea")) return;
-      const el = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const começar = useCallback((e: React.PointerEvent, leadId: string, etapa: string, indice: number) => {
+    // só botão principal, e nunca a partir de um controle dentro do card
+    if (e.button !== 0) return;
+    const alvoEl = e.target as HTMLElement;
+    if (alvoEl.closest("button,a,input,select,textarea")) return;
+    // v6: aqui NÃO nasce arraste nenhum — só a intenção. Quem decide é o limiar, no efeito abaixo.
+    // Enquanto isso o card segue montado, e é isso que deixa o `click` (abrir o lead) acontecer.
+    pendenteRef.current = { leadId, etapa, indice, x0: e.clientX, y0: e.clientY, el: e.currentTarget as HTMLElement };
+    setPendente(true);
+  }, []);
+
+  // promove a intenção a arraste no primeiro movimento acima do limiar; soltar antes disso é clique
+  useEffect(() => {
+    if (!pendente) return;
+    function mover(e: PointerEvent) {
+      const p = pendenteRef.current;
+      if (!p) return;
+      if (Math.abs(e.clientX - p.x0) < LIMIAR_ARRASTE && Math.abs(e.clientY - p.y0) < LIMIAR_ARRASTE) return;
       const raiz = trilhoRef.current;
       if (!raiz) return;
-      pegaRef.current = { dx: e.clientX - el.left, dy: e.clientY - el.top };
+      const el = p.el.getBoundingClientRect();
+      pegaRef.current = { dx: p.x0 - el.left, dy: p.y0 - el.top };
       x.set(el.left);
       y.set(el.top);
-      snapRef.current = tirarSnapshot(raiz, leadId, el.height);
-      setArraste({ leadId, etapaOrigem: etapa, indiceOrigem: indice, largura: el.width, altura: el.height, porTeclado: false });
-      setAlvo({ etapa, indice });
-      setAnuncio(`${nomeDoLead(leadId)} pego. Arraste para outra etapa.`);
-    },
-    [nomeDoLead, x, y],
-  );
+      snapRef.current = tirarSnapshot(raiz, p.leadId, el.height);
+      setArraste({
+        leadId: p.leadId,
+        etapaOrigem: p.etapa,
+        indiceOrigem: p.indice,
+        largura: el.width,
+        altura: el.height,
+        porTeclado: false,
+      });
+      setAlvo({ etapa: p.etapa, indice: p.indice });
+      setAnuncio(`${nomeDoLead(p.leadId)} pego. Arraste para outra etapa.`);
+      pendenteRef.current = null;
+      setPendente(false);
+    }
+    function fim() {
+      pendenteRef.current = null;
+      setPendente(false);
+    }
+    document.addEventListener("pointermove", mover);
+    document.addEventListener("pointerup", fim);
+    document.addEventListener("pointercancel", fim);
+    return () => {
+      document.removeEventListener("pointermove", mover);
+      document.removeEventListener("pointerup", fim);
+      document.removeEventListener("pointercancel", fim);
+    };
+  }, [pendente, nomeDoLead, x, y]);
 
-  const teclaNoCard = useCallback(
-    (e: React.KeyboardEvent, leadId: string, etapa: string, indice: number) => {
-      // Espaço pega e solta; setas movem enquanto está pego; Esc devolve
-      if (e.key === " " || e.key === "Spacebar") {
-        e.preventDefault();
-        if (arraste?.leadId === leadId) return soltar(false);
-        const el = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-card]");
-        const r = el?.getBoundingClientRect();
-        setArraste({ leadId, etapaOrigem: etapa, indiceOrigem: indice, largura: r?.width ?? 0, altura: r?.height ?? 0, porTeclado: true });
-        setAlvo({ etapa, indice });
-        setAnuncio(`${nomeDoLead(leadId)} pego. Use as setas para escolher a etapa e a posição, espaço para soltar, Esc para cancelar.`);
-        return;
+  /*
+   * v6 · As teclas que valem ENQUANTO um card está pego moram AQUI, e são escutadas no documento
+   * (efeito abaixo) — não no card. Na v5 elas viviam no `onKeyDown` do card, e o card era desmontado
+   * no instante em que era pego: o foco caía no `body` e setas, Espaço e Esc não chegavam a ninguém.
+   * O card ficava preso no ar até recarregar a página. Devolve true quando consumiu a tecla.
+   */
+  const teclaComPego = useCallback(
+    (key: string): boolean => {
+      if (!arraste) return false;
+      if (key === " " || key === "Spacebar") {
+        soltar(false);
+        return true;
       }
-      if (!arraste || arraste.leadId !== leadId) return;
-      if (e.key === "Escape") {
-        e.preventDefault();
-        return soltar(true);
+      if (key === "Escape") {
+        soltar(true);
+        return true;
       }
-      if (!alvo) return;
+      if (!alvo) return false;
       const i = etapasDestino.indexOf(alvo.etapa);
-      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        e.preventDefault();
-        const prox = etapasDestino[e.key === "ArrowLeft" ? Math.max(0, i - 1) : Math.min(etapasDestino.length - 1, i + 1)];
-        if (!prox || prox === alvo.etapa) return;
-        const tamanho = ordemDaColuna(prox).filter((x) => x !== leadId).length;
+      if (key === "ArrowLeft" || key === "ArrowRight") {
+        const prox = etapasDestino[key === "ArrowLeft" ? Math.max(0, i - 1) : Math.min(etapasDestino.length - 1, i + 1)];
+        if (!prox || prox === alvo.etapa) return true;
+        const tamanho = ordemDaColuna(prox).filter((x) => x !== arraste.leadId).length;
         const indice = Math.min(alvo.indice, tamanho);
         setAlvo({ etapa: prox, indice });
         setAnuncio(`${nomeDaEtapa(prox)}, posição ${indice + 1} de ${tamanho + 1}.`);
-        return;
+        return true;
       }
-      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-        e.preventDefault();
-        const tamanho = ordemDaColuna(alvo.etapa).filter((x) => x !== leadId).length;
-        const indice = Math.max(0, Math.min(tamanho, alvo.indice + (e.key === "ArrowUp" ? -1 : 1)));
-        if (indice === alvo.indice) return;
+      if (key === "ArrowUp" || key === "ArrowDown") {
+        const tamanho = ordemDaColuna(alvo.etapa).filter((x) => x !== arraste.leadId).length;
+        const indice = Math.max(0, Math.min(tamanho, alvo.indice + (key === "ArrowUp" ? -1 : 1)));
+        if (indice === alvo.indice) return true;
         setAlvo({ ...alvo, indice });
         setAnuncio(`Posição ${indice + 1} de ${tamanho + 1}.`);
+        return true;
       }
+      return false;
     },
-    [arraste, alvo, etapasDestino, ordemDaColuna, nomeDoLead, nomeDaEtapa, soltar],
+    [arraste, alvo, etapasDestino, ordemDaColuna, nomeDaEtapa, soltar],
+  );
+
+  // enquanto há card pego por teclado, as teclas valem no documento inteiro — mesmo que o foco
+  // escape (remontagem, rolagem, clique fora). É a rede que faltava para Esc SEMPRE devolver o card.
+  useEffect(() => {
+    if (!arraste?.porTeclado) return;
+    function tecla(e: KeyboardEvent) {
+      if (teclaComPego(e.key)) e.preventDefault();
+    }
+    document.addEventListener("keydown", tecla);
+    return () => document.removeEventListener("keydown", tecla);
+  }, [arraste, teclaComPego]);
+
+  const teclaNoCard = useCallback(
+    (e: React.KeyboardEvent, leadId: string, etapa: string, indice: number) => {
+      // com um card já pego, quem manda é o listener do documento — aqui só se PEGA
+      if (arraste) return;
+      if (e.key !== " " && e.key !== "Spacebar") return;
+      e.preventDefault();
+      const el = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-card]");
+      const r = el?.getBoundingClientRect();
+      setArraste({ leadId, etapaOrigem: etapa, indiceOrigem: indice, largura: r?.width ?? 0, altura: r?.height ?? 0, porTeclado: true });
+      setAlvo({ etapa, indice });
+      setAnuncio(`${nomeDoLead(leadId)} pego. Use as setas para escolher a etapa e a posição, espaço para soltar, Esc para cancelar.`);
+    },
+    [arraste, nomeDoLead],
   );
 
   const propsCard = useCallback(
