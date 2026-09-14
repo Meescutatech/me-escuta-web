@@ -181,6 +181,30 @@ export interface ExcecaoConferencia {
 export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
   anotacao_adicionada: { tabela: "anotacao", por: "evento", coluna: "id" },
 
+  /*
+   * LIGAR/DESLIGAR AGENTE (14/09) — conferência por EFEITO, e não pela posição.
+   *
+   * `core.agente` não tem `ultima_posicao`: o projetor `porta.proj_config_agente` (0042/0107) faz
+   * `update core.agente set ativo = ...` e nada mais. Então o que se confere é o efeito esperado —
+   * o agente NOMEADO está no estado PEDIDO — que é justamente o que a tela afirma ao dizer "no ar".
+   *
+   * ⚠️ O filtro de `ativo` é obrigatório de propósito. Conferir só que a linha do agente existe
+   * aprovaria uma linha que já existia antes da ação: é assim que readback vira decoração. Em
+   * troca, um `config_atualizada` que só leve `config_patch`/`escopo_patch` (sem `ativo`) REPROVA
+   * aqui, por falta de dado para montar a releitura — e falhar fechado é o desfecho certo: quem
+   * trouxer esse caminho para cá declara como ele se confere, em vez de herdar um sucesso cego.
+   * (Hoje esse caminho é o da tela da Clara, que escreve direto e está na lista de herdados.)
+   */
+  config_atualizada: {
+    tabela: "agente",
+    por: "filtros",
+    coluna: "id",
+    filtros: [
+      { campo: "id", op: "igualPayload", dePayload: "agente_id" },
+      { campo: "ativo", op: "igualPayload", dePayload: "ativo" },
+    ],
+  },
+
   tarefa_criada: { tabela: "tarefa", por: "posicao", coluna: "ultima_posicao" },
   tarefa_concluida: { tabela: "tarefa", por: "posicao", coluna: "ultima_posicao" },
   tarefa_reatribuida: { tabela: "tarefa", por: "posicao", coluna: "ultima_posicao" },

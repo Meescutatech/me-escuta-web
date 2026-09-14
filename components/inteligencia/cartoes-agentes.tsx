@@ -3,7 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
+import { toast } from "@/components/ui/sonner";
+import { useRouter } from "next/navigation";
 import { Switch } from "@/components/ui/switch";
+import { alternarAgente } from "@/app/(app)/configuracoes/agentes/actions";
 import { DialogoLigarClara } from "@/components/inteligencia/dialogo-ligar-clara";
 import type { CanalEscolhivel } from "@/components/clara/canais-da-clara";
 
@@ -29,6 +32,11 @@ import type { AgenteInteligencia } from "@/lib/ensaio/inteligencia";
  * em eco (ver `glifos.tsx`) e perde a cor quando ele está desligado, para que a fileira inteira
  * se leia sem ler uma palavra. O rodapé é a parte que ninguém desenha e que é a mais importante
  * aqui: QUEM VALIDA o que esse agente propõe — é o que separa este sistema de um robô solto.
+ *
+ * 14/09/2026 — O INTERRUPTOR GRAVA. Ligar a Clara já gravava (o desvio para o `DialogoLigarClara`
+ * chama uma action real). DESLIGAR era `setLigado(v)`: a tela dizia "parado" com o agente ativo,
+ * respondendo a paciente. Agora os dois sentidos passam por `alternarAgente`, e o estado local só
+ * muda depois do banco confirmar.
  */
 
 export function CartoesAgentes({
@@ -36,12 +44,19 @@ export function CartoesAgentes({
   gestao,
   canaisClara = [],
   canaisEscolhidosClara = [],
+  ensaio = false,
 }: {
   agentes: AgenteInteligencia[];
   gestao: boolean;
   /** os números que a Clara pode assumir — só ela responde a paciente, só ela precisa disto. */
   canaisClara?: CanalEscolhivel[];
   canaisEscolhidosClara?: string[];
+  /**
+   * `true` só no modo ensaio, onde não há banco e o estado local É o comportamento certo. Default
+   * `false` de propósito: quem esquecer de passar vê um erro honesto do servidor, nunca um
+   * sucesso de mentira — o oposto do default errado custa a tela inteira.
+   */
+  ensaio?: boolean;
 }) {
   return (
     <div className="w-full px-6 py-7 2xl:px-8">
@@ -61,6 +76,7 @@ export function CartoesAgentes({
             gestao={gestao}
             canaisClara={canaisClara}
             canaisEscolhidosClara={canaisEscolhidosClara}
+            ensaio={ensaio}
           />
         ))}
       </div>
@@ -73,17 +89,47 @@ function CartaoAgente({
   gestao,
   canaisClara,
   canaisEscolhidosClara,
+  ensaio,
 }: {
   agente: AgenteInteligencia;
   gestao: boolean;
   canaisClara: CanalEscolhivel[];
   canaisEscolhidosClara: string[];
+  ensaio: boolean;
 }) {
+  const router = useRouter();
   const [dialogoClara, setDialogoClara] = React.useState(false);
   const emDev = emDesenvolvimento(a.pendencias);
   const reduzido = useReducedMotion();
   const [ligado, setLigado] = React.useState(a.ativo);
+  const [gravando, setGravando] = React.useState(false);
   const impedido = a.pendencias.length > 0;
+
+  React.useEffect(() => setLigado(a.ativo), [a.ativo]);
+
+  const alternar = async (v: boolean) => {
+    if (ensaio) {
+      setLigado(v);
+      return;
+    }
+    setGravando(true);
+    try {
+      const r = await alternarAgente(a.chave, v);
+      if (!r.ok) {
+        toast.error(v ? "Não ligou." : "Não desligou.", { description: r.motivo ?? "o servidor recusou" });
+        return;
+      }
+      setLigado(v);
+      toast.success(v ? `${a.nome} no ar.` : `${a.nome} parado.`, {
+        description: "Vale na próxima mensagem, e ficou registrado no ledger.",
+      });
+      router.refresh();
+    } catch (e) {
+      toast.error("Não gravou.", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setGravando(false);
+    }
+  };
 
   const autoNaRegua = a.autonomia.some((l) => l.nivel === "auto");
 
@@ -166,9 +212,9 @@ function CartaoAgente({
                   setDialogoClara(true);
                   return;
                 }
-                setLigado(v);
+                void alternar(v);
               }}
-              disabled={!gestao || emDev || (impedido && !ligado)}
+              disabled={!gestao || emDev || gravando || (impedido && !ligado)}
               aria-label={`${ligado ? "Desligar" : "Ligar"} ${a.nome}`}
             />
           </span>

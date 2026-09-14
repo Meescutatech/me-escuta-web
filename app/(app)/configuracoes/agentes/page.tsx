@@ -34,6 +34,7 @@ export default async function AgentesPage({ searchParams }: { searchParams: { ag
       <CartoesAgentes
         agentes={agentesInteligencia(new Date())}
         gestao={ensaio.papel === "owner" || ensaio.papel === "admin"}
+        ensaio
       />
     );
   }

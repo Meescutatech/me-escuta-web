@@ -180,6 +180,9 @@ export const TIPOS_ESCRITOS_WEB_B: string[] = [
   // inconferivel. Foi o portao `tipos_declarados` que exigiu esta linha aqui: sem ela, o literal
   // "canal_nivel_alterado" na action reprova estaticamente antes de chegar a producao.
   "canal_nivel_alterado",
+  // 14/09 · ligar/desligar agente pela tela de Agentes. Estreia com a linha em CONFERENCIA
+  // (por EFEITO: o `ativo` resultante em core.agente), nunca com exceção — o efeito é legível.
+  "config_atualizada",
   "config_publicada",
   "suporte_ticket_aberto",
   "suporte_ticket_comentado",

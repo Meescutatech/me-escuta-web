@@ -383,8 +383,11 @@ test("todo tipo escrito pela Web-B tem conferência OU exceção declarada", () 
   // 10 → 11 em 08/09/2026: entrou `canal_nivel_alterado` (D70). O número é atualizado no MESMO
   // commit que acrescenta o tipo, de propósito — é ele que obriga quem acrescenta uma escrita nova
   // a passar por aqui e declarar como ela se confere.
-  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 11);
+  // 11 → 12 em 14/09/2026: entrou `config_atualizada` (ligar/desligar agente pela tela de Agentes),
+  // com conferência por EFEITO — `core.agente.ativo` no estado pedido, não só a linha existir.
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 12);
   assert.ok(TIPOS_ESCRITOS_WEB_B.includes("canal_nivel_alterado"));
+  assert.ok(TIPOS_ESCRITOS_WEB_B.includes("config_atualizada"));
 });
 
 test("tipo NÃO declarado é FALHA, não sucesso — é a correção sobre o helper do F6", () => {
