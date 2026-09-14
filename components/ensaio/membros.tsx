@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { CheckIcon, CopyIcon, LinkIcon, MoreHorizontalIcon, PlusIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CheckIcon, CopyIcon, LinkIcon, MoreHorizontalIcon, PlusIcon, RefreshCwIcon, SearchIcon, UsersIcon, XIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,6 +21,17 @@ import { gerarAtividadeMembro } from "@/lib/ensaio/fixtures/membro-atividade";
 import { fotosEnsaio } from "@/lib/ensaio/fotos";
 import { CabecalhoCartaoPessoa, CartaoPessoa, desdeQuando, type NumeroDaPessoa, type Pessoa } from "@/components/pessoas/cartao-pessoa";
 import { PainelPessoa } from "@/components/pessoas/painel-pessoa";
+import { emailConviteValido } from "@/lib/membros";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  gerarConviteAberto,
+  gerarConvitePorCargo,
+  mudarCargo as acaoMudarCargo,
+  reativarAcesso as acaoReativarAcesso,
+  reenviarConvite as acaoReenviarConvite,
+  revogarAcesso as acaoRevogarAcesso,
+  revogarConvite as acaoRevogarConvite,
+} from "@/app/(app)/configuracoes/membros/actions";
 import { CascaConfig, Contagem } from "./casca-config";
 
 /**
@@ -36,6 +48,19 @@ import { CascaConfig, Contagem } from "./casca-config";
  *
  * O link continua sendo o meio (D91 R5: `canal='link'`, e-mail desligado). Pendentes com "expira
  * em": Twenty `SettingsWorkspaceMembersInviteTab.tsx:147-236`.
+ *
+ * 14/09/2026 — ESTA TELA VOLTA A GRAVAR. Os três commits de 11/09 que a promoveram ao caminho real
+ * religaram a LEITURA e deixaram a ESCRITA nos handlers locais do ensaio: revogar acesso era
+ * `setMembros`, revogar convite era `setConvites` com o toast "o link não abre mais" enquanto o
+ * link abria, e convidar fabricava `token: cnv_${Math.random()}` no NAVEGADOR — um convite que
+ * aparecia na lista, subia o contador e não existia em `core.convite` (medido: zero linhas no dia).
+ *
+ * A correção é de fiação, não de funcionalidade: as sete actions reais sempre estiveram em
+ * `membros/actions.ts`. Agora cada handler tem dois ramos, e o `ensaio` é quem escolhe:
+ *  · `ensaio === true`  → setState local. É o comportamento CERTO ali: a tela de demonstração não
+ *    tem banco, e o estado local é o que a faz funcionar sem um.
+ *  · `ensaio === false` → a action decide. O estado local só muda DEPOIS do servidor confirmar, e
+ *    recusa vira toast de erro com o motivo que o Postgres devolveu — nunca sucesso silencioso.
  */
 export function MembrosEnsaio({
   meuId,
@@ -61,9 +86,25 @@ export function MembrosEnsaio({
    */
   ensaio?: boolean;
 }) {
+  const router = useRouter();
   const agora = useMemo(() => new Date(agoraIso), [agoraIso]);
   const [membros, setMembros] = useState(membrosIniciais);
   const [convites, setConvites] = useState(convitesIniciais);
+  /** id do alvo em gravação — trava o botão e evita a segunda escrita em cima da primeira. */
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  /** link devolvido pelo servidor ao renovar um convite (o antigo morre no ato). */
+  const [linkRenovado, setLinkRenovado] = useState<{ nome: string; url: string } | null>(null);
+
+  // Depois de gravar, o servidor é quem manda: as actions chamam `revalidatePath` e o
+  // `router.refresh()` reexecuta a página, trazendo props novas. Sem este resync, uma mudança que
+  // entrou PELA METADE (mudar cargo são até três eventos, não uma transação) continuaria na tela
+  // como se tivesse entrado inteira — que é a classe de mentira que esta rodada existe para tirar.
+  useEffect(() => {
+    setMembros(membrosIniciais);
+  }, [membrosIniciais]);
+  useEffect(() => {
+    setConvites(convitesIniciais);
+  }, [convitesIniciais]);
   const [busca, setBusca] = useState("");
   const [cargoFiltro, setCargoFiltro] = useState<string>("todos");
   const [convidando, setConvidando] = useState(false);
@@ -109,6 +150,41 @@ export function MembrosEnsaio({
     foto: fotos[m.id] ?? null,
   });
 
+  /**
+   * O casco comum das quatro escritas. `aoConfirmar` só roda quando o servidor aceitou — é o
+   * ponto inteiro desta correção. Recusa devolve o motivo do Postgres, que já vem em PT-BR
+   * ("sem permissao: ...", "o owner nao pode ser revogado"), e não um "algo deu errado".
+   */
+  const gravar = async (
+    chave: string,
+    acao: () => Promise<{ ok: boolean; motivo?: string }>,
+    aoConfirmar: () => void,
+  ): Promise<boolean> => {
+    setOcupado(chave);
+    try {
+      const r = await acao();
+      if (!r.ok) {
+        toast.error("Não gravou.", { description: r.motivo ?? "o servidor recusou, sem motivo declarado" });
+        return false;
+      }
+      aoConfirmar();
+      router.refresh();
+      return true;
+    } catch (e) {
+      toast.error("Não gravou.", { description: e instanceof Error ? e.message : String(e) });
+      return false;
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  /**
+   * Copiar o link de um convite que JÁ existe só é possível no ensaio.
+   *
+   * Fora dele o token não volta: `core.v_convite` não o expõe e `ops.convite_token` guarda só o
+   * hash — quem tem o token entra, então guardá-lo legível seria guardar a credencial. Recuperar
+   * um link perdido é RENOVAR (o antigo morre no ato). Por isso o botão só aparece quando há token.
+   */
   const copiarLink = async (c: ConviteEnsaio) => {
     const url = `${window.location.origin}/convite/aceitar?token=${c.token}`;
     try {
@@ -119,33 +195,93 @@ export function MembrosEnsaio({
     }
   };
 
-  const renovar = (c: ConviteEnsaio) => {
-    setConvites((xs) =>
-      xs.map((x) =>
-        x.id === c.id
-          ? { ...x, status: "pendente" as const, expira_em: new Date(agora.getTime() + 7 * 86_400_000).toISOString(), token: `cnv_${Math.random().toString(36).slice(2, 12)}` }
-          : x,
-      ),
-    );
-    toast.success("Convite renovado.", { description: "Link novo, 7 dias. O anterior não abre mais." });
+  const renovar = async (c: ConviteEnsaio) => {
+    if (ensaio) {
+      setConvites((xs) =>
+        xs.map((x) =>
+          x.id === c.id
+            ? { ...x, status: "pendente" as const, expira_em: new Date(agora.getTime() + 7 * 86_400_000).toISOString(), token: `cnv_${Math.random().toString(36).slice(2, 12)}` }
+            : x,
+        ),
+      );
+      toast.success("Convite renovado.", { description: "Link novo, 7 dias. O anterior não abre mais." });
+      return;
+    }
+    setOcupado(`convite:${c.id}`);
+    try {
+      const r = await acaoReenviarConvite(c.id);
+      if (!r.ok || !r.url) {
+        toast.error("Não gravou.", { description: r.motivo ?? "o servidor não devolveu o link novo" });
+        return;
+      }
+      setConvites((xs) =>
+        xs.map((x) => (x.id === c.id ? { ...x, status: "pendente" as const, expira_em: r.expira_em ?? x.expira_em } : x)),
+      );
+      setLinkRenovado({ nome: c.nome ?? c.email ?? "quem foi convidado", url: r.url });
+      router.refresh();
+    } finally {
+      setOcupado(null);
+    }
   };
 
-  const revogarConvite = (c: ConviteEnsaio) => {
-    setConvites((xs) => xs.filter((x) => x.id !== c.id));
-    toast("Convite revogado.", { description: `O link de ${c.nome ?? c.email ?? "quem foi convidado"} não abre mais.` });
+  const revogarConvite = async (c: ConviteEnsaio) => {
+    const tirar = () => setConvites((xs) => xs.filter((x) => x.id !== c.id));
+    const avisar = () =>
+      toast("Convite revogado.", { description: `O link de ${c.nome ?? c.email ?? "quem foi convidado"} não abre mais.` });
+    if (ensaio) {
+      tirar();
+      avisar();
+      return;
+    }
+    if (await gravar(`convite:${c.id}`, () => acaoRevogarConvite(c.id), tirar)) avisar();
   };
 
-  const revogarAcesso = (m: MembroEnsaio) => {
-    setMembros((xs) => xs.map((x) => (x.id === m.id ? { ...x, ativo: !x.ativo } : x)));
-    toast(m.ativo ? "Acesso revogado." : "Acesso devolvido.", { description: m.nome });
+  const revogarAcesso = async (m: MembroEnsaio) => {
+    const virar = () => setMembros((xs) => xs.map((x) => (x.id === m.id ? { ...x, ativo: !x.ativo } : x)));
+    const avisar = () => toast(m.ativo ? "Acesso revogado." : "Acesso devolvido.", { description: m.nome });
+    if (ensaio) {
+      virar();
+      avisar();
+      return;
+    }
+    // Revogar e devolver são eventos DIFERENTES (`acesso_revogado` / `acesso_reativado`, 0035),
+    // não um interruptor — o ledger registra os dois sentidos com autor e hora.
+    const acao = m.ativo ? () => acaoRevogarAcesso(m.id) : () => acaoReativarAcesso(m.id);
+    if (await gravar(`membro:${m.id}`, acao, virar)) avisar();
   };
 
-  const mudarCargo = (m: MembroEnsaio, chave: string) => {
+  const mudarCargo = async (m: MembroEnsaio, chave: string) => {
     const c = cargoPorChave(chave);
     if (!c) return;
     const { papel, departamentos: deps } = conviteDoCargo(c);
-    setMembros((xs) => xs.map((x) => (x.id === m.id ? { ...x, papel, departamentos: deps } : x)));
-    toast.success(`${m.nome.split(" ")[0]} agora é ${c.nome}.`, { description: c.resumo });
+    const aplicar = () => setMembros((xs) => xs.map((x) => (x.id === m.id ? { ...x, papel, departamentos: deps } : x)));
+    const avisar = () => toast.success(`${m.nome.split(" ")[0]} agora é ${c.nome}.`, { description: c.resumo });
+    if (ensaio) {
+      aplicar();
+      avisar();
+      return;
+    }
+    // Quem expande o cargo em papel + lotação é o BANCO (`core.expandir_cargo`); o que a tela
+    // mostra acima é a mesma expansão, não uma segunda verdade.
+    setOcupado(`membro:${m.id}`);
+    try {
+      const r = await acaoMudarCargo(m.id, chave);
+      if (!r.ok) {
+        const entrou = r.passos.filter((x) => x.ok).length;
+        toast.error(entrou > 0 ? "O cargo mudou pela metade." : "Não gravou.", {
+          description: r.motivo ?? "o servidor recusou, sem motivo declarado",
+        });
+        // Mesmo na falha parcial: o que entrou, entrou. Recarregar é o que faz a tela contar a
+        // verdade em vez de continuar mostrando o cargo antigo — ou o novo.
+        if (entrou > 0) router.refresh();
+        return;
+      }
+      aplicar();
+      avisar();
+      router.refresh();
+    } finally {
+      setOcupado(null);
+    }
   };
 
   const aberto = membros.find((m) => m.id === abertoId) ?? null;
@@ -229,7 +365,11 @@ export function MembrosEnsaio({
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => setAbertoId(m.id)}>Abrir o perfil</DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onClick={() => revogarAcesso(m)}>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={ocupado === `membro:${m.id}`}
+                        onClick={() => void revogarAcesso(m)}
+                      >
                         {m.ativo ? "Revogar acesso" : "Devolver acesso"}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -246,15 +386,30 @@ export function MembrosEnsaio({
           <h2 className="text-ui-13 font-semibold text-foreground">Convites pendentes</h2>
           <div className="overflow-hidden rounded-lg border border-border bg-card">
             {pendentes.map((c, i) => {
-              const cargo = cargoDoConvite(c);
+              // o cargo PEDIDO manda sobre o cargo derivado: `cargoDoConvite` reconstrói a partir de
+              // papel + lotação e empata entre dois cargos que expandem igual
+              const cargo = cargoPorChave(c.cargo) ?? cargoDoConvite(c);
+              const grupo = c.canal === "link_aberto";
               const prazo = expiraEm(c.expira_em, agora);
               return (
                 <div key={c.id} className={cn("flex items-center gap-4 px-4 py-3", i > 0 && "border-t border-border")}>
                   <span className="grid size-10 shrink-0 place-items-center rounded-full border border-dashed border-border text-muted-foreground">
-                    <LinkIcon className="size-4" />
+                    {grupo ? <UsersIcon className="size-4" /> : <LinkIcon className="size-4" />}
                   </span>
                   <div className="min-w-0 flex-[1.6]">
-                    <div className="truncate text-[15px] font-semibold text-foreground">{c.nome ?? c.email ?? "Convite por link"}</div>
+                    {/* No link aberto o e-mail é um marcador `.invalid` montado pelo runtime para
+                        satisfazer a guarda do banco. Mostrá-lo seria exibir um endereço que não é
+                        de ninguém — quem identifica o link é o CARGO, na linha de baixo. */}
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[15px] font-semibold text-foreground">
+                        {grupo ? "Link do grupo" : (c.nome ?? c.email ?? "Convite por link")}
+                      </span>
+                      {grupo && (
+                        <Badge variant="muted" size="sm">
+                          várias pessoas
+                        </Badge>
+                      )}
+                    </div>
                     <div className="mt-0.5 text-[13px]">
                       <span className="font-medium text-foreground">{cargo?.nome ?? "Sem cargo"}</span>
                       <span className="text-muted-foreground">
@@ -267,14 +422,37 @@ export function MembrosEnsaio({
                   <span className="hidden w-[150px] shrink-0 text-right text-[13px] text-muted-foreground lg:block">criado {desdeQuando(c.criado_em, agora)}</span>
                   {podeGerir && (
                     <div className="flex shrink-0 items-center gap-1">
-                      <Button variant="outline" size="sm" onClick={() => copiarLink(c)}>
-                        <CopyIcon data-icon="inline-start" />
-                        Copiar link
-                      </Button>
-                      <Button variant="ghost" size="icon-sm" aria-label="Renovar convite" onClick={() => renovar(c)}>
-                        <RefreshCwIcon />
-                      </Button>
-                      <Button variant="ghost" size="icon-sm" aria-label="Revogar convite" onClick={() => revogarConvite(c)}>
+                      {c.token ? (
+                        <Button variant="outline" size="sm" onClick={() => copiarLink(c)}>
+                          <CopyIcon data-icon="inline-start" />
+                          Copiar link
+                        </Button>
+                      ) : (
+                        // Sem token guardado não há link para copiar — e é de propósito. O botão
+                        // diz o que de fato acontece: gera um link NOVO e mata o anterior.
+                        <Button variant="outline" size="sm" disabled={ocupado === `convite:${c.id}`} onClick={() => void renovar(c)}>
+                          <RefreshCwIcon data-icon="inline-start" />
+                          Gerar link novo
+                        </Button>
+                      )}
+                      {c.token && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Renovar convite"
+                          disabled={ocupado === `convite:${c.id}`}
+                          onClick={() => void renovar(c)}
+                        >
+                          <RefreshCwIcon />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Revogar convite"
+                        disabled={ocupado === `convite:${c.id}`}
+                        onClick={() => void revogarConvite(c)}
+                      >
                         <XIcon />
                       </Button>
                     </div>
@@ -297,8 +475,8 @@ export function MembrosEnsaio({
           agora={agora}
           ensaio={ensaio}
           onFechar={() => setAbertoId(null)}
-          onRevogar={revogarAcesso}
-          onMudarCargo={mudarCargo}
+          onRevogar={(m) => void revogarAcesso(m)}
+          onMudarCargo={(m, chave) => void mudarCargo(m, chave)}
         />
       )}
 
@@ -308,8 +486,12 @@ export function MembrosEnsaio({
         rotuloDepartamento={rotuloDep}
         agora={agora}
         criadoPor={meuId}
+        ensaio={ensaio}
         aoGerar={(c) => setConvites((xs) => [...xs, c])}
+        aoGravar={() => router.refresh()}
       />
+
+      <DialogoLinkNovo aberto={linkRenovado} aoFechar={() => setLinkRenovado(null)} />
     </CascaConfig>
   );
 }
@@ -328,51 +510,117 @@ function DialogoConvite({
   rotuloDepartamento,
   agora,
   aoGerar,
+  aoGravar,
   criadoPor,
+  ensaio,
 }: {
   aberto: boolean;
   aoFechar: () => void;
   rotuloDepartamento: (c: string) => string;
   agora: Date;
   aoGerar: (c: ConviteEnsaio) => void;
+  /** avisa a tela que o servidor gravou, para ela recarregar da fonte. */
+  aoGravar: () => void;
   criadoPor: string;
+  ensaio: boolean;
 }) {
   const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
+  const [alcance, setAlcance] = useState<"pessoa" | "grupo">("pessoa");
   const [chaveCargo, setChaveCargo] = useState<string>("sdr");
   const [gerado, setGerado] = useState<ConviteEnsaio | null>(null);
+  const [linkReal, setLinkReal] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [gerando, setGerando] = useState(false);
   const [copiado, setCopiado] = useState(false);
 
   const cargo = (cargoPorChave(chaveCargo) ?? CARGOS_ATIVOS[0]) as Cargo;
+  const paraGrupo = alcance === "grupo";
+  const emailOk = paraGrupo || emailConviteValido(email);
 
   const fechar = () => {
     aoFechar();
     setTimeout(() => {
       setNome("");
+      setEmail("");
+      setAlcance("pessoa");
       setChaveCargo("sdr");
       setGerado(null);
+      setLinkReal(null);
+      setErro(null);
       setCopiado(false);
     }, 200);
   };
 
-  const gerar = () => {
-    const { papel, departamentos } = conviteDoCargo(cargo);
-    const c: ConviteEnsaio = {
-      id: `c0000000-0000-4000-8000-${Date.now().toString().slice(-12)}`,
-      nome: nome.trim() || null,
-      email: null,
-      papel,
-      departamentos,
-      criado_em: agora.toISOString(),
-      expira_em: new Date(agora.getTime() + 7 * 86_400_000).toISOString(),
-      status: "pendente",
-      token: `cnv_${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 8)}`,
-      criado_por: criadoPor,
-    };
-    setGerado(c);
-    aoGerar(c);
+  /**
+   * GERAR O CONVITE.
+   *
+   * No ensaio o convite é de mentira e isso é o certo — não há banco. Fora do ensaio quem gera é o
+   * runtime: ele sorteia `randomBytes(32).toString("base64url")` (43 caracteres, sem prefixo),
+   * grava só o HASH em `ops.convite_token` e devolve a URL montada. A tela nunca inventa token:
+   * era exatamente isso que produzia o link `cnv_…` que abria e não entrava ninguém.
+   */
+  const gerar = async () => {
+    if (ensaio) {
+      const { papel, departamentos } = conviteDoCargo(cargo);
+      const c: ConviteEnsaio = {
+        id: `c0000000-0000-4000-8000-${Date.now().toString().slice(-12)}`,
+        nome: paraGrupo ? null : nome.trim() || null,
+        email: paraGrupo ? null : email.trim() || null,
+        canal: paraGrupo ? "link_aberto" : "link",
+        cargo: chaveCargo,
+        papel,
+        departamentos,
+        criado_em: agora.toISOString(),
+        expira_em: new Date(agora.getTime() + 7 * 86_400_000).toISOString(),
+        status: "pendente",
+        token: `cnv_${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 8)}`,
+        criado_por: criadoPor,
+      };
+      setGerado(c);
+      aoGerar(c);
+      return;
+    }
+
+    setErro(null);
+    setGerando(true);
+    try {
+      const r = paraGrupo ? await gerarConviteAberto(chaveCargo) : await gerarConvitePorCargo(email, chaveCargo);
+      if (!r.ok || !r.url) {
+        setErro(r.motivo ?? "o servidor não devolveu o link");
+        return;
+      }
+      const { papel, departamentos } = conviteDoCargo(cargo);
+      setLinkReal(r.url);
+      setGerado({
+        id: r.convite_id ?? "",
+        nome: paraGrupo ? null : nome.trim() || null,
+        // no link aberto o e-mail é um marcador `.invalid` montado pelo runtime — a tela nunca o
+        // mostra, e guardá-lo aqui faria a lista exibir um endereço que não é de ninguém
+        email: paraGrupo ? null : email.trim().toLowerCase(),
+        canal: paraGrupo ? "link_aberto" : "link",
+        cargo: chaveCargo,
+        papel,
+        departamentos,
+        criado_em: agora.toISOString(),
+        expira_em: r.expira_em ?? new Date(agora.getTime() + 7 * 86_400_000).toISOString(),
+        status: "pendente",
+        // vazio de propósito: o token existe uma vez só, na resposta. Guardá-lo na tela seria
+        // guardar a credencial em memória do navegador sem motivo — o link já está em `linkReal`.
+        token: "",
+        criado_por: criadoPor,
+      });
+      aoGravar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGerando(false);
+    }
   };
 
-  const link = gerado ? `${typeof window !== "undefined" ? window.location.origin : ""}/convite/aceitar?token=${gerado.token}` : "";
+  const link =
+    linkReal ??
+    (gerado?.token ? `${typeof window !== "undefined" ? window.location.origin : ""}/convite/aceitar?token=${gerado.token}` : "");
 
   const copiar = async () => {
     try {
@@ -435,15 +683,71 @@ function DialogoConvite({
                 </ul>
               </div>
 
-              <FormItemLayout label="Nome" htmlFor="convite-nome" description="Opcional — só para você lembrar para quem mandou.">
-                <Input id="convite-nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Priscila Martins" />
-              </FormItemLayout>
+              {/* Quem pode usar o link. As duas opções se leem como consequência, não como rótulo:
+                  a diferença entre elas não é "um" e "vários" — é quem consegue entrar se o link
+                  vazar, e isso tem de estar escrito na hora da escolha, não num aviso depois. */}
+              <RadioGroup value={alcance} onValueChange={(v) => setAlcance(v as "pessoa" | "grupo")}>
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <RadioGroupItem value="pessoa" className="mt-0.5" />
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px] font-medium text-foreground">Uma pessoa</span>
+                    <span className="block text-ui-12 text-muted-foreground">
+                      Você informa o e-mail dela. Só quem tiver esse e-mail entra, e o link morre no primeiro uso.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <RadioGroupItem value="grupo" className="mt-0.5" />
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px] font-medium text-foreground">Várias pessoas</span>
+                    <span className="block text-ui-12 text-muted-foreground">
+                      Um link só, para mandar no grupo. Quem abrir entra como {cargo.nome} e escolhe o próprio e-mail —
+                      inclusive quem receber o link de outra pessoa. Revogue quando a turma terminar.
+                    </span>
+                  </span>
+                </label>
+              </RadioGroup>
+
+              {!paraGrupo && (
+                <>
+                  <FormItemLayout
+                    label="E-mail"
+                    required
+                    htmlFor="convite-email"
+                    description="É por ele que o convite é DESTA pessoa: o aceite confere o e-mail, e só quem o tiver entra por este link."
+                  >
+                    <Input
+                      id="convite-email"
+                      type="email"
+                      autoComplete="off"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setErro(null);
+                      }}
+                      placeholder="priscila@meescuta.com"
+                    />
+                  </FormItemLayout>
+
+                  <FormItemLayout label="Nome" htmlFor="convite-nome" description="Opcional — só para você lembrar para quem mandou.">
+                    <Input id="convite-nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Priscila Martins" />
+                  </FormItemLayout>
+                </>
+              )}
+
+              {erro && (
+                <p role="alert" className="text-[13px] text-destructive">
+                  {erro}
+                </p>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={fechar}>
                 Cancelar
               </Button>
-              <Button onClick={gerar}>Gerar link</Button>
+              <Button disabled={!emailOk || gerando} onClick={() => void gerar()}>
+                {gerando ? "Gerando…" : paraGrupo ? "Gerar link do grupo" : "Gerar link"}
+              </Button>
             </DialogFooter>
           </>
         ) : (
@@ -451,7 +755,9 @@ function DialogoConvite({
             <DialogHeader>
               <DialogTitle>Link pronto</DialogTitle>
               <DialogDescription>
-                {gerado.nome ? `${gerado.nome} entra como ${cargo.nome}.` : `Quem abrir entra como ${cargo.nome}.`} O link vale 7 dias e serve uma vez só.
+                {aberto
+                  ? `Quem abrir entra como ${cargo.nome}. O link vale 7 dias e serve para várias pessoas — revogue quando a turma terminar.`
+                  : `${gerado.nome ?? gerado.email ?? "Quem abrir"} entra como ${cargo.nome}. O link vale 7 dias e serve uma vez só.`}
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2">
@@ -462,13 +768,65 @@ function DialogoConvite({
               </Button>
             </div>
             <p className="text-ui-12 text-muted-foreground">
-              Mande pelo WhatsApp dela. Enquanto não for aceito, o convite fica em pendentes e você pode revogar.
+              {aberto
+                ? "Mande no grupo. Ele fica em pendentes até você revogar — e revogar mata o link para todo mundo na hora."
+                : "Mande pelo WhatsApp dela. Enquanto não for aceito, o convite fica em pendentes e você pode revogar."}
             </p>
             <DialogFooter>
               <Button onClick={fechar}>Fechar</Button>
             </DialogFooter>
           </>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * LINK NOVO depois de renovar um convite.
+ *
+ * O link aparece UMA vez, e só aqui: renovar troca o token e o antigo morre no ato (spec §4.3).
+ * Se esta janela fechar sem ninguém copiar, o caminho é renovar de novo — não há onde reler.
+ */
+function DialogoLinkNovo({ aberto, aoFechar }: { aberto: { nome: string; url: string } | null; aoFechar: () => void }) {
+  const [copiado, setCopiado] = useState(false);
+  const copiar = async () => {
+    if (!aberto) return;
+    try {
+      await navigator.clipboard.writeText(aberto.url);
+      setCopiado(true);
+      toast.success("Link copiado.");
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      /* o campo continua selecionável */
+    }
+  };
+  return (
+    <Dialog open={aberto !== null} onOpenChange={(o) => !o && aoFechar()}>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>Link novo</DialogTitle>
+          <DialogDescription>
+            O convite de {aberto?.nome} foi renovado: vale 7 dias e o link anterior não abre mais. Copie agora — ele não
+            volta a aparecer.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center gap-2">
+          <Input
+            readOnly
+            value={aberto?.url ?? ""}
+            className="font-mono text-ui-12"
+            onFocus={(e) => e.currentTarget.select()}
+            aria-label="Link do convite"
+          />
+          <Button variant="outline" onClick={() => void copiar()} className="shrink-0">
+            {copiado ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}
+            {copiado ? "Copiado" : "Copiar"}
+          </Button>
+        </div>
+        <DialogFooter>
+          <Button onClick={aoFechar}>Fechar</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

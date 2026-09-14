@@ -16,16 +16,33 @@ import { lerTituloDaRota } from "../lib/header/titulos.ts";
  * F4 (27/08) — navegação e header. O que se prova aqui é a LISTA (o que entra, o que saiu, em que
  * ordem), o contrato `contexto` com a F9 e o menu do avatar. O que só o navegador prova (foco,
  * hover, Esc) fica no QA humano.
+ *
+ * ── ATUALIZADO em 14/09, e a razão importa mais que o ajuste ──────────────────────────────────
+ * Cinco testes daqui falhavam na `main` desde 11/09. Não era regressão: o `c86f1c1` ("o arco vai
+ * para o centro do header e vira a presença do sistema inteiro") mudou a navegação DE PROPÓSITO e
+ * deixou o teste para trás. Medido por `git log`: `lib/header/navegacao.ts` e `components/header.tsx`
+ * mudaram em 11/09; este arquivo parou em 10/09 (`f284541`). O código está certo, o teste é que
+ * estava velho.
+ *
+ * O que o `c86f1c1` decidiu, e o que estes testes passam a guardar:
+ *  · **o Jarvis deixou de ser DESTINO** — saiu da sidebar e virou o arco no centro do header, em
+ *    toda tela. A rota `/jarvis` continua existindo (quem tem o link chega);
+ *  · **os três botões da direita do header saíram** — o gatilho que levava a `/jarvis`, o "relatar
+ *    desta tela" e o SINO. O arco os substitui: quem nota que algo precisa de atenção é o Jarvis,
+ *    e duas fontes para o mesmo fato fazem a segunda envelhecer.
+ * Nenhum teste foi apagado: cada um passou a afirmar o contrato de hoje, e o que ele afirma falha
+ * se alguém devolver a aba do Jarvis à sidebar ou o sino ao header.
  */
 
 const base = { pathname: "/funil", contFunil: 1234, contNaoLidas: 0, contVencidas: null };
 
-test("Jarvis é o primeiro item e Dashboard o segundo", () => {
+test("o Jarvis SAIU da sidebar (11/09) — Dashboard voltou a ser o primeiro item", () => {
   const it = itensSidebar(base);
-  assert.deepEqual(it.slice(0, 2).map((i) => [i.href, i.rotulo]), [
-    ["/jarvis", "Jarvis"],
-    ["/", "Dashboard"],
-  ]);
+  assert.deepEqual([it[0].href, it[0].rotulo], ["/", "Dashboard"]);
+  assert.ok(
+    !it.some((i) => i.href.startsWith("/jarvis") || i.rotulo === "Jarvis"),
+    "o Jarvis não é destino: mora no arco do header, em toda tela",
+  );
 });
 
 test("Fila de validação, Configurações e Relatar problema SAÍRAM do menu", () => {
@@ -37,12 +54,12 @@ test("Fila de validação, Configurações e Relatar problema SAÍRAM do menu", 
   assert.ok(!hrefs.some((h) => h.startsWith("/fila") || h.startsWith("/configuracoes") || h.startsWith("/suporte")));
 });
 
-test("ordem completa: Jarvis · Dashboard · Funil · Conversas · Tarefas — Marketing SAIU (virou aba do dashboard, W-D4)", () => {
+test("ordem completa: Dashboard · Funil · Conversas · Tarefas — Marketing (W-D4) e Jarvis (c86f1c1) SAÍRAM", () => {
   assert.deepEqual(
     itensSidebar({ ...base, verMarketing: true }).map((i) => i.rotulo),
-    ["Jarvis", "Dashboard", "Funil", "Conversas", "Tarefas"],
+    ["Dashboard", "Funil", "Conversas", "Tarefas"],
   );
-  assert.equal(itensSidebar(base).length, 5, "com ou sem marketing são 5");
+  assert.equal(itensSidebar(base).length, 4, "com ou sem marketing são 4");
 });
 
 test("contadores: funil sempre que houver número; conversas/tarefas só acima de zero", () => {
@@ -54,15 +71,26 @@ test("contadores: funil sempre que houver número; conversas/tarefas só acima d
   assert.equal(por.Tarefas.cont, "3");
   assert.equal(por.Tarefas.tom, "vermelho");
   assert.equal(por.Tarefas.ponto, true);
-  assert.equal(por.Jarvis.cont, null, "Jarvis não tem badge — a badge da fila morreu com ela");
+  assert.equal(por.Dashboard.cont, null, "Dashboard não tem badge");
+  assert.ok(!("Jarvis" in por), "não há item Jarvis para contar — ele não está na sidebar");
 });
 
 test("ativo: `/` só casa exato; os outros casam por prefixo", () => {
   const raiz = itensSidebar({ ...base, pathname: "/" });
   assert.equal(raiz.find((i) => i.rotulo === "Dashboard")!.ativa, true);
-  const jarvis = itensSidebar({ ...base, pathname: "/jarvis?contexto=%2Ffunil" });
-  assert.equal(jarvis.find((i) => i.rotulo === "Jarvis")!.ativa, true);
-  assert.equal(jarvis.find((i) => i.rotulo === "Dashboard")!.ativa, false);
+  assert.equal(raiz.find((i) => i.rotulo === "Funil")!.ativa, false);
+
+  const dentroDoFunil = itensSidebar({ ...base, pathname: "/funil/6f0c" });
+  assert.equal(dentroDoFunil.find((i) => i.rotulo === "Funil")!.ativa, true);
+  assert.equal(
+    dentroDoFunil.find((i) => i.rotulo === "Dashboard")!.ativa,
+    false,
+    "`/` não pode casar por prefixo, senão o Dashboard fica aceso em TODA rota",
+  );
+
+  // a rota `/jarvis` continua existindo e não acende item nenhum — ela não está no menu
+  const noJarvis = itensSidebar({ ...base, pathname: "/jarvis" });
+  assert.ok(noJarvis.every((i) => !i.ativa), "nenhum item da sidebar acende em /jarvis");
 });
 
 test("título da raiz acompanha o menu: Dashboard, não Visão geral", () => {
@@ -126,9 +154,15 @@ test("menu do avatar é role=menu com menuitems, fecha com Esc e tem Configuraç
   assert.match(identidade, /method="post"/);
 });
 
-test("header tem o gatilho do Jarvis ao lado do sino e o Relatar problema desta tela", () => {
-  assert.match(header, /<JarvisGatilho usuarioId=\{usuarioId\} papel=\{meuPapel\} \/>/);
-  assert.match(header, /<RelatarDestaTela/);
-  assert.ok(header.indexOf("<JarvisGatilho") < header.indexOf("<Sino"), "Jarvis vem antes do sino");
+test("header: o arco do Jarvis no centro — e os três botões da direita saíram junto", () => {
+  assert.match(header, /<ArcoHeader \/>/, "o arco é o que ocupa o centro do header");
+  assert.match(header, /-translate-x-1\/2/, "centro da TELA, não do espaço que sobra — senão ele anda a cada rota");
+  for (const [tag, porque] of [
+    ["<JarvisGatilho", "o Jarvis não é mais destino: o arco responde na própria tela"],
+    ["<Sino", "uma fonte só de atenção — o aviso é do Jarvis, e sino ao lado envelhece"],
+    ["<RelatarDestaTela", "saiu com os outros dois em 11/09"],
+  ] as const) {
+    assert.ok(!header.includes(tag), `${tag} não pode voltar ao header: ${porque}`);
+  }
   assert.ok(!/data-slot="jarvis"/.test(header), "o slot vazio foi ocupado");
 });

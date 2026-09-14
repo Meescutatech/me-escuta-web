@@ -76,7 +76,24 @@ export const COLUNAS_CARD_BASE =
  */
 export const COLUNAS_ULTIMA_MENSAGEM = "ultima_mensagem_corpo,ultima_mensagem_em,ultima_mensagem_direcao";
 
-export const COLUNAS_CARD = `${COLUNAS_CARD_BASE},${COLUNAS_ULTIMA_MENSAGEM}`;
+/**
+ * H5 (10/09) · a CIDADE declarada pelo paciente. Coluna própria, e não mais uma dentro do bloco
+ * acima, pelo mesmo motivo operacional que separou as três de mensagem — e por um a mais, medido:
+ * com UM degrau só, no dia em que faltasse a coluna de cidade, a primeira consulta erraria por
+ * causa dela e o fallback cairia DIRETO na base, perdendo a linha de última mensagem, que hoje
+ * funciona em produção. Uma escada de três garante que se perde só o que falta.
+ *
+ * ⚠️ Conferido em 14/09 contra `core.v_lead_card` VIVA: a coluna `cidade` está lá. O degrau não é
+ * teoria — é o que impede o board de esvaziar se a view for reconstruída sem ela.
+ */
+export const COLUNAS_CIDADE = "cidade";
+
+export const COLUNAS_CARD_SEM_CIDADE = `${COLUNAS_CARD_BASE},${COLUNAS_ULTIMA_MENSAGEM}`;
+
+export const COLUNAS_CARD = `${COLUNAS_CARD_SEM_CIDADE},${COLUNAS_CIDADE}`;
+
+/** A escada, do mais completo ao mínimo. Quem consulta desce por ela até parar de errar. */
+export const DEGRAU_COLUNAS_CARD: readonly string[] = [COLUNAS_CARD, COLUNAS_CARD_SEM_CIDADE, COLUNAS_CARD_BASE];
 
 /**
  * As três colunas de última mensagem do contrato → o objeto que o card desenha e que a ordem

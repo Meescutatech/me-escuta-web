@@ -22,6 +22,12 @@ export interface ResultadoAcao {
   motivo?: string;
 }
 
+/** Vínculo com departamento — o formato que `core.expandir_cargo` devolve e que o evento leva. */
+export interface VinculoConvite {
+  departamento: string;
+  papel_no_departamento: "membro" | "gestor";
+}
+
 export interface ResultadoConvite extends ResultadoAcao {
   url?: string;
   convite_id?: string;
@@ -119,4 +125,159 @@ export async function reenviarConvite(conviteId: string): Promise<ResultadoConvi
 
 export async function revogarConvite(conviteId: string): Promise<ResultadoConvite> {
   return chamarConvites("/admin/convites/revogar", { convite_id: conviteId });
+}
+
+/**
+ * CONVITE PELA TELA — por CARGO (0338), que é o que a tela de Membros pergunta.
+ *
+ * `gerarLinkConvite` acima manda `papel` e continua existindo para o degrade `TabelaMembros`.
+ * Esta manda `cargo`, e quem expande para papel + lotação é o BANCO (`core.expandir_cargo`).
+ * Duas rotas, um caminho: as duas caem no mesmo `POST /admin/convites`, que aceita um ou outro
+ * (runtime `src/convites/servidor.ts:187`) — o que não existe é convite sem nenhum dos dois.
+ *
+ * O e-mail é OBRIGATÓRIO e não é burocracia: `porta.criar_convite` grava o convite nele, o aceite
+ * confere `v_email <> c.email`, e é por ele que o sistema sabe que este link é DESTA pessoa. O
+ * modal não pedia e-mail — era o sintoma mais visível de que ele não falava com o servidor.
+ */
+export async function gerarConvitePorCargo(email: string, cargo: string): Promise<ResultadoConvite> {
+  const limpo = email.trim().toLowerCase();
+  if (!limpo.includes("@")) return { ok: false, motivo: "informe um e-mail válido" };
+  if (!cargo.trim()) return { ok: false, motivo: "escolha um cargo" };
+  return chamarConvites("/admin/convites", { email: limpo, cargo: cargo.trim(), canal: "link" });
+}
+
+/**
+ * LINK ABERTO — um link, várias pessoas (0342-0344).
+ *
+ * Sem e-mail: `porta.aceitar_convite` não consome o token e não confere o e-mail no canal aberto —
+ * cada pessoa traz o seu ao entrar. Quem monta o e-mail MARCADOR que a porta exige é o runtime, não
+ * esta função e não a tela: e-mail é identidade, e identidade inventada pelo navegador é a classe
+ * de defeito que esta rodada inteira existiu para tirar.
+ *
+ * ⚠️ O link é uma CREDENCIAL QUE SE ENCAMINHA: quem o receber de terceiro entra igual. Revogar mata
+ * na hora (`POST /admin/convites/revogar`), e é por isso que a tela deixa o revogar à mão.
+ *
+ * Existe UM link aberto vivo por cargo de cada vez: o marcador leva o cargo, e a porta recusa
+ * segundo convite pendente para o mesmo e-mail. Pedir outro devolve "já existe convite pendente" —
+ * que é a verdade, e evita dois links do mesmo cargo abertos sem ninguém lembrar de fechar.
+ */
+export async function gerarConviteAberto(cargo: string): Promise<ResultadoConvite> {
+  if (!cargo.trim()) return { ok: false, motivo: "escolha um cargo" };
+  return chamarConvites("/admin/convites", { cargo: cargo.trim(), canal: "link_aberto" });
+}
+
+export interface PassoCargo {
+  rotulo: string;
+  ok: boolean;
+  motivo?: string;
+}
+
+export interface ResultadoMudarCargo extends ResultadoAcao {
+  /**
+   * Um passo por evento emitido. Existe porque a mudança de cargo NÃO é uma transação: são até
+   * três escritas (papel + tirar lotação + pôr lotação) e o banco não tem `cargo_alterado`. Se a
+   * segunda falhar, a primeira já entrou — e a tela tem de dizer isso, não "não deu certo".
+   */
+  passos: PassoCargo[];
+}
+
+/**
+ * MUDAR O CARGO DE QUEM JÁ ESTÁ DENTRO.
+ *
+ * Não existe evento `cargo_alterado` (medido 14/09 em `supabase/migrations/`: zero ocorrências).
+ * Cargo é LEITURA de `core.usuario.papel` + `core.usuario_departamento` — foi o que a D91 travou,
+ * e criar um evento novo agora seria criar uma segunda verdade sobre a mesma coisa. Então isto
+ * compõe com os eventos que existem e que o projetor já sabe aplicar:
+ *   `papel_alterado` (0035) · `usuario_departamento_removido` / `_atribuido` (0085).
+ *
+ * A expansão do cargo vem do BANCO (`core.expandir_cargo`, `grant execute to authenticated` na
+ * 0338), nunca do catálogo do front: a tela mostra a expansão, o servidor decide qual é.
+ *
+ * O estado atual também é lido aqui, e não recebido do cliente: `papel_de` entra na guarda
+ * (`api.registrar_evento` recusa admin rebaixando admin), e guarda que confia em número mandado
+ * pelo navegador não é guarda.
+ */
+export async function mudarCargo(usuarioId: string, cargo: string): Promise<ResultadoMudarCargo> {
+  const supabase = criarClienteServidor();
+
+  const { data: expansao, error: errCargo } = await supabase
+    .schema("core")
+    .rpc("expandir_cargo", { p_cargo: cargo });
+  if (errCargo) return { ok: false, motivo: errCargo.message, passos: [] };
+  const alvo = expansao as { papel?: string; departamentos?: VinculoConvite[] } | null;
+  if (!alvo?.papel) {
+    return { ok: false, motivo: `cargo desconhecido: "${cargo}"`, passos: [] };
+  }
+
+  const [{ data: membro, error: errMembro }, { data: lotacao }] = await Promise.all([
+    supabase.schema("core").from("v_membro").select("papel").eq("id", usuarioId).maybeSingle(),
+    supabase
+      .schema("core")
+      .from("usuario_departamento")
+      .select("departamento, papel_no_departamento")
+      .eq("usuario_id", usuarioId)
+      .is("removido_em", null),
+  ]);
+  if (errMembro) return { ok: false, motivo: errMembro.message, passos: [] };
+  if (!membro) return { ok: false, motivo: "esse membro não existe no workspace", passos: [] };
+
+  const papelDe = String((membro as { papel: string }).papel);
+  const atuais = ((lotacao ?? []) as VinculoConvite[]).map((l) => ({
+    departamento: String(l.departamento),
+    papel_no_departamento: l.papel_no_departamento === "gestor" ? "gestor" : "membro",
+  }));
+  const novos = (alvo.departamentos ?? []).map((d) => ({
+    departamento: String(d.departamento),
+    papel_no_departamento: d.papel_no_departamento === "gestor" ? "gestor" : "membro",
+  }));
+
+  const passos: PassoCargo[] = [];
+  const emitir = async (rotulo: string, tipo: string, payload: Record<string, unknown>) => {
+    const r = await registrarEventoMembros(tipo, payload);
+    passos.push(r.ok ? { rotulo, ok: true } : { rotulo, ok: false, motivo: r.motivo });
+  };
+
+  // 1 · papel, e SÓ quando muda. Emitir `papel_alterado` com papel_de = papel_para passaria pela
+  //     guarda e sujaria o ledger com uma mudança que não houve.
+  if (alvo.papel !== papelDe) {
+    await emitir(`papel ${papelDe} → ${alvo.papel}`, "papel_alterado", {
+      usuario_id: usuarioId,
+      papel_de: papelDe,
+      papel_para: alvo.papel,
+    });
+  }
+
+  // 2 · tirar o que sobrou. Remover ANTES de atribuir: quem trocasse de departamento com a ordem
+  //     invertida ficaria, no meio do caminho, lotado nos dois — e o rodízio M3 sortearia por lá.
+  for (const a of atuais) {
+    if (!novos.some((n) => n.departamento === a.departamento)) {
+      await emitir(`sai de ${a.departamento}`, "usuario_departamento_removido", {
+        usuario_id: usuarioId,
+        departamento: a.departamento,
+      });
+    }
+  }
+
+  // 3 · pôr o que falta — inclusive quando só o papel_no_departamento mudou (membro ⇄ gestor):
+  //     o projetor faz upsert e reativa `removido_em`, então reatribuir é o caminho correto.
+  for (const n of novos) {
+    const igual = atuais.find(
+      (a) => a.departamento === n.departamento && a.papel_no_departamento === n.papel_no_departamento,
+    );
+    if (igual) continue;
+    await emitir(`entra em ${n.departamento} como ${n.papel_no_departamento}`, "usuario_departamento_atribuido", {
+      usuario_id: usuarioId,
+      departamento: n.departamento,
+      papel_no_departamento: n.papel_no_departamento,
+    });
+  }
+
+  if (passos.length === 0) return { ok: true, motivo: "nada a mudar — já está nesse cargo", passos };
+  const falhou = passos.filter((p) => !p.ok);
+  if (falhou.length === 0) return { ok: true, passos };
+  return {
+    ok: false,
+    motivo: falhou.map((p) => `${p.rotulo}: ${p.motivo ?? "recusado"}`).join(" · "),
+    passos,
+  };
 }

@@ -23,7 +23,7 @@ export default async function AgentePage({ params }: { params: { id: string } })
   if (ensaio) {
     const agente = agenteInteligencia(params.id, new Date());
     if (!agente) notFound();
-    return <TelaAgente agente={agente} gestao={ensaio.papel === "owner" || ensaio.papel === "admin"} />;
+    return <TelaAgente agente={agente} gestao={ensaio.papel === "owner" || ensaio.papel === "admin"} ensaio />;
   }
 
   // o histórico só existe para quem grava `origem` na tarefa — hoje, o Jarvis. Para os outros a

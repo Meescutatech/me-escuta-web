@@ -1,7 +1,6 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import {
-  COLUNAS_CARD,
-  COLUNAS_CARD_BASE,
+  DEGRAU_COLUNAS_CARD,
   escolherProximaTarefa,
   montarUltimaMensagem,
   type ProximaTarefa,
@@ -313,7 +312,7 @@ export async function lerSlaEtapas(cliente?: Supabase): Promise<SlaEtapas> {
 /**
  * ⚠️ EXPORTADA e com `cliente?` desde 22/08 — e o motivo não é simetria com as vizinhas.
  *
- * O DEGRAU desta função (COLUNAS_CARD → COLUNAS_CARD_BASE, logo abaixo) é a única coisa que
+ * O DEGRAU desta função (`DEGRAU_COLUNAS_CARD`, logo abaixo) é a única coisa que
  * separa "board sem a linha de última mensagem" de "board VAZIO" no dia em que a migration da
  * `v_lead_card` não tiver descido: pedir coluna inexistente ao PostgREST derruba a consulta
  * INTEIRA, não só a coluna. Até aqui esse degrau era intestável — a função criava o cliente por
@@ -344,14 +343,20 @@ export async function lerCardsReais(
       .limit(TETO_CARDS);
 
   const agora = Date.now();
-  // COLUNAS_CARD primeiro; sem as três de última mensagem (migration da view ainda não aplicada)
-  // volta pro shape sem elas. O degrau é o que separa "board sem a linha de mensagem" de "board
-  // VAZIO": pedir coluna inexistente ao PostgREST derruba a consulta inteira.
+  // O DEGRAU é o que separa "board sem a linha de mensagem" de "board VAZIO": pedir coluna
+  // inexistente ao PostgREST derruba a consulta inteira, não só a coluna.
+  //
+  // H5 (merge de 14/09) · a escada tem TRÊS degraus — com cidade → sem cidade → base. Desce UM
+  // por erro, e é essa a diferença que importa: com dois degraus só, o dia em que faltasse a
+  // coluna de cidade derrubaria a primeira consulta e o fallback cairia DIRETO na base, perdendo
+  // a linha de última mensagem, que funciona em produção hoje. Perde-se só o que falta.
   let [{ data, error }, comTarefa] = await Promise.all([
-    consulta(COLUNAS_CARD),
+    consulta(DEGRAU_COLUNAS_CARD[0]),
     lerLeadsComTarefaPendente(supabase, agora),
   ]);
-  if (error) ({ data, error } = await consulta(COLUNAS_CARD_BASE));
+  for (let i = 1; error && i < DEGRAU_COLUNAS_CARD.length; i++) {
+    ({ data, error } = await consulta(DEGRAU_COLUNAS_CARD[i]));
+  }
   if (error || !data) return { cards: [], corte: false }; // leitura indisponível → board vazio honesto
   const cards = (data as any[]).map((r: any) => {
     const id = String(r.lead_id);
@@ -400,6 +405,11 @@ function montarCard(
     kommo_lead_id: r.kommo_lead_id ?? null,
     tem_tarefa_pendente: temTarefaPendente,
     ultima_mensagem: montarUltimaMensagem(r),
+    // H5 · a cidade só existe quando a view a expõe. Ausente ≠ vazio: `undefined` é "a view não
+    // tem a coluna", `null` é "tem, e este lead não declarou". O card não desenha nenhum dos dois.
+    // Até este merge o tipo declarava `cidade` e NINGUÉM a preenchia: a view tinha a coluna
+    // (conferido em produção 14/09), o card sabia desenhá-la, e a consulta nunca a pedia.
+    cidade: "cidade" in r ? (r.cidade ? String(r.cidade) : null) : undefined,
     compromisso_em: compromissoEm,
   };
 }

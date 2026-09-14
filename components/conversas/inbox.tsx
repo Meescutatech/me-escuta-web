@@ -60,6 +60,9 @@ import type { CanalEnvioComposer } from "@/components/conversas/composer";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
 import { ehAudio, ehImagem, temImagemVisivel } from "@/lib/conversas/midia";
+import { resolverReacoes, textoDoSelo } from "@/lib/conversas/reacoes";
+import { BolhaBotao } from "@/components/conversas/bolha-botao";
+import { ehBotaoRecebido } from "@/lib/conversas/interativa";
 import { useConversaViva } from "@/components/conversas/tempo-real";
 import { criarClienteBrowser } from "@/lib/supabase/client";
 import { montarEnvelopeAtividade } from "@/lib/presenca";
@@ -464,7 +467,11 @@ export function Inbox({
     [mensagens, pendentes],
   );
 
-  const blocos = useMemo(() => montarBlocos(visiveis), [visiveis]);
+  // E2 · reação com alvo presente vira SELO na mensagem alvo e sai da linha do tempo; sem alvo
+  // (ou alvo fora do nosso ledger — ~87% das históricas, porque a Sara respondia pelo Kommo) fica
+  // como bolha honesta. A regra é pura e testada em lib/conversas/reacoes.ts.
+  const { linhaDoTempo, selos } = useMemo(() => resolverReacoes(visiveis), [visiveis]);
+  const blocos = useMemo(() => montarBlocos(linhaDoTempo), [linhaDoTempo]);
 
   // 31/08 · a mensagem onde o fio para quando se chega por uma tarefa (`?em=`). `exata=false`
   // significa que a tarefa é anterior ao que foi carregado — a tela DIZ isso em vez de fingir.
@@ -1398,7 +1405,9 @@ export function Inbox({
                               >
                                 <div
                                   className={cn(
-                                    "whitespace-pre-wrap break-words text-[0.88rem] leading-relaxed",
+                                    // `relative` é do E2: o selo da reação é posicionado contra a
+                                    // bolha, e sem isto ele ancora no scroller e voa pela tela.
+                                    "relative whitespace-pre-wrap break-words text-[0.88rem] leading-relaxed",
                                     // figurinha vai SEM balão (LiderHub: `MessageRow bare` + STICKER_BOX)
                                     figurinha
                                       ? "p-0"
@@ -1412,10 +1421,16 @@ export function Inbox({
                                           falhou && "border border-vermelho-bd bg-vermelho-bg",
                                           programada && "border border-dashed border-amarelo-bd bg-amarelo-bg/60",
                                         ),
+                                    // E2: o selo sobrepõe a borda de baixo; a bolha abre espaço para
+                                    // ele. Vale também na figurinha, que agora pode receber reação.
+                                    selos.has(m.id) && "mb-3",
                                   )}
                                 >
                                   {m.citada && !figurinha && <BolhaCitada citada={m.citada} saida={saida} />}
                                   <ConteudoBolha m={m} />
+                                  {selos.has(m.id) && (
+                                    <SeloReacao emojis={selos.get(m.id)!} saida={saida} />
+                                  )}
                                 </div>
                                 {m.reacoes && m.reacoes.length > 0 && <ReacoesChips reacoes={m.reacoes} saida={saida} />}
                                 {falhou ? (
@@ -1709,6 +1724,32 @@ export function Inbox({
 
 
 /**
+ * E2 · O SELO DE REAÇÃO — o emoji colado na mensagem que ele reagiu, como no WhatsApp.
+ *
+ * Mora DENTRO da bolha (position absolute) e sobrepõe a borda de baixo, do lado interno da
+ * conversa: bolha de saída recebe o selo à esquerda, de entrada à direita — é o lado que "olha"
+ * para o outro falante. Branco com hairline, sem sombra: é um fato pequeno, não um botão.
+ *
+ * Só existe quando a mensagem reagida ESTÁ nesta conversa. Quando não está (a maioria das
+ * históricas — a Sara respondia pelo Kommo), a reação continua como bolha, e é `ConteudoBolha`
+ * quem diz isso com honestidade.
+ */
+function SeloReacao({ emojis, saida }: { emojis: string[]; saida: boolean }) {
+  const texto = textoDoSelo(emojis);
+  return (
+    <span
+      aria-label={`Reação: ${texto}`}
+      className={cn(
+        "absolute -bottom-2.5 inline-flex cursor-default select-none items-center rounded-full border border-linha bg-branco px-1.5 py-[1px] text-[0.78rem] leading-none",
+        saida ? "left-2" : "right-2",
+      )}
+    >
+      {texto}
+    </span>
+  );
+}
+
+/**
  * Conteúdo da bolha por tipo (RF-33, degradação HONESTA): a pipeline de mídia (container
  * me-escuta-midia) ainda não existe — áudio/imagem/documento aparecem nomeados, com a
  * transcrição/visualização anunciada como pendente em vez de player quebrado ou URL da Meta.
@@ -1738,6 +1779,26 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
     // foto (in e out) quando a mídia já está no bucket; sem caminho cai no rótulo de sempre
     return <BolhaImagem m={m} />;
   }
+  if (tipo === "reaction" || tipo === "reacao") {
+    // E2 · reação que NÃO achou o alvo nesta conversa (as com alvo viraram selo e nem chegam
+    // aqui). Antes caía no fallback de mídia abaixo: "Reação" com ÍCONE DE FOTO. Agora diz o que
+    // sabe. Medido: ~87% das históricas caem aqui, porque a mensagem reagida saiu pelo Kommo.
+    return (
+      <span className="flex items-center gap-2">
+        <span className="text-[1.15rem] leading-none">{m.corpo}</span>
+        <span className="text-[0.76rem] leading-snug text-mute">
+          reagiu a uma mensagem que não está nesta conversa
+        </span>
+      </span>
+    );
+  }
+
+  if (ehBotaoRecebido(m)) {
+    // E3: resposta rápida TOCADA (190 em produção, a última de hoje). Antes disto caía no
+    // fallback de mídia abaixo e a tela escrevia `Mensagem (botao)` com ícone de FOTO.
+    // Sem corpo, `ehBotaoRecebido` devolve false de propósito e o rótulo honesto segue valendo.
+    return <BolhaBotao m={m} />;
+  }
   // tipos em PT-BR = contrato do ingestor (parser TIPO_PT); os em EN cobrem linhas históricas
   const rotulo =
     tipo === "image" || tipo === "imagem"
@@ -1752,9 +1813,7 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
               ? "Localização recebida"
               : tipo === "contacts" || tipo === "contato"
                 ? "Contato recebido"
-                : tipo === "reaction" || tipo === "reacao"
-                  ? "Reação"
-                  : `Mensagem (${tipo})`;
+                : `Mensagem (${tipo})`;
   return (
     <span className="flex flex-col gap-1">
       <span className="flex items-center gap-2 font-medium">
