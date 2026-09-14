@@ -92,7 +92,17 @@ export const GRUPOS_CONFIG: { rotulo: string; secoes: SecaoConfig[] }[] = [
       {
         href: "/configuracoes/templates",
         rotulo: "Mensagens prontas",
-        descricao: "O que o composer oferece com barra — e quais dessas mensagens a Meta já aprovou.",
+        descricao: "O que o composer oferece com barra: o texto que a equipe reusa DENTRO da janela de 24h.",
+        icone: "templates",
+      },
+      // Item SEPARADO de propósito (RF-9). São dois conceitos com a mesma palavra: mensagem pronta
+      // é texto nosso e vale DENTRO da janela de 24h; template de WhatsApp é modelo aprovado pela
+      // Meta e é o único caminho FORA dela. Já houve colisão de nome uma vez, e rota separada é o
+      // que impede a segunda — os rótulos também não se parecem, que é o resto do conserto.
+      {
+        href: "/configuracoes/templates-whatsapp",
+        rotulo: "Templates de WhatsApp",
+        descricao: "Os modelos que a Meta aprovou: o único jeito de escrever para quem não responde há mais de 24h.",
         icone: "templates",
       },
     ],
