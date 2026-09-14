@@ -271,6 +271,49 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
   enviar_mensagem_humana: { tabela: "mensagem", por: "evento", coluna: "id" },
 
   /*
+   * ── R36 · TEMPLATE HSM DA META ──────────────────────────────────────────────────────────────
+   *
+   * Modo `filtros`, como o resto da Web-B, e por um motivo mais forte que a simetria: aqui DOIS
+   * dos três eventos não criam linha, só mudam a que já existe. Conferir "a linha existe" em
+   * `_submetido` seria conferir algo que já era verdade ANTES do clique — o jeito exato de um
+   * readback virar decoração. Então cada um confere o EFEITO que lhe é próprio:
+   *
+   *   · `_criado`    → nasceu a linha cujo `id` é o id DESTE evento (`0116`: `id = evento.id`), e
+   *                    ela nasceu em `rascunho` — o que também prova que criar NÃO submete. O id
+   *                    vem da porta, nunca da tela: a tela não inventa identidade.
+   *   · `_submetido` → o template APONTADO passou a `enviando`. É o estado que distingue submetido
+   *                    de rascunho esquecido, e é por isso que `enviando` existe no vocabulário.
+   *   · `_arquivado` → o template apontado ganhou `arquivado_em`. Arquivar é terminal.
+   */
+  template_whatsapp_criado: {
+    tabela: "template_whatsapp",
+    por: "filtros",
+    coluna: "id",
+    filtros: [
+      { campo: "id", op: "igualEvento" },
+      { campo: "status", op: "igual", valor: "rascunho" },
+    ],
+  },
+  template_whatsapp_submetido: {
+    tabela: "template_whatsapp",
+    por: "filtros",
+    coluna: "id",
+    filtros: [
+      { campo: "id", op: "igualPayload", dePayload: "template_id" },
+      { campo: "status", op: "igual", valor: "enviando" },
+    ],
+  },
+  template_whatsapp_arquivado: {
+    tabela: "template_whatsapp",
+    por: "filtros",
+    coluna: "id",
+    filtros: [
+      { campo: "id", op: "igualPayload", dePayload: "template_id" },
+      { campo: "arquivado_em", op: "naoNulo" },
+    ],
+  },
+
+  /*
    * ── TELAS B (R16-20 · Web-B) ────────────────────────────────────────────────────────────────
    * Enxertadas aqui pelo ARB-28-bis: o arquivo é meu (Agent 1), o fail-closed é a base, e o modo
    * `filtros` + estas dez linhas vêm de web-b @ dde4d3c. Não há choque lógico — com as linhas NA

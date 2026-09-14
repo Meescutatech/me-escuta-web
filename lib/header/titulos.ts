@@ -53,6 +53,12 @@ const MAPA: Record<string, string> = {
   "/configuracoes/meta": "Conexões",
   "/configuracoes/funil": "Funil e etapas",
   "/configuracoes/templates": "Mensagens prontas",
+  // Rota IRMÃ e SEPARADA (RF-9): `templates` é resposta rápida, que vale DENTRO da janela de 24h;
+  // `templates-whatsapp` é o modelo aprovado pela Meta, o único caminho FORA dela. O casamento por
+  // rota mais específica já garante a ordem — e `/configuracoes/templates-whatsapp` nunca cai em
+  // `/configuracoes/templates` porque o prefixo só casa seguido de barra.
+  "/configuracoes/templates-whatsapp": "Templates de WhatsApp",
+  "/configuracoes/templates-whatsapp/novo": "Escrever template",
   "/configuracoes/regras": "Regras e SLAs",
   "/configuracoes/geral": "Geral",
   "/configuracoes/identidades": "Identidades",
