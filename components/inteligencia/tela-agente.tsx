@@ -23,7 +23,11 @@ import {
   SquarePen,
   UserRoundCheck,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { toast } from "@/components/ui/sonner";
+import { Input } from "@/components/ui/input";
+import { alternarAgente, publicarPromptAgente } from "@/app/(app)/configuracoes/agentes/actions";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { HintTooltip } from "@/components/ui/hint-tooltip";
@@ -44,6 +48,19 @@ import type { TarefaCriadaPeloAgente } from "@/lib/dados/execucoes-jarvis";
  *
  * Agente desligado abre a MESMA tela. As ferramentas continuam listadas — elas existem — e o que
  * muda é o estado vazio, que diz a verdade em vez de fingir número: "ainda não executou".
+ *
+ * 14/09/2026 — OS CONTROLES GRAVAM, e um deles passou a dizer que não grava.
+ *
+ * Esta tela nasceu no ensaio e foi promovida ao caminho real em `aac6aec` com os handlers locais
+ * intactos: `setLigado(v)` mostrava "parado" com o agente ativo, e "Publicar v+1" incrementava um
+ * número enquanto o agente seguia com o prompt antigo. Interruptor e prompt agora passam por
+ * `agentes/actions.ts` — o mesmo caminho da tela da Clara, com o agente como parâmetro.
+ *
+ * A RÉGUA DE AUTONOMIA É A EXCEÇÃO, e vale dizer por quê: ela não tem caminho no banco. O projetor
+ * `porta.proj_config_agente` (0107) trata `ativo`, `config_patch` e `escopo_patch` — não há ramo de
+ * autonomia, e `core.agente.autonomia_jsonb` não se altera por evento nenhum. Isso é LACUNA, não
+ * regressão: nunca houve. Então fora do ensaio ela fica em leitura, com o motivo escrito na tela.
+ * Deixá-la clicável seria repetir exatamente o defeito que este commit corrige.
  */
 
 const ICONES: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -85,6 +102,7 @@ export function TelaAgente({
   agente: a,
   gestao,
   criadas,
+  ensaio = false,
 }: {
   agente: AgenteInteligencia;
   gestao: boolean;
@@ -94,16 +112,46 @@ export function TelaAgente({
    * histórico do que ele cria; se isso não é documentado, remova a seção do front".
    */
   criadas?: TarefaCriadaPeloAgente[] | null;
+  /** `true` só no ensaio, onde não há banco. Default `false`: quem esquecer vê um erro, não uma mentira. */
+  ensaio?: boolean;
 }) {
+  const router = useRouter();
   const [ligado, setLigado] = React.useState(a.ativo);
   const [autonomia, setAutonomia] = React.useState(a.autonomia);
+  const [gravando, setGravando] = React.useState(false);
   const impedido = a.pendencias.length > 0;
+
+  React.useEffect(() => setLigado(a.ativo), [a.ativo]);
 
   function mudarAutonomia(chave: string, nivel: NivelAutonomia) {
     setAutonomia((linhas) =>
       linhas.map((l) => (l.chave === chave ? { ...l, nivel, alteradaPor: "você · agora" } : l)),
     );
   }
+
+  const alternar = async (v: boolean) => {
+    if (ensaio) {
+      setLigado(v);
+      return;
+    }
+    setGravando(true);
+    try {
+      const r = await alternarAgente(a.chave, v);
+      if (!r.ok) {
+        toast.error(v ? "Não ligou." : "Não desligou.", { description: r.motivo ?? "o servidor recusou" });
+        return;
+      }
+      setLigado(v);
+      toast.success(v ? `${a.nome} no ar.` : `${a.nome} parado.`, {
+        description: "Vale na próxima mensagem, e ficou registrado no ledger.",
+      });
+      router.refresh();
+    } catch (e) {
+      toast.error("Não gravou.", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setGravando(false);
+    }
+  };
 
   const lendo = a.ferramentas.filter((f) => f.acesso === "leitura" && !f.futura).length;
   const escrevendo = a.ferramentas.filter((f) => f.acesso === "escrita" && !f.futura).length;
@@ -169,8 +217,8 @@ export function TelaAgente({
                 <span className="flex items-center gap-2">
                   <Switch
                     checked={ligado}
-                    onCheckedChange={setLigado}
-                    disabled={!gestao || (impedido && !ligado)}
+                    onCheckedChange={(v) => void alternar(v)}
+                    disabled={!gestao || gravando || (impedido && !ligado)}
                     aria-label={`${ligado ? "Desligar" : "Ligar"} ${a.nome}`}
                   />
                   <span className="text-[12.5px] text-muted-foreground">{ligado ? "no ar" : "parado"}</span>
@@ -194,14 +242,27 @@ export function TelaAgente({
 
       <Secao
         titulo="Autonomia"
-        descricao="Até onde ele vai sozinho, por tipo de ação. Mudar aqui vale na hora — não precisa de deploy."
+        descricao={
+          ensaio
+            ? "Até onde ele vai sozinho, por tipo de ação. Mudar aqui vale na hora — não precisa de deploy."
+            : "Até onde ele vai sozinho, por tipo de ação. Hoje só se lê: mudar por esta tela ainda não existe."
+        }
       >
         <ReguaAutonomia
           linhas={autonomia}
-          podeEditar={gestao && ligado}
+          podeEditar={ensaio && gestao && ligado}
           onMudar={mudarAutonomia}
           agente={{ id: a.chave, nome: a.nome }}
         />
+        {!ensaio && (
+          <p className="mt-2 max-w-[80ch] text-[12.5px] text-muted-foreground">
+            A régua está em leitura porque não existe caminho de gravação: o projetor de config de
+            agente (0107) aplica <code>ativo</code>, <code>config_patch</code> e{" "}
+            <code>escopo_patch</code> — nenhum deles toca <code>autonomia_jsonb</code>. Mudar a
+            autonomia hoje é migration, não configuração. Isto está dito aqui em vez de um controle
+            que aceita o clique e não muda nada.
+          </p>
+        )}
       </Secao>
 
       {/* O passo a passo de cada passada (o trace) NÃO é gravado em lugar nenhum — só existe como
@@ -281,7 +342,7 @@ export function TelaAgente({
         titulo="Instrução"
         descricao="O texto que ele recebe antes de cada execução. A versão anterior fica no histórico."
       >
-        <BlocoPrompt agente={a} podeEditar={gestao} />
+        <BlocoPrompt agente={a} podeEditar={gestao} ensaio={ensaio} />
       </Secao>
 
       <section className="grid gap-8 border-t border-border/60 py-7 lg:grid-cols-2">
@@ -410,12 +471,62 @@ function Execucoes({ execucoes }: { execucoes: ExecucaoTrace[] }) {
   );
 }
 
-function BlocoPrompt({ agente: a, podeEditar }: { agente: AgenteInteligencia; podeEditar: boolean }) {
+/**
+ * O PROMPT — e a justificativa que o caminho versionado exige.
+ *
+ * Publicar é `api.propor_atualizacao_prompt` + `api.validar_sugestao` (0007/0008): a proposta nasce
+ * com lock otimista por `versao_base`, e a aprovação gera `prompt_atualizado`. Duas consequências
+ * que aparecem na tela:
+ *  · a JUSTIFICATIVA é obrigatória de verdade — o banco recusa sem ela, e é o que fica legível no
+ *    histórico meses depois. Antes não havia campo, porque nada era publicado;
+ *  · publicar sobre uma versão que mudou no meio do caminho FALHA em vez de sobrescrever. O motivo
+ *    volta do Postgres e aparece inteiro.
+ */
+function BlocoPrompt({
+  agente: a,
+  podeEditar,
+  ensaio,
+}: {
+  agente: AgenteInteligencia;
+  podeEditar: boolean;
+  ensaio: boolean;
+}) {
+  const router = useRouter();
   const [editando, setEditando] = React.useState(false);
   const [texto, setTexto] = React.useState(a.prompt);
+  const [justificativa, setJustificativa] = React.useState("");
   const [versao, setVersao] = React.useState(a.versao_prompt);
   const [publicada, setPublicada] = React.useState<number | null>(null);
+  const [publicando, setPublicando] = React.useState(false);
   const mudou = texto.trim() !== a.prompt.trim();
+  const podePublicar = mudou && (ensaio || justificativa.trim().length > 0);
+
+  const publicar = async () => {
+    if (ensaio) {
+      setVersao((v) => v + 1);
+      setPublicada(versao + 1);
+      setEditando(false);
+      return;
+    }
+    setPublicando(true);
+    try {
+      const r = await publicarPromptAgente(a.chave, texto, justificativa, versao);
+      if (!r.ok) {
+        toast.error("O prompt não foi publicado.", { description: r.motivo ?? "o servidor recusou" });
+        return;
+      }
+      setVersao((v) => v + 1);
+      setPublicada(versao + 1);
+      setJustificativa("");
+      setEditando(false);
+      toast.success(`Prompt v${versao + 1} publicado.`, { description: `${a.nome} passa a usar na próxima passada.` });
+      router.refresh();
+    } catch (e) {
+      toast.error("Não gravou.", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setPublicando(false);
+    }
+  };
 
   return (
     <div className="rounded-md border border-border/60 bg-card">
@@ -430,23 +541,17 @@ function BlocoPrompt({ agente: a, podeEditar }: { agente: AgenteInteligencia; po
               <Button
                 size="sm"
                 variant="ghost"
+                disabled={publicando}
                 onClick={() => {
                   setTexto(a.prompt);
+                  setJustificativa("");
                   setEditando(false);
                 }}
               >
                 Cancelar
               </Button>
-              <Button
-                size="sm"
-                disabled={!mudou}
-                onClick={() => {
-                  setVersao((v) => v + 1);
-                  setPublicada(versao + 1);
-                  setEditando(false);
-                }}
-              >
-                Publicar v{versao + 1}
+              <Button size="sm" disabled={!podePublicar || publicando} onClick={() => void publicar()}>
+                {publicando ? "Publicando…" : `Publicar v${versao + 1}`}
               </Button>
             </>
           ) : (
@@ -468,12 +573,32 @@ function BlocoPrompt({ agente: a, podeEditar }: { agente: AgenteInteligencia; po
       </header>
 
       {editando ? (
-        <Textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          rows={14}
-          className="min-h-[280px] resize-y rounded-none border-0 text-[13px] leading-relaxed focus-visible:ring-0"
-        />
+        <>
+          <Textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            rows={14}
+            className="min-h-[280px] resize-y rounded-none border-0 text-[13px] leading-relaxed focus-visible:ring-0"
+          />
+          {!ensaio && (
+            <div className="border-t border-border/60 px-4 py-3">
+              <label htmlFor="prompt-justificativa" className="text-[12.5px] font-medium text-foreground">
+                O que mudou
+              </label>
+              <Input
+                id="prompt-justificativa"
+                value={justificativa}
+                onChange={(e) => setJustificativa(e.target.value)}
+                placeholder="Ex.: passa a perguntar a cidade antes de oferecer avaliação"
+                className="mt-1.5"
+              />
+              <p className="mt-1.5 text-[12px] text-muted-foreground">
+                Obrigatório — é o que fica legível no histórico daqui a seis meses. Sem isso o banco
+                recusa a publicação.
+              </p>
+            </div>
+          )}
+        </>
       ) : (
         <pre className="max-h-[340px] max-w-[86ch] overflow-auto whitespace-pre-wrap px-4 py-3.5 font-sans text-[13px] leading-relaxed text-foreground">
           {texto}

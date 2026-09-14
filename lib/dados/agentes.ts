@@ -15,6 +15,21 @@ const EM_DESENVOLVIMENTO = new Set(["levindo", "priscila"]);
 const AVISO_DESENVOLVIMENTO = "Em desenvolvimento — ainda não opera; ligar aqui não produz efeito.";
 
 /**
+ * 14/09 · O LEVINDO APARECIA "ATIVO" E NINGUÉM SABIA POR QUÊ — e esta é a resposta, medida.
+ *
+ * O card mostrava "● Ativo" ao lado do selo "em desenvolvimento", com o interruptor travado, e não
+ * explicava a contradição: o motivo morava num tooltip que ninguém abre. Medido em produção:
+ *
+ *     core.agente      levindo ativo=t · priscila ativo=f
+ *     core.sugestao_ia levindo 47 sugestões, TODAS de 16/07/2026 (o dia do smoke). Nada depois.
+ *                      clara 256, a última de hoje — é a única viva.
+ *
+ * Ele está ligado porque **nasceu ligado na semente**, não porque alguém o ligou. "Ativo" é
+ * verdade sobre a coluna e mentira sobre a operação, e é a segunda que a pessoa lê.
+ */
+const LIGADO_POR_SEMENTE = "Ligado desde a semente de 16/07 — ninguém o ligou, e ele não produz nada desde então.";
+
+/**
  * OS AGENTES, COM O ESTADO QUE O BANCO TEM — 11/09/2026.
  *
  * Até hoje `/configuracoes/agentes` redirecionava para a página da Clara fora do ensaio, porque
@@ -78,7 +93,9 @@ export async function lerAgentesReais(agora: Date = new Date()): Promise<AgenteI
         numeros: [],
         execucoes: [],
         pendencias: EM_DESENVOLVIMENTO.has(b.chave)
-          ? [AVISO_DESENVOLVIMENTO, ...b.pendencias]
+          ? // a segunda linha só existe quando o banco diz `ativo` e o agente não opera — é
+            // exatamente o par que a tela mostrava sem explicar
+            [AVISO_DESENVOLVIMENTO, ...(ativo ? [LIGADO_POR_SEMENTE] : []), ...b.pendencias]
           : b.pendencias,
       };
     });
