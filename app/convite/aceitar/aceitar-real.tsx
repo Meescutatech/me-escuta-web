@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { aceitarConviteAction, validarConvite, type ConviteValidado } from "./actions";
 import { rotuloPapelBruto } from "@/lib/membros";
+import { cargoPorChave } from "@/lib/ensaio/fixtures/cargos";
 
 /**
  * Página PÚBLICA de aceite de convite (/convite/aceitar?token=...). O conhecimento do
@@ -26,6 +27,9 @@ function AceitarConvite() {
   const token = params.get("token") ?? "";
 
   const [convite, setConvite] = useState<ConviteValidado | "carregando">("carregando");
+  // O catálogo de cargos é o MESMO que a tela de convite mostra a quem convida (0338 transcreveu
+  // este arquivo para `core.cargo_catalogo`). Quem convida e quem aceita leem a mesma promessa.
+  const cargo = convite !== "carregando" && convite.cargo ? cargoPorChave(convite.cargo) : null;
   const [erro, setErro] = useState<string | null>(null);
   const [pendente, startTransition] = useTransition();
 
@@ -53,7 +57,11 @@ function AceitarConvite() {
         setErro(r.motivo ?? "não foi possível aceitar o convite");
         return;
       }
-      router.push("/login?convite=aceito");
+      // `entrou` separa dois sucessos: com sessão vai direto para o trabalho; sem ela a conta
+      // EXISTE e só falta entrar — e o `?conta=criada` é o que faz o login dizer isso em vez de
+      // deixar a pessoa achar que o convite falhou e tentar de novo.
+      router.push(r.entrou ? "/funil" : `/login?conta=criada&email=${encodeURIComponent(email)}`);
+      router.refresh();
     });
   }
 
@@ -83,45 +91,49 @@ function AceitarConvite() {
 
         {convite !== "carregando" && convite.valido && (
           <div>
-            <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Você foi convidado</h1>
-            <p className="mt-1.5 text-[13.5px] text-suave">
-              {/* Era `papel === "admin" ? "Admin" : "Membro"` — um convite `marketing` anunciava
-                  "Acesso de Membro" no exato momento em que a pessoa decide aceitar. `papel` chega
-                  como `string` cru do runtime, então a peneira e o rótulo vêm da fonte única. */}
-              Acesso de <strong className="text-tinta">{rotuloPapelBruto(convite.papel)}</strong>
-              {convite.funcao ? ` · ${convite.funcao}` : ""} para {convite.email_mascarado ?? "seu email"}. Confirme o
-              email do convite e crie sua senha.
+            {/*
+              ── A TELA DE BOAS-VINDAS (14/09) ────────────────────────────────────────────────────
+              Quem abre isto é a fono, no celular, pelo WhatsApp, e nunca viu o sistema. A versão
+              anterior a tratava como um formulário de confirmação: dizia "Você foi convidado",
+              anunciava o PAPEL técnico ("Acesso de Admin") e mostrava o e-mail do convite mascarado
+              — que num link de grupo é o marcador `a*********@convite.invalid`, um endereço que não
+              é de ninguém. Três coisas erradas na primeira frase que ela lê.
+
+              Agora a tela diz, nesta ordem: o CARGO (o nome que a operação usa), o que ele
+              significa em uma frase, e o que ela vai ver quando entrar. É o mínimo de tutorial que
+              cabe no lugar onde de fato se lê — antes de pedir qualquer campo.
+            */}
+            <h1 className="text-[21px] font-[650] leading-tight tracking-[-0.015em] text-tinta">
+              {cargo ? <>Boas-vindas — você entra como {cargo.nome}</> : "Boas-vindas à Me Escuta"}
+            </h1>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-suave">
+              {cargo?.resumo ??
+                (convite.funcao
+                  ? `Seu acesso é de ${rotuloPapelBruto(convite.papel)} · ${convite.funcao}.`
+                  : `Seu acesso é de ${rotuloPapelBruto(convite.papel)}.`)}
             </p>
+
+            {cargo && cargo.ve.length > 0 && (
+              <ul className="mt-3 flex flex-col gap-1.5 rounded-md bg-board px-3.5 py-3">
+                {cargo.ve.slice(0, 3).map((v) => (
+                  <li key={v} className="text-[12.5px] leading-snug text-suave">
+                    {v}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <p className="mt-4 text-[13px] text-suave">Crie sua conta para entrar.</p>
+
             <form
-              className="mt-5 flex flex-col gap-3"
+              className="mt-3 flex flex-col gap-3"
               onSubmit={(e) => {
                 e.preventDefault();
                 enviar(new FormData(e.currentTarget));
               }}
             >
-              {/*
-                11/09 · RÓTULO ACIMA, E AUTOFILL DESLIGADO NO CAMPO DO E-MAIL.
-                O campo era só `placeholder`, e o Chrome preenchia nele o login SALVO de quem está
-                abrindo — vimos `admin@meescuta.com` entrar sozinho num convite de outra pessoa.
-                Como o aceite exige que o e-mail bata com o do convite, a pessoa digitava a senha,
-                clicava e levava um erro que parece convite quebrado. `autoComplete="off"` mais um
-                `name` que o navegador não reconhece como campo de login é o que o impede; o rótulo
-                acima resolve a outra metade, porque placeholder some no instante em que se digita
-                e deixa o campo sem nome justamente para quem parou no meio.
-              */}
-              <label className="grid gap-1">
-                <span className="text-[12px] text-mute">Seu e-mail (o mesmo do convite)</span>
-                <input
-                  name="email_do_convite"
-                  type="email"
-                  required
-                  autoComplete="off"
-                  data-1p-ignore
-                  data-lpignore="true"
-                  aria-label="Seu e-mail, o mesmo do convite"
-                  className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
-                />
-              </label>
+              {/* O NOME vem primeiro: é o campo sobre ELA, e abrir por "confirme o e-mail do
+                  convite" era abrir por burocracia numa tela de chegada. */}
               <label className="grid gap-1">
                 <span className="text-[12px] text-mute">Seu nome</span>
                 <input
@@ -129,9 +141,36 @@ function AceitarConvite() {
                   type="text"
                   required
                   autoComplete="name"
+                  placeholder="Como a equipe vai te chamar"
                   aria-label="Seu nome"
                   className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
                 />
+              </label>
+              {/*
+                11/09 · RÓTULO ACIMA, E AUTOFILL DESLIGADO NO CAMPO DO E-MAIL.
+                O campo era só `placeholder`, e o Chrome preenchia nele o login SALVO de quem está
+                abrindo — vimos `admin@meescuta.com` entrar sozinho num convite de outra pessoa.
+                A proteção continua valendo no link de grupo, e ali é ainda pior: como qualquer
+                e-mail é aceito, o autofill criaria a conta com o endereço ERRADO sem erro nenhum.
+              */}
+              <label className="grid gap-1">
+                <span className="text-[12px] text-mute">
+                  {convite.aberto ? "Seu e-mail" : "Seu e-mail (o mesmo do convite)"}
+                </span>
+                <input
+                  name="email_do_convite"
+                  type="email"
+                  required
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  placeholder={convite.aberto ? "o e-mail que você vai usar para entrar" : undefined}
+                  aria-label={convite.aberto ? "Seu e-mail" : "Seu e-mail, o mesmo do convite"}
+                  className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
+                />
+                {!convite.aberto && convite.email_mascarado && (
+                  <span className="text-[11.5px] text-mute">O convite foi para {convite.email_mascarado}.</span>
+                )}
               </label>
               <label className="grid gap-1">
                 <span className="text-[12px] text-mute">Crie uma senha — mínimo 8 caracteres</span>
@@ -155,7 +194,7 @@ function AceitarConvite() {
                 disabled={pendente}
                 className="h-9 rounded-md bg-laranja text-[13px] font-semibold text-branco hover:bg-laranja-esc disabled:opacity-60"
               >
-                {pendente ? "Criando acesso…" : "Aceitar convite"}
+                {pendente ? "Criando sua conta…" : "Criar conta e entrar"}
               </button>
             </form>
           </div>

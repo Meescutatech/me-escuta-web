@@ -38,7 +38,15 @@ const campo =
   "w-full rounded-md border border-linha-forte bg-branco px-3 py-2 text-sm text-tinta outline-none " +
   "placeholder:text-mute focus:border-laranja focus:ring-2 focus:ring-laranja/25";
 
-export default function LoginPage({ searchParams }: { searchParams: { proxima?: string } }) {
+export default function LoginPage({
+  searchParams,
+}: {
+  searchParams: { proxima?: string; conta?: string; email?: string };
+}) {
+  // `?conta=criada` vem do aceite de convite quando a conta FOI criada e o login automático não
+  // passou. Sem esta linha a pessoa cai numa tela de login idêntica à de quem errou a senha, e a
+  // conclusão natural é que o convite falhou — e ela tenta aceitar de novo um convite já aceito.
+  const contaRecemCriada = searchParams.conta === "criada";
   const [erro, formAction] = useFormState(entrar, null);
 
   return (
@@ -47,9 +55,13 @@ export default function LoginPage({ searchParams }: { searchParams: { proxima?: 
         <div className="rounded-[10px] border border-linha bg-branco p-8">
           <Marca className="mb-6" />
 
-          <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">Entrar</h1>
+          <h1 className="text-[20px] font-[650] tracking-[-0.01em] text-tinta">
+            {contaRecemCriada ? "Sua conta está pronta" : "Entrar"}
+          </h1>
           <p className="mt-1.5 text-[13.5px] text-suave">
-            Acesso restrito ao sistema. Use o e-mail do seu convite.
+            {contaRecemCriada
+              ? "Entre com o e-mail e a senha que você acabou de criar."
+              : "Acesso restrito ao sistema. Use o e-mail do seu convite."}
           </p>
 
           <form action={formAction} className="mt-6 space-y-4">
@@ -65,6 +77,9 @@ export default function LoginPage({ searchParams }: { searchParams: { proxima?: 
                 type="email"
                 autoComplete="email"
                 required
+                // quem acabou de criar a conta chega com o e-mail já sabido — redigitá-lo é a
+                // chance de errar exatamente o campo que o sistema acabou de gravar
+                defaultValue={contaRecemCriada ? (searchParams.email ?? "") : undefined}
                 className={campo}
               />
             </div>

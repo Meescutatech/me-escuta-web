@@ -182,3 +182,49 @@ test("a tela diz a verdade sobre o link: serve para varias, e nunca 'uma vez so'
   assert.ok(membros.includes("serve para várias pessoas"));
   assert.ok(!membros.includes("serve uma vez só"), "sobrou a frase do uso unico, que nao vale mais");
 });
+
+/*
+ * ── A TELA DE CHEGADA (14/09) ──────────────────────────────────────────────────────────────────
+ * Quem abre `/convite/aceitar` é a fono, no celular, e nunca viu o sistema. O print do Diogo
+ * mostrava a primeira frase dela errada de três jeitos ao mesmo tempo: "Você foi convidado",
+ * "Acesso de **Admin**" (o papel técnico, não o cargo) e o e-mail do convite mascarado — que num
+ * link de grupo é o marcador `a*********@convite.invalid`, um endereço que não é de ninguém.
+ */
+
+const aceite = readFileSync(new URL("../app/convite/aceitar/aceitar-real.tsx", import.meta.url), "utf8");
+const acoesAceite = readFileSync(new URL("../app/convite/aceitar/actions.ts", import.meta.url), "utf8");
+
+test("a tela anuncia o CARGO, não o papel técnico do banco", () => {
+  assert.ok(aceite.includes("cargoPorChave(convite.cargo)"), "a tela não resolve o cargo");
+  assert.ok(aceite.includes("você entra como {cargo.nome}"));
+  // o papel continua existindo como degrade para convite antigo, sem cargo gravado
+  assert.ok(aceite.includes("rotuloPapelBruto(convite.papel)"));
+});
+
+test("no link de grupo a tela não pede 'o mesmo e-mail do convite' nem mostra o marcador", () => {
+  assert.ok(aceite.includes('convite.aberto ? "Seu e-mail" : "Seu e-mail (o mesmo do convite)"'));
+  assert.ok(aceite.includes("{!convite.aberto && convite.email_mascarado && ("));
+});
+
+test("o autofill continua desligado no e-mail — e no link aberto ele é PIOR", () => {
+  // Como o link de grupo aceita qualquer e-mail, o login salvo do Chrome criaria a conta com o
+  // endereço errado sem erro nenhum. A proteção de 11/09 vale mais aqui, não menos.
+  assert.ok(aceite.includes('name="email_do_convite"'));
+  assert.ok(aceite.includes('autoComplete="off"'));
+});
+
+test("aceitar entra direto — e o sucesso sem sessão continua sendo sucesso", () => {
+  assert.ok(acoesAceite.includes("signInWithPassword"), "o aceite não entra");
+  assert.ok(acoesAceite.includes("return { ok: true, entrou: false };"));
+  assert.ok(aceite.includes('router.push(r.entrou ? "/funil"'));
+  // o degrade manda para o login DIZENDO que a conta existe; sem isso a tela é idêntica à de quem
+  // errou a senha, e a pessoa tenta aceitar de novo um convite já aceito
+  assert.ok(aceite.includes("/login?conta=criada&email="));
+  const login = readFileSync(new URL("../app/login/page.tsx", import.meta.url), "utf8");
+  assert.ok(login.includes("Sua conta está pronta"));
+});
+
+test("falha do login automático NÃO vira erro de aceite — a conta já existe", () => {
+  // `ok: false` aqui faria a pessoa clicar de novo e levar "este email já tem cadastro".
+  assert.ok(!/signInWithPassword[\s\S]{0,200}return \{ ok: false/.test(acoesAceite));
+});
