@@ -21,11 +21,8 @@ import { gerarAtividadeMembro } from "@/lib/ensaio/fixtures/membro-atividade";
 import { fotosEnsaio } from "@/lib/ensaio/fotos";
 import { CabecalhoCartaoPessoa, CartaoPessoa, desdeQuando, type NumeroDaPessoa, type Pessoa } from "@/components/pessoas/cartao-pessoa";
 import { PainelPessoa } from "@/components/pessoas/painel-pessoa";
-import { emailConviteValido } from "@/lib/membros";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   gerarConviteAberto,
-  gerarConvitePorCargo,
   mudarCargo as acaoMudarCargo,
   reativarAcesso as acaoReativarAcesso,
   reenviarConvite as acaoReenviarConvite,
@@ -504,6 +501,21 @@ export function MembrosEnsaio({
  * escolha, e o bloco abaixo do seletor mostra o que o banco vai receber (D91 R5) — quem precisa
  * conferir confere, quem não precisa não lê.
  */
+/**
+ * CONVIDAR — um campo, e ele é o CARGO.
+ *
+ * 14/09, decisão do Diogo vendo a tela: **só o link**. Um link por cargo, mandado no grupo; quem
+ * abre cria a própria conta com o próprio e-mail. Não há campo de e-mail porque não há destinatário
+ * — e a versão que pedia um estava fazendo a gestão digitar, uma a uma, a lista que ela justamente
+ * não tem.
+ *
+ * Isso é `canal = 'link_aberto'` (0342-0344, em produção desde 11/09). O aceite não consome o
+ * token e não confere e-mail: cada pessoa traz o seu. Revogar e expirar continuam valendo, e são o
+ * botão de pânico — o link é uma credencial que se encaminha, e a tela diz isso antes de gerar.
+ *
+ * O e-mail que a porta exige é um MARCADOR montado pelo runtime (`aberto-<cargo>@convite.invalid`).
+ * A tela nunca o vê nem o mostra: quem identifica o link é o cargo.
+ */
 function DialogoConvite({
   aberto,
   aoFechar,
@@ -524,9 +536,6 @@ function DialogoConvite({
   criadoPor: string;
   ensaio: boolean;
 }) {
-  const [nome, setNome] = useState("");
-  const [email, setEmail] = useState("");
-  const [alcance, setAlcance] = useState<"pessoa" | "grupo">("pessoa");
   const [chaveCargo, setChaveCargo] = useState<string>("sdr");
   const [gerado, setGerado] = useState<ConviteEnsaio | null>(null);
   const [linkReal, setLinkReal] = useState<string | null>(null);
@@ -535,15 +544,10 @@ function DialogoConvite({
   const [copiado, setCopiado] = useState(false);
 
   const cargo = (cargoPorChave(chaveCargo) ?? CARGOS_ATIVOS[0]) as Cargo;
-  const paraGrupo = alcance === "grupo";
-  const emailOk = paraGrupo || emailConviteValido(email);
 
   const fechar = () => {
     aoFechar();
     setTimeout(() => {
-      setNome("");
-      setEmail("");
-      setAlcance("pessoa");
       setChaveCargo("sdr");
       setGerado(null);
       setLinkReal(null);
@@ -553,21 +557,19 @@ function DialogoConvite({
   };
 
   /**
-   * GERAR O CONVITE.
-   *
-   * No ensaio o convite é de mentira e isso é o certo — não há banco. Fora do ensaio quem gera é o
+   * No ensaio o convite é de mentira e isso é o certo — não há banco. Fora dele quem gera é o
    * runtime: ele sorteia `randomBytes(32).toString("base64url")` (43 caracteres, sem prefixo),
-   * grava só o HASH em `ops.convite_token` e devolve a URL montada. A tela nunca inventa token:
-   * era exatamente isso que produzia o link `cnv_…` que abria e não entrava ninguém.
+   * grava só o HASH e devolve a URL montada. A tela nunca inventa token — era exatamente isso que
+   * produzia o link `cnv_…` que abria e não entrava ninguém.
    */
   const gerar = async () => {
     if (ensaio) {
       const { papel, departamentos } = conviteDoCargo(cargo);
       const c: ConviteEnsaio = {
         id: `c0000000-0000-4000-8000-${Date.now().toString().slice(-12)}`,
-        nome: paraGrupo ? null : nome.trim() || null,
-        email: paraGrupo ? null : email.trim() || null,
-        canal: paraGrupo ? "link_aberto" : "link",
+        nome: null,
+        email: null,
+        canal: "link_aberto",
         cargo: chaveCargo,
         papel,
         departamentos,
@@ -585,7 +587,7 @@ function DialogoConvite({
     setErro(null);
     setGerando(true);
     try {
-      const r = paraGrupo ? await gerarConviteAberto(chaveCargo) : await gerarConvitePorCargo(email, chaveCargo);
+      const r = await gerarConviteAberto(chaveCargo);
       if (!r.ok || !r.url) {
         setErro(r.motivo ?? "o servidor não devolveu o link");
         return;
@@ -594,11 +596,9 @@ function DialogoConvite({
       setLinkReal(r.url);
       setGerado({
         id: r.convite_id ?? "",
-        nome: paraGrupo ? null : nome.trim() || null,
-        // no link aberto o e-mail é um marcador `.invalid` montado pelo runtime — a tela nunca o
-        // mostra, e guardá-lo aqui faria a lista exibir um endereço que não é de ninguém
-        email: paraGrupo ? null : email.trim().toLowerCase(),
-        canal: paraGrupo ? "link_aberto" : "link",
+        nome: null,
+        email: null,
+        canal: "link_aberto",
         cargo: chaveCargo,
         papel,
         departamentos,
@@ -647,9 +647,10 @@ function DialogoConvite({
         {!gerado ? (
           <>
             <DialogHeader>
-              <DialogTitle>Convidar alguém</DialogTitle>
+              <DialogTitle>Gerar link de convite</DialogTitle>
               <DialogDescription>
-                Escolha o cargo e gere o link. A pessoa abre pelo WhatsApp, escolhe a senha e já entra com tudo no lugar.
+                Escolha o cargo e mande o link no grupo. Cada pessoa abre, escolhe e-mail e senha, e já entra com tudo
+                no lugar.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-5">
@@ -683,57 +684,12 @@ function DialogoConvite({
                 </ul>
               </div>
 
-              {/* Quem pode usar o link. As duas opções se leem como consequência, não como rótulo:
-                  a diferença entre elas não é "um" e "vários" — é quem consegue entrar se o link
-                  vazar, e isso tem de estar escrito na hora da escolha, não num aviso depois. */}
-              <RadioGroup value={alcance} onValueChange={(v) => setAlcance(v as "pessoa" | "grupo")}>
-                <label className="flex cursor-pointer items-start gap-2.5">
-                  <RadioGroupItem value="pessoa" className="mt-0.5" />
-                  <span className="min-w-0">
-                    <span className="block text-[13.5px] font-medium text-foreground">Uma pessoa</span>
-                    <span className="block text-ui-12 text-muted-foreground">
-                      Você informa o e-mail dela. Só quem tiver esse e-mail entra, e o link morre no primeiro uso.
-                    </span>
-                  </span>
-                </label>
-                <label className="flex cursor-pointer items-start gap-2.5">
-                  <RadioGroupItem value="grupo" className="mt-0.5" />
-                  <span className="min-w-0">
-                    <span className="block text-[13.5px] font-medium text-foreground">Várias pessoas</span>
-                    <span className="block text-ui-12 text-muted-foreground">
-                      Um link só, para mandar no grupo. Quem abrir entra como {cargo.nome} e escolhe o próprio e-mail —
-                      inclusive quem receber o link de outra pessoa. Revogue quando a turma terminar.
-                    </span>
-                  </span>
-                </label>
-              </RadioGroup>
-
-              {!paraGrupo && (
-                <>
-                  <FormItemLayout
-                    label="E-mail"
-                    required
-                    htmlFor="convite-email"
-                    description="É por ele que o convite é DESTA pessoa: o aceite confere o e-mail, e só quem o tiver entra por este link."
-                  >
-                    <Input
-                      id="convite-email"
-                      type="email"
-                      autoComplete="off"
-                      value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        setErro(null);
-                      }}
-                      placeholder="priscila@meescuta.com"
-                    />
-                  </FormItemLayout>
-
-                  <FormItemLayout label="Nome" htmlFor="convite-nome" description="Opcional — só para você lembrar para quem mandou.">
-                    <Input id="convite-nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Priscila Martins" />
-                  </FormItemLayout>
-                </>
-              )}
+              {/* O link é uma credencial que se encaminha, e isso tem de estar escrito ANTES de
+                  gerar — não num aviso depois, quando ele já está no grupo. */}
+              <p className="text-ui-12 leading-snug text-muted-foreground">
+                Qualquer pessoa com o link entra como {cargo.nome}, inclusive quem o receber de outra. Vale 7 dias, e
+                revogar mata o link para todo mundo na hora.
+              </p>
 
               {erro && (
                 <p role="alert" className="text-[13px] text-destructive">
@@ -745,8 +701,8 @@ function DialogoConvite({
               <Button variant="outline" onClick={fechar}>
                 Cancelar
               </Button>
-              <Button disabled={!emailOk || gerando} onClick={() => void gerar()}>
-                {gerando ? "Gerando…" : paraGrupo ? "Gerar link do grupo" : "Gerar link"}
+              <Button disabled={gerando} onClick={() => void gerar()}>
+                {gerando ? "Gerando…" : "Gerar link"}
               </Button>
             </DialogFooter>
           </>
@@ -755,22 +711,19 @@ function DialogoConvite({
             <DialogHeader>
               <DialogTitle>Link pronto</DialogTitle>
               <DialogDescription>
-                {aberto
-                  ? `Quem abrir entra como ${cargo.nome}. O link vale 7 dias e serve para várias pessoas — revogue quando a turma terminar.`
-                  : `${gerado.nome ?? gerado.email ?? "Quem abrir"} entra como ${cargo.nome}. O link vale 7 dias e serve uma vez só.`}
+                Quem abrir entra como {cargo.nome}. Vale 7 dias e serve para várias pessoas — revogue quando a turma
+                terminar.
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2">
               <Input readOnly value={link} className="font-mono text-ui-12" onFocus={(e) => e.currentTarget.select()} aria-label="Link do convite" />
-              <Button variant="outline" onClick={copiar} className="shrink-0">
+              <Button variant="outline" onClick={() => void copiar()} className="shrink-0">
                 {copiado ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}
                 {copiado ? "Copiado" : "Copiar"}
               </Button>
             </div>
             <p className="text-ui-12 text-muted-foreground">
-              {aberto
-                ? "Mande no grupo. Ele fica em pendentes até você revogar — e revogar mata o link para todo mundo na hora."
-                : "Mande pelo WhatsApp dela. Enquanto não for aceito, o convite fica em pendentes e você pode revogar."}
+              Mande no grupo. Ele fica em pendentes até você revogar — e revogar mata o link para todo mundo na hora.
             </p>
             <DialogFooter>
               <Button onClick={fechar}>Fechar</Button>
