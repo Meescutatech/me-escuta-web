@@ -99,3 +99,44 @@ test("o ensaio continua com estado local — é o comportamento certo onde não 
   assert.ok(grade.includes("ensaio = false,"));
   assert.ok(tela.includes("ensaio = false,"));
 });
+
+/*
+ * ── "Só não explica o motivo do Levindo estar ligado" (Diogo, 14/09, olhando a tela) ───────────
+ *
+ * O card mostrava "● Ativo" ao lado do selo "em desenvolvimento", com o interruptor TRAVADO, e não
+ * dizia por quê. Medido em produção antes de consertar:
+ *     core.agente       levindo ativo=t · priscila ativo=f
+ *     core.sugestao_ia  levindo 47, TODAS de 16/07/2026 (o smoke). Nada depois.
+ *                       clara 256, a última de hoje — a única viva.
+ * Ele está ligado porque NASCEU ligado na semente. "Ativo" é verdade sobre a coluna e mentira sobre
+ * a operação, e é a segunda que a pessoa lê.
+ */
+
+const leitor = readFileSync(new URL("../lib/dados/agentes.ts", import.meta.url), "utf8");
+
+test("agente que não opera não se anuncia como Ativo", () => {
+  assert.ok(
+    grade.includes('situacao={ligado && emDev ? "esperando_credencial" : ligado ? "ligado" : a.situacao}'),
+    "ligado + em desenvolvimento voltou a mostrar o ponto verde de Ativo",
+  );
+});
+
+test("o motivo de estar ligado fica VISÍVEL — tooltip é onde a informação vai para não ser lida", () => {
+  assert.ok(leitor.includes("Ligado desde a semente de 16/07"));
+  assert.ok(grade.includes("Ligado no banco, mas não opera."), "o motivo sumiu do corpo do card");
+  // e só aparece no par que gera a contradição: ligado E sem operar
+  assert.ok(grade.includes("{emDev && ligado && ("));
+  assert.ok(leitor.includes("...(ativo ? [LIGADO_POR_SEMENTE] : [])"));
+});
+
+test("dá para DESLIGAR um agente que não opera — travar os dois sentidos era o defeito", () => {
+  // Desligar é sempre seguro. Com `emDev` travando os dois lados, o Levindo ficava ligado sem que
+  // ninguém pudesse desligá-lo pela tela.
+  assert.ok(grade.includes("disabled={!gestao || gravando || ((emDev || impedido) && !ligado)}"));
+  assert.ok(!grade.includes("disabled={!gestao || emDev || gravando"), "o travamento antigo voltou");
+});
+
+test("LIGAR o que não funciona continua travado", () => {
+  // o predicado `(emDev || impedido) && !ligado` é o que guarda esse sentido
+  assert.ok(grade.includes("(emDev || impedido) && !ligado"));
+});

@@ -143,13 +143,15 @@ function CartaoAgente({
 
       <div className="flex flex-1 flex-col gap-2 px-4 pb-3 pt-3">
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-          <PontoEstado situacao={ligado ? "ligado" : a.situacao} />
+          {/* "Ativo" ao lado de "em desenvolvimento" era a contradição que a tela mostrava sem
+              explicar. Ligado E sem operar não é "ativo" — é ligado à toa, e o card diz isso. */}
+          <PontoEstado situacao={ligado && emDev ? "esperando_credencial" : ligado ? "ligado" : a.situacao} />
           {emDev && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-[0.04em] text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
               em desenvolvimento
             </span>
           )}
-          {a.ultima_acao && ligado && <span className="truncate">· {relativo(a.ultima_acao.em)}</span>}
+          {a.ultima_acao && ligado && !emDev && <span className="truncate">· {relativo(a.ultima_acao.em)}</span>}
         </div>
 
         <Link
@@ -160,6 +162,14 @@ function CartaoAgente({
         </Link>
 
         <p className="min-h-[38px] text-[13px] leading-snug text-muted-foreground">{a.frase}</p>
+
+        {/* O motivo vivia num tooltip, e tooltip é onde a informação vai para não ser lida. Quem
+            abre esta tela para entender por que um agente está ligado tem de ler aqui. */}
+        {emDev && ligado && (
+          <p className="text-ui-12 leading-snug text-warning-ink">
+            Ligado no banco, mas não opera. {a.pendencias.find((p) => p.startsWith("Ligado desde")) ?? ""}
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-1.5 pt-0.5">
           <TagAgente>{a.area}</TagAgente>
@@ -199,8 +209,16 @@ function CartaoAgente({
         </Link>
 
         <HintTooltip
-          title={impedido ? "Não dá para ligar ainda" : ligado ? "Desligar" : "Ligar"}
-          content={impedido ? a.pendencias[0] : gestao ? "Vale na hora, e fica registrado." : "Só gestão liga e desliga agente."}
+          title={impedido && !ligado ? "Não dá para ligar ainda" : ligado ? "Desligar" : "Ligar"}
+          content={
+            impedido && !ligado
+              ? a.pendencias[0]
+              : !gestao
+                ? "Só gestão liga e desliga agente."
+                : emDev && ligado
+                  ? "Desligar é seguro: ele não produz nada. Fica registrado no ledger."
+                  : "Vale na hora, e fica registrado."
+          }
         >
           <span className="shrink-0">
             <Switch
@@ -214,7 +232,10 @@ function CartaoAgente({
                 }
                 void alternar(v);
               }}
-              disabled={!gestao || emDev || gravando || (impedido && !ligado)}
+              // Desligar um agente que não opera é seguro e é o gesto certo — travar os DOIS
+              // sentidos deixava o Levindo ligado sem que ninguém pudesse desligá-lo pela tela.
+              // O que continua travado é LIGAR o que não funciona.
+              disabled={!gestao || gravando || ((emDev || impedido) && !ligado)}
               aria-label={`${ligado ? "Desligar" : "Ligar"} ${a.nome}`}
             />
           </span>
