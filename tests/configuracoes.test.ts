@@ -383,9 +383,16 @@ test("todo tipo escrito pela Web-B tem conferência OU exceção declarada", () 
   // 10 → 11 em 08/09/2026: entrou `canal_nivel_alterado` (D70). O número é atualizado no MESMO
   // commit que acrescenta o tipo, de propósito — é ele que obriga quem acrescenta uma escrita nova
   // a passar por aqui e declarar como ela se confere.
-  // 11 → 12 em 14/09/2026: entrou `config_atualizada` (ligar/desligar agente pela tela de Agentes),
+  // 11 → 12 em 14/09: entrou `config_atualizada` (ligar/desligar agente pela tela de Agentes),
   // com conferência por EFEITO — `core.agente.ativo` no estado pedido, não só a linha existir.
-  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 12);
+  // 12 → 15 no MESMO dia: os três eventos do template HSM (R36). As duas trilhas mexeram nesta
+  // linha sem se ver — a da R36 escreveu 14 partindo de 11, sem o `config_atualizada`. O número
+  // fica travado de propósito: é ele que obriga quem acrescenta escrita nova a declarar como ela
+  // se confere, e foi ele que acusou a colisão em vez de deixar as duas listas se comerem.
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 15);
+  for (const t of ["config_atualizada", "template_whatsapp_criado", "template_whatsapp_submetido", "template_whatsapp_arquivado"]) {
+    assert.ok(TIPOS_ESCRITOS_WEB_B.includes(t), t);
+  }
   assert.ok(TIPOS_ESCRITOS_WEB_B.includes("canal_nivel_alterado"));
   assert.ok(TIPOS_ESCRITOS_WEB_B.includes("config_atualizada"));
 });
@@ -410,6 +417,42 @@ test("toda regra desta trilha confere por EFEITO — nunca só pela existência 
 test("ativar confere o ESTADO, não só a existência da linha", () => {
   const r = regraWebB("canal_ativado");
   assert.ok(r.filtros.some((f) => f.campo === "ativo" && f.op === "igual" && f.valor === true));
+});
+
+/*
+ * R36 · os três eventos do template HSM. O que estes testes travam é a distinção que a spec
+ * comprou: criar NÃO submete. Se o `_criado` passar a conferir qualquer status, a diferença entre
+ * rascunho e submetido deixa de ser provada no readback — e ela é a razão de o rascunho existir
+ * (nome de template não se edita, e nome apagado fica bloqueado para reuso).
+ */
+test("criar template confere que a linha nasceu EM RASCUNHO — a prova de que criar não submete", () => {
+  const r = regraWebB("template_whatsapp_criado");
+  assert.equal(r.tabela, "template_whatsapp");
+  assert.ok(r.filtros.some((f) => f.campo === "status" && f.op === "igual" && f.valor === "rascunho"));
+  // o id vem do EVENTO, nunca do payload: a tela não inventa identidade
+  assert.ok(r.filtros.some((f) => f.campo === "id" && f.op === "igualEvento"));
+  assert.deepEqual(resolverFiltros(r.filtros, { nome: "retomar_avaliacao" }, "evt-1"), [
+    { campo: "id", tipo: "igual", valor: "evt-1" },
+    { campo: "status", tipo: "igual", valor: "rascunho" },
+  ]);
+});
+
+test("submeter confere o ESTADO 'enviando' — não que a linha existe, porque ela já existia", () => {
+  const r = regraWebB("template_whatsapp_submetido");
+  assert.ok(r.filtros.some((f) => f.campo === "status" && f.op === "igual" && f.valor === "enviando"));
+  assert.deepEqual(resolverFiltros(r.filtros, { template_id: "t-9" }, "evt-2"), [
+    { campo: "id", tipo: "igual", valor: "t-9" },
+    { campo: "status", tipo: "igual", valor: "enviando" },
+  ]);
+});
+
+test("arquivar confere `arquivado_em` preenchido — arquivar é terminal", () => {
+  const r = regraWebB("template_whatsapp_arquivado");
+  assert.ok(r.filtros.some((f) => f.campo === "arquivado_em" && f.op === "naoNulo"));
+  assert.deepEqual(resolverFiltros(r.filtros, { template_id: "t-9" }, null), [
+    { campo: "id", tipo: "igual", valor: "t-9" },
+    { campo: "arquivado_em", tipo: "naoNulo" },
+  ]);
 });
 
 test("config_publicada confere a VERSÃO RESULTANTE (base + 1), não o nome", () => {
