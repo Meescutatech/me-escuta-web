@@ -44,6 +44,15 @@ export interface ConviteEnsaio {
   status: "pendente" | "expirado" | "aceito" | "revogado";
   token: string;
   criado_por: string;
+  /**
+   * `link_aberto` (0342-0344) = UM link, VÁRIAS pessoas: o aceite não consome o token nem confere
+   * o e-mail, e cada uma traz o seu. Muda o que a tela pode dizer sobre o convite — "serve uma vez
+   * só" é falso nele — e é por isso que o campo existe aqui em vez de ficar só no banco.
+   * `undefined` = fixture antiga; a leitura real sempre preenche.
+   */
+  canal?: "email" | "link" | "link_aberto";
+  /** chave do cargo pedido no convite (0338). É o que se mostra no lugar do e-mail marcador. */
+  cargo?: string | null;
 }
 
 const H = 3_600_000;

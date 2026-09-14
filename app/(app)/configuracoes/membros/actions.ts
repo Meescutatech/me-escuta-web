@@ -146,6 +146,26 @@ export async function gerarConvitePorCargo(email: string, cargo: string): Promis
   return chamarConvites("/admin/convites", { email: limpo, cargo: cargo.trim(), canal: "link" });
 }
 
+/**
+ * LINK ABERTO — um link, várias pessoas (0342-0344).
+ *
+ * Sem e-mail: `porta.aceitar_convite` não consome o token e não confere o e-mail no canal aberto —
+ * cada pessoa traz o seu ao entrar. Quem monta o e-mail MARCADOR que a porta exige é o runtime, não
+ * esta função e não a tela: e-mail é identidade, e identidade inventada pelo navegador é a classe
+ * de defeito que esta rodada inteira existiu para tirar.
+ *
+ * ⚠️ O link é uma CREDENCIAL QUE SE ENCAMINHA: quem o receber de terceiro entra igual. Revogar mata
+ * na hora (`POST /admin/convites/revogar`), e é por isso que a tela deixa o revogar à mão.
+ *
+ * Existe UM link aberto vivo por cargo de cada vez: o marcador leva o cargo, e a porta recusa
+ * segundo convite pendente para o mesmo e-mail. Pedir outro devolve "já existe convite pendente" —
+ * que é a verdade, e evita dois links do mesmo cargo abertos sem ninguém lembrar de fechar.
+ */
+export async function gerarConviteAberto(cargo: string): Promise<ResultadoConvite> {
+  if (!cargo.trim()) return { ok: false, motivo: "escolha um cargo" };
+  return chamarConvites("/admin/convites", { cargo: cargo.trim(), canal: "link_aberto" });
+}
+
 export interface PassoCargo {
   rotulo: string;
   ok: boolean;

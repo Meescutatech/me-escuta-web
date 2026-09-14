@@ -41,7 +41,7 @@ export async function lerDadosMembros(): Promise<DadosMembros | null> {
       supabase
         .schema("core")
         .from("v_convite")
-        .select("id,email,papel,funcao,criado_em,expira_em,status,departamentos,criado_por")
+        .select("id,email,papel,funcao,criado_em,expira_em,status,departamentos,criado_por,canal,cargo")
         .in("status", ["pendente", "expirado"])
         .order("criado_em", { ascending: true }),
       supabase.schema("core").from("v_departamento").select("chave,rotulo,ativo,pai,nivel,entrada,ordem"),
@@ -95,6 +95,8 @@ export async function lerDadosMembros(): Promise<DadosMembros | null> {
       status: (c.status ?? "pendente") as ConviteEnsaio["status"],
       token: "",
       criado_por: String(c.criado_por ?? ""),
+      canal: c.canal === "link_aberto" ? "link_aberto" : c.canal === "email" ? "email" : "link",
+      cargo: (c.cargo as string | null) ?? null,
     }));
 
     const departamentos: Departamento[] = (depsRes.data ?? []).map((d) => ({

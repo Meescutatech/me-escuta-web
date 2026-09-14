@@ -73,8 +73,10 @@ test("o token do convite nunca é fabricado no navegador fora do ensaio", () => 
     .filter(([l]) => l.includes("cnv_${Math.random") && !/^\s*(\*|\/\/)/.test(l));
   assert.ok(fabricacoes.length > 0, "o ensaio perdeu o token de mentira — refaça este teste");
   for (const [, i] of fabricacoes) {
-    // o ramo do ensaio abre no máximo 12 linhas acima de cada fabricação
-    const acima = linhas.slice(Math.max(0, i - 12), i).join("\n");
+    // o ramo do ensaio abre acima de cada fabricação. A janela é 20 e não 5 porque o objeto
+    // `ConviteEnsaio` do ensaio tem 12 campos — o que se prova é que a fabricação está DENTRO de um
+    // ramo de ensaio, não a que distância ele abre.
+    const acima = linhas.slice(Math.max(0, i - 20), i).join("\n");
     assert.ok(
       acima.includes("if (ensaio)"),
       `linha ${i + 1}: token fabricado fora de um ramo \`if (ensaio)\` — é o convite fantasma voltando`,
@@ -86,7 +88,9 @@ test("o modal pede e-mail, e sem e-mail válido não deixa gerar", () => {
   // A prova sem ler código, que foi como o defeito apareceu: o modal no ar pedia Cargo e Nome
   // opcional e NÃO pedia e-mail — e `POST /admin/convites` recusa sem e-mail (400 "email inválido").
   assert.ok(membros.includes('id="convite-email"'), "o modal não tem campo de e-mail");
-  assert.ok(membros.includes("const emailOk = emailConviteValido(email)"));
+  // no modo GRUPO não há e-mail para exigir — a trava vale para o convite nominal, que é o que
+  // `POST /admin/convites` recusa sem e-mail
+  assert.ok(membros.includes("const emailOk = paraGrupo || emailConviteValido(email)"));
   assert.ok(membros.includes("disabled={!emailOk || gerando}"), "o botão Gerar link não trava sem e-mail");
 });
 
@@ -122,4 +126,62 @@ test("falha parcial de mudar cargo é dita, não escondida", () => {
   // certo" sobre uma mudança que entrou pela metade.
   assert.ok(acoes.includes("passos: PassoCargo[]"));
   assert.ok(membros.includes('toast.error(entrou > 0 ? "O cargo mudou pela metade." : "Não gravou."'));
+});
+
+/*
+ * ── LINK ABERTO: um link, várias pessoas (14/09, depois que o Diogo viu a tela) ────────────────
+ *
+ * O defeito que estes fecham não estava no banco. As migrations 0342-0344 estavam APLICADAS em
+ * produção desde 11/09 e o recurso não existia para ninguém, porque a única porta de entrada — a
+ * rota `POST /admin/convites` do runtime — fazia `corpo.canal === "email" ? "email" : "link"` e
+ * descartava o valor em silêncio. Banco pronto + porta que descarta é a classe de defeito mais cara
+ * desta casa, porque nada quebra e ninguém descobre.
+ */
+
+test("a tela sabe pedir link aberto, e o e-mail deixa de ser exigido nesse modo", () => {
+  assert.ok(membros.includes("gerarConviteAberto(chaveCargo)"), "a tela não chama a action do link aberto");
+  assert.ok(acoes.includes('canal: "link_aberto"'), "a action não pede o canal aberto");
+  assert.ok(membros.includes("const emailOk = paraGrupo || emailConviteValido(email)"));
+});
+
+test("no link aberto a tela NÃO inventa e-mail — quem monta o marcador é o servidor", () => {
+  // e-mail é identidade, e identidade inventada pelo navegador é a classe de defeito da ARB-26 —
+  // a mesma do token `cnv_${Math.random()}` que esta rodada começou consertando.
+  assert.ok(membros.includes("email: paraGrupo ? null :"), "a tela guarda um e-mail no link aberto");
+  assert.ok(
+    !acoes.includes(".invalid"),
+    "o marcador `.invalid` não pode nascer no web — ele é do runtime (src/convites/servidor.ts)",
+  );
+  assert.ok(acoes.includes("export async function gerarConviteAberto(cargo: string)"));
+  assert.ok(
+    !/gerarConviteAberto\([^)]*email/.test(acoes),
+    "gerarConviteAberto não recebe e-mail: o modo aberto existe justamente para não pedir um",
+  );
+});
+
+test("a escolha entre um e vários é feita de CONSEQUÊNCIA, não de rótulo", () => {
+  // O link aberto é uma credencial que se encaminha. Isso tem de estar escrito na hora de escolher,
+  // não num aviso depois — quem lê "várias pessoas" não deduz "inclusive quem receber de terceiro".
+  assert.ok(membros.includes("Uma pessoa") && membros.includes("Várias pessoas"));
+  assert.ok(membros.includes("inclusive quem receber o link de outra pessoa"));
+  assert.ok(membros.includes("o link morre no primeiro uso"));
+});
+
+test("a tela para de dizer 'serve uma vez só' sobre um link que serve várias", () => {
+  // `porta.aceitar_convite` (0342) ignora `usado_em` no canal aberto: o link NÃO se consome.
+  assert.ok(membros.includes("serve para várias pessoas"));
+  assert.ok(membros.includes("paraGrupo ?"), "o texto do passo 2 tem de ser condicionado ao modo");
+  assert.ok(membros.includes("serve uma vez só"), "o modo nominal continua dizendo a verdade dele");
+});
+
+test("o convite pendente diz que é de grupo, e não mostra o marcador `.invalid`", () => {
+  assert.ok(membros.includes('const grupo = c.canal === "link_aberto"'));
+  assert.ok(membros.includes('{grupo ? "Link do grupo"'), "o marcador apareceria como e-mail na lista");
+  assert.ok(membros.includes("várias pessoas"));
+});
+
+test("`canal` e `cargo` vêm do banco — a tela não adivinha qual convite é aberto", () => {
+  const leitor = readFileSync(new URL("../lib/dados/membros-reais.ts", import.meta.url), "utf8");
+  assert.ok(leitor.includes("canal,cargo"), "o select não traz canal nem cargo de core.v_convite");
+  assert.ok(leitor.includes('c.canal === "link_aberto" ? "link_aberto"'));
 });

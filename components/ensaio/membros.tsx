@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, CopyIcon, LinkIcon, MoreHorizontalIcon, PlusIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, LinkIcon, MoreHorizontalIcon, PlusIcon, RefreshCwIcon, SearchIcon, UsersIcon, XIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -22,7 +22,9 @@ import { fotosEnsaio } from "@/lib/ensaio/fotos";
 import { CabecalhoCartaoPessoa, CartaoPessoa, desdeQuando, type NumeroDaPessoa, type Pessoa } from "@/components/pessoas/cartao-pessoa";
 import { PainelPessoa } from "@/components/pessoas/painel-pessoa";
 import { emailConviteValido } from "@/lib/membros";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
+  gerarConviteAberto,
   gerarConvitePorCargo,
   mudarCargo as acaoMudarCargo,
   reativarAcesso as acaoReativarAcesso,
@@ -384,15 +386,30 @@ export function MembrosEnsaio({
           <h2 className="text-ui-13 font-semibold text-foreground">Convites pendentes</h2>
           <div className="overflow-hidden rounded-lg border border-border bg-card">
             {pendentes.map((c, i) => {
-              const cargo = cargoDoConvite(c);
+              // o cargo PEDIDO manda sobre o cargo derivado: `cargoDoConvite` reconstrói a partir de
+              // papel + lotação e empata entre dois cargos que expandem igual
+              const cargo = cargoPorChave(c.cargo) ?? cargoDoConvite(c);
+              const grupo = c.canal === "link_aberto";
               const prazo = expiraEm(c.expira_em, agora);
               return (
                 <div key={c.id} className={cn("flex items-center gap-4 px-4 py-3", i > 0 && "border-t border-border")}>
                   <span className="grid size-10 shrink-0 place-items-center rounded-full border border-dashed border-border text-muted-foreground">
-                    <LinkIcon className="size-4" />
+                    {grupo ? <UsersIcon className="size-4" /> : <LinkIcon className="size-4" />}
                   </span>
                   <div className="min-w-0 flex-[1.6]">
-                    <div className="truncate text-[15px] font-semibold text-foreground">{c.nome ?? c.email ?? "Convite por link"}</div>
+                    {/* No link aberto o e-mail é um marcador `.invalid` montado pelo runtime para
+                        satisfazer a guarda do banco. Mostrá-lo seria exibir um endereço que não é
+                        de ninguém — quem identifica o link é o CARGO, na linha de baixo. */}
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[15px] font-semibold text-foreground">
+                        {grupo ? "Link do grupo" : (c.nome ?? c.email ?? "Convite por link")}
+                      </span>
+                      {grupo && (
+                        <Badge variant="muted" size="sm">
+                          várias pessoas
+                        </Badge>
+                      )}
+                    </div>
                     <div className="mt-0.5 text-[13px]">
                       <span className="font-medium text-foreground">{cargo?.nome ?? "Sem cargo"}</span>
                       <span className="text-muted-foreground">
@@ -509,6 +526,7 @@ function DialogoConvite({
 }) {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
+  const [alcance, setAlcance] = useState<"pessoa" | "grupo">("pessoa");
   const [chaveCargo, setChaveCargo] = useState<string>("sdr");
   const [gerado, setGerado] = useState<ConviteEnsaio | null>(null);
   const [linkReal, setLinkReal] = useState<string | null>(null);
@@ -517,13 +535,15 @@ function DialogoConvite({
   const [copiado, setCopiado] = useState(false);
 
   const cargo = (cargoPorChave(chaveCargo) ?? CARGOS_ATIVOS[0]) as Cargo;
-  const emailOk = emailConviteValido(email);
+  const paraGrupo = alcance === "grupo";
+  const emailOk = paraGrupo || emailConviteValido(email);
 
   const fechar = () => {
     aoFechar();
     setTimeout(() => {
       setNome("");
       setEmail("");
+      setAlcance("pessoa");
       setChaveCargo("sdr");
       setGerado(null);
       setLinkReal(null);
@@ -545,8 +565,10 @@ function DialogoConvite({
       const { papel, departamentos } = conviteDoCargo(cargo);
       const c: ConviteEnsaio = {
         id: `c0000000-0000-4000-8000-${Date.now().toString().slice(-12)}`,
-        nome: nome.trim() || null,
-        email: email.trim() || null,
+        nome: paraGrupo ? null : nome.trim() || null,
+        email: paraGrupo ? null : email.trim() || null,
+        canal: paraGrupo ? "link_aberto" : "link",
+        cargo: chaveCargo,
         papel,
         departamentos,
         criado_em: agora.toISOString(),
@@ -563,7 +585,7 @@ function DialogoConvite({
     setErro(null);
     setGerando(true);
     try {
-      const r = await gerarConvitePorCargo(email, chaveCargo);
+      const r = paraGrupo ? await gerarConviteAberto(chaveCargo) : await gerarConvitePorCargo(email, chaveCargo);
       if (!r.ok || !r.url) {
         setErro(r.motivo ?? "o servidor não devolveu o link");
         return;
@@ -572,8 +594,12 @@ function DialogoConvite({
       setLinkReal(r.url);
       setGerado({
         id: r.convite_id ?? "",
-        nome: nome.trim() || null,
-        email: email.trim().toLowerCase(),
+        nome: paraGrupo ? null : nome.trim() || null,
+        // no link aberto o e-mail é um marcador `.invalid` montado pelo runtime — a tela nunca o
+        // mostra, e guardá-lo aqui faria a lista exibir um endereço que não é de ninguém
+        email: paraGrupo ? null : email.trim().toLowerCase(),
+        canal: paraGrupo ? "link_aberto" : "link",
+        cargo: chaveCargo,
         papel,
         departamentos,
         criado_em: agora.toISOString(),
@@ -657,28 +683,57 @@ function DialogoConvite({
                 </ul>
               </div>
 
-              <FormItemLayout
-                label="E-mail"
-                required
-                htmlFor="convite-email"
-                description="É por ele que o convite é DESTA pessoa: o aceite confere o e-mail, e só quem o tiver entra por este link."
-              >
-                <Input
-                  id="convite-email"
-                  type="email"
-                  autoComplete="off"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setErro(null);
-                  }}
-                  placeholder="priscila@meescuta.com"
-                />
-              </FormItemLayout>
+              {/* Quem pode usar o link. As duas opções se leem como consequência, não como rótulo:
+                  a diferença entre elas não é "um" e "vários" — é quem consegue entrar se o link
+                  vazar, e isso tem de estar escrito na hora da escolha, não num aviso depois. */}
+              <RadioGroup value={alcance} onValueChange={(v) => setAlcance(v as "pessoa" | "grupo")}>
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <RadioGroupItem value="pessoa" className="mt-0.5" />
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px] font-medium text-foreground">Uma pessoa</span>
+                    <span className="block text-ui-12 text-muted-foreground">
+                      Você informa o e-mail dela. Só quem tiver esse e-mail entra, e o link morre no primeiro uso.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <RadioGroupItem value="grupo" className="mt-0.5" />
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px] font-medium text-foreground">Várias pessoas</span>
+                    <span className="block text-ui-12 text-muted-foreground">
+                      Um link só, para mandar no grupo. Quem abrir entra como {cargo.nome} e escolhe o próprio e-mail —
+                      inclusive quem receber o link de outra pessoa. Revogue quando a turma terminar.
+                    </span>
+                  </span>
+                </label>
+              </RadioGroup>
 
-              <FormItemLayout label="Nome" htmlFor="convite-nome" description="Opcional — só para você lembrar para quem mandou.">
-                <Input id="convite-nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Priscila Martins" />
-              </FormItemLayout>
+              {!paraGrupo && (
+                <>
+                  <FormItemLayout
+                    label="E-mail"
+                    required
+                    htmlFor="convite-email"
+                    description="É por ele que o convite é DESTA pessoa: o aceite confere o e-mail, e só quem o tiver entra por este link."
+                  >
+                    <Input
+                      id="convite-email"
+                      type="email"
+                      autoComplete="off"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setErro(null);
+                      }}
+                      placeholder="priscila@meescuta.com"
+                    />
+                  </FormItemLayout>
+
+                  <FormItemLayout label="Nome" htmlFor="convite-nome" description="Opcional — só para você lembrar para quem mandou.">
+                    <Input id="convite-nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Priscila Martins" />
+                  </FormItemLayout>
+                </>
+              )}
 
               {erro && (
                 <p role="alert" className="text-[13px] text-destructive">
@@ -691,7 +746,7 @@ function DialogoConvite({
                 Cancelar
               </Button>
               <Button disabled={!emailOk || gerando} onClick={() => void gerar()}>
-                {gerando ? "Gerando…" : "Gerar link"}
+                {gerando ? "Gerando…" : paraGrupo ? "Gerar link do grupo" : "Gerar link"}
               </Button>
             </DialogFooter>
           </>
@@ -700,7 +755,9 @@ function DialogoConvite({
             <DialogHeader>
               <DialogTitle>Link pronto</DialogTitle>
               <DialogDescription>
-                {gerado.nome ? `${gerado.nome} entra como ${cargo.nome}.` : `${gerado.email ?? "Quem abrir"} entra como ${cargo.nome}.`} O link vale 7 dias e serve uma vez só.
+                {aberto
+                  ? `Quem abrir entra como ${cargo.nome}. O link vale 7 dias e serve para várias pessoas — revogue quando a turma terminar.`
+                  : `${gerado.nome ?? gerado.email ?? "Quem abrir"} entra como ${cargo.nome}. O link vale 7 dias e serve uma vez só.`}
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2">
@@ -711,7 +768,9 @@ function DialogoConvite({
               </Button>
             </div>
             <p className="text-ui-12 text-muted-foreground">
-              Mande pelo WhatsApp dela. Enquanto não for aceito, o convite fica em pendentes e você pode revogar.
+              {aberto
+                ? "Mande no grupo. Ele fica em pendentes até você revogar — e revogar mata o link para todo mundo na hora."
+                : "Mande pelo WhatsApp dela. Enquanto não for aceito, o convite fica em pendentes e você pode revogar."}
             </p>
             <DialogFooter>
               <Button onClick={fechar}>Fechar</Button>
