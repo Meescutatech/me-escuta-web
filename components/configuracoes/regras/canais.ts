@@ -399,6 +399,19 @@ export interface FormCanal {
    * default foi o que produziu dois números vivos que ninguém ligou.
    */
   finalidade: Finalidade | "";
+  /**
+   * 🔴 DE QUEM É O NÚMERO — `core.usuario.id`, e OBRIGATÓRIO no não oficial.
+   *
+   * Não é campo novo por capricho: a porta recusa o registro sem ele, com todas as letras —
+   * *"o numero e de uma pessoa, e canal sem dono nao tem quem pareie, quem responda nem de quem
+   * cobrar o consentimento"*. Medido em 14/09 clicando "Registrar número" na tela em produção: o
+   * formulário nunca mandava `responsavel_id`, e o cadastro de número não oficial **nunca
+   * funcionou** — a recusa vinha do banco e aparecia como uma faixa vermelha no topo da página,
+   * longe do botão.
+   *
+   * `""` no oficial, e ali é legítimo: o número é da empresa, não de ninguém.
+   */
+  responsavelId: string;
 }
 
 /** Campo → motivo em PT-BR. Motivo NOMEIA o limite violado, nunca "valor inválido". */
@@ -421,6 +434,14 @@ export function validarRegistroCanal(f: FormCanal): Problemas {
     p.nome = "dê um nome ao canal — é por ele que a operação identifica o número (e, no não oficial, é ele que vira o id `lite:`)";
   } else if (nome.length > 60) {
     p.nome = "o nome passa de 60 caracteres";
+  }
+
+  // 🔴 A recusa que ANTES vinha do banco, e agora vem aqui — antes de escrever, e ao lado do campo.
+  // A porta continua recusando (é ela quem guarda); o que muda é a pessoa descobrir no formulário
+  // em vez de numa faixa vermelha no topo da página, depois de clicar.
+  if (f.provedor === "nao_oficial" && (f.responsavelId ?? "").trim().length === 0) {
+    p.responsavelId =
+      "diga de quem é o número — um número pessoal sem dono não tem quem pareie, quem responda, nem de quem cobrar o consentimento";
   }
 
   if (!provedorValido(f.provedor)) {
@@ -644,6 +665,10 @@ export function payloadCanalRegistrado(f: FormCanal): PayloadECanalId {
   // janela do D18 (VD2), mas mandar as duas seria manter viva a fonte que esta rodada matou — e
   // payload que carrega o mesmo fato duas vezes é como as duas divergem.
   if (departamento) payload.departamento = departamento;
+  // o dono do número. Só viaja quando há — no oficial a porta não o exige, e mandar vazio seria
+  // afirmar que a empresa tem um dono pessoal para o próprio número.
+  const responsavel = (f.responsavelId ?? "").trim();
+  if (responsavel) payload.responsavel_id = responsavel;
   // M7 · a finalidade viaja no payload. O `if` aqui NÃO é o mesmo caso do `waba_id`: lá o campo
   // sumir calado era o defeito; aqui `validarRegistroCanal` já barrou o vazio antes de chegar,
   // e a omissão só acontece num ambiente onde a coluna ainda não existe.

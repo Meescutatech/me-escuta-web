@@ -43,6 +43,7 @@ import type { Departamento } from "@/lib/departamentos/escopo";
 import { PainelSessao } from "./painel-sessao";
 import { BarraPublicacao, Dialogo } from "./kit";
 import { CascaConfig, Contagem } from "@/components/ensaio/casca-config";
+import { SheetNumeroLite, type PessoaDoNumero } from "./sheet-numero-lite";
 import {
   Alert,
   AlertContent,
@@ -158,6 +159,7 @@ export function TabelaCanais({
   dominioIndisponivel,
   r22Legivel,
   nivelLegivel,
+  pessoas = [],
   declaracaoLegivel,
 }: {
   canais: CanalNaTela[];
@@ -174,11 +176,17 @@ export function TabelaCanais({
   nivelLegivel: boolean;
   /** D70 · `false` = a view não expõe `nivel_declarado`; não dá para dizer se alguém escolheu. */
   declaracaoLegivel: boolean;
+  /** membros ATIVOS — é deles que sai o dono do número não oficial, que a porta exige. */
+  pessoas?: PessoaDoNumero[];
 }) {
   const router = useRouter();
   const gestor = podeGerirCanais(meuPapel);
   const [busca, setBusca] = useState("");
   const [abrindo, setAbrindo] = useState(false);
+  /* 14/09 · o número NÃO OFICIAL saiu do formulário inline e virou um painel lateral com o QR.
+     O oficial continua aqui: ele é mesmo um formulário — três dados técnicos que se copiam do
+     painel da Meta. O não oficial não é: é uma pessoa, um celular e uma espera. */
+  const [conectando, setConectando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState<CanalNaTela | null>(null);
@@ -347,8 +355,20 @@ export function TabelaCanais({
           aoAviso={setAviso}
           departamentos={departamentos}
           dominioIndisponivel={dominioIndisponivel}
+          aoEscolherNaoOficial={() => {
+            setAbrindo(false);
+            setConectando(true);
+          }}
         />
       ) : null}
+
+      <SheetNumeroLite
+        aberto={conectando}
+        aoFechar={() => setConectando(false)}
+        pessoas={pessoas}
+        departamentos={departamentos}
+        f8Pronto={f8Pronto}
+      />
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         <Table className="table-fixed">
@@ -861,12 +881,15 @@ function BlocoAdicionar({
   aoAviso,
   departamentos,
   dominioIndisponivel,
+  aoEscolherNaoOficial,
 }: {
   aoFechar: () => void;
   aoErro: (m: string | null) => void;
   aoAviso: (m: string) => void;
   departamentos: Departamento[];
   dominioIndisponivel: boolean;
+  /** escolher "não oficial" SAI daqui e abre o painel de conectar — ver a nota em `setConectando`. */
+  aoEscolherNaoOficial: () => void;
 }) {
   const router = useRouter();
   const [provedor, setProvedor] = useState<Provedor>("waba");
@@ -876,6 +899,8 @@ function BlocoAdicionar({
     provedor: "waba",
     numeroE164: "",
     wabaId: "",
+    // vazio no oficial, e ali é legítimo: o número é da empresa, não de uma pessoa
+    responsavelId: "",
     // R22/A1 · NASCE VAZIO, como `finalidade`. `"comercial"` era o valor de antes — e `comercial` é
     // nó de agrupamento, que a porta RECUSA desde o M8. O default conveniente não era só feio:
     // era o único valor que o banco não aceita.
@@ -937,7 +962,10 @@ function BlocoAdicionar({
             key={o.v}
             type="button"
             aria-pressed={provedor === o.v}
-            onClick={() => setProvedor(o.v)}
+            onClick={() => {
+              if (o.v === "nao_oficial") return aoEscolherNaoOficial();
+              setProvedor(o.v);
+            }}
             className={cn(
               "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors",
               provedor === o.v

@@ -280,7 +280,10 @@ function CodigoEmTexto({ codigo }: { codigo: string | null }) {
  *
  * Falha aqui é DIREÇÃO, não humor: cada modo que não é o feliz diz o que aconteceu e o que fazer.
  */
-function QuadroDePareamento({ quadro }: { quadro: QuadroPareamento }) {
+// Exportado em 14/09 para o sheet de conectar número (`sheet-numero-lite.tsx`) desenhar o MESMO
+// quadro. Duplicar os quatro modos em duas telas é como elas divergem — e o modo `vazio`, que diz
+// POR QUE não há código, é justamente o que uma cópia apressada deixa para trás.
+export function QuadroDePareamento({ quadro }: { quadro: QuadroPareamento }) {
   if (quadro.modo === "vazio") {
     return (
       <Quadro>

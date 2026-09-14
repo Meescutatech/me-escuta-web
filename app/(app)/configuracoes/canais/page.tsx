@@ -2,6 +2,7 @@ import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
 import { lerCanais } from "@/components/configuracoes/dados/canais";
 import { lerSessao } from "@/components/configuracoes/dados/lite-sessao";
 import { lerDominioDepartamentos } from "@/lib/dados/departamentos";
+import { lerDadosMembros } from "@/lib/dados/membros-reais";
 import { TabelaCanais, type CanalNaTela } from "@/components/configuracoes/tabela-canais";
 import { lerSessaoEnsaio, DEPARTAMENTOS_ENSAIO } from "@/lib/ensaio/sessao";
 import { gerarCanaisEnsaio } from "@/lib/ensaio/fixtures/canais";
@@ -42,11 +43,18 @@ export default async function CanaisPage() {
   // R22/A1 · o domínio de departamento vem do BANCO (`core.v_departamento`), no servidor, junto das
   // outras leituras. Era uma constante de quatro valores dentro do componente, e três dos quatro
   // não existiam no banco (D22-1 / ARB-R18-02).
-  const [papel, lidos, dominio] = await Promise.all([
+  // 14/09 · as PESSOAS entram na leitura porque o número não oficial é de uma delas: a porta exige
+  // `responsavel_id` e recusa o registro sem ele. Lista vazia é estado tratado na tela (o caminho é
+  // convidar em Membros), nunca um seletor vazio sem explicação.
+  const [papel, lidos, dominio, membros] = await Promise.all([
     lerPapelAtual(),
     lerCanais(),
     lerDominioDepartamentos(),
+    lerDadosMembros(),
   ]);
+  const pessoas = (membros?.membros ?? [])
+    .filter((m) => m.ativo)
+    .map((m) => ({ id: m.id, nome: m.nome, email: m.email }));
 
   const canais: CanalNaTela[] = await Promise.all(
     lidos.canais.map(async (c) => {
@@ -63,6 +71,7 @@ export default async function CanaisPage() {
       indisponivel={lidos.indisponivel}
       f8Pronto={process.env.F8_EM_PRODUCAO === "sim"}
       departamentos={dominio.departamentos}
+      pessoas={pessoas}
       dominioIndisponivel={dominio.indisponivel}
       r22Legivel={lidos.r22Legivel}
       nivelLegivel={lidos.nivelLegivel}

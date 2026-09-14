@@ -57,6 +57,10 @@ function form(p: Partial<FormCanal> = {}): FormCanal {
     canalId: "",
     nome: "Jade",
     provedor: "nao_oficial",
+    // o molde nasce COM dono: quase todo teste aqui é de canal não oficial, e a porta o exige.
+    // Quem quiser exercer a ausência passa `responsavelId: ""` explicitamente — que é o caso do
+    // teste da recusa, logo abaixo.
+    responsavelId: "11111111-1111-4111-8111-111111111111",
     numeroE164: "",
     wabaId: "",
     departamento: "",
@@ -237,6 +241,9 @@ test("canal_registrado leva só o que foi preenchido", () => {
     nome: "Jade",
     provedor: "nao_oficial",
     finalidade: "teste",
+    // 14/09 · o DONO entra no payload. A porta sempre o exigiu no não oficial e o formulário nunca
+    // o mandava — o cadastro de número não oficial nunca funcionou em produção por causa disso.
+    responsavel_id: "11111111-1111-4111-8111-111111111111",
   });
 });
 
@@ -245,10 +252,13 @@ test("INVARIANTE · campo em branco NÃO vira chave no payload — inclusive fin
   // para sempre, e `finalidade: \"\"` seria recusado pelo CHECK de domínio no melhor caso e
   // gravado como lixo no pior.
   const { payload } = payloadCanalRegistrado(
-    form({ nome: "Jade", provedor: "nao_oficial", numeroE164: "", wabaId: "", departamento: "", finalidade: "" }),
+    form({ nome: "Jade", provedor: "nao_oficial", numeroE164: "", wabaId: "", departamento: "", finalidade: "", responsavelId: "" }),
   );
   assert.deepEqual(Object.keys(payload).sort(), ["canal_id", "nome", "provedor"]);
   assert.equal("finalidade" in payload, false);
+  // o dono segue a mesma regra: em branco não vira chave. Quem barra o vazio é
+  // `validarRegistroCanal`, ANTES de montar o payload — aqui se prova que o montador não inventa.
+  assert.equal("responsavel_id" in payload, false);
 });
 
 test("canal_registrado do WABA leva número, waba e DEPARTAMENTO quando existem", () => {
@@ -263,6 +273,7 @@ test("canal_registrado do WABA leva número, waba e DEPARTAMENTO quando existem"
     numero_e164: "+5511999998888",
     waba_id: "9",
     finalidade: "teste",
+    responsavel_id: "11111111-1111-4111-8111-111111111111",
   });
 });
 
@@ -945,4 +956,37 @@ test("D70 · a tela distingue 'não li' de 'ninguém declarou' de 'declarado'", 
   // os estados 2 e 3 têm o mesmo nível vigente — colapsá-los é o erro que a flag existe para evitar.
   assert.equal(nivelDoCanal(nuncaDeclarado), nivelDoCanal(declarado));
   assert.notEqual(nuncaDeclarado.nivel_declarado, declarado.nivel_declarado);
+});
+
+/*
+ * ── DE QUEM É O NÚMERO (14/09) ─────────────────────────────────────────────────────────────────
+ *
+ * Achado testando o fluxo no navegador, contra produção: clicar "Registrar número" com o provedor
+ * não oficial devolvia, numa faixa vermelha no TOPO da página, longe do botão:
+ *
+ *   payload.responsavel_id obrigatorio em canal_registrado de provedor nao_oficial: o numero e de
+ *   uma pessoa, e canal sem dono nao tem quem pareie, quem responda nem de quem cobrar o
+ *   consentimento
+ *
+ * A porta sempre exigiu o dono. O formulário nunca teve o campo. **O cadastro de número não
+ * oficial nunca funcionou em produção** — e a tela não dizia isso, dizia uma mensagem de banco.
+ */
+
+test("não oficial SEM dono é recusado no formulário, antes de escrever", () => {
+  const p = validarRegistroCanal(form({ provedor: "nao_oficial", responsavelId: "" }));
+  assert.ok(p.responsavelId, "o formulário aceita número pessoal sem dono");
+  assert.match(p.responsavelId!, /de quem é o número/i);
+});
+
+test("oficial SEM dono passa — o número é da empresa, não de uma pessoa", () => {
+  const p = validarRegistroCanal(
+    form({ provedor: "waba", canalId: "627327023793464", nome: "Produção", responsavelId: "", wabaId: "9" }),
+  );
+  assert.equal(p.responsavelId, undefined);
+});
+
+test("o dono chega ao payload com a chave que a porta espera", () => {
+  // `responsavel_id`, snake_case — o nome que a mensagem de recusa da porta cita textualmente.
+  const { payload } = payloadCanalRegistrado(form({ provedor: "nao_oficial", responsavelId: "abc-123" }));
+  assert.equal(payload.responsavel_id, "abc-123");
 });
