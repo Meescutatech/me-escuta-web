@@ -38,11 +38,33 @@ import {
   type FiltroProjecao,
 } from "../lib/eventos/confirmar-projecao.ts";
 
-/** a regra da Web-B, já estreitada para o modo `filtros` — que é o que estas telas usam. */
-function regraWebB(tipo: string): Extract<ConferenciaProjecao, { por: "filtros" }> {
+type RegraFiltros = Extract<ConferenciaProjecao, { por: "filtros" }>;
+
+/**
+ * TODAS as regras de `filtros` de um tipo — uma só na maioria, várias quando o tipo tem variantes.
+ *
+ * 14/09: `config_atualizada` passou a ter duas (ligar/desligar × responsável padrão), porque é o
+ * mesmo evento com efeitos em colunas diferentes de `core.agente`. O helper devolve a lista para
+ * que os testes de "confere por EFEITO" continuem varrendo TUDO — se ele devolvesse só a primeira,
+ * a variante nova entraria sem portão nenhum, que é exatamente o furo que esta suíte existe para
+ * não ter.
+ */
+function regrasWebB(tipo: string): RegraFiltros[] {
   const r = CONFERENCIA[tipo];
-  assert.ok(r && r.por === "filtros", `${tipo} deveria conferir por filtros`);
-  return r as Extract<ConferenciaProjecao, { por: "filtros" }>;
+  assert.ok(r, `${tipo} deveria estar na tabela`);
+  if (r.por === "variantes") {
+    assert.ok(r.variantes.length > 0, `${tipo} declara variantes e não tem nenhuma`);
+    return r.variantes.map((v) => v.regra);
+  }
+  assert.ok(r.por === "filtros", `${tipo} deveria conferir por filtros`);
+  return [r as RegraFiltros];
+}
+
+/** a regra ÚNICA de um tipo sem variantes — que é o caso da maioria destas telas. */
+function regraWebB(tipo: string): RegraFiltros {
+  const rs = regrasWebB(tipo);
+  assert.equal(rs.length, 1, `${tipo} tem variantes; use regrasWebB`);
+  return rs[0];
 }
 const excecaoWebB = (t: string) => (Object.prototype.hasOwnProperty.call(EXCECOES, t) ? EXCECOES[t] : null);
 
@@ -389,12 +411,16 @@ test("todo tipo escrito pela Web-B tem conferência OU exceção declarada", () 
   // linha sem se ver — a da R36 escreveu 14 partindo de 11, sem o `config_atualizada`. O número
   // fica travado de propósito: é ele que obriga quem acrescenta escrita nova a declarar como ela
   // se confere, e foi ele que acusou a colisão em vez de deixar as duas listas se comerem.
-  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 15);
+  // 15 → 16 em 14/09: `autonomia_alterada`. A régua de autonomia deixou de ser leitura — o
+  // caminho de gravação existia desde a 0104/0165 e eu o declarara inexistente lendo o projetor
+  // ERRADO (`proj_config_agente` em vez de `proj_autonomia_agente`).
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 16);
   for (const t of ["config_atualizada", "template_whatsapp_criado", "template_whatsapp_submetido", "template_whatsapp_arquivado"]) {
     assert.ok(TIPOS_ESCRITOS_WEB_B.includes(t), t);
   }
   assert.ok(TIPOS_ESCRITOS_WEB_B.includes("canal_nivel_alterado"));
   assert.ok(TIPOS_ESCRITOS_WEB_B.includes("config_atualizada"));
+  assert.ok(TIPOS_ESCRITOS_WEB_B.includes("autonomia_alterada"));
 });
 
 test("tipo NÃO declarado é FALHA, não sucesso — é a correção sobre o helper do F6", () => {
@@ -408,9 +434,10 @@ test("toda regra desta trilha confere por EFEITO — nunca só pela existência 
   // alguma destas voltar a ser `por: posicao`, é porque alguém achou que a coluna existe.
   for (const tipo of TIPOS_ESCRITOS_WEB_B) {
     if (Object.prototype.hasOwnProperty.call(EXCECOES, tipo)) continue;
-    const r = regraWebB(tipo);
-    assert.ok(r.filtros.length > 0, tipo);
-    assert.ok(r.tabela.length > 0, tipo);
+    for (const r of regrasWebB(tipo)) {
+      assert.ok(r.filtros.length > 0, tipo);
+      assert.ok(r.tabela.length > 0, tipo);
+    }
   }
 });
 
@@ -518,12 +545,14 @@ test("nenhuma regra desta trilha confere por um id que a própria tela inventou"
   // `ticket_id` só é legítimo em comentar/resolver, onde ele APONTA para um ticket que já existe.
   for (const tipo of TIPOS_ESCRITOS_WEB_B) {
     if (tipo === "suporte_ticket_aberto" || Object.prototype.hasOwnProperty.call(EXCECOES, tipo)) continue;
-    const porPayload = regraWebB(tipo).filtros.filter((f) => f.op === "igualPayload");
-    for (const f of porPayload) {
-      assert.ok(
-        f.dePayload !== "ticket_id" || tipo !== "suporte_ticket_aberto",
-        `${tipo} confere por um id de criação vindo do payload`,
-      );
+    for (const r of regrasWebB(tipo)) {
+      const porPayload = r.filtros.filter((f) => f.op === "igualPayload");
+      for (const f of porPayload) {
+        assert.ok(
+          f.dePayload !== "ticket_id" || tipo !== "suporte_ticket_aberto",
+          `${tipo} confere por um id de criação vindo do payload`,
+        );
+      }
     }
   }
 });

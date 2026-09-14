@@ -60,6 +60,98 @@ export async function alternarAgente(agenteId: string, ligar: boolean): Promise<
 }
 
 /**
+ * LIGAR / DESLIGAR UMA CAPACIDADE do agente — a régua de autonomia, que até 14/09 não gravava.
+ *
+ * ── Por que só dois estados, e não os três do banco ────────────────────────────────────────
+ * O vocabulário de `core.agente.autonomia_jsonb` é `auto | propor | proibido`, e a régua oferecia
+ * as três posições. Mas o consumidor real é BINÁRIO: `lerGateJarvis`
+ * (runtime `src/jarvis/tarefas/worker.ts`) exige `criar_tarefa === 'auto'` e, em qualquer outro
+ * nível, o Jarvis **não propõe — ele cala**. Oferecer "Propõe" seria um botão que promete uma
+ * fila de sugestões e entrega silêncio. Decisão do Diogo em 14/09: "corta essa feature por
+ * enquanto. Só liga ou desliga".
+ *
+ * Então: ligado = `auto`, desligado = `proibido`. Capacidade cujo TETO não é `auto` (Art. III.3 —
+ * preço, crédito, conduta clínica, e mais quatro em `flag.teto_autonomia`) não ganha interruptor
+ * nenhum, porque a porta recusaria `auto` e a tela não oferece o que o banco recusa.
+ *
+ * ── As guardas, e onde elas moram ──────────────────────────────────────────────────────────
+ * Nenhuma aqui, de novo de propósito. Em `api.registrar_evento` (0104/0160/0165), medidas no
+ * corpo VIVO em produção em 14/09: admin/owner · agente existe · capacidade no catálogo vigente
+ * (`core.v_config_vigente` nome `capacidade_agente`) · nível ∈ auto|propor|proibido · teto
+ * constitucional (`core.teto_capacidade`, fail-closed em `propor`) · MOTIVO com ≥ 3 caracteres.
+ *
+ * ⚠️ A sexta é a que quase passou batido: o ledger É a auditoria, e a porta recusa evento sem
+ * `motivo`. Ele é composto aqui em vez de pedido num diálogo porque o pedido do Diogo foi um
+ * interruptor, não um formulário — e o que o campo precisa dizer, o interruptor já sabe: o que
+ * mudou e por onde. Quem mudou e quando são do ledger, não deste texto.
+ */
+export async function alterarAutonomiaAgente(
+  agenteId: string,
+  capacidade: string,
+  ligar: boolean,
+): Promise<ResultadoAcao> {
+  const id = agenteId.trim();
+  if (!id) return { ok: false, motivo: "agente não informado" };
+  const cap = capacidade.trim();
+  if (!cap) return { ok: false, motivo: "capacidade não informada" };
+
+  const nivel = ligar ? "auto" : "proibido";
+  return registrarEventoComReadback({
+    tipo: "autonomia_alterada",
+    idExterno: randomUUID(),
+    payload: {
+      agente_id: id,
+      capacidade: cap,
+      nivel,
+      motivo: ligar
+        ? `ligada na tela do agente: passa a fazer "${cap}" sozinho`
+        : `desligada na tela do agente: deixa de fazer "${cap}"`,
+    },
+    revalidar: ["/configuracoes/agentes", `/configuracoes/agentes/${id}`],
+  });
+}
+
+/**
+ * RESPONSÁVEL PADRÃO do agente — para quem vai a tarefa quando não há dono claro.
+ *
+ * ── O que isto resolve ─────────────────────────────────────────────────────────────────────
+ * O Jarvis resolve o responsável em três degraus (runtime, `resolverDestinoTarefa`): dono ativo
+ * do lead → gestor do departamento de entrada → owner. Em produção o segundo degrau é vazio —
+ * `core.usuario_departamento` tem ZERO linhas (medido 14/09) —, então TODA tarefa sem dono cai no
+ * owner. Este campo troca esse último degrau por uma pessoa escolhida na tela. O rodízio por
+ * departamento continua valendo no dia em que houver lotação: isto é o último degrau, não o
+ * primeiro.
+ *
+ * ── Caminho barato, sem migration ──────────────────────────────────────────────────────────
+ * `config_atualizada` com `config_patch` já faz merge em `core.agente.config_jsonb`
+ * (`porta.proj_config_agente`, 0107 — conferido no corpo vivo). MERGE, não substituição: o
+ * `prompt_conversa` do Jarvis mora no mesmo jsonb e um patch que o apagasse tiraria o Jarvis do
+ * ar sem erro nenhum.
+ *
+ * 🔴 O RUNTIME AINDA NÃO LÊ `responsavel_padrao`. Esta metade grava e é auditável; a outra metade
+ * — o degrau em `resolverDestinoTarefa` — é de outro repositório e NÃO foi feita aqui. Enquanto
+ * ela não existir, gravar este campo não muda para onde a tarefa vai. A tela diz isso ao lado do
+ * campo, com todas as letras: prometer ponta a ponta o que só tem metade é o defeito que a
+ * rodada inteira de 14/09 existiu para tirar.
+ */
+export async function definirResponsavelPadrao(
+  agenteId: string,
+  usuarioId: string,
+): Promise<ResultadoAcao> {
+  const id = agenteId.trim();
+  if (!id) return { ok: false, motivo: "agente não informado" };
+  const uid = usuarioId.trim();
+  if (!uid) return { ok: false, motivo: "escolha a pessoa que recebe a tarefa" };
+
+  return registrarEventoComReadback({
+    tipo: "config_atualizada",
+    idExterno: randomUUID(),
+    payload: { agente_id: id, config_patch: { responsavel_padrao: uid } },
+    revalidar: ["/configuracoes/agentes", `/configuracoes/agentes/${id}`],
+  });
+}
+
+/**
  * Publica uma versão nova do prompt de um agente (propõe + aplica, como a tela da Clara faz).
  *
  * São duas chamadas porque o caminho versionado é de duas etapas (0007/0008): `propor` cria a

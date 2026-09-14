@@ -4,6 +4,7 @@ import { agenteInteligencia } from "@/lib/ensaio/inteligencia";
 import { lerAgenteReal } from "@/lib/dados/agentes";
 import { lerTarefasCriadasPeloAgente } from "@/lib/dados/execucoes-jarvis";
 import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
+import { lerMembrosEscolhiveis } from "@/lib/dados/agentes";
 import { TelaAgente } from "@/components/inteligencia/tela-agente";
 
 export const dynamic = "force-dynamic";
@@ -28,13 +29,23 @@ export default async function AgentePage({ params }: { params: { id: string } })
 
   // o histórico só existe para quem grava `origem` na tarefa — hoje, o Jarvis. Para os outros a
   // seção simplesmente não aparece (11/09: "se isso não é documentado, remova a seção do front").
-  const [agente, papel, criadas] = await Promise.all([
+  const [agente, papel, criadas, membros] = await Promise.all([
     lerAgenteReal(params.id, new Date()),
     lerPapelAtual(),
     // `[]` (e não `null`) para quem não tem origem própria: lista vazia é um fato lido, `null`
     // seria "não consegui ler" — e a tela diz coisas diferentes nos dois casos.
     params.id === "jarvis" ? lerTarefasCriadasPeloAgente(undefined, 10) : Promise.resolve([]),
+    // só o Jarvis tem campo de responsável padrão hoje; ler a equipe para as outras telas seria
+    // uma consulta que ninguém usa.
+    params.id === "jarvis" ? lerMembrosEscolhiveis() : Promise.resolve([]),
   ]);
   if (!agente) notFound();
-  return <TelaAgente agente={agente} gestao={papel === "owner" || papel === "admin"} criadas={criadas} />;
+  return (
+    <TelaAgente
+      agente={agente}
+      gestao={papel === "owner" || papel === "admin"}
+      criadas={criadas}
+      membros={membros}
+    />
+  );
 }

@@ -11,11 +11,26 @@ import {
   motivoAcaoNaoDeclarada,
   motivoFalhaVerificacao,
   posicaoParaConferir,
+  escolherVariante,
+  motivoVarianteNaoReconhecida,
   resolverFiltro,
   resolverFiltros,
   temConferencia,
   type ConferenciaProjecao,
+  type FiltroProjecao,
 } from "../lib/eventos/confirmar-projecao.ts";
+
+/**
+ * A regra de UMA ação que NÃO é de variantes. Existe desde 14/09, quando `config_atualizada`
+ * passou a ter duas (ligar/desligar × responsável padrão): sem este estreitamento, `r.tabela`
+ * deixa de existir no tipo e o teste perde a asserção mais barata que tem.
+ */
+function simples(acao: string): Exclude<ConferenciaProjecao, { por: "variantes" }> {
+  const r = CONFERENCIA[acao];
+  assert.ok(r, `${acao} tem de estar na tabela`);
+  assert.ok(r.por !== "variantes", `${acao} não deveria ser de variantes`);
+  return r as Exclude<ConferenciaProjecao, { por: "variantes" }>;
+}
 
 /*
  * Read-back do limite de escrita (R15): o ledger aceitar não é sucesso — sucesso
@@ -90,7 +105,7 @@ test("fio da colisão futura: evento aceito, leitura volta vazia, sucesso é neg
 // que a spec da Fase 1 previa, e as duas teriam reprovado escritas corretas.
 
 test("anotacao_adicionada confere pelo EVENTO — core.anotacao não tem coluna de posição", () => {
-  const r = CONFERENCIA.anotacao_adicionada;
+  const r = simples("anotacao_adicionada");
   assert.equal(r.tabela, "anotacao");
   assert.equal(r.por, "evento");
   assert.equal(r.por === "evento" && r.coluna, "id");
@@ -115,8 +130,7 @@ test("o ciclo de vida da tarefa confere core.tarefa.ultima_posicao", () => {
     "tarefa_arquivada",
     "tarefa_assumida",
   ]) {
-    const r = CONFERENCIA[acao];
-    assert.ok(r, `${acao} tem de estar na tabela`);
+    const r = simples(acao);
     assert.equal(r.tabela, "tarefa", acao);
     assert.equal(r.por, "posicao", acao);
     assert.equal(r.por === "posicao" && r.coluna, "ultima_posicao", acao);
@@ -134,8 +148,7 @@ test("cada ação aponta para a projeção que o SEU projetor escreve", () => {
     conversa_devolvida: ["conversa", "posse_posicao"],
   };
   for (const [acao, [tabela, coluna]] of Object.entries(esperado)) {
-    const r = CONFERENCIA[acao];
-    assert.ok(r, `${acao} tem de estar na tabela`);
+    const r = simples(acao);
     assert.equal(r.tabela, tabela, acao);
     assert.equal(r.por, "posicao", acao);
     assert.equal(r.por === "posicao" && r.coluna, coluna, acao);
@@ -154,7 +167,7 @@ test("enviar_mensagem_humana É conferível — a exceção que a spec previa n�
   // id = id do evento, status_entrega='na_fila'. A bolha nasce junto; sair de fato é do sender.
   assert.equal(excecaoDe("enviar_mensagem_humana"), null);
   assert.equal(temConferencia("enviar_mensagem_humana"), true);
-  const r = CONFERENCIA.enviar_mensagem_humana;
+  const r = simples("enviar_mensagem_humana");
   assert.equal(r.tabela, "mensagem");
   assert.equal(r.por, "evento");
   assert.equal(r.por === "evento" && r.coluna, "id");
@@ -546,11 +559,245 @@ test("H7 · os três eventos de template conferem core.template_mensagem.ultima_
   // fail-closed, declarava sucesso sem conferir nada. Os três carimbam `ultima_posicao` no
   // projetor VIVO (`porta.proj_template_mensagem`), conferido no banco em 10/09.
   for (const acao of ["template_criado", "template_atualizado", "template_arquivado"]) {
-    const r = CONFERENCIA[acao];
-    assert.ok(r, `${acao} tem de estar na tabela`);
+    const r = simples(acao);
     assert.equal(r.tabela, "template_mensagem", acao);
     assert.equal(r.por, "posicao", acao);
     assert.equal(r.por === "posicao" && r.coluna, "ultima_posicao", acao);
     assert.equal(temConferencia(acao), true, acao);
   }
+});
+
+
+/*
+ * ═══ 14/09 · UM TIPO, DOIS EFEITOS — e a régua de autonomia dentro de um jsonb ═══════════════
+ *
+ * `config_atualizada` liga/desliga o agente E grava configuração dele. São colunas diferentes de
+ * `core.agente` (`ativo` × `config_jsonb`), aplicadas por ramos diferentes do mesmo projetor
+ * (`porta.proj_config_agente`, 0107, conferido no corpo vivo).
+ *
+ * Uma regra só tinha as duas saídas ruins: conferir sempre `ativo` REPROVA toda escrita de
+ * `config_patch`; conferir só `id` aprova uma linha que já existia antes do clique.
+ */
+
+function variantesDe(acao: string) {
+  const r = CONFERENCIA[acao];
+  assert.ok(r && r.por === "variantes", `${acao} deveria ter variantes`);
+  return r.por === "variantes" ? r.variantes : [];
+}
+
+test("config_atualizada tem DUAS variantes: ligar/desligar e responsável padrão", () => {
+  const vs = variantesDe("config_atualizada");
+  assert.deepEqual(vs.map((v) => v.quandoTem), ["ativo", "config_patch"]);
+});
+
+test("a variante é escolhida pelo payload, e a de `ativo` confere o ESTADO pedido", () => {
+  const vs = variantesDe("config_atualizada");
+  const r = escolherVariante(vs, { agente_id: "jarvis", ativo: false })!;
+  assert.ok(r);
+  assert.equal(r.tabela, "agente");
+  assert.deepEqual(resolverFiltros(r.filtros, { agente_id: "jarvis", ativo: false }, null), [
+    { campo: "id", tipo: "igual", valor: "jarvis" },
+    { campo: "ativo", tipo: "igual", valor: false },
+  ]);
+});
+
+test("`ativo: false` NÃO é ausência de variante — desligar é o caminho que mata agente no ar", () => {
+  // `hasOwnProperty` + `!= null`: um `false` legítimo tem de casar. Testar só truthiness aqui
+  // faria DESLIGAR reprovar sempre, com a escrita já feita.
+  const vs = variantesDe("config_atualizada");
+  assert.ok(escolherVariante(vs, { agente_id: "clara", ativo: false }));
+});
+
+test("a variante do responsável padrão lê FUNDO no payload e confere a chave no config_jsonb", () => {
+  const vs = variantesDe("config_atualizada");
+  const payload = { agente_id: "jarvis", config_patch: { responsavel_padrao: "u-7" } };
+  const r = escolherVariante(vs, payload)!;
+  assert.deepEqual(resolverFiltros(r.filtros, payload, null), [
+    { campo: "id", tipo: "igual", valor: "jarvis" },
+    { campo: "config_jsonb->>responsavel_padrao", tipo: "igual", valor: "u-7" },
+  ]);
+});
+
+test("config_patch com OUTRA chave reprova — quem trouxer o caminho declara a variante dele", () => {
+  // A tela da Clara publica pacing/bolhas/modelos por este mesmo tipo. Ela escreve direto (está
+  // na lista de herdados), mas no dia em que vier para o ponto único não pode herdar sucesso cego.
+  const vs = variantesDe("config_atualizada");
+  const payload = { agente_id: "clara", config_patch: { pacing: { base_ms: 2000 } } };
+  const r = escolherVariante(vs, payload)!;
+  assert.equal(resolverFiltros(r.filtros, payload, null), null);
+});
+
+test("payload que não casa com variante nenhuma REPROVA, e o motivo nomeia as que existem", () => {
+  const vs = variantesDe("config_atualizada");
+  assert.equal(escolherVariante(vs, { agente_id: "jarvis" }), null);
+  const m = motivoVarianteNaoReconhecida("config_atualizada", vs);
+  assert.match(m, /ativo/);
+  assert.match(m, /config_patch/);
+  assert.match(m, /não repita/);
+});
+
+test("autonomia_alterada confere `autonomia_jsonb-><capacidade>` no nível pedido", () => {
+  const r = simples("autonomia_alterada");
+  assert.equal(r.tabela, "agente");
+  assert.equal(r.por, "filtros");
+  if (r.por !== "filtros") return;
+  assert.deepEqual(
+    resolverFiltros(r.filtros, { agente_id: "jarvis", capacidade: "criar_tarefa", nivel: "proibido" }, null),
+    [
+      { campo: "id", tipo: "igual", valor: "jarvis" },
+      { campo: "autonomia_jsonb->>criar_tarefa", tipo: "igual", valor: "proibido" },
+    ],
+  );
+});
+
+test("a chave do jsonb é SANEADA — payload não monta seletor", () => {
+  const f: FiltroProjecao = {
+    campo: "autonomia_jsonb",
+    op: "igualPayloadEmJsonb",
+    chaveDePayload: "capacidade",
+    dePayload: "nivel",
+  };
+  assert.deepEqual(resolverFiltro(f, { capacidade: "criar_tarefa", nivel: "auto" }, null), {
+    campo: "autonomia_jsonb->>criar_tarefa",
+    tipo: "igual",
+    valor: "auto",
+  });
+  for (const ruim of ["criar tarefa", "a->b", "A", "cap.eq.x", "", "a,b", "a)b"]) {
+    assert.equal(resolverFiltro(f, { capacidade: ruim, nivel: "auto" }, null), null, ruim);
+  }
+  // nível ausente também derruba: conferir a chave sem o valor aprovaria qualquer nível
+  assert.equal(resolverFiltro(f, { capacidade: "criar_tarefa" }, null), null);
+});
+
+test("caminho fundo inexistente devolve null — conferência inteira cai, não 'confere menos'", () => {
+  const f: FiltroProjecao = {
+    campo: "config_jsonb->>responsavel_padrao",
+    op: "igualPayloadFundo",
+    caminho: ["config_patch", "responsavel_padrao"],
+  };
+  assert.equal(resolverFiltro(f, {}, null), null);
+  assert.equal(resolverFiltro(f, { config_patch: null }, null), null);
+  assert.equal(resolverFiltro(f, { config_patch: ["x"] }, null), null);
+  assert.equal(resolverFiltro(f, { config_patch: { responsavel_padrao: { a: 1 } } }, null), null);
+  assert.deepEqual(resolverFiltro(f, { config_patch: { responsavel_padrao: "u-1" } }, null), {
+    campo: "config_jsonb->>responsavel_padrao",
+    tipo: "igual",
+    valor: "u-1",
+  });
+});
+
+/*
+ * ═══ e o mesmo exercício com o BANCO FALSO, para a linha nova não repetir o furo da D70 ═══════
+ *
+ * A lição da D70 está escrita 200 linhas acima: uma regra que entra em CONFERENCIA sem NADA que a
+ * exercite deixa a suíte verde com o filtro apagado. As três abaixo passam por `confirmarProjecao`
+ * inteira — variante escolhida, filtros resolvidos, releitura montada — em vez de olhar só a
+ * tabela.
+ *
+ * `core.agente` é lida com `autonomia_jsonb->>criar_tarefa` como nome de coluna, que é filtro de
+ * coluna legítimo do PostgREST. O banco falso trata a chave literalmente, que é o que o PostgREST
+ * faz do outro lado.
+ */
+
+/** Um "banco" de uma tabela só, que devolve a linha que casa com TODOS os eq. */
+function bancoDeLinhas(linhas: Array<Record<string, unknown>>) {
+  const emitidas: Array<Array<{ campo: string; valor: unknown }>> = [];
+  const cliente = {
+    schema: () => ({
+      from: () => {
+        const eqs: Array<{ campo: string; valor: unknown }> = [];
+        const q: any = {
+          select: () => q,
+          eq(campo: string, valor: unknown) {
+            eqs.push({ campo, valor });
+            return q;
+          },
+          not(campo: string, _op: string, _v: unknown) {
+            eqs.push({ campo, valor: "<naoNulo>" });
+            return q;
+          },
+          limit: async () => {
+            emitidas.push(eqs);
+            const casam = linhas.filter((l) =>
+              eqs.every((f) => (f.valor === "<naoNulo>" ? l[f.campo] != null : l[f.campo] === f.valor)),
+            );
+            return { data: casam, error: null };
+          },
+        };
+        return q;
+      },
+    }),
+  } as never;
+  return { cliente, emitidas };
+}
+
+test("autonomia · capacidade que NÃO mudou no banco reprova a escrita", async () => {
+  // a linha do jarvis existe e `criar_tarefa` continua em `auto`; a ação pediu `proibido`.
+  const { cliente, emitidas } = bancoDeLinhas([
+    { id: "jarvis", "autonomia_jsonb->>criar_tarefa": "auto" },
+  ]);
+  const r = await confirmarProjecao(
+    cliente,
+    "autonomia_alterada",
+    { agente_id: "jarvis", capacidade: "criar_tarefa", nivel: "proibido", motivo: "desligada" },
+    { evento_id: "e1", posicao_global: 7 },
+  );
+  assert.equal(r.ok, false);
+  assert.match(r.motivo ?? "", /não apareceu/);
+  assert.deepEqual(emitidas[0], [
+    { campo: "id", valor: "jarvis" },
+    { campo: "autonomia_jsonb->>criar_tarefa", valor: "proibido" },
+  ]);
+});
+
+test("autonomia · capacidade no nível pedido aprova, e a releitura aponta a chave CERTA", async () => {
+  const { cliente } = bancoDeLinhas([
+    { id: "jarvis", "autonomia_jsonb->>criar_tarefa": "proibido", "autonomia_jsonb->>mover_etapa": "auto" },
+  ]);
+  const r = await confirmarProjecao(
+    cliente,
+    "autonomia_alterada",
+    { agente_id: "jarvis", capacidade: "criar_tarefa", nivel: "proibido", motivo: "desligada" },
+    { evento_id: "e1", posicao_global: 7 },
+  );
+  assert.deepEqual(r, { ok: true });
+});
+
+test("config_atualizada · o responsável padrão atravessa a variante e confere o uuid gravado", async () => {
+  const { cliente, emitidas } = bancoDeLinhas([
+    { id: "jarvis", "config_jsonb->>responsavel_padrao": "u-7" },
+  ]);
+  const ok = await confirmarProjecao(
+    cliente,
+    "config_atualizada",
+    { agente_id: "jarvis", config_patch: { responsavel_padrao: "u-7" } },
+    { evento_id: "e2", posicao_global: 8 },
+  );
+  assert.deepEqual(ok, { ok: true });
+  assert.deepEqual(emitidas[0], [
+    { campo: "id", valor: "jarvis" },
+    { campo: "config_jsonb->>responsavel_padrao", valor: "u-7" },
+  ]);
+
+  // e o uuid que o banco NÃO gravou reprova — é o que separa "salvo" de salvo
+  const nao = await confirmarProjecao(
+    cliente,
+    "config_atualizada",
+    { agente_id: "jarvis", config_patch: { responsavel_padrao: "u-9" } },
+    { evento_id: "e3", posicao_global: 9 },
+  );
+  assert.equal(nao.ok, false);
+});
+
+test("config_atualizada · payload sem efeito conferível REPROVA antes de tocar o banco", async () => {
+  const { cliente, emitidas } = bancoDeLinhas([{ id: "jarvis" }]);
+  const r = await confirmarProjecao(
+    cliente,
+    "config_atualizada",
+    { agente_id: "jarvis", escopo_patch: { canais: ["x"] } },
+    { evento_id: "e4", posicao_global: 10 },
+  );
+  assert.equal(r.ok, false);
+  assert.match(r.motivo ?? "", /nenhum dos efeitos conferíveis/);
+  assert.equal(emitidas.length, 0, "não se confere nada indo ao banco sem saber o que conferir");
 });

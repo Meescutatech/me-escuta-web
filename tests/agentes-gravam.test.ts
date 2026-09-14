@@ -24,6 +24,7 @@ const acoes = readFileSync(
 );
 const grade = readFileSync(new URL("../components/inteligencia/cartoes-agentes.tsx", import.meta.url), "utf8");
 const tela = readFileSync(new URL("../components/inteligencia/tela-agente.tsx", import.meta.url), "utf8");
+const regua = readFileSync(new URL("../components/jarvis/regua-autonomia.tsx", import.meta.url), "utf8");
 
 test("existe action genérica de agente, e o agente é PARÂMETRO — não `clara` cravado", () => {
   assert.ok(acoes.includes("export async function alternarAgente(agenteId: string, ligar: boolean)"));
@@ -83,11 +84,83 @@ test("publicar prompt chama o caminho versionado, com justificativa obrigatória
   assert.ok(acoes.includes("p_versao_base: versaoBase"), "publicar sem lock sobrescreveria versão alheia");
 });
 
-test("a régua de autonomia fica em LEITURA fora do ensaio, e a tela diz por quê", () => {
-  // `porta.proj_config_agente` (0107) aplica `ativo`, `config_patch` e `escopo_patch` — nenhum
-  // toca `autonomia_jsonb`. Deixar a régua clicável seria o mesmo defeito, com outro nome.
-  assert.ok(tela.includes("podeEditar={ensaio && gestao && ligado}"));
-  assert.ok(tela.includes("A régua está em leitura porque não existe caminho de gravação"));
+/*
+ * ── 14/09, mais tarde · A RÉGUA GRAVA, e o que estava aqui era uma AFIRMAÇÃO FALSA travada por
+ *    teste ──────────────────────────────────────────────────────────────────────────────────
+ *
+ * O teste anterior exigia a frase "A régua está em leitura porque não existe caminho de gravação"
+ * na tela, e o `podeEditar={ensaio && gestao && ligado}` que a acompanhava. Os dois ficam de
+ * história: o caminho existe desde a 0104/0165 e eu concluí o contrário lendo o projetor ERRADO
+ * (`porta.proj_config_agente` em vez de `porta.proj_autonomia_agente`). Medido no banco vivo:
+ *
+ *     porta.projetor_registro     autonomia_alterada → porta.proj_autonomia_agente (sem_projetor=f)
+ *     porta.proj_autonomia_agente update core.agente set autonomia_jsonb = … || {cap: nivel}
+ *
+ * Lição para a próxima: teste que trava uma frase trava também o ERRO dela. A frase tinha de ser
+ * medida antes de virar asserção — a asserção não a torna verdadeira.
+ */
+
+test("a régua GRAVA, e o texto que dizia o contrário sumiu da tela", () => {
+  assert.ok(!tela.includes("A régua está em leitura porque não existe caminho de gravação"));
+  assert.ok(!tela.includes("podeEditar={ensaio && gestao && ligado}"), "a régua voltou a ser leitura");
+  assert.ok(tela.includes("alterarAutonomiaAgente(a.chave, chave, ligar)"));
+  assert.ok(acoes.includes('tipo: "autonomia_alterada"'));
+  assert.ok(acoes.includes("registrarEventoComReadback({"), "gravar sem readback é a tela mentindo");
+});
+
+test("só DOIS estados: `auto` e `proibido` — 'Propõe' não é oferecido em lugar nenhum", () => {
+  // O gate do runtime é binário (`lerGateJarvis`: `criar_tarefa` diferente de `auto` = o Jarvis
+  // CALA, não propõe). Um botão "Propõe" prometeria uma fila de sugestões e entregaria silêncio.
+  assert.ok(acoes.includes('const nivel = ligar ? "auto" : "proibido"'));
+  assert.ok(!regua.includes('rotulo: "Propõe"'), "a posição clicável de Propõe voltou");
+  assert.ok(regua.includes('onCheckedChange={(v) => onMudar?.(l.chave, v ? "auto" : "proibido")}'));
+  // `propor` continua EXIBÍVEL — existe no banco (a Clara tem quatro capacidades assim hoje)
+  assert.ok(regua.includes('propor: "Propõe; alguém aprova"'));
+});
+
+test("capacidade cujo TETO não é `auto` não ganha interruptor — a tela não oferece o que a porta recusa", () => {
+  // `api.registrar_evento` (GUARDA:M2:autonomia_teto_constitucional) recusa `auto` quando
+  // `core.teto_capacidade(cap) <> 'auto'`. Oferecer o clique seria prometer uma recusa.
+  assert.ok(regua.includes('return !l.travada && l.teto === "auto";'));
+  assert.ok(regua.includes("const comInterruptor = temInterruptor(l);"));
+});
+
+test("a porta exige MOTIVO (≥3 caracteres) — e ele vai no payload, senão o evento é recusado", () => {
+  // GUARDA:M2:autonomia_exige_motivo, medida no corpo vivo em 14/09. Era a guarda que não estava
+  // no enunciado da tarefa e que teria derrubado toda gravação em produção.
+  assert.ok(acoes.includes("motivo: ligar"));
+  assert.ok(acoes.includes("ligada na tela do agente"));
+  assert.ok(acoes.includes("desligada na tela do agente"));
+});
+
+test("a conferência de `autonomia_alterada` olha a CHAVE certa dentro do jsonb", () => {
+  // Conferir a linha do agente aprovaria algo que já era verdade antes do clique; conferir a
+  // coluna inteira falharia pelas capacidades que o evento nem tocou.
+  const conf = readFileSync(new URL("../lib/eventos/confirmar-projecao.ts", import.meta.url), "utf8");
+  const bloco = (conf.split("autonomia_alterada: {")[1] ?? "").slice(0, 500);
+  assert.ok(bloco.includes('tabela: "agente"'));
+  assert.ok(bloco.includes('{ campo: "id", op: "igualPayload", dePayload: "agente_id" }'));
+  assert.ok(bloco.includes('op: "igualPayloadEmJsonb"'));
+  assert.ok(bloco.includes('chaveDePayload: "capacidade"'));
+  assert.ok(bloco.includes('dePayload: "nivel"'));
+});
+
+/*
+ * ── A RÉGUA LÊ DO BANCO, e é por isso que ela pode gravar ─────────────────────────────────────
+ *
+ * Até 14/09 as linhas saíam da FIXTURE. Para o Jarvis eram `criar_tarefa · priorizar · atribuir ·
+ * arquivar_lead`, e MEDIDO em produção no mesmo dia: o catálogo vigente
+ * (`core.v_config_vigente` nome `capacidade_agente`) tem 15 chaves e TRÊS dessas quatro não estão
+ * nele. Enquanto a régua era leitura isso era enfeite errado; com o clique gravando, seriam três
+ * interruptores que a porta recusa com "capacidade não existe no catálogo vigente".
+ */
+
+const leitorRegua = readFileSync(new URL("../lib/dados/agentes.ts", import.meta.url), "utf8");
+
+test("as linhas da régua saem de `autonomia_jsonb` × catálogo vigente, nunca da fixture", () => {
+  assert.ok(leitorRegua.includes("autonomia_jsonb,config_jsonb"), "o leitor não pede as colunas");
+  assert.ok(leitorRegua.includes('.in("nome", ["capacidade_agente", "flag.teto_autonomia"])'));
+  assert.ok(leitorRegua.includes("autonomia: linhasDaReguaReal("));
 });
 
 test("o ensaio continua com estado local — é o comportamento certo onde não há banco", () => {

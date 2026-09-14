@@ -27,15 +27,22 @@ import { useRouter } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
-import { alternarAgente, publicarPromptAgente } from "@/app/(app)/configuracoes/agentes/actions";
+import {
+  alterarAutonomiaAgente,
+  alternarAgente,
+  definirResponsavelPadrao,
+  publicarPromptAgente,
+} from "@/app/(app)/configuracoes/agentes/actions";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { HintTooltip } from "@/components/ui/hint-tooltip";
 import { TraceAgente, type ExecucaoTrace } from "@/components/ui/trace-agente";
 import { ReguaAutonomia, type NivelAutonomia } from "@/components/jarvis/regua-autonomia";
 import { cn } from "@/lib/utils";
 import { CapaAgente, GlifoAgente } from "./glifos";
 import { NumeroGrande, PontoEstado, Secao, TagAgente, VazioHonesto } from "./pecas";
+import type { MembroEscolhivel } from "@/lib/agentes/regua-real";
 import type { AgenteInteligencia, FerramentaAgente } from "@/lib/ensaio/inteligencia";
 import type { TarefaCriadaPeloAgente } from "@/lib/dados/execucoes-jarvis";
 
@@ -56,11 +63,24 @@ import type { TarefaCriadaPeloAgente } from "@/lib/dados/execucoes-jarvis";
  * número enquanto o agente seguia com o prompt antigo. Interruptor e prompt agora passam por
  * `agentes/actions.ts` — o mesmo caminho da tela da Clara, com o agente como parâmetro.
  *
- * A RÉGUA DE AUTONOMIA É A EXCEÇÃO, e vale dizer por quê: ela não tem caminho no banco. O projetor
- * `porta.proj_config_agente` (0107) trata `ativo`, `config_patch` e `escopo_patch` — não há ramo de
- * autonomia, e `core.agente.autonomia_jsonb` não se altera por evento nenhum. Isso é LACUNA, não
- * regressão: nunca houve. Então fora do ensaio ela fica em leitura, com o motivo escrito na tela.
- * Deixá-la clicável seria repetir exatamente o defeito que este commit corrige.
+ * ── 14/09, mais tarde · A RÉGUA TAMBÉM GRAVA, e o parágrafo que dizia o contrário era FALSO ────
+ *
+ * Estava escrito aqui, e na tela: "a régua está em leitura porque não existe caminho de gravação;
+ * o projetor de config de agente (0107) aplica ativo, config_patch e escopo_patch — nenhum deles
+ * toca autonomia_jsonb". O erro é de leitura minha: li `porta.proj_config_agente` e concluí sobre
+ * uma capacidade que vive em OUTRO projetor. Medido no banco vivo:
+ *
+ *     porta.projetor_registro  autonomia_alterada → porta.proj_autonomia_agente  (sem_projetor=f)
+ *     porta.proj_autonomia_agente  update core.agente set autonomia_jsonb = … || {cap: nivel}
+ *
+ * O caminho existia desde a 0104/0165, com SEIS guardas vivas em `api.registrar_evento`. Concluir
+ * "não existe" pelo projetor errado é a mesma classe de erro que E-360 ("tela vazia ≠ feature
+ * ausente"), com o objeto trocado.
+ *
+ * O que continua verdade, e ficou no lugar do parágrafo: a régua oferece DOIS estados, não três.
+ * O gate do runtime é binário (`lerGateJarvis`: `criar_tarefa` diferente de `auto` = o Jarvis
+ * cala, não propõe), então "Propõe" seria um botão que promete fila de sugestões e entrega
+ * silêncio. Decisão do Diogo: "corta essa feature por enquanto. Só liga ou desliga".
  */
 
 const ICONES: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -102,6 +122,7 @@ export function TelaAgente({
   agente: a,
   gestao,
   criadas,
+  membros,
   ensaio = false,
 }: {
   agente: AgenteInteligencia;
@@ -112,6 +133,8 @@ export function TelaAgente({
    * histórico do que ele cria; se isso não é documentado, remova a seção do front".
    */
   criadas?: TarefaCriadaPeloAgente[] | null;
+  /** Quem pode ser o responsável padrão — `core.v_membro` ativos. Vazio fora do caminho real. */
+  membros?: MembroEscolhivel[];
   /** `true` só no ensaio, onde não há banco. Default `false`: quem esquecer vê um erro, não uma mentira. */
   ensaio?: boolean;
 }) {
@@ -119,15 +142,50 @@ export function TelaAgente({
   const [ligado, setLigado] = React.useState(a.ativo);
   const [autonomia, setAutonomia] = React.useState(a.autonomia);
   const [gravando, setGravando] = React.useState(false);
+  const [gravandoCap, setGravandoCap] = React.useState<ReadonlySet<string>>(new Set());
   const impedido = a.pendencias.length > 0;
 
   React.useEffect(() => setLigado(a.ativo), [a.ativo]);
+  React.useEffect(() => setAutonomia(a.autonomia), [a.autonomia]);
 
-  function mudarAutonomia(chave: string, nivel: NivelAutonomia) {
-    setAutonomia((linhas) =>
-      linhas.map((l) => (l.chave === chave ? { ...l, nivel, alteradaPor: "você · agora" } : l)),
-    );
-  }
+  /**
+   * Liga/desliga UMA capacidade. No ensaio é estado local (não há banco); no caminho real é
+   * `autonomia_alterada` pelo ponto único de escrita, e o estado da tela só muda DEPOIS de o
+   * servidor confirmar a projeção. A ordem importa: pintar antes de gravar é o defeito que esta
+   * tela inteira existiu para tirar.
+   */
+  const mudarAutonomia = async (chave: string, nivel: NivelAutonomia) => {
+    if (ensaio) {
+      setAutonomia((linhas) =>
+        linhas.map((l) => (l.chave === chave ? { ...l, nivel, alteradaPor: "você · agora" } : l)),
+      );
+      return;
+    }
+    const ligar = nivel === "auto";
+    setGravandoCap((s) => new Set(s).add(chave));
+    try {
+      const r = await alterarAutonomiaAgente(a.chave, chave, ligar);
+      if (!r.ok) {
+        toast.error(ligar ? "Não ligou." : "Não desligou.", { description: r.motivo ?? "o servidor recusou" });
+        return;
+      }
+      setAutonomia((linhas) =>
+        linhas.map((l) => (l.chave === chave ? { ...l, nivel, alteradaPor: "você · agora" } : l)),
+      );
+      toast.success(ligar ? "Passa a fazer sozinho." : "Deixa de fazer.", {
+        description: "Vale na próxima passada do agente, e ficou registrado no ledger.",
+      });
+      router.refresh();
+    } catch (e) {
+      toast.error("Não gravou.", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setGravandoCap((s) => {
+        const n = new Set(s);
+        n.delete(chave);
+        return n;
+      });
+    }
+  };
 
   const alternar = async (v: boolean) => {
     if (ensaio) {
@@ -242,28 +300,37 @@ export function TelaAgente({
 
       <Secao
         titulo="Autonomia"
-        descricao={
-          ensaio
-            ? "Até onde ele vai sozinho, por tipo de ação. Mudar aqui vale na hora — não precisa de deploy."
-            : "Até onde ele vai sozinho, por tipo de ação. Hoje só se lê: mudar por esta tela ainda não existe."
-        }
+        descricao="O que ele faz sozinho, por tipo de ação. Ligar vale na próxima passada — não precisa de deploy."
       >
         <ReguaAutonomia
           linhas={autonomia}
-          podeEditar={ensaio && gestao && ligado}
-          onMudar={mudarAutonomia}
+          podeEditar={gestao}
+          gravando={gravandoCap}
+          onMudar={(chave, nivel) => void mudarAutonomia(chave, nivel)}
           agente={{ id: a.chave, nome: a.nome }}
         />
-        {!ensaio && (
+        {!ensaio && autonomia.length === 0 && (
           <p className="mt-2 max-w-[80ch] text-[12.5px] text-muted-foreground">
-            A régua está em leitura porque não existe caminho de gravação: o projetor de config de
-            agente (0107) aplica <code>ativo</code>, <code>config_patch</code> e{" "}
-            <code>escopo_patch</code> — nenhum deles toca <code>autonomia_jsonb</code>. Mudar a
-            autonomia hoje é migration, não configuração. Isto está dito aqui em vez de um controle
-            que aceita o clique e não muda nada.
+            {a.nome} não tem nenhuma capacidade gravada em <code>autonomia_jsonb</code>. Não é
+            defeito de leitura: é o estado do agente no banco. Dar a primeira capacidade a um agente
+            é migration, porque a régua liga e desliga o que já existe — não cria.
           </p>
         )}
       </Secao>
+
+      {a.chave === "jarvis" && (
+        <Secao
+          titulo="Responsável padrão"
+          descricao="Para quem a tarefa vai quando o lead não tem dono claro."
+        >
+          <ResponsavelPadrao
+            agente={a}
+            membros={membros ?? []}
+            podeEditar={gestao && !ensaio}
+            ensaio={ensaio}
+          />
+        </Secao>
+      )}
 
       {/* O passo a passo de cada passada (o trace) NÃO é gravado em lugar nenhum — só existe como
           fixture, no ensaio. O que É gravado é a consequência: a tarefa que o agente abriu, com
@@ -396,6 +463,120 @@ export function TelaAgente({
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * O RESPONSÁVEL PADRÃO — uma pessoa fixa, escolhida aqui, para quando não há dono claro.
+ *
+ * ── O degrau que este campo ocupa ──────────────────────────────────────────────────────────
+ * O Jarvis resolve o responsável em três degraus (runtime, `resolverDestinoTarefa`): dono ativo do
+ * lead → gestor do departamento de entrada → owner. Medido em produção em 14/09,
+ * `core.usuario_departamento` tem ZERO linhas — então o segundo degrau nunca casa e TODA tarefa
+ * sem dono cai no owner. Este campo troca o ÚLTIMO degrau. O rodízio por departamento continua
+ * valendo no dia em que houver lotação: isto não o substitui, fica embaixo dele.
+ *
+ * ── 🔴 A METADE QUE NÃO EXISTE, dita na tela e não só no PR ────────────────────────────────
+ * O runtime ainda NÃO lê `config_jsonb.responsavel_padrao`. Gravar aqui é auditável e vale como
+ * decisão registrada no ledger, mas hoje NÃO muda para onde a tarefa vai. Está escrito embaixo do
+ * campo, em vez de num changelog: um campo que finge funcionar é pior que um campo ausente, e a
+ * pessoa que escolhe é justamente quem precisa saber disso.
+ */
+function ResponsavelPadrao({
+  agente: a,
+  membros,
+  podeEditar,
+  ensaio,
+}: {
+  agente: AgenteInteligencia;
+  membros: MembroEscolhivel[];
+  podeEditar: boolean;
+  ensaio: boolean;
+}) {
+  const router = useRouter();
+  const [escolhido, setEscolhido] = React.useState<string | null>(a.responsavel_padrao ?? null);
+  const [gravando, setGravando] = React.useState(false);
+
+  React.useEffect(() => setEscolhido(a.responsavel_padrao ?? null), [a.responsavel_padrao]);
+
+  const escolher = async (uid: string) => {
+    if (ensaio) {
+      setEscolhido(uid);
+      return;
+    }
+    setGravando(true);
+    try {
+      const r = await definirResponsavelPadrao(a.chave, uid);
+      if (!r.ok) {
+        toast.error("Não gravou o responsável padrão.", { description: r.motivo ?? "o servidor recusou" });
+        return;
+      }
+      setEscolhido(uid);
+      const nome = membros.find((m) => m.id === uid)?.nome ?? "a pessoa escolhida";
+      toast.success(`Responsável padrão: ${nome}.`, {
+        description: "Ficou registrado no ledger. O runtime ainda não lê este campo.",
+      });
+      router.refresh();
+    } catch (e) {
+      toast.error("Não gravou.", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setGravando(false);
+    }
+  };
+
+  if (membros.length === 0) {
+    return (
+      <VazioHonesto
+        titulo="Não há ninguém para escolher"
+        linha={
+          ensaio
+            ? "No ensaio não há banco, então a lista de pessoas não é carregada."
+            : "A lista sai de `core.v_membro` (pessoas ativas) e voltou vazia. Sem pessoa ativa, não há para quem mandar a tarefa."
+        }
+      />
+    );
+  }
+
+  const atual = membros.find((m) => m.id === escolhido) ?? null;
+
+  return (
+    <div className="max-w-[80ch] rounded-md border border-border/60 bg-card px-4 py-3.5">
+      <label htmlFor="responsavel-padrao" className="text-[13.5px] font-medium text-foreground">
+        Quando não houver dono claro, a tarefa vai para
+      </label>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <Select
+          value={escolhido ?? ""}
+          onValueChange={(v) => void escolher(String(v))}
+          disabled={!podeEditar || gravando}
+        >
+          <SelectTrigger id="responsavel-padrao" className="w-[320px] max-w-full">
+            <SelectValue placeholder="Ninguém escolhido — hoje cai no owner" />
+          </SelectTrigger>
+          <SelectContent>
+            {membros.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.nome} · {m.papel}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {gravando && <span className="text-[12px] text-muted-foreground">gravando…</span>}
+        {!podeEditar && !ensaio && (
+          <span className="text-[12px] text-muted-foreground">Só gestão muda isto.</span>
+        )}
+      </div>
+
+      <p className="mt-2.5 text-[12.5px] leading-snug text-muted-foreground">
+        O dono do lead vem primeiro, sempre. Depois o gestor do departamento de entrada — que hoje
+        não casa com ninguém, porque nenhuma pessoa está lotada em departamento. {atual ? atual.nome : "O owner"}{" "}
+        é o último degrau.
+      </p>
+      <p className="mt-1.5 text-[12.5px] leading-snug text-muted-foreground">
+        ⚠️ O motor ainda não lê este campo: a escolha fica gravada e auditável, mas hoje ela não muda
+        para onde a tarefa vai. Falta o degrau correspondente no runtime.
+      </p>
+    </div>
+  );
+}
 
 function CartaoFerramenta({ ferramenta: f }: { ferramenta: FerramentaAgente }) {
   const Icone = ICONES[f.chave] ?? FileText;

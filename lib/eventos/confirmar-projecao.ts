@@ -97,7 +97,31 @@ export type FiltroProjecao =
   | { campo: string; op: "igualPayloadMais1"; dePayload: string }
   | { campo: string; op: "igualEvento" }
   | { campo: string; op: "igual"; valor: string | number | boolean }
-  | { campo: string; op: "naoNulo" };
+  | { campo: string; op: "naoNulo" }
+  /**
+   * 14/09 · o efeito mora DENTRO de um jsonb, e a CHAVE vem do payload.
+   *
+   * `porta.proj_autonomia_agente` faz `autonomia_jsonb || {capacidade: nivel}`: o que muda não é
+   * uma coluna, é uma chave escolhida no clique. Conferir a coluna inteira seria conferir também
+   * as capacidades que o evento não tocou — e conferir só que a linha do agente existe seria
+   * conferir algo que já era verdade antes do clique.
+   *
+   * `campo` é a COLUNA jsonb; o campo RESOLVIDO é o operador `->>` do PostgREST
+   * (`autonomia_jsonb->>criar_tarefa`), que é filtro de coluna legítimo no `eq`. A chave é SANEADA
+   * aqui (`[a-z0-9_]`): ela vem do payload,
+   * e payload não monta seletor. Chave fora disso devolve `null`, que derruba a conferência
+   * inteira — o desfecho certo, porque a porta já teria recusado antes (guarda de catálogo).
+   */
+  | { campo: string; op: "igualPayloadEmJsonb"; chaveDePayload: string; dePayload: string }
+  /**
+   * 14/09 · o valor mora FUNDO no payload (`config_patch.responsavel_padrao`), porque o evento é
+   * um PATCH. Sem isto o único jeito de conferir um patch seria repetir o valor na raiz do
+   * payload só para o readback alcançá-lo — inventar chave no ledger append-only para servir a
+   * uma leitura é o tipo de dívida que ninguém desfaz depois.
+   *
+   * Caminho que não existe no payload devolve `null`, e `null` derruba a conferência inteira.
+   */
+  | { campo: string; op: "igualPayloadFundo"; caminho: string[] };
 
 /** Como confirmar: pela posição carimbada, pelo id do evento, por um estado, ou por efeito. */
 export type ConferenciaProjecao =
@@ -115,7 +139,59 @@ export type ConferenciaProjecao =
    * conferir só que a linha existe — linha que já existia ANTES da ação), que é exatamente como um
    * readback vira decoração.
    */
-  | { tabela: string; por: "filtros"; coluna: string; filtros: FiltroProjecao[] };
+  | { tabela: string; por: "filtros"; coluna: string; filtros: FiltroProjecao[] }
+  /**
+   * UM TIPO DE EVENTO, DOIS EFEITOS DIFERENTES (14/09).
+   *
+   * `config_atualizada` é o caso: o mesmo tipo liga/desliga o agente (`payload.ativo`) E grava
+   * configuração dele (`payload.config_patch`). São efeitos em colunas diferentes de
+   * `core.agente`, e o projetor (`porta.proj_config_agente`, 0107) aplica cada um no seu ramo.
+   *
+   * Uma regra só não serve, e as duas saídas ruins são conhecidas: conferir sempre `ativo`
+   * REPROVA toda escrita de `config_patch` (que é o que acontecia até aqui — fail-closed correto,
+   * mas intransponível); conferir só `id` aprovaria uma linha que já existia antes do clique, que
+   * é como readback vira decoração.
+   *
+   * A variante é escolhida pela CHAVE PRESENTE no payload, na ordem declarada, e payload que não
+   * casa com nenhuma REPROVA — nunca "passa sem conferir".
+   *
+   * ⚠️ LIMITE DECLARADO: um evento que traga DOIS efeitos (`ativo` e `config_patch` no mesmo
+   * payload) confere só o primeiro que casar. Nenhum caminho deste ponto de escrita faz isso
+   * hoje — o `DialogoLigarClara`, que junta `ativo` + `escopo_patch` num evento só, escreve
+   * direto e está na lista de herdados. Quem trouxer um payload combinado para cá precisa de um
+   * modo que confira os dois, e não de mais uma variante.
+   */
+  | { por: "variantes"; variantes: VarianteConferencia[] };
+
+export interface VarianteConferencia {
+  /** a chave do payload que seleciona esta variante; a primeira presente ganha */
+  quandoTem: string;
+  regra: Extract<ConferenciaProjecao, { por: "filtros" }>;
+}
+
+/** A variante que casa com o payload, ou `null` (que REPROVA, nunca "confere menos"). */
+export function escolherVariante(
+  variantes: VarianteConferencia[],
+  payload: Record<string, unknown>,
+): Extract<ConferenciaProjecao, { por: "filtros" }> | null {
+  for (const v of variantes) {
+    if (Object.prototype.hasOwnProperty.call(payload, v.quandoTem) && payload[v.quandoTem] != null) {
+      return v.regra;
+    }
+  }
+  return null;
+}
+
+export function motivoVarianteNaoReconhecida(acao: string, variantes: VarianteConferencia[]): string {
+  return (
+    `a escrita foi aceita, mas o payload de "${acao}" não traz nenhum dos efeitos conferíveis ` +
+    `(${variantes.map((v) => v.quandoTem).join(", ")}) — não repita; declare a variante nova ` +
+    "em lib/eventos/confirmar-projecao.ts antes de escrever por este caminho"
+  );
+}
+
+/** A chave do jsonb vem do payload — e payload não monta seletor. */
+const CHAVE_JSONB_SEGURA = /^[a-z0-9_]{1,60}$/;
 
 /** Valor concreto de um filtro. Puro: é o que o teste exercita sem banco. */
 export type FiltroResolvido =
@@ -146,6 +222,24 @@ export function resolverFiltro(
       return typeof v === "number" && Number.isFinite(v)
         ? { campo: filtro.campo, tipo: "igual", valor: v + 1 }
         : null;
+    }
+    case "igualPayloadFundo": {
+      let v: unknown = payload;
+      for (const passo of filtro.caminho) {
+        if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+        v = (v as Record<string, unknown>)[passo];
+      }
+      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+        return { campo: filtro.campo, tipo: "igual", valor: v };
+      }
+      return null;
+    }
+    case "igualPayloadEmJsonb": {
+      const chave = payload[filtro.chaveDePayload];
+      const valor = payload[filtro.dePayload];
+      if (typeof chave !== "string" || !CHAVE_JSONB_SEGURA.test(chave)) return null;
+      if (typeof valor !== "string" || valor.length === 0) return null;
+      return { campo: `${filtro.campo}->>${chave}`, tipo: "igual", valor };
     }
     default:
       return null;
@@ -196,12 +290,75 @@ export const CONFERENCIA: Readonly<Record<string, ConferenciaProjecao>> = {
    * (Hoje esse caminho é o da tela da Clara, que escreve direto e está na lista de herdados.)
    */
   config_atualizada: {
+    por: "variantes",
+    variantes: [
+      {
+        quandoTem: "ativo",
+        regra: {
+          tabela: "agente",
+          por: "filtros",
+          coluna: "id",
+          filtros: [
+            { campo: "id", op: "igualPayload", dePayload: "agente_id" },
+            { campo: "ativo", op: "igualPayload", dePayload: "ativo" },
+          ],
+        },
+      },
+      /*
+       * 14/09 · RESPONSÁVEL PADRÃO do agente (`config_patch.responsavel_padrao`).
+       *
+       * A variante existe porque o efeito é OUTRO: `porta.proj_config_agente` faz
+       * `config_jsonb || config_patch`, então o que prova a gravação é a chave DENTRO do jsonb
+       * com o uuid pedido — não `ativo`, que este evento nem carrega.
+       *
+       * ⚠️ A conferência é do CAMPO, não do patch inteiro. Um `config_patch` com outra chave
+       * (a Clara publica pacing, bolhas, modelos por este mesmo tipo) não casa aqui e REPROVA —
+       * e é o certo: quem trouxer esse caminho para o ponto único declara a variante dele.
+       */
+      {
+        quandoTem: "config_patch",
+        regra: {
+          tabela: "agente",
+          por: "filtros",
+          coluna: "id",
+          filtros: [
+            { campo: "id", op: "igualPayload", dePayload: "agente_id" },
+            {
+              campo: "config_jsonb->>responsavel_padrao",
+              op: "igualPayloadFundo",
+              caminho: ["config_patch", "responsavel_padrao"],
+            },
+          ],
+        },
+      },
+    ],
+  },
+
+  /*
+   * 14/09 · AUTONOMIA POR CAPACIDADE (0104/0165) — o que a régua de `/configuracoes/agentes/[id]`
+   * escreve quando alguém liga ou desliga uma capacidade.
+   *
+   * Conferência pelo EFEITO e pela CHAVE CERTA: `porta.proj_autonomia_agente` faz
+   * `autonomia_jsonb || {capacidade: nivel}`, então a prova é `autonomia_jsonb->><capacidade>`
+   * valer exatamente o nível pedido. Conferir a linha do agente aprovaria algo que já era verdade
+   * antes do clique; conferir a coluna inteira falharia por causa das capacidades que o evento
+   * nem tocou.
+   *
+   * `core.agente` não tem `ultima_posicao` — o projetor só faz o `update` do jsonb —, então não
+   * há modo `posicao` disponível aqui, e não é por preguiça: é o que o projetor vivo faz.
+   */
+  autonomia_alterada: {
     tabela: "agente",
     por: "filtros",
     coluna: "id",
     filtros: [
       { campo: "id", op: "igualPayload", dePayload: "agente_id" },
-      { campo: "ativo", op: "igualPayload", dePayload: "ativo" },
+      {
+        campo: "autonomia_jsonb",
+        op: "igualPayloadEmJsonb",
+        chaveDePayload: "capacidade",
+        dePayload: "nivel",
+      },
     ],
   },
 
@@ -581,7 +738,15 @@ export async function confirmarProjecao(
   // uma escrita nova é obrigado a declarar como ela se confere — ou a declarar a exceção com o
   // motivo, que é a regra que a spec já pedia ("ausência de conferência NUNCA por esquecimento").
   if (!temConferencia(acao)) return { ok: false, motivo: motivoAcaoNaoDeclarada(acao) };
-  const regra = CONFERENCIA[acao];
+  let regra: ConferenciaProjecao = CONFERENCIA[acao];
+
+  // UM TIPO, DOIS EFEITOS: a variante é escolhida pelo payload, e payload que não casa com
+  // nenhuma REPROVA — o mesmo fail-closed do tipo desconhecido, um nível abaixo.
+  if (regra.por === "variantes") {
+    const escolhida = escolherVariante(regra.variantes, payload);
+    if (!escolhida) return { ok: false, motivo: motivoVarianteNaoReconhecida(acao, regra.variantes) };
+    regra = escolhida;
+  }
 
   if (regra.por === "estado") {
     // O projetor é guardado por estado (ex.: mencao_lida só marca a PRIMEIRA leitura), então a

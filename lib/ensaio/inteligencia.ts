@@ -64,6 +64,11 @@ export interface AgenteInteligencia extends AgenteEnsaio {
   numeros: Array<{ rotulo: string; valor: string }>;
   execucoes: ExecucaoTrace[];
   autonomia: LinhaAutonomia[];
+  /**
+   * `core.agente.config_jsonb.responsavel_padrao` — para quem a tarefa vai quando não há dono
+   * claro. `undefined` no ensaio (não há banco) e `null` quando ninguém foi escolhido.
+   */
+  responsavel_padrao?: string | null;
 }
 
 const FOTOS = fotosEnsaio();

@@ -182,7 +182,12 @@ export const TIPOS_ESCRITOS_WEB_B: string[] = [
   "canal_nivel_alterado",
   // 14/09 · ligar/desligar agente pela tela de Agentes. Estreia com a linha em CONFERENCIA
   // (por EFEITO: o `ativo` resultante em core.agente), nunca com exceção — o efeito é legível.
+  // Depois do mesmo dia ele ganhou uma SEGUNDA variante (`config_patch.responsavel_padrao`):
+  // é o mesmo tipo de evento com outro efeito, e cada variante confere o seu.
   "config_atualizada",
+  // 14/09 · a régua de autonomia passou a GRAVAR (liga/desliga por capacidade). Conferência por
+  // EFEITO dentro do jsonb: `autonomia_jsonb->><capacidade>` no nível pedido.
+  "autonomia_alterada",
   "config_publicada",
   "suporte_ticket_aberto",
   "suporte_ticket_comentado",

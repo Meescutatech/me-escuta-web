@@ -1,5 +1,13 @@
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { agentesInteligencia, type AgenteInteligencia } from "@/lib/ensaio/inteligencia";
+import {
+  CATALOGO_INDISPONIVEL,
+  lerCatalogo,
+  linhasDaReguaReal,
+  responsavelPadraoDe,
+  type MembroEscolhivel,
+  type CatalogoAutonomia,
+} from "@/lib/agentes/regua-real";
 
 /**
  * Quem ainda NÃO opera, dito pelo Diogo em 11/09. Levindo está `ativo=true` no banco desde a
@@ -59,15 +67,39 @@ export async function lerAgentesReais(agora: Date = new Date()): Promise<AgenteI
   const base = agentesInteligencia(agora);
   try {
     const supabase = criarClienteServidor();
-    const { data, error } = await supabase
-      .schema("core")
-      .from("agente")
-      .select("id,nome,ativo,prompt_versao,prompt_sistema,area")
-      .in(
-        "id",
-        base.map((b) => b.chave),
-      );
+    /*
+     * 14/09 · a régua passou a GRAVAR, então ela passa a LER do banco também — as duas metades
+     * andam juntas. `autonomia_jsonb` diz quais capacidades o agente tem e em que nível;
+     * `config_jsonb` traz o responsável padrão. Enquanto a régua era enfeite, mostrar as
+     * capacidades da fixture era só impreciso; com o clique gravando, seria oferecer um clique
+     * que a porta recusa (três das quatro capacidades da fixture do Jarvis não estão no catálogo).
+     */
+    const [agentesRes, configRes] = await Promise.all([
+      supabase
+        .schema("core")
+        .from("agente")
+        .select("id,nome,ativo,prompt_versao,prompt_sistema,area,autonomia_jsonb,config_jsonb")
+        .in(
+          "id",
+          base.map((b) => b.chave),
+        ),
+      supabase
+        .schema("core")
+        .from("v_config_vigente")
+        .select("nome,payload")
+        .in("nome", ["capacidade_agente", "flag.teto_autonomia"]),
+    ]);
+    const { data, error } = agentesRes;
     if (error || !data || data.length === 0) return null;
+
+    // catálogo ilegível NÃO derruba a tela: ela continua mostrando o estado do agente, e a régua
+    // inteira nasce em leitura, com o motivo escrito (fail-closed em `regua-real.ts`).
+    const catalogo: CatalogoAutonomia = configRes.error
+      ? CATALOGO_INDISPONIVEL
+      : lerCatalogo(
+          configRes.data?.find((c) => c.nome === "capacidade_agente")?.payload,
+          configRes.data?.find((c) => c.nome === "flag.teto_autonomia")?.payload,
+        );
 
     const porId = new Map(data.map((a) => [String(a.id), a]));
     const vivos = base.filter((b) => porId.has(b.chave));
@@ -88,6 +120,11 @@ export async function lerAgentesReais(agora: Date = new Date()): Promise<AgenteI
         // da fixture e alguém editaria um prompt que não é o que roda.
         prompt: typeof r.prompt_sistema === "string" && r.prompt_sistema.length > 0 ? r.prompt_sistema : b.prompt,
         area: typeof r.area === "string" && r.area.length > 0 ? r.area : b.area,
+        // a régua REAL: as chaves que o agente tem em `autonomia_jsonb`, cruzadas com o catálogo
+        // vigente. Nada de fixture — era o que fazia a tela oferecer `priorizar`/`atribuir`/
+        // `arquivar_lead`, que não existem no catálogo e a porta recusaria.
+        autonomia: linhasDaReguaReal(r.autonomia_jsonb as Record<string, unknown> | null, catalogo),
+        responsavel_padrao: responsavelPadraoDe(r.config_jsonb),
         ultima_acao: null,
         ultimos_7d: [],
         numeros: [],
@@ -112,4 +149,34 @@ export async function lerAgentesReais(agora: Date = new Date()): Promise<AgenteI
 export async function lerAgenteReal(id: string, agora: Date = new Date()): Promise<AgenteInteligencia | null> {
   const todos = await lerAgentesReais(agora);
   return todos?.find((a) => a.chave === id) ?? null;
+}
+
+/**
+ * AS PESSOAS que podem ser o responsável padrão de um agente — `core.v_membro`, só quem está
+ * ativo. Revogado não entra na lista: escolher alguém sem acesso seria mandar a tarefa para uma
+ * fila que ninguém abre.
+ *
+ * Degrada para `[]`, e a tela diz "não há ninguém para escolher" com o motivo — nunca para uma
+ * lista inventada, que é o caminho para alguém escolher um nome que o banco não conhece.
+ */
+export async function lerMembrosEscolhiveis(): Promise<MembroEscolhivel[]> {
+  try {
+    const supabase = criarClienteServidor();
+    const { data, error } = await supabase
+      .schema("core")
+      .from("v_membro")
+      .select("id,nome,email,papel,funcao,ativo")
+      .eq("ativo", true)
+      .order("nome", { ascending: true });
+    if (error || !data) return [];
+    return data.map((m) => ({
+      id: String(m.id),
+      nome: String(m.nome ?? m.email ?? m.id),
+      // a FUNÇÃO é o que a pessoa faz ("Gestora de Pré-venda"); o PAPEL é o poder no workspace
+      // (admin/membro). Quem escolhe para quem a tarefa vai quer a primeira.
+      papel: String(m.funcao ?? m.papel ?? "membro"),
+    }));
+  } catch {
+    return [];
+  }
 }
