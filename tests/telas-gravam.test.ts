@@ -196,15 +196,55 @@ const acoesAceite = readFileSync(new URL("../app/convite/aceitar/actions.ts", im
 
 test("a tela anuncia o CARGO, não o papel técnico do banco", () => {
   assert.ok(aceite.includes("cargoPorChave(convite.cargo)"), "a tela não resolve o cargo");
-  assert.ok(aceite.includes("você entra como {cargo.nome}"));
-  // o papel continua existindo como degrade para convite antigo, sem cargo gravado
-  assert.ok(aceite.includes("rotuloPapelBruto(convite.papel)"));
+  assert.ok(aceite.includes("Você entra como <strong"));
+  assert.ok(aceite.includes("{cargo.nome}"));
+  assert.ok(!aceite.includes("Acesso de <strong"), "o papel técnico voltou para a primeira frase");
+});
+
+test("a tela NÃO lista o que cada cargo alcança (Diogo, 14/09)", () => {
+  // Cortado a pedido dele: tela de chegada não é lugar de explicar permissão, e a lista empurrava
+  // o formulário para fora da primeira dobra no celular — que é onde ela é aberta.
+  assert.ok(!aceite.includes("cargo.ve"), "a lista de telas voltou");
+  assert.ok(!aceite.includes("cargo.telas"));
+  assert.ok(aceite.includes("Boas-vindas à Me Escuta"));
+});
+
+test("o formulário responde enquanto se digita, e o botão diz o que falta", () => {
+  // Antes era `FormData` no submit: a pessoa preenchia os três campos no escuro e só descobria a
+  // senha curta depois de clicar. No celular esse erro custa a tentativa inteira.
+  for (const sinal of ["const nomeOk =", "const emailOk =", "const senhaOk =", "const prontoPara ="]) {
+    assert.ok(aceite.includes(sinal), `falta ${sinal}`);
+  }
+  assert.ok(aceite.includes("`Falta ${faltando}`"), "o botão desabilitado precisa dizer o motivo");
+  assert.ok(aceite.includes("disabled={pendente || !prontoPara}"));
+  // o QUE `prontoPara` é, e não só que ele é usado: a primeira versão deste teste passava com
+  // `prontoPara = true`, que libera o botão com os três campos vazios
+  assert.ok(aceite.includes("const prontoPara = nomeOk && emailOk && senhaOk;"));
+  assert.ok(aceite.includes("senha.length >= 8"), "a régra dos 8 caracteres saiu do cliente");
 });
 
 test("no link de grupo a tela não pede 'o mesmo e-mail do convite' nem mostra o marcador", () => {
   assert.ok(aceite.includes('convite.aberto ? "Seu e-mail" : "Seu e-mail (o mesmo do convite)"'));
-  assert.ok(aceite.includes("{!convite.aberto && convite.email_mascarado && ("));
+  // A dica é um valor NOMEADO com o guarda explícito, e não um ternário aninhado no JSX — a
+  // primeira versão deste teste passava com o guarda removido, porque a janela de linhas pegava o
+  // `convite.aberto` do RÓTULO logo acima. Guarda que o teste não vê sumir não é guarda.
+  const bloco = aceite.slice(aceite.indexOf("const dicaEmail"), aceite.indexOf("})();", aceite.indexOf("const dicaEmail")));
+  assert.ok(bloco.length > 0, "o `dicaEmail` sumiu — a dica voltou para dentro do JSX");
+  assert.ok(bloco.includes("if (convite.aberto) return"), "o ramo aberto não é tratado ANTES do marcador");
+  assert.ok(
+    bloco.indexOf("convite.aberto") < bloco.indexOf("email_mascarado"),
+    "o marcador é alcançável antes de checar se o link é aberto",
+  );
+  // e em nenhum outro lugar do arquivo o marcador é LIDO — comentário que o cita não conta, o que
+  // este teste aprendeu na própria pele mais cedo hoje, duas vezes
+  const leituras = aceite
+    .split("\n")
+    .filter((l) => l.includes("email_mascarado") && !/^\s*(\*|\/\/)/.test(l));
+  assert.equal(leituras.length, 1, `email_mascarado lido fora do \`dicaEmail\`: ${leituras.join(" | ")}`);
+  assert.ok(bloco.includes(leituras[0].trim()), "a leitura do marcador saiu de dentro do `dicaEmail`");
 });
+
+
 
 test("o autofill continua desligado no e-mail — e no link aberto ele é PIOR", () => {
   // Como o link de grupo aceita qualquer e-mail, o login salvo do Chrome criaria a conta com o

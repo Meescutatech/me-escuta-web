@@ -21,6 +21,52 @@ const MOTIVOS: Record<string, string> = {
   runtime_fora_do_ar: "Não foi possível checar o convite agora. Tente de novo em instantes.",
 };
 
+const ENTRADA =
+  "h-10 w-full rounded-md border border-linha bg-branco px-3 text-[14px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none";
+
+/**
+ * Um campo com rótulo, dica e o sinal de pronto.
+ *
+ * O sinal (✓) aparece no RÓTULO e não dentro da caixa: no celular o cursor e o teclado já disputam
+ * o interior do campo, e um ícone ali some atrás do texto digitado. A dica ocupa sempre a mesma
+ * linha — quando vira aviso ela troca de cor, e não de posição, para o formulário não pular sob o
+ * dedo de quem está preenchendo.
+ */
+function Campo({
+  rotulo,
+  dica,
+  ok,
+  mostrarAviso,
+  aviso,
+  children,
+}: {
+  rotulo: string;
+  dica?: string | undefined;
+  ok: boolean;
+  mostrarAviso: boolean;
+  aviso?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-[12.5px] font-medium text-suave">{rotulo}</span>
+        {ok && (
+          <span aria-hidden className="text-[12px] leading-none text-verde">
+            ✓
+          </span>
+        )}
+      </span>
+      {children}
+      {(mostrarAviso || dica) && (
+        <span className={`text-[11.5px] leading-snug ${mostrarAviso ? "text-vermelho" : "text-mute"}`}>
+          {mostrarAviso ? aviso : dica}
+        </span>
+      )}
+    </label>
+  );
+}
+
 function AceitarConvite() {
   const router = useRouter();
   const params = useSearchParams();
@@ -33,6 +79,46 @@ function AceitarConvite() {
   const [erro, setErro] = useState<string | null>(null);
   const [pendente, startTransition] = useTransition();
 
+  /*
+   * ── O FORMULÁRIO RESPONDE ENQUANTO SE DIGITA (14/09, pedido do Diogo) ────────────────────────
+   * Antes era um `FormData` no submit: a pessoa preenchia os três campos no escuro, clicava, e só
+   * então descobria que a senha tinha 7 caracteres. Num celular, com a fono abrindo pelo WhatsApp,
+   * esse erro custa a tentativa inteira.
+   *
+   * Agora cada campo diz o que falta no momento em que passa a faltar, o botão só acende quando
+   * os três estão prontos, e ele DIZ o que falta em vez de ficar cinza sem explicação — botão
+   * desabilitado e mudo é a forma mais comum de travar alguém sem que ela saiba por quê.
+   */
+  const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [tocado, setTocado] = useState<Record<string, boolean>>({});
+  const tocar = (c: string) => setTocado((t) => ({ ...t, [c]: true }));
+
+  const nomeOk = nome.trim().length >= 2;
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const senhaOk = senha.length >= 8;
+  const prontoPara = nomeOk && emailOk && senhaOk;
+  const faltando = [!nomeOk && "seu nome", !emailOk && "um e-mail válido", !senhaOk && "8 caracteres na senha"]
+    .filter(Boolean)
+    .join(" · ");
+
+  /*
+   * A dica do campo de e-mail, calculada AQUI e não no JSX, por uma razão que um teste me cobrou:
+   * no JSX ela era um ternário aninhado dentro de outro, e uma guarda que some ali some em
+   * silêncio. Num link de grupo o `email_mascarado` é `aberto-<cargo>@convite.invalid` — um
+   * endereço que não é de ninguém — e foi exatamente ele que apareceu mascarado na tela.
+   *
+   * O ramo aberto NÃO PODE alcançar `email_mascarado`, e este `if` é o que torna isso legível e
+   * verificável. (O runtime também parou de devolvê-lo no canal aberto; são duas defesas, e é de
+   * propósito: a divergência entre as duas pontas foi o bug de 14/09.)
+   */
+  const dicaEmail = (() => {
+    if (convite === "carregando" || !convite.valido) return undefined;
+    if (convite.aberto) return "É por ele que você entra daqui em diante";
+    return convite.email_mascarado ? `O convite foi para ${convite.email_mascarado}` : undefined;
+  })();
+
   useEffect(() => {
     if (!token) {
       setConvite({ valido: false, motivo: "token_ausente" });
@@ -41,18 +127,19 @@ function AceitarConvite() {
     void validarConvite(token).then(setConvite);
   }, [token]);
 
-  function enviar(form: FormData) {
-    // `email_do_convite`, e não `email`: o nome foi trocado justamente para o Chrome não
-    // reconhecer o campo como login e preencher a conta salva de outra pessoa.
-    const email = String(form.get("email_do_convite") ?? "").trim().toLowerCase();
-    const nome = String(form.get("nome") ?? "").trim();
-    const senha = String(form.get("senha") ?? "");
-    if (!email || !email.includes("@")) return setErro("Informe o email do convite.");
-    if (!nome) return setErro("Informe seu nome.");
-    if (senha.length < 8) return setErro("A senha precisa de pelo menos 8 caracteres.");
+  function enviar() {
+    if (!prontoPara) {
+      setTocado({ nome: true, email: true, senha: true });
+      return;
+    }
     setErro(null);
     startTransition(async () => {
-      const r = await aceitarConviteAction({ token, email, nome, senha });
+      const r = await aceitarConviteAction({
+        token,
+        email: email.trim().toLowerCase(),
+        nome: nome.trim(),
+        senha,
+      });
       if (!r.ok) {
         setErro(r.motivo ?? "não foi possível aceitar o convite");
         return;
@@ -103,98 +190,116 @@ function AceitarConvite() {
               significa em uma frase, e o que ela vai ver quando entrar. É o mínimo de tutorial que
               cabe no lugar onde de fato se lê — antes de pedir qualquer campo.
             */}
+            {/* 14/09, segunda passada: o Diogo cortou a lista do que cada cargo alcança —
+                "só coloque boas vindas". Estava certo: uma tela de chegada não é o lugar de
+                explicar permissão, e a lista empurrava o formulário para fora da primeira dobra
+                no celular, que é onde essa tela é aberta. O cargo fica, em uma linha, porque é a
+                única coisa que a pessoa precisa reconhecer para saber que o link é o dela. */}
             <h1 className="text-[21px] font-[650] leading-tight tracking-[-0.015em] text-tinta">
-              {cargo ? <>Boas-vindas — você entra como {cargo.nome}</> : "Boas-vindas à Me Escuta"}
+              Boas-vindas à Me Escuta
             </h1>
             <p className="mt-2 text-[13.5px] leading-relaxed text-suave">
-              {cargo?.resumo ??
-                (convite.funcao
-                  ? `Seu acesso é de ${rotuloPapelBruto(convite.papel)} · ${convite.funcao}.`
-                  : `Seu acesso é de ${rotuloPapelBruto(convite.papel)}.`)}
+              {cargo ? (
+                <>
+                  Você entra como <strong className="font-[620] text-tinta">{cargo.nome}</strong>. Preencha os três
+                  campos e o sistema abre.
+                </>
+              ) : (
+                "Preencha os três campos e o sistema abre."
+              )}
             </p>
 
-            {cargo && cargo.ve.length > 0 && (
-              <ul className="mt-3 flex flex-col gap-1.5 rounded-md bg-board px-3.5 py-3">
-                {cargo.ve.slice(0, 3).map((v) => (
-                  <li key={v} className="text-[12.5px] leading-snug text-suave">
-                    {v}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <p className="mt-4 text-[13px] text-suave">Crie sua conta para entrar.</p>
-
             <form
-              className="mt-3 flex flex-col gap-3"
+              className="mt-5 flex flex-col gap-3"
+              noValidate
               onSubmit={(e) => {
                 e.preventDefault();
-                enviar(new FormData(e.currentTarget));
+                enviar();
               }}
             >
               {/* O NOME vem primeiro: é o campo sobre ELA, e abrir por "confirme o e-mail do
                   convite" era abrir por burocracia numa tela de chegada. */}
-              <label className="grid gap-1">
-                <span className="text-[12px] text-mute">Seu nome</span>
+              <Campo
+                rotulo="Seu nome"
+                dica="Como a equipe vai te chamar"
+                ok={nomeOk}
+                mostrarAviso={!!tocado.nome && !nomeOk}
+                aviso="Escreva pelo menos duas letras."
+              >
                 <input
                   name="nome"
                   type="text"
-                  required
                   autoComplete="name"
-                  placeholder="Como a equipe vai te chamar"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  onBlur={() => tocar("nome")}
+                  placeholder="Jade Ferreira"
                   aria-label="Seu nome"
-                  className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
+                  className={ENTRADA}
                 />
-              </label>
+              </Campo>
+
               {/*
-                11/09 · RÓTULO ACIMA, E AUTOFILL DESLIGADO NO CAMPO DO E-MAIL.
+                11/09 · AUTOFILL DESLIGADO NO CAMPO DO E-MAIL.
                 O campo era só `placeholder`, e o Chrome preenchia nele o login SALVO de quem está
                 abrindo — vimos `admin@meescuta.com` entrar sozinho num convite de outra pessoa.
-                A proteção continua valendo no link de grupo, e ali é ainda pior: como qualquer
-                e-mail é aceito, o autofill criaria a conta com o endereço ERRADO sem erro nenhum.
+                A proteção vale MAIS no link de grupo, não menos: como qualquer e-mail é aceito ali,
+                o autofill criaria a conta com o endereço errado sem erro nenhum.
               */}
-              <label className="grid gap-1">
-                <span className="text-[12px] text-mute">
-                  {convite.aberto ? "Seu e-mail" : "Seu e-mail (o mesmo do convite)"}
-                </span>
+              <Campo
+                rotulo={convite.aberto ? "Seu e-mail" : "Seu e-mail (o mesmo do convite)"}
+                dica={dicaEmail}
+                ok={emailOk}
+                mostrarAviso={!!tocado.email && !emailOk}
+                aviso="Falta o @ ou o final do endereço."
+              >
                 <input
                   name="email_do_convite"
                   type="email"
-                  required
                   autoComplete="off"
                   data-1p-ignore
                   data-lpignore="true"
-                  placeholder={convite.aberto ? "o e-mail que você vai usar para entrar" : undefined}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => tocar("email")}
+                  placeholder="jade@gmail.com"
                   aria-label={convite.aberto ? "Seu e-mail" : "Seu e-mail, o mesmo do convite"}
-                  className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
+                  className={ENTRADA}
                 />
-                {!convite.aberto && convite.email_mascarado && (
-                  <span className="text-[11.5px] text-mute">O convite foi para {convite.email_mascarado}.</span>
-                )}
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[12px] text-mute">Crie uma senha — mínimo 8 caracteres</span>
+              </Campo>
+
+              <Campo
+                rotulo="Crie uma senha"
+                dica={senha.length === 0 ? "Mínimo 8 caracteres" : senhaOk ? "Boa" : `Faltam ${8 - senha.length}`}
+                ok={senhaOk}
+                mostrarAviso={false}
+              >
                 <input
                   name="senha"
                   type="password"
-                  required
-                  minLength={8}
                   autoComplete="new-password"
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
+                  onBlur={() => tocar("senha")}
                   aria-label="Crie uma senha, mínimo 8 caracteres"
-                  className="h-9 rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta placeholder:text-mute focus:border-laranja focus:outline-none"
+                  className={ENTRADA}
                 />
-              </label>
+              </Campo>
+
               {erro && (
                 <p role="alert" className="rounded-md bg-[#FBEFED] px-3 py-2 text-[12.5px] text-vermelho">
                   {erro}
                 </p>
               )}
+
+              {/* O botão DIZ o que falta. Desabilitado e mudo é a forma mais comum de travar
+                  alguém sem que ela saiba por quê — e no celular não há hover para descobrir. */}
               <button
                 type="submit"
-                disabled={pendente}
-                className="h-9 rounded-md bg-laranja text-[13px] font-semibold text-branco hover:bg-laranja-esc disabled:opacity-60"
+                disabled={pendente || !prontoPara}
+                className="mt-1 h-10 rounded-md bg-laranja text-[13.5px] font-semibold text-branco transition-opacity hover:bg-laranja-esc disabled:opacity-45"
               >
-                {pendente ? "Criando sua conta…" : "Criar conta e entrar"}
+                {pendente ? "Criando sua conta…" : prontoPara ? "Criar conta e entrar" : `Falta ${faltando}`}
               </button>
             </form>
           </div>
