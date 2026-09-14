@@ -21,6 +21,7 @@ import {
   type ModoComposer,
   type ModoInterno,
 } from "@/lib/conversas/composer-modo";
+import { motivoFaltando, posicoesDe, type TemplateHsmNoChat } from "@/lib/conversas/template-hsm";
 import { placeholdersPendentes, type TemplateMensagem, type VariaveisTemplate } from "@/lib/templates";
 import {
   aplicarMencao,
@@ -96,10 +97,12 @@ export function Composer({
   mencionaveis,
   tiposTarefa,
   templates,
+  templatesHsm = [],
   variaveis,
   autorId,
   autorEmail,
   onEnviarTexto,
+  onEnviarTemplate,
   onEnviarMidia,
   onDigitar,
   aoPublicar,
@@ -134,12 +137,20 @@ export function Composer({
   tiposTarefa: TipoTarefa[];
   /** Templates ativos do menu / (SPEC-TEMPLATES §6). Vazio = seção não aparece. */
   templates: TemplateMensagem[];
+  /**
+   * T2 (14/09) · os HSM APROVADOS do canal DESTA conversa. Já filtrados na leitura: template de
+   * outro canal é recusado pela porta, e oferecer o que será recusado faz a recusa ser a primeira
+   * notícia. Vazio = a seção não aparece, e isso é degrade honesto.
+   */
+  templatesHsm?: TemplateHsmNoChat[];
   /** Só variáveis CONFIÁVEIS (§5.2) — o Inbox decide o que entra; nome ruim fica de fora. */
   variaveis: VariaveisTemplate;
   autorId: string | null;
   autorEmail: string | null;
   /** templateId acompanha o texto quando o rascunho nasceu de template (§6.4). */
   onEnviarTexto: (texto: string, templateId?: string | null) => void;
+  /** T2 · manda o HSM. `parametros` é POSICIONAL — o índice é a posição menos um. */
+  onEnviarTemplate?: (templateId: string, parametros: string[]) => void;
   onEnviarMidia: (m: MidiaPronta) => void;
   onDigitar?: () => void;
   aoPublicar: () => void;
@@ -209,8 +220,31 @@ export function Composer({
 
   const interno = ehModoInterno(modo);
   const podeComandar = !!leadId;
+
+  /*
+   * T2 · TEMPLATE HSM ARMADO — escolhido, montado, esperando confirmação.
+   *
+   * Estado separado do rascunho de propósito: o rascunho é texto que a pessoa escreve e edita; o
+   * HSM é um objeto aprovado pela Meta, e o que sai é `template_id` + parâmetros. Enquanto houver
+   * um armado, o campo de texto dá lugar à prévia — não dá para "misturar" um template com uma
+   * frase digitada, e oferecer isso seria oferecer uma mensagem que a Meta recusa.
+   */
+  const [hsmArmado, setHsmArmado] = useState<{
+    templateId: string;
+    nome: string;
+    texto: string;
+    parametros: string[];
+    faltando: number[];
+  } | null>(null);
+
+  /**
+   * O primeiro nome, e só quando ele é CONFIÁVEL: `variaveis` já chega peneirada pelo Inbox (§5.2
+   * — "nome ruim de lead nem entra no objeto"). Herdar essa peneira é o que separa preencher
+   * "Oi, Ana!" de preencher "Oi, 5531999…!" numa mensagem para paciente real.
+   */
+  const primeiroNomeDoLead = (variaveis.nome ?? "").trim().split(/\s+/)[0] || undefined;
   const comandos = useMemo(
-    () => (modo === "mensagem" && podeComandar && !anexo ? menuComandos(rascunho, templates) : []),
+    () => (modo === "mensagem" && podeComandar && !anexo ? menuComandos(rascunho, templates, templatesHsm) : []),
     [modo, podeComandar, anexo, rascunho, templates],
   );
   // §5.3: placeholder que sobrou trava o envio (a trava mora em despacharAoCliente; isto é o aviso)
@@ -285,7 +319,7 @@ export function Composer({
    * só escreve no rascunho. O envio continua tendo um único portão (`enviarAoCliente`).
    */
   function executarComando(c: ComandoComposer) {
-    const efeito = efeitoDoComando(c, variaveis);
+    const efeito = efeitoDoComando(c, variaveis, { primeiroNome: primeiroNomeDoLead });
     switch (efeito.tipo) {
       case "entrar_modo":
         entrarNoModo(efeito.modo);
@@ -302,6 +336,25 @@ export function Composer({
           if (m) el.setSelectionRange(m.index, m.index + m[0].length);
           else el.setSelectionRange(efeito.texto.length, efeito.texto.length);
         });
+        return;
+      }
+      case "armar_template_hsm": {
+        /*
+         * ARMAR, e nada mais. T1 continua inteiro: nenhum comando do menu envia.
+         *
+         * O texto vai para a PRÉVIA e não para o rascunho editável, e a diferença não é estética:
+         * o corpo que sai é montado pelo sender a partir da definição que a Meta aprovou. Deixar a
+         * pessoa editar aqui mudaria o que ela lê e não o que a paciente recebe — a pior mentira
+         * possível numa tela de envio.
+         */
+        setHsmArmado({
+          templateId: efeito.templateId,
+          nome: efeito.nome,
+          texto: efeito.texto,
+          parametros: efeito.parametros,
+          faltando: efeito.faltando,
+        });
+        setRascunho("");
         return;
       }
       default: {
@@ -631,6 +684,81 @@ export function Composer({
         </div>
       )}
 
+      {/* ── A PRÉVIA DO TEMPLATE ARMADO ──────────────────────────────────────────────────────
+          Ela toma o lugar do campo de texto, e não senta ao lado dele: template e frase digitada
+          não se misturam numa mensagem só, e oferecer o contrário seria oferecer algo que a Meta
+          recusa. O texto é LEITURA — o que sai é montado pelo sender a partir da definição
+          aprovada, então deixar editar aqui mudaria a prévia e não a mensagem. */}
+      {hsmArmado && (
+        <div className="mb-2 rounded-lg border border-linha bg-board p-3.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="font-mono text-[12px] text-suave">{hsmArmado.nome}</span>
+            <button
+              type="button"
+              onClick={() => setHsmArmado(null)}
+              className="shrink-0 text-[12px] text-mute underline-offset-2 hover:text-tinta hover:underline"
+            >
+              Cancelar
+            </button>
+          </div>
+
+          <p className="mt-2 whitespace-pre-line text-[13.5px] leading-relaxed text-tinta">{hsmArmado.texto}</p>
+
+          {hsmArmado.faltando.length > 0 && (
+            <div className="mt-3 flex flex-col gap-2">
+              {hsmArmado.faltando.map((n) => (
+                <label key={n} className="flex items-center gap-2">
+                  <span className="shrink-0 font-mono text-[11.5px] text-mute">{`{{${n}}}`}</span>
+                  <input
+                    value={hsmArmado.parametros[n - 1] ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setHsmArmado((a) => {
+                        if (!a) return a;
+                        const parametros = [...a.parametros];
+                        parametros[n - 1] = v;
+                        return {
+                          ...a,
+                          parametros,
+                          // o que ainda falta se recalcula do array, e não de um contador à parte:
+                          // dois lugares contando lacuna é como a tela libera o que a porta recusa
+                          faltando: parametros
+                            .map((x, i) => ((x ?? "").trim() === "" ? i + 1 : 0))
+                            .filter((x) => x > 0),
+                        };
+                      });
+                    }}
+                    autoComplete="off"
+                    aria-label={`valor da variável ${n}`}
+                    className="h-8 w-full rounded-md border border-linha bg-branco px-2.5 text-[13px] text-tinta focus:border-laranja focus:outline-none"
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-[11.5px] leading-snug text-mute">
+              {hsmArmado.faltando.length > 0
+                ? motivoFaltando(hsmArmado.faltando)
+                : "Sai como está escrito. Abre uma janela de 24 horas para conversar."}
+            </span>
+            <button
+              type="button"
+              disabled={hsmArmado.faltando.length > 0}
+              onClick={() => {
+                if (hsmArmado.faltando.length > 0) return;
+                onEnviarTemplate?.(hsmArmado.templateId, hsmArmado.parametros);
+                setHsmArmado(null);
+              }}
+              className="h-8 shrink-0 rounded-md bg-laranja px-3 text-[12.5px] font-semibold text-branco hover:bg-laranja-esc disabled:opacity-45"
+            >
+              Mandar template
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="relative">
         {/* menu de comandos — abre pra cima, ancorado no campo (mockup, estado b) */}
         {comandos.length > 0 && (
@@ -641,11 +769,16 @@ export function Composer({
           >
             {comandos.map((c, i) => {
               const primeiroTemplate = c.acao === "template" && (i === 0 || comandos[i - 1].acao !== "template");
+              const primeiroHsm = c.acao === "template_hsm" && (i === 0 || comandos[i - 1].acao !== "template_hsm");
               const temAsDuasSecoes = comandos.some((x) => x.acao === "template") && comandos.some((x) => x.acao === "modo");
+              const qtdVar = c.acao === "template_hsm" ? posicoesDe(c.template.corpo).length : 0;
               return (
-                <div key={c.acao === "template" ? c.template.id : c.comando} className="contents">
+                <div key={c.acao === "modo" ? c.comando : c.template.id} className="contents">
                   {i === 0 && c.acao === "modo" && temAsDuasSecoes && <Cabecalho>Comandos</Cabecalho>}
                   {primeiroTemplate && temAsDuasSecoes && <Cabecalho>Templates</Cabecalho>}
+                  {/* Cabeçalho PRÓPRIO, e o nome diz o que muda: estes custam dinheiro, abrem uma
+                      janela de 24h e são os únicos que funcionam com a janela fechada. */}
+                  {primeiroHsm && <Cabecalho>Templates aprovados (WhatsApp)</Cabecalho>}
                   <button
                     type="button"
                     role="option"
@@ -659,7 +792,14 @@ export function Composer({
                   >
                     <span className="min-w-[64px] shrink-0 font-mono text-[12.5px] font-medium text-tinta">{c.comando}</span>
                     <span className="truncate text-[12.5px] text-suave">{c.explicacao}</span>
-                    {i === iComando && <span className="ml-auto font-mono text-[10.5px] text-mute">↵</span>}
+                    {/* "2 variáveis" antes de escolher: é a diferença entre um clique e um
+                        formulário, e saber disso antes evita abrir o que não dá tempo de preencher. */}
+                    {qtdVar > 0 && (
+                      <span className="ml-auto shrink-0 text-[10.5px] text-mute">
+                        {qtdVar} {qtdVar === 1 ? "variável" : "variáveis"}
+                      </span>
+                    )}
+                    {i === iComando && qtdVar === 0 && <span className="ml-auto font-mono text-[10.5px] text-mute">↵</span>}
                   </button>
                 </div>
               );

@@ -1,5 +1,8 @@
 "use server";
 
+import { lerTemplatesHsmDoCanal } from "@/lib/dados/templates-hsm-do-canal";
+import type { TemplateHsmNoChat } from "@/lib/conversas/template-hsm";
+
 import { revalidatePath } from "next/cache";
 import { criarClienteServidor } from "@/lib/supabase/server";
 import { registrarEventoUI, type ResultadoEvento } from "@/app/(app)/funil/actions";
@@ -92,6 +95,64 @@ export async function enviarMensagem(
   // O que continua sendo do sender é o `mensagem_enviada` (saiu de fato); a bolha segue em
   // "aguardando" até lá, que é o comportamento honesto e já era o de hoje.
   const r = await registrarEventoUI("enviar_mensagem_humana", payload, undefined, chaveIdem);
+  if (r.ok) revalidatePath("/conversas");
+  return r;
+}
+
+/**
+ * MANDAR UM TEMPLATE HSM (RF-5 · 14/09).
+ *
+ * ── Por que é uma action própria, e não `enviarMensagem` com um campo a mais ──────────────────
+ * `enviar_mensagem_humana` leva TEXTO. O template não: leva `template_id` + `parametros`
+ * posicionais, e quem monta o corpo é o sender, a partir da `definicao` que a Meta aprovou. Se a
+ * tela mandasse o texto montado como mensagem comum, a Meta recusaria fora da janela de 24h — que
+ * é exatamente o caso em que o template existe para servir (354 das 373 conversas, medido em 14/09).
+ *
+ * ── A guarda, e onde ela mora ─────────────────────────────────────────────────────────────────
+ * `porta.validar_evento_template_envio`, chamada de `porta.inserir_evento` — não da `api`. Isso
+ * importa: a porta é o caminho comum do web E do runtime, então a guarda vale para os dois. Ela
+ * confere que o template existe, que a conversa existe, que a conversa tem canal resolvido, e que
+ * o template é DO MESMO CANAL da conversa. Nada disso é reimplementado aqui: a tela filtra pelo
+ * canal para não OFERECER o que seria recusado, mas quem recusa é o banco.
+ *
+ * ── `parametros` vai como array, e a ordem é o contrato ───────────────────────────────────────
+ * Posicional e contíguo: o índice é a posição menos um. Quem monta é `armarTemplate`
+ * (`lib/conversas/template-hsm.ts`), que devolve o array inteiro com `""` nas lacunas — e a tela
+ * trava o envio enquanto houver lacuna. Mandar um array "compactado", sem os vazios, deslocaria
+ * todos os seguintes e a mensagem sairia com a data no lugar do nome.
+ */
+/**
+ * Os HSM aprovados do canal DESTA conversa, sob demanda.
+ *
+ * Por que não vem como prop da página: a lista depende do canal da conversa SELECIONADA, que muda
+ * no cliente. Mandar os 318 de todos os canais no primeiro carregamento seria pagar ~100 KB por
+ * uma tela que quase sempre usa um canal só. Na prática são dois canais, então isto busca no
+ * máximo duas vezes por sessão — o inbox guarda o que já leu.
+ */
+export async function lerTemplatesDoCanal(canalId: string | null): Promise<TemplateHsmNoChat[]> {
+  return lerTemplatesHsmDoCanal(canalId);
+}
+
+export async function enviarTemplateHumano(
+  conversaId: string,
+  templateId: string,
+  parametros: string[],
+  chaveIdem?: string,
+): Promise<ResultadoEvento> {
+  if (!conversaId.trim()) return { ok: false, motivo: "conversa não informada" };
+  if (!templateId.trim()) return { ok: false, motivo: "template não informado" };
+  // A trava de lacuna vale aqui também, e não só na tela: botão desabilitado é conforto visual —
+  // não impede Enter, não impede submit programático, e some num refactor.
+  const vazia = parametros.findIndex((v) => (v ?? "").trim() === "");
+  if (vazia >= 0) {
+    return { ok: false, motivo: `a variável {{${vazia + 1}}} está vazia — o template sai como está escrito` };
+  }
+  const r = await registrarEventoUI(
+    "enviar_template_humano",
+    { conversa_id: conversaId, template_id: templateId, parametros },
+    undefined,
+    chaveIdem,
+  );
   if (r.ok) revalidatePath("/conversas");
   return r;
 }

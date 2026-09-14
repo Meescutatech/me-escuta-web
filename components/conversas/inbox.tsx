@@ -19,12 +19,15 @@ import {
   carregarMaisConversas,
   devolverConversa,
   enviarMensagem,
+  enviarTemplateHumano,
+  lerTemplatesDoCanal,
   programarEnvio,
   cancelarEnvioProgramado,
   sinalizarPresenca,
   validarSugestaoMensagem,
 } from "@/app/(app)/conversas/actions";
 import { criarGatilhoDigitando } from "@/lib/conversas/presenca";
+import type { TemplateHsmNoChat } from "@/lib/conversas/template-hsm";
 import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 import { frasePrograma } from "@/lib/conversas/programar-envio";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
@@ -747,6 +750,40 @@ export function Inbox({
    * evento estendido (D4) com o caminho; a bolha otimista carrega midia_caminho/mime e renderiza
    * com os MESMOS componentes das mensagens do servidor (signed URL de sessão).
    */
+  /*
+   * T2 · OS TEMPLATES HSM DO CANAL, guardados por canal.
+   *
+   * Cache por `phone_number_id` e não por conversa: o template pertence à WABA, e duas conversas
+   * do mesmo número compartilham a lista inteira. Na prática são dois canais, então isto busca no
+   * máximo duas vezes por sessão. Falha de leitura vira lista vazia — o `/` continua servindo nota,
+   * tarefa e mensagem pronta, que é degrade; o menu sumir não seria.
+   */
+  const [hsmPorCanal, setHsmPorCanal] = useState<Record<string, TemplateHsmNoChat[]>>({});
+  const canalDaConversa = selecionada?.phone_number_id ?? null;
+  useEffect(() => {
+    if (!canalDaConversa || hsmPorCanal[canalDaConversa]) return;
+    let vivo = true;
+    void lerTemplatesDoCanal(canalDaConversa).then((lista) => {
+      if (vivo) setHsmPorCanal((m) => ({ ...m, [canalDaConversa]: lista }));
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [canalDaConversa, hsmPorCanal]);
+
+  /** Manda o HSM. Caminho SEPARADO do texto: `template_id` + parâmetros, nunca o corpo montado. */
+  function despacharTemplate(templateId: string, parametros: string[]) {
+    if (!selecionada) return;
+    const conversaId = selecionada.id;
+    void enviarTemplateHumano(conversaId, templateId, parametros).then((r) => {
+      if (!r.ok) {
+        avisar(r.motivo ?? "não deu para mandar o template");
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   function despachar(texto: string, midia?: MidiaPronta | null, idPendente?: string, templateId?: string | null) {
     if (!selecionada) return;
     // o id da bolha é também a chave de idempotência do evento (id_externo): retry da MESMA bolha
@@ -1626,7 +1663,9 @@ export function Inbox({
               variaveis={variaveis}
               autorId={autorId}
               autorEmail={autorEmail}
+              templatesHsm={canalDaConversa ? (hsmPorCanal[canalDaConversa] ?? []) : []}
               onEnviarTexto={(texto, templateId) => despachar(texto, undefined, undefined, templateId)}
+              onEnviarTemplate={despacharTemplate}
               onEnviarMidia={(midia) => despachar(midia.legenda ?? "", midia)}
               onDigitar={aoDigitar}
               aoPublicar={() => router.refresh()}

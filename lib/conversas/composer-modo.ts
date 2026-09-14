@@ -7,6 +7,7 @@ import {
   type TemplateMensagem,
   type VariaveisTemplate,
 } from "../templates.ts";
+import { armarTemplate, filtrarHsm, type SabidoDaConversa, type TemplateHsmNoChat } from "./template-hsm.ts";
 
 /**
  * MODO DO COMPOSER — comandos `/` e a TRAVA DE ENVIO (Rodada 13 / Bloco C + templates).
@@ -49,7 +50,20 @@ export interface ComandoTemplate {
   explicacao: string;
 }
 
-export type ComandoComposer = ComandoModo | ComandoTemplate;
+/**
+ * T2 (14/09) · o template HSM da META. Variante PRÓPRIA, e não um campo a mais em `ComandoTemplate`:
+ * a mensagem pronta é texto nosso e vai pelo envio de sempre; o HSM sai por `enviar_template_humano`
+ * com `template_id` + parâmetros posicionais, custa dinheiro e abre janela de 24h. Um tipo só faria
+ * o compilador calar exatamente onde ele deve falar.
+ */
+export interface ComandoTemplateHsm {
+  acao: "template_hsm";
+  template: TemplateHsmNoChat;
+  comando: string;
+  explicacao: string;
+}
+
+export type ComandoComposer = ComandoModo | ComandoTemplate | ComandoTemplateHsm;
 
 /** Os dois comandos fixos. Ordem = ordem do menu (mockup composer-comandos-v3, estado b). */
 export const COMANDOS: ComandoModo[] = [
@@ -73,7 +87,11 @@ export function termoComando(texto: string): string | null {
  * Templates entram como seção própria depois dos comandos fixos: casam por prefixo do
  * atalho OU substring do título (SPEC-TEMPLATES §6.1).
  */
-export function menuComandos(texto: string, templates: TemplateMensagem[] = []): ComandoComposer[] {
+export function menuComandos(
+  texto: string,
+  templates: TemplateMensagem[] = [],
+  hsm: TemplateHsmNoChat[] = [],
+): ComandoComposer[] {
   const termo = termoComando(texto);
   if (termo === null) return [];
   const alvo = normalizar(termo);
@@ -84,7 +102,22 @@ export function menuComandos(texto: string, templates: TemplateMensagem[] = []):
     comando: `/${t.atalho}`,
     explicacao: t.titulo,
   }));
-  return [...fixos, ...deTemplate];
+  // Os HSM vêm POR ÚLTIMO, e o motivo é de custo: nota e tarefa são internas, a mensagem pronta é
+  // de graça, e o template é a única opção do menu que gasta dinheiro e abre uma janela de 24h.
+  // A ordem do menu é a ordem do risco.
+  const deHsm: ComandoTemplateHsm[] = filtrarHsm(hsm, termo).map((t) => ({
+    acao: "template_hsm",
+    template: t,
+    comando: `/${t.nome}`,
+    explicacao: primeiraLinha(t.corpo),
+  }));
+  return [...fixos, ...deTemplate, ...deHsm];
+}
+
+/** A primeira linha do corpo, cortada — é o que identifica o template para quem não decora nome. */
+function primeiraLinha(corpo: string, max = 64): string {
+  const l = (corpo ?? "").split("\n")[0]?.trim() ?? "";
+  return l.length > max ? `${l.slice(0, max - 1)}…` : l;
 }
 
 function normalizar(s: string): string {
@@ -106,9 +139,27 @@ export function rotuloModo(modo: ModoInterno): string {
  */
 export type EfeitoComando =
   | { tipo: "entrar_modo"; modo: ModoInterno }
-  | { tipo: "inserir_rascunho"; texto: string; templateId: string; pendentes: string[] };
+  | { tipo: "inserir_rascunho"; texto: string; templateId: string; pendentes: string[] }
+  /**
+   * ARMAR, não inserir. O texto é só o que a atendente LÊ: o que vai para a Meta é
+   * `templateId` + `parametros`, e o corpo é montado pelo sender a partir da definição aprovada.
+   * Editar o texto aqui não mudaria a mensagem — mudaria só a prévia, que é a pior mentira
+   * possível numa tela de envio. Por isso o efeito é separado de `inserir_rascunho`.
+   */
+  | {
+      tipo: "armar_template_hsm";
+      templateId: string;
+      nome: string;
+      texto: string;
+      parametros: string[];
+      faltando: number[];
+    };
 
-export function efeitoDoComando(c: ComandoComposer, variaveis: VariaveisTemplate): EfeitoComando {
+export function efeitoDoComando(
+  c: ComandoComposer,
+  variaveis: VariaveisTemplate,
+  sabido: SabidoDaConversa = {},
+): EfeitoComando {
   switch (c.acao) {
     case "modo":
       return { tipo: "entrar_modo", modo: c.modo };
@@ -120,6 +171,19 @@ export function efeitoDoComando(c: ComandoComposer, variaveis: VariaveisTemplate
         texto,
         templateId: c.template.id,
         pendentes: placeholdersPendentes(texto),
+      };
+    }
+    case "template_hsm": {
+      // T1 continua valendo: ARMAR não é ENVIAR. Nenhum comando do menu chama o envio — quem manda
+      // template é `enviarTemplateHumano`, depois de a pessoa confirmar a prévia.
+      const a = armarTemplate(c.template, sabido);
+      return {
+        tipo: "armar_template_hsm",
+        templateId: c.template.id,
+        nome: c.template.nome,
+        texto: a.texto,
+        parametros: a.parametros,
+        faltando: a.faltando,
       };
     }
     default: {
