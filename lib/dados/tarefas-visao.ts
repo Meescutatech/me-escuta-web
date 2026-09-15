@@ -20,12 +20,20 @@ import type { TarefaVisao } from "./tarefas-visao-calculos";
 export const TETO_ABERTAS = 500;
 export const TETO_FECHADAS = 200;
 
+// ⚠️ `conversa_id` É OBRIGATÓRIO NAS TRÊS LISTAS, e não é detalhe de exibição: o MODO FOCO
+// (`lib/tarefas/foco.ts`) descarta toda tarefa sem ele — `if (!conversaId) continue`. Faltando a
+// coluna aqui, a leitura real devolve `undefined` em todas, o foco fica VAZIO em produção com as
+// tarefas certas no banco, e a tela não tem como dizer por quê. Foi exatamente o que aconteceu
+// (14/09): 2 tarefas pendentes, ancoradas, e o raio do foco mostrando nada.
+// A coluna existe em `core.tarefa` desde a 0037 §1 e é exposta por `core.v_tarefa` — medido em
+// produção em 14/09. Onde não existir, o `select` erra, `lerDeUmaFonte` devolve null e a escada
+// cai para a próxima fonte: degradar de fonte é previsto, perder o foco em silêncio não é.
 const COLS_VIEW_R27 =
-  "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em,vencida,por_que,fazer,trecho,origem";
+  "id,lead_id,conversa_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em,vencida,por_que,fazer,trecho,origem";
 const COLS_VIEW =
-  "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em,vencida";
+  "id,lead_id,conversa_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em,vencida";
 const COLS_TABELA_R13 =
-  "id,lead_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em";
+  "id,lead_id,conversa_id,titulo,descricao,tipo,responsavel,responsavel_id,prazo,status,resultado,motivo_arquivo,criado_em,concluida_em";
 
 export interface DadosVisaoTarefas {
   tarefas: TarefaVisao[];
@@ -41,6 +49,8 @@ function paraTarefa(r: any, agoraMs: number, comVencida: boolean): TarefaVisao {
   return {
     id: String(r.id),
     lead_id: r.lead_id != null ? String(r.lead_id) : null,
+    // a âncora da tarefa na conversa — sem ela o modo foco não vê esta tarefa (ver COLS_*)
+    conversa_id: r.conversa_id != null ? String(r.conversa_id) : null,
     lead_nome: null, // resolvido em lote depois
     titulo: String(r.titulo ?? "(sem título)"),
     descricao: r.descricao ?? null,
@@ -143,6 +153,47 @@ export async function lerVisaoTarefas(): Promise<DadosVisaoTarefas> {
     return { tarefas, corte: bruto.corte, derivadaNoBanco };
   } catch {
     return { tarefas: [], corte: false, derivadaNoBanco: false };
+  }
+}
+
+/**
+ * O SELO DO RAIO (modo foco), e por que ele é uma leitura própria.
+ *
+ * O selo conta CONVERSAS, não tarefas — a lista entra uma vez por conversa, com a tarefa mais
+ * urgente dela (`lib/tarefas/foco.ts`). Contar tarefas daria "2" num raio que abre UMA linha, e
+ * um número que não bate com a lista é pior que número nenhum: manda a pessoa procurar a que
+ * falta. Por isso lê só a coluna `conversa_id` e conta as distintas aqui.
+ *
+ * Roda em TODA visita a /conversas (o selo tem de aparecer antes do clique, senão o raio diz
+ * "nada esperando por você" com tarefa esperando). É uma coluna, com teto e filtros no banco.
+ *
+ * Indisponível devolve 0, não null: o selo é ornamento; a lista é que tem de ser verdadeira.
+ */
+export async function contarConversasEmFoco(usuarioId: string | null): Promise<number> {
+  if (!usuarioId) return 0;
+  if (ensaioTarefasLigado()) {
+    const daPessoa = visaoTarefasDeEnsaio().tarefas.filter(
+      (t) => t.status === "pendente" && t.responsavel_id === usuarioId && t.conversa_id,
+    );
+    return new Set(daPessoa.map((t) => t.conversa_id)).size;
+  }
+  try {
+    const supabase = criarClienteServidor();
+    for (const fonte of ["v_tarefa", "tarefa"] as const) {
+      const { data, error } = await supabase
+        .schema("core")
+        .from(fonte)
+        .select("conversa_id")
+        .eq("status", "pendente")
+        .eq("responsavel_id", usuarioId)
+        .not("conversa_id", "is", null)
+        .limit(TETO_ABERTAS);
+      if (error) continue;
+      return new Set((data ?? []).map((r: any) => String(r.conversa_id))).size;
+    }
+    return 0;
+  } catch {
+    return 0;
   }
 }
 

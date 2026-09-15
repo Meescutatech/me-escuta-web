@@ -181,6 +181,7 @@ export function Inbox({
   fotos = null,
   foco = false,
   linhasFoco = [],
+  seloFoco = 0,
 }: {
   conversas: ConversaResumo[];
   /** F22 · total do filtro NO SERVIDOR. `null` = indisponível → "50+", nunca "50". */
@@ -246,6 +247,12 @@ export function Inbox({
   foco?: boolean;
   /** W-D3 v6 · as conversas em foco, já ordenadas (vencidas → hoje → futuras) por `lib/tarefas/foco`. */
   linhasFoco?: ConversaEmFoco[];
+  /**
+   * Quantas conversas esperam por você — o selo do raio, contado no banco quando o foco está
+   * DESLIGADO (ligado, quem conta é a própria lista). Sem ele o botão mentia: fora do foco
+   * `linhasFoco` é vazio por construção, e o título dizia "nada esperando por você".
+   */
+  seloFoco?: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -1150,7 +1157,7 @@ export function Inbox({
           />
           </>
           )}
-          <BotaoFoco ligado={foco} pendentes={linhasFoco.length} onAlternar={alternarFoco} />
+          <BotaoFoco ligado={foco} pendentes={foco ? linhasFoco.length : seloFoco} onAlternar={alternarFoco} />
           {!foco && canaisEnvio && canaisEnvio.length > 0 ? <BotaoNovaConversa canais={canaisEnvio} /> : null}
         </div>
         {/*

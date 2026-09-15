@@ -17,7 +17,7 @@ import { Inbox } from "@/components/conversas/inbox";
 import type { EnvioProgramadoLinha } from "@/lib/conversas/envios-programados";
 import { lerSessaoEnsaio, estadoEscopoEnsaio } from "@/lib/ensaio/sessao";
 import { lerCanaisDeEnvio } from "@/lib/dados/canais-envio";
-import { lerVisaoTarefas } from "@/lib/dados/tarefas-visao";
+import { contarConversasEmFoco, lerVisaoTarefas } from "@/lib/dados/tarefas-visao";
 import { focoDasTarefas } from "@/lib/tarefas/foco";
 import { mencionaveisEnsaio } from "@/lib/ensaio/fixtures/mencionaveis";
 import {
@@ -218,9 +218,13 @@ export default async function ConversasPage({
   //    `focoDasTarefas` é a parte PURA que o autor deixou pronta para receber banco em vez de
   //    fixture ("é esta que serve quando a leitura real existir" — lib/tarefas/foco.ts).
   const foco = searchParams.foco === "1";
-  const [canaisEnvio, visaoTarefas] = await Promise.all([
+  const [canaisEnvio, visaoTarefas, seloFoco] = await Promise.all([
     lerCanaisDeEnvio(user?.id ?? null),
     foco ? lerVisaoTarefas() : Promise.resolve(null),
+    // o selo do raio precisa existir ANTES do clique: fora do foco não há lista para contar, e
+    // sem ele o botão dizia "nada esperando por você" com tarefa esperando. Uma coluna, filtrada
+    // no banco — a lista inteira só é lida quando o modo está ligado.
+    foco ? Promise.resolve(0) : contarConversasEmFoco(user?.id ?? null),
   ]);
   const linhasFoco = visaoTarefas ? focoDasTarefas(visaoTarefas.tarefas, user?.id ?? null, {}, new Date()) : [];
 
@@ -283,6 +287,7 @@ export default async function ConversasPage({
       canaisEnvio={canaisEnvio.length > 0 ? canaisEnvio : null}
       foco={foco}
       linhasFoco={linhasFoco}
+      seloFoco={seloFoco}
     />
   );
 }

@@ -43,7 +43,11 @@ export interface TarefaVisao {
   prioridade?: "alta" | "media" | "baixa" | null;
   /**
    * v3 (23:20) · `core.tarefa.conversa_id` (0037 §1, a ancoragem). Quando vem, o clique na linha
-   * abre `/conversas?c=<id>`; sem ele cai em `?lead=`. A leitura real ainda não o seleciona.
+   * abre `/conversas?c=<id>`; sem ele cai em `?lead=`.
+   *
+   * ⚠️ 14/09 · a leitura real PASSOU a selecioná-lo (`lib/dados/tarefas-visao.ts`). Enquanto não
+   * selecionava, o modo foco — que descarta tarefa sem âncora — ficava vazio em produção com as
+   * tarefas certas no banco. Opcional no tipo, obrigatório na consulta: ver `COLS_*` lá.
    */
   conversa_id?: string | null;
   /**
