@@ -70,3 +70,39 @@ test("montarRegistros carrega `jarvis` na tarefa do Jarvis e null na nota e na t
     ],
   );
 });
+
+/*
+ * 15/09 · O SELETOR DE RESPONSÁVEL no cartão da conversa não é um componente que se vira sozinho:
+ * ele precisa de dois dados que a timeline não carregava — o `responsavel_id` (o nome não serve
+ * para gravar) e se a tarefa está pendente (a porta recusa reatribuir as outras, 55000).
+ *
+ * É a fronteira de sempre: o controle pode estar perfeito e não funcionar porque quem o alimenta
+ * não manda o campo. Por isso o contrato é travado aqui, na montagem, e não só no componente.
+ */
+test("o registro de tarefa carrega responsavel_id e pendente — o que o seletor precisa para gravar", () => {
+  const [r] = montarRegistros(
+    [],
+    [tarefa({ id: "t9", responsavel_id: "u-1", responsavel: "sara@meescuta.com", status: "pendente" })],
+    [],
+    [{ id: "u-1", nome: "Sara Lima", tipo: "humano", ativo: true, papel: "membro" } as never],
+  );
+  assert.equal(r!.responsavel_id, "u-1", "sem o uuid não há como reatribuir");
+  assert.equal(r!.pendente, true);
+  assert.equal(r!.responsavel, "Sara Lima");
+});
+
+test("tarefa concluída não é reatribuível — o cartão não pode oferecer o que a porta recusa", () => {
+  const [r] = montarRegistros([], [tarefa({ status: "concluida", responsavel_id: "u-1" })], [], []);
+  assert.equal(r!.pendente, false);
+});
+
+test("nota não tem responsável — o seletor nunca aparece nela", () => {
+  const [r] = montarRegistros(
+    [{ id: "a1", texto: "oi", autor: null, autor_id: null, criado_em: "2026-08-27T12:00:00.000Z" } as never],
+    [],
+    [],
+    [],
+  );
+  assert.equal(r!.responsavel_id, null);
+  assert.equal(r!.pendente, false);
+});

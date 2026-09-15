@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import type { PessoaAtiva } from "@/components/tarefas/acoes-tarefa";
+import { SeletorResponsavel } from "@/components/tarefas/seletor-responsavel";
 import { segmentosComMencao } from "@/lib/conversas/mencao";
 import type { RegistroInterno as Registro } from "@/lib/conversas/registro-timeline";
 import { dataHoraCurta } from "@/lib/dados/tarefa-calculos";
@@ -29,9 +31,36 @@ function primeiroNome(nome: string | null): string | null {
   return nome.includes("@") ? nome.split("@")[0] : nome.trim().split(/\s+/)[0];
 }
 
-export function RegistroInterno({ registro }: { registro: Registro }) {
+export function RegistroInterno({
+  registro,
+  leadId = null,
+  pessoas = [],
+  aoMudar,
+}: {
+  registro: Registro;
+  /** ancora o evento no ledger do lead; a porta acha a tarefa pelo id mesmo sem ele */
+  leadId?: string | null;
+  /** quem pode receber a tarefa — vazio esconde o seletor e volta ao texto */
+  pessoas?: PessoaAtiva[];
+  aoMudar?: () => void;
+}) {
   const nota = registro.tipo === "nota";
   const segmentos = segmentosComMencao(registro.texto, registro.mencoes);
+
+  // "para Sara" deixa de ser texto e passa a ser o CONTROLE — trocar o responsável é a coisa mais
+  // pedida sobre uma tarefa, e ela aparece aqui. Só em tarefa pendente: a porta recusa as outras,
+  // e oferecer um controle que sempre falha é pior que não oferecer.
+  const destino =
+    registro.tipo === "tarefa" && registro.pendente && pessoas.length > 0 ? (
+      <SeletorResponsavel
+        leadId={leadId}
+        tarefaId={registro.id}
+        atualId={registro.responsavel_id}
+        atualNome={primeiroNome(registro.responsavel)}
+        pessoas={pessoas}
+        aoTrocar={aoMudar}
+      />
+    ) : null;
 
   // F2 / D62 · a tarefa que o JARVIS criou a partir desta conversa. É REGISTRO, não pedido:
   // sem botão de aprovar (criar_tarefa está em `auto`, 0297). O que a autonomia muda é quem
@@ -43,7 +72,7 @@ export function RegistroInterno({ registro }: { registro: Registro }) {
         <header className={CABECALHO}>
           <span>Jarvis criou uma tarefa</span>
           <span aria-hidden>·</span>
-          <span>{registro.responsavel ? `para ${primeiroNome(registro.responsavel)}` : "sem responsável"}</span>
+          {destino ?? <span>{registro.responsavel ? `para ${primeiroNome(registro.responsavel)}` : "sem responsável"}</span>}
           <span aria-hidden>·</span>
           <time dateTime={registro.criado_em}>{hora(registro.criado_em)}</time>
         </header>
@@ -77,13 +106,11 @@ export function RegistroInterno({ registro }: { registro: Registro }) {
       <header className={CABECALHO}>
         <span>{nota ? "Nota interna" : "Tarefa"}</span>
         <span aria-hidden>·</span>
-        <span>
-          {nota
-            ? (primeiroNome(registro.autor) ?? "equipe")
-            : registro.responsavel
-              ? `para ${primeiroNome(registro.responsavel)}`
-              : "sem responsável"}
-        </span>
+        {nota ? (
+          <span>{primeiroNome(registro.autor) ?? "equipe"}</span>
+        ) : (
+          destino ?? <span>{registro.responsavel ? `para ${primeiroNome(registro.responsavel)}` : "sem responsável"}</span>
+        )}
         <span aria-hidden>·</span>
         <time dateTime={registro.criado_em}>{hora(registro.criado_em)}</time>
       </header>

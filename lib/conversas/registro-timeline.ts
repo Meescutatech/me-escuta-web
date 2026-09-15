@@ -18,6 +18,10 @@ export interface RegistroInterno {
   autor: string | null;
   /** só tarefa: para quem ficou. */
   responsavel: string | null;
+  /** uuid de quem responde — o dado forte; o nome acima é só leitura. */
+  responsavel_id: string | null;
+  /** só tarefa pendente pode ser reatribuída (a porta recusa as outras com 55000). */
+  pendente: boolean;
   prazo: string | null;
   criado_em: string;
   /** rótulos das menções resolvidas (via core.mencao) — base do destaque na leitura. */
@@ -83,6 +87,8 @@ export function montarRegistros(
       texto: a.texto,
       autor: nomeDe(a.autor_id, porId) ?? autorLegivel(a.autor),
       responsavel: null,
+      responsavel_id: null,
+      pendente: false,
       prazo: null,
       criado_em: a.criado_em,
       mencoes: porOrigem.get(a.id) ?? [],
@@ -97,6 +103,8 @@ export function montarRegistros(
       texto: t.titulo,
       autor: null,
       responsavel: nomeDe(t.responsavel_id, porId) ?? autorLegivel(t.responsavel),
+      responsavel_id: t.responsavel_id,
+      pendente: t.status === "pendente",
       prazo: t.prazo,
       criado_em: t.criado_em,
       mencoes: porOrigem.get(t.id) ?? [],

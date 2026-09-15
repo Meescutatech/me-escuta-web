@@ -1405,7 +1405,17 @@ export function Inbox({
                   {itensDoDia(bloco, registros, propostasVivas).map((item, gi) => {
                     // R13/C2: nota e tarefa entram no mesmo fio cronológico, em largura total
                     if (item.tipo === "registro") {
-                      return <RegistroInterno key={`reg-${item.registro.id}`} registro={item.registro} />;
+                      // `responsaveis` é a MESMA lista do "atribuir a" do composer — humanos
+                      // ativos de core.v_membro. O seletor de responsável vive no cartão.
+                      return (
+                        <RegistroInterno
+                          key={`reg-${item.registro.id}`}
+                          registro={item.registro}
+                          leadId={selecionada?.lead_id ?? null}
+                          pessoas={responsaveis}
+                          aoMudar={() => router.refresh()}
+                        />
+                      );
                     }
                     // W-D3 · a nota do Jarvis, no ponto em que a proposta nasceu
                     if (item.tipo === "proposta") {
