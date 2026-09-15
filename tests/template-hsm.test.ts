@@ -5,6 +5,7 @@ import {
   exemploEhPrimeiroNome,
   filtrarHsm,
   motivoFaltando,
+  nomeEhUuid,
   posicoesDe,
   type TemplateHsmNoChat,
 } from "../lib/conversas/template-hsm.ts";
@@ -153,4 +154,38 @@ test("o efeito do HSM é `armar`, NUNCA `inserir_rascunho` — os dois caminhos 
   assert.notEqual(efeito.tipo, "inserir_rascunho");
   if (efeito.tipo !== "armar_template_hsm") return;
   assert.deepEqual(efeito.faltando, [1], "parentesco não recebe o nome da paciente");
+});
+
+/*
+ * ── 94 dos 318 vêm da Meta com nome de UUID (medido 14/09) ─────────────────────────────────────
+ * `01fce978_e378_4e97_9b5e_c92cc1b83eb5`. Não é defeito nosso — eles chegam assim, com
+ * `meta_template_id` preenchido; alguém os criou lá com nome gerado. Mas UUID começa com DÍGITO, e
+ * dígito ganha a ordem alfabética: sem ordenar, os seis primeiros que a atendente vê ao digitar `/`
+ * são seis nomes que não dizem nada.
+ */
+
+test("nome de UUID é reconhecido, e nome de gente não é confundido com um", () => {
+  assert.equal(nomeEhUuid("01fce978_e378_4e97_9b5e_c92cc1b83eb5"), true);
+  assert.equal(nomeEhUuid("1b126f3b-9394-4b2f-87f1-f74060627b4f"), true, "com traço também");
+  for (const bom of ["faltou_consulta_mwcl85", "lembrete_consulta", "sus_zvuq3o", ""]) {
+    assert.equal(nomeEhUuid(bom), false, bom);
+  }
+});
+
+test("os de nome legível aparecem PRIMEIRO — os de UUID continuam na lista, no fim", () => {
+  const lista = [
+    t({ id: "u1", nome: "01fce978_e378_4e97_9b5e_c92cc1b83eb5" }),
+    t({ id: "n1", nome: "retorno_avaliacao" }),
+    t({ id: "u2", nome: "ba1a894e_0a5c_4968_b78b_48849f6f76c0" }),
+    t({ id: "n2", nome: "lembrete_consulta" }),
+  ];
+  assert.deepEqual(filtrarHsm(lista, "").map((x) => x.id), ["n2", "n1", "u1", "u2"]);
+});
+
+test("o de UUID continua ACHÁVEL pelo corpo — ele não some, só sai da frente", () => {
+  const lista = [
+    t({ id: "n1", nome: "lembrete_consulta", corpo: "Sua consulta é amanhã" }),
+    t({ id: "u1", nome: "1b126f3b_9394_4b2f_87f1_f74060627b4f", corpo: "Você conseguiu conversar com a sua {{1}}" }),
+  ];
+  assert.deepEqual(filtrarHsm(lista, "conseguiu").map((x) => x.id), ["u1"]);
 });

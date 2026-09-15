@@ -126,10 +126,31 @@ export function armarTemplate(t: TemplateHsmNoChat, sabido: SabidoDaConversa): T
  */
 export function filtrarHsm(lista: TemplateHsmNoChat[], termo: string, limite = 6): TemplateHsmNoChat[] {
   const alvo = normalizar(termo);
-  if (!alvo) return lista.slice(0, limite);
+  if (!alvo) return [...lista].sort(legivelPrimeiro).slice(0, limite);
   const porNome = lista.filter((t) => normalizar(t.nome).startsWith(alvo));
   const porCorpo = lista.filter((t) => !porNome.includes(t) && normalizar(t.corpo).includes(alvo));
-  return [...porNome, ...porCorpo].slice(0, limite);
+  return [...porNome.sort(legivelPrimeiro), ...porCorpo.sort(legivelPrimeiro)].slice(0, limite);
+}
+
+/**
+ * NOME DE UUID vai para o fim da lista.
+ *
+ * Medido em 14/09: **94 dos 318 aprovados** têm nome como `01fce978_e378_4e97_9b5e_c92cc1b83eb5` —
+ * e eles vêm assim DA META, com `meta_template_id` preenchido. Não é defeito nosso: alguém os criou
+ * lá com nome gerado. Mas UUID começa com dígito, e dígito ganha a ordem alfabética: sem isto, os
+ * seis primeiros que a atendente vê ao digitar `/` são seis nomes que não dizem nada.
+ *
+ * Eles continuam na lista e continuam achaveis — a busca casa por TRECHO DO CORPO, então
+ * `/conseguiu` encontra o que se chama `1b126f3b_9394_…`. O que muda é quem aparece primeiro.
+ */
+export function nomeEhUuid(nome: string): boolean {
+  return /^[0-9a-f]{8}[_-][0-9a-f]{4}[_-][0-9a-f]{4}[_-][0-9a-f]{4}[_-][0-9a-f]{12}$/i.test((nome ?? "").trim());
+}
+
+function legivelPrimeiro(a: TemplateHsmNoChat, b: TemplateHsmNoChat): number {
+  const ua = nomeEhUuid(a.nome) ? 1 : 0;
+  const ub = nomeEhUuid(b.nome) ? 1 : 0;
+  return ua - ub || a.nome.localeCompare(b.nome, "pt-BR");
 }
 
 function normalizar(s: string): string {
