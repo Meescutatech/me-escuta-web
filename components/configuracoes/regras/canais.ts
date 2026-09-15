@@ -565,10 +565,21 @@ export function validarAtivacao(pedido: PedidoAtivacao): Problemas {
     p.papel = "ligar e desligar canal exige admin ou owner";
   }
 
-  if (canal.provedor === "nao_oficial" && !canal.consentimento_em) {
-    p.consentimento =
-      "este número é de uma pessoa: sem o consentimento dela registrado, o canal não liga. O banco recusa a linha, não só a tela";
-  }
+  /*
+   * 14/09 · O CONSENTIMENTO DEIXOU DE TRAVAR O LIGAR — decisão do Diogo, e o banco foi junto.
+   *
+   * Esta recusa dizia "o banco recusa a linha, não só a tela", e era verdade até a `0347`: havia um
+   * CHECK em `core.canal_whatsapp` e a guarda ARB-16 em `api.registrar_evento`. As duas saíram, com
+   * o motivo escrito no corpo da função. Manter a recusa só aqui inverteria a frase — a tela
+   * recusando o que o banco aceita — e é assim que nasce uma regra que ninguém sabe de onde vem.
+   *
+   * O registro NÃO sumiu: as colunas continuam lá, `canal_consentimento_registrado` continua
+   * gravando, e o que já foi registrado continua registrado. Quem quiser documentar que a titular
+   * concordou, documenta; ninguém é mais obrigado.
+   *
+   * O aviso do risco de ban continua na tela de registro do número, antes do botão — ele é a única
+   * coisa que restou avisando que o dano cai no WhatsApp PESSOAL de outra pessoa.
+   */
 
   // M7 · IDENTIDADE É PRÉ-CONDIÇÃO DE VIDA, e só para o canal oficial.
   //

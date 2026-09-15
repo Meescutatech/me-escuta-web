@@ -186,10 +186,14 @@ test("corte desconhecido (view sem a coluna) é tratado como AUSENTE — exige a
   assert.ok(validarAtivacao({ canal: c, inboxDesde: "", papel: "admin" }).inboxDesde);
 });
 
-test("não oficial SEM consentimento não liga, e o motivo diz que o banco também recusa", () => {
+// ⚠️ Este teste dizia o CONTRÁRIO até 14/09: "não oficial SEM consentimento não liga, e o motivo
+// diz que o banco também recusa". A migration `0347` tirou a trava dos dois lados (o CHECK da
+// tabela e a guarda ARB-16 em `api.registrar_evento`), por decisão do Diogo. O bloco no fim deste
+// arquivo assegura o que restou: o registro continua possível, e as outras travas do ligar
+// continuam de pé. A asserção mudou de sentido de propósito — não caiu por acidente.
+test("não oficial SEM consentimento LIGA — a trava saiu do banco e da tela (0347)", () => {
   const p = validarAtivacao({ canal: canal({ consentimento_em: null }), inboxDesde: "2026-07-26", papel: "admin" });
-  assert.match(p.consentimento!, /consentimento/);
-  assert.match(p.consentimento!, /banco/);
+  assert.equal(p.consentimento, undefined);
 });
 
 test("membro não liga nem desliga canal", () => {
@@ -992,43 +996,50 @@ test("o dono chega ao payload com a chave que a porta espera", () => {
 });
 
 /*
- * ── O CONSENTIMENTO, no degrau em que ele decide (14/09) ───────────────────────────────────────
- * Ele saiu do PAREAMENTO e ficou aqui, no LIGAR. Não é afrouxamento: é a trava no lugar em que o
- * banco também a cobra — `api.registrar_evento` recusa `canal_ativado` de canal não oficial sem
- * `consentimento_em` (ARB-16), e o CHECK da tabela diz o mesmo:
+ * ── O CONSENTIMENTO DEIXOU DE TRAVAR (14/09, migration 0347) ───────────────────────────────────
  *
- *     CHECK (provedor <> 'nao_oficial' OR ativo IS NOT TRUE OR consentimento_em IS NOT NULL)
+ * Há uma hora este bloco assegurava o contrário: que ligar canal não oficial sem consentimento era
+ * recusado. Era verdade, e o banco concordava — CHECK em `core.canal_whatsapp` + guarda ARB-16 em
+ * `api.registrar_evento`. O Diogo decidiu remover, e a `0347` removeu as duas **no banco**; manter
+ * a recusa só na tela inverteria a frase que ela mesma dizia ("o banco recusa a linha, não só a
+ * tela") e criaria uma regra sem origem.
  *
- * Parear não põe nada em movimento: o canal nasce desligado e nada entra nem sai. O ban que
- * ameaça o WhatsApp pessoal dela vem do USO, e é o USO que esta guarda impede.
+ * O que estes testes protegem agora é o que RESTOU, e é o que se perde por descuido na próxima
+ * mexida: o registro continua existindo e continua gravável. Saiu a obrigação, não a possibilidade.
  */
 
-test("🔴 LIGAR canal não oficial sem consentimento é recusado — e o motivo diz que o banco também recusa", () => {
+test("ligar canal não oficial SEM consentimento passa — a trava saiu da tela e do banco (0347)", () => {
   const p = validarAtivacao({
     papel: "admin",
     canal: canal({ provedor: "nao_oficial", consentimento_em: null }),
     inboxDesde: "2026-09-14T00:00:00Z",
   });
-  assert.ok(p.consentimento, "o canal liga sem o consentimento da titular");
-  assert.match(p.consentimento!, /consentimento/i);
-  // a frase nomeia que a recusa não é só da tela — quem tentar pela API leva a mesma
-  assert.match(p.consentimento!, /banco/i);
+  assert.equal(p.consentimento, undefined, "a recusa do consentimento voltou para o ligar");
 });
 
-test("com consentimento registrado, ligar passa", () => {
-  const p = validarAtivacao({
-    papel: "admin",
-    canal: canal({ provedor: "nao_oficial", consentimento_em: "2026-09-14T00:00:00Z" }),
+test("o que ainda barra o ligar continua barrando — a 0347 tirou UMA trava, não as outras", () => {
+  // controle negativo do controle: se a remoção tivesse levado junto o resto, este passaria.
+  const semPapel = validarAtivacao({
+    papel: "membro",
+    canal: canal({ provedor: "nao_oficial", consentimento_em: null }),
     inboxDesde: "2026-09-14T00:00:00Z",
   });
-  assert.equal(p.consentimento, undefined);
+  assert.ok(semPapel.papel, "membro comum voltou a poder ligar canal");
+
+  const semCorte = validarAtivacao({
+    papel: "admin",
+    canal: canal({ provedor: "nao_oficial", consentimento_em: null }),
+    inboxDesde: "",
+  });
+  assert.ok(semCorte.inboxDesde, "ligar sem corte de inbox despeja o histórico inteiro na tela");
 });
 
-test("o canal OFICIAL liga sem consentimento — o número é da empresa", () => {
-  const p = validarAtivacao({
-    papel: "admin",
-    canal: canal({ provedor: "waba", consentimento_em: null }),
-    inboxDesde: "2026-09-14T00:00:00Z",
-  });
+test("o REGISTRO do consentimento sobreviveu — saiu a obrigação, não a possibilidade", () => {
+  // As colunas continuam no contrato do canal, e `canal_consentimento_registrado` continua sendo o
+  // caminho de gravar. Quem quiser documentar que a titular concordou, documenta.
+  const c = canal({ consentimento_em: "2026-09-14T00:00:00Z", consentimento_titular: "Jade" });
+  assert.equal(c.consentimento_em, "2026-09-14T00:00:00Z");
+  assert.equal(c.consentimento_titular, "Jade");
+  const p = validarAtivacao({ papel: "admin", canal: c, inboxDesde: "2026-09-14T00:00:00Z" });
   assert.equal(p.consentimento, undefined);
 });
