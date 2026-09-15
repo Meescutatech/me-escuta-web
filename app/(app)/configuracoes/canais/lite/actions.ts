@@ -11,6 +11,7 @@ import { lerCanal } from "@/components/configuracoes/dados/canais";
 import {
   contarConversasTocadas24h,
   criarSessaoNoRuntime,
+  provisionarInstanciaNoRuntime,
   desconectarNoRuntime,
   lerDescartes,
   lerEstadoNoRuntime,
@@ -105,9 +106,30 @@ export async function criarSessao(
     };
   }
 
+  /*
+   * PROVISIONA ANTES DE PEDIR O QR — dois passos, e a ordem é do provedor.
+   *
+   * O WuzAPI recusa `connect` de uma instância que não existe, e é isso que produzia o **502** que
+   * a tela mostrava num canal recém-criado (medido em 14/09). A instância nasce aqui.
+   *
+   * Provisionar é IDEMPOTENTE do lado do provedor — canal que já tem instância volta a mesma —, e
+   * por isso a chamada é incondicional: guardar "já provisionei" num estado da tela seria manter
+   * uma segunda verdade sobre um fato que só o provedor conhece.
+   *
+   * ⚠️ A falha aqui NÃO é ignorada, e também não interrompe: se o provisionamento não passou, o
+   * `connect` seguinte vai falhar de qualquer jeito, e o motivo DELE é mais específico do que
+   * "falhou ao provisionar". Mas se o provisionamento falhou com uma causa que a sessão não sabe
+   * explicar — 503 com a lista de env que faltam, por exemplo —, é esse motivo que a pessoa
+   * precisa ler. Então o motivo do provisionamento só aparece quando a sessão não tem um próprio.
+   */
+  const prov = await provisionarInstanciaNoRuntime(canalId);
   const r = await criarSessaoNoRuntime(canalId);
   revalidatePath(ROTA);
-  return montarEstado(r.ok ? r.resposta ?? null : null, r.motivo, false);
+  const estado = montarEstado(r.ok ? r.resposta ?? null : null, r.motivo, false);
+  if (!prov.ok && !r.ok) {
+    return { ...estado, motivo: `não deu para preparar o número: ${prov.motivo ?? "o runtime recusou"}` };
+  }
+  return estado;
 }
 
 /** Releitura. O status vem do BANCO (sobrevive a restart); o QR, do runtime. */

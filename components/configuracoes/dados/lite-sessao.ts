@@ -161,6 +161,26 @@ async function chamar(caminho: string, metodo: "GET" | "POST"): Promise<Resultad
   }
 }
 
+/**
+ * PROVISIONA A INSTÂNCIA no provedor — o passo que faltava, e sem o qual não há QR.
+ *
+ * Medido em 14/09, com um canal recém-criado: a tela pedia a sessão direto e o runtime devolvia
+ * **502**. Não é falha de rede: `conectar` chama `POST /session/connect` do WuzAPI, que supõe uma
+ * instância e uma credencial JÁ EXISTENTES para aquele canal. Canal novo não tem nenhuma das duas,
+ * e o provedor recusa.
+ *
+ * São dois passos e a ordem é do provedor, não nossa: primeiro nasce a instância (o "usuário" no
+ * WuzAPI, com a credencial que o runtime guarda), depois se pede o QR. O comentário do mockup da
+ * tela de número já descrevia exatamente isso desde o começo — o que faltava era o web chamar.
+ *
+ * Mesma fronteira e mesmo token das rotas de sessão (`rotaToken`, conferido no runtime): não há
+ * credencial nova aqui. Desligado no servidor, a rota devolve **503 com a lista das env que
+ * faltam** — e é por isso que o motivo volta cru para a tela em vez de virar "não deu certo".
+ */
+export function provisionarInstanciaNoRuntime(canalId: string): Promise<ResultadoRuntime> {
+  return chamar(`/lite/instancia/${encodeURIComponent(canalId)}`, "POST");
+}
+
 /** Cria a sessão. A resposta traz o QR quando houver — ele é desenhado e morre. */
 export function criarSessaoNoRuntime(canalId: string): Promise<ResultadoRuntime> {
   return chamar(`/lite/sessao/${encodeURIComponent(canalId)}`, "POST");

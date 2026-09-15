@@ -195,13 +195,32 @@ export function TabelaCanais({
 
   const ordenados = useMemo(() => ordenarCanais(canais) as CanalNaTela[], [canais]);
   const cols = useMemo(() => colunasVisiveis(ordenados), [ordenados]);
+  /*
+   * 14/09 · CANAL DESLIGADO SAI DA LISTA — soft delete, e só no front.
+   *
+   * Não existe evento de remoção: `porta.projetor_registro` tem registrado, atualizado, ativado,
+   * desativado, pareado, despareado e nível — nenhum apaga. É de propósito: o canal é um fato do
+   * ledger, e o histórico das conversas que entraram por ele continua apontando para o id.
+   *
+   * O que sobra, e é o que a operação de fato quer, é não ver mais: desligar tira da lista. O fato
+   * fica, o número some da frente, e um toggle traz de volta quem precisar. Nada é apagado — e a
+   * frase "N desligados" existe para que a lista NUNCA minta sobre quantos números existem.
+   *
+   * Busca IGNORA o filtro: quem digita o nome de um número desligado está procurando justamente
+   * por ele, e sumir com o resultado da busca seria a tela dizendo que ele não existe.
+   */
+  const [verDesligados, setVerDesligados] = useState(false);
+  const desligados = ordenados.filter((c) => !c.ativo).length;
+
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    if (!q) return ordenados;
-    return ordenados.filter((c) =>
-      `${c.nome} ${c.numero ?? ""} ${c.canal_id}`.toLowerCase().includes(q),
-    );
-  }, [ordenados, busca]);
+    if (q) {
+      return ordenados.filter((c) =>
+        `${c.nome} ${c.numero ?? ""} ${c.canal_id}`.toLowerCase().includes(q),
+      );
+    }
+    return verDesligados ? ordenados : ordenados.filter((c) => c.ativo);
+  }, [ordenados, busca, verDesligados]);
 
   const naoOficiais = ordenados.filter((c) => c.provedor === "nao_oficial").length;
 
@@ -273,7 +292,21 @@ export function TabelaCanais({
         <Contagem>
           {busca.trim()
             ? `${filtrados.length} de ${ordenados.length} ${ordenados.length === 1 ? "número" : "números"}`
-            : `${ordenados.length} ${ordenados.length === 1 ? "número" : "números"}`}
+            : `${filtrados.length} ${filtrados.length === 1 ? "número" : "números"}`}
+          {/* A lista nunca mente sobre quantos existem: o que está escondido é dito, e se traz de
+              volta com um clique. */}
+          {!busca.trim() && desligados > 0 ? (
+            <>
+              {" · "}
+              <button
+                type="button"
+                onClick={() => setVerDesligados((v) => !v)}
+                className="underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {verDesligados ? "esconder os desligados" : `${desligados} desligado${desligados === 1 ? "" : "s"}`}
+              </button>
+            </>
+          ) : null}
           {naoOficiais > 0
             ? ` · ${naoOficiais} ${naoOficiais === 1 ? "não oficial" : "não oficiais"}`
             : ""}
