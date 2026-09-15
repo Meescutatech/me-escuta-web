@@ -271,21 +271,27 @@ function canalLite(p: Partial<Canal> = {}): Canal {
   };
 }
 
-test("desenhar o QR não afrouxou o portão: os quatro bloqueios seguem de pé", () => {
-  // Esta trilha só ensinou a tela a DESENHAR um código que ela já recebia. Se um dos quatro
-  // bloqueios tivesse caído no caminho, o QR passaria a ser emitido para um número cuja titular
-  // não consentiu — e um ban tira o WhatsApp PESSOAL dela. Por isso o portão é reafirmado aqui,
-  // ao lado do desenho, e não só no arquivo de regras ao lado.
+test("desenhar o QR não afrouxou o portão: os bloqueios do PAREAMENTO seguem de pé", () => {
+  // Esta trilha só ensinou a tela a DESENHAR um código que ela já recebia. Se um dos bloqueios
+  // tivesse caído no caminho, o QR passaria a ser emitido para quem não pode pedi-lo. Por isso o
+  // portão é reafirmado aqui, ao lado do desenho, e não só no arquivo de regras ao lado.
+  //
+  // ⚠️ Eram QUATRO e passaram a ser TRÊS em 14/09, e a diferença não é afrouxamento: o
+  // consentimento saiu do pareamento e foi para o LIGAR, que é onde o banco também o cobra
+  // (ARB-16) e onde o risco de fato começa — parear não põe nada em movimento, o canal nasce
+  // desligado. A asserção foi junto, para `tests/canais.test.ts`.
   assert.equal(podeCriarSessao({ papel: "membro", canal: canalLite(), f8Pronto: true }).pode, false);
   assert.equal(
     podeCriarSessao({ papel: "admin", canal: canalLite({ provedor: "waba" }), f8Pronto: true }).pode,
     false,
   );
+  assert.equal(podeCriarSessao({ papel: "admin", canal: canalLite(), f8Pronto: false }).pode, false);
+  // e o que MUDOU, dito aqui também para ninguém achar que caiu por acidente
   assert.equal(
     podeCriarSessao({ papel: "admin", canal: canalLite({ consentimento_em: null }), f8Pronto: true }).pode,
-    false,
+    true,
+    "sem consentimento o QR SAI — a exigência mora no ligar",
   );
-  assert.equal(podeCriarSessao({ papel: "admin", canal: canalLite(), f8Pronto: false }).pode, false);
 
   // e o caminho legítimo continua abrindo — portão que nunca deixa passar não é portão, é parede.
   assert.equal(podeCriarSessao({ papel: "admin", canal: canalLite(), f8Pronto: true }).pode, true);

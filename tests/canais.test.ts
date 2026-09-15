@@ -990,3 +990,45 @@ test("o dono chega ao payload com a chave que a porta espera", () => {
   const { payload } = payloadCanalRegistrado(form({ provedor: "nao_oficial", responsavelId: "abc-123" }));
   assert.equal(payload.responsavel_id, "abc-123");
 });
+
+/*
+ * ── O CONSENTIMENTO, no degrau em que ele decide (14/09) ───────────────────────────────────────
+ * Ele saiu do PAREAMENTO e ficou aqui, no LIGAR. Não é afrouxamento: é a trava no lugar em que o
+ * banco também a cobra — `api.registrar_evento` recusa `canal_ativado` de canal não oficial sem
+ * `consentimento_em` (ARB-16), e o CHECK da tabela diz o mesmo:
+ *
+ *     CHECK (provedor <> 'nao_oficial' OR ativo IS NOT TRUE OR consentimento_em IS NOT NULL)
+ *
+ * Parear não põe nada em movimento: o canal nasce desligado e nada entra nem sai. O ban que
+ * ameaça o WhatsApp pessoal dela vem do USO, e é o USO que esta guarda impede.
+ */
+
+test("🔴 LIGAR canal não oficial sem consentimento é recusado — e o motivo diz que o banco também recusa", () => {
+  const p = validarAtivacao({
+    papel: "admin",
+    canal: canal({ provedor: "nao_oficial", consentimento_em: null }),
+    inboxDesde: "2026-09-14T00:00:00Z",
+  });
+  assert.ok(p.consentimento, "o canal liga sem o consentimento da titular");
+  assert.match(p.consentimento!, /consentimento/i);
+  // a frase nomeia que a recusa não é só da tela — quem tentar pela API leva a mesma
+  assert.match(p.consentimento!, /banco/i);
+});
+
+test("com consentimento registrado, ligar passa", () => {
+  const p = validarAtivacao({
+    papel: "admin",
+    canal: canal({ provedor: "nao_oficial", consentimento_em: "2026-09-14T00:00:00Z" }),
+    inboxDesde: "2026-09-14T00:00:00Z",
+  });
+  assert.equal(p.consentimento, undefined);
+});
+
+test("o canal OFICIAL liga sem consentimento — o número é da empresa", () => {
+  const p = validarAtivacao({
+    papel: "admin",
+    canal: canal({ provedor: "waba", consentimento_em: null }),
+    inboxDesde: "2026-09-14T00:00:00Z",
+  });
+  assert.equal(p.consentimento, undefined);
+});

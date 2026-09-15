@@ -197,11 +197,22 @@ test("cada estado tem rótulo e explicação — e a do banido diz que o dano é
 
 // ═══════════ o portão da sessão ═══════════
 
-test("SEM CONSENTIMENTO não abre sessão — e o motivo nomeia o dano de quem cedeu o número", () => {
+/*
+ * ── O CONSENTIMENTO MUDOU DE DEGRAU EM 14/09 (não sumiu) ──────────────────────────────────────
+ *
+ * Este teste exigia consentimento para PAREAR. Medido nas duas pontas, a trava estava no lugar
+ * errado e era mais dura que a do banco:
+ *   BANCO   CHECK (provedor <> 'nao_oficial' OR ativo IS NOT TRUE OR consentimento_em IS NOT NULL)
+ *   RUNTIME zero referência a consentimento no caminho da sessão
+ *
+ * Parear não põe nada em movimento: o canal nasce DESLIGADO e nada entra nem sai até alguém ligar.
+ * O ban que ameaça o WhatsApp pessoal dela vem do USO. A exigência foi para `validarAtivacao`, que
+ * é onde o banco também a cobra (ARB-16, em `api.registrar_evento`) — e a asserção foi junto, em
+ * `tests/canais.test.ts`. Guarda que muda de casa leva o teste; guarda que perde o teste some.
+ */
+test("parear NÃO exige consentimento — a exigência mora no LIGAR, e está testada lá", () => {
   const v = podeCriarSessao({ papel: "admin", canal: canal({ consentimento_em: null }), f8Pronto: true });
-  assert.equal(v.pode, false);
-  assert.match(v.motivo!, /PESSOAL/);
-  assert.match(v.motivo!, /sem volta|não/);
+  assert.equal(v.pode, true, "a trava do consentimento voltou para o pareamento");
 });
 
 test("F8 pendente bloqueia, com o motivo do ledger que não devolve", () => {
@@ -210,10 +221,10 @@ test("F8 pendente bloqueia, com o motivo do ledger que não devolve", () => {
   assert.match(v.motivo!, /F8/);
 });
 
-test("o consentimento é reportado ANTES do F8 — destravar F8 não pode parecer solução", () => {
+test("sem consentimento e sem F8, o motivo é o F8 — que agora é o único bloqueio do pareamento", () => {
   const v = podeCriarSessao({ papel: "admin", canal: canal({ consentimento_em: null }), f8Pronto: false });
-  assert.match(v.motivo!, /consentimento/);
-  assert.ok(!/F8/.test(v.motivo!));
+  assert.equal(v.pode, false);
+  assert.match(v.motivo!, /F8/);
 });
 
 test("membro não cria sessão; canal WABA não tem sessão por pareamento", () => {

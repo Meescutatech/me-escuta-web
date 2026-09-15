@@ -217,14 +217,23 @@ export function podeCriarSessao(ctx: ContextoCriacaoSessao): VereditoSessao {
       avisos,
     };
   }
-  if (!ctx.canal.consentimento_em) {
-    return {
-      pode: false,
-      motivo:
-        "sem o consentimento da titular registrado, a sessão não abre. O número é dela: um ban tira o WhatsApp PESSOAL dela, sem volta, e ninguém aqui pode consentir no lugar dela",
-      avisos,
-    };
-  }
+  /*
+   * 14/09 · O CONSENTIMENTO SAIU DAQUI, e foi para onde o risco de fato começa.
+   *
+   * Esta trava recusava o PAREAMENTO. Medido, e ela estava no lugar errado nas duas pontas:
+   *   · o BANCO só exige consentimento para o canal ficar ATIVO —
+   *       CHECK (provedor <> 'nao_oficial' OR ativo IS NOT TRUE OR consentimento_em IS NOT NULL)
+   *   · o RUNTIME não exige nada para parear (zero referência a consentimento no caminho da sessão)
+   *
+   * Ou seja: era regra só nossa, e mais dura que a do banco. Parear não põe nada em movimento — o
+   * canal nasce DESLIGADO e nenhuma mensagem entra ou sai enquanto ninguém o liga. O ban que
+   * ameaça o WhatsApp pessoal dela vem do USO, não do QR.
+   *
+   * O aviso do risco continua na tela de registro, antes do botão. E o consentimento continua
+   * obrigatório — em `podeAtivarCanal`, que é o degrau em que ele sempre devia ter estado, e onde
+   * o próprio banco o cobra. Uma trava a menos aqui não é uma proteção a menos: é a proteção no
+   * degrau certo, e uma única fonte de verdade em vez de duas que discordam.
+   */
   if (!ctx.f8Pronto) {
     return {
       pode: false,

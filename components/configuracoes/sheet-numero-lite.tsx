@@ -11,21 +11,12 @@ import { registrarCanal, previsaoCanalId } from "@/app/(app)/configuracoes/canai
 import {
   criarSessao,
   lerEstadoSessao,
-  registrarConsentimento,
   type EstadoSessaoNaTela,
 } from "@/app/(app)/configuracoes/canais/lite/actions";
 import { AVISO_RISCO_BAN, type FormCanal } from "./regras/canais.ts";
 import type { Departamento } from "@/lib/departamentos/escopo";
 import { decidirQuadro } from "./regras/qr-pareamento.ts";
-import {
-  MEIOS_CONSENTIMENTO,
-  TERMO_CANAL_PESSOAL,
-  TERMO_VERSAO,
-  descricaoEstadoSessao,
-  intervaloRelituraMs,
-  rotuloEstadoSessao,
-  type MeioConsentimento,
-} from "./regras/lite-sessao.ts";
+import { descricaoEstadoSessao, intervaloRelituraMs, rotuloEstadoSessao } from "./regras/lite-sessao.ts";
 import { QuadroDePareamento } from "./painel-sessao";
 
 /**
@@ -56,14 +47,6 @@ import { QuadroDePareamento } from "./painel-sessao";
  * Um campo a menos e a recusa do banco deixa de existir.
  */
 
-/** O meio, na palavra que a gestão usa — `MEIOS_CONSENTIMENTO` guarda a chave que vai ao ledger. */
-const ROTULO_MEIO: Record<MeioConsentimento, string> = {
-  assinatura: "Assinou um termo",
-  whatsapp: "Disse por WhatsApp",
-  presencial: "Concordou pessoalmente",
-  video: "Gravou um vídeo",
-};
-
 export interface PessoaDoNumero {
   id: string;
   nome: string;
@@ -71,20 +54,23 @@ export interface PessoaDoNumero {
 }
 
 /*
- * TRÊS momentos, e o do meio não é burocracia — é a razão de o aviso de ban existir.
+ * DOIS momentos, e o consentimento NÃO é um deles — decisão do Diogo em 14/09, e medida antes:
  *
- * Eu tinha deixado o consentimento de fora nesta tela, por ter lido a guarda ERRADA:
- * `exigeAceiteDoTermo` devolve `false` no nível `estrito`, e concluí que o aceite não travava nada.
- * Trava outra coisa. Quem barra o pareamento é `podeCriarSessao`, e o texto dela é explícito:
+ *   BANCO   CHECK (provedor <> 'nao_oficial' OR ativo IS NOT TRUE OR consentimento_em IS NOT NULL)
+ *   RUNTIME zero referência a consentimento no caminho da sessão
  *
- *   "sem o consentimento da titular registrado, a sessão não abre. O número é dela: um ban tira o
- *    WhatsApp PESSOAL dela, sem volta, e ninguém aqui pode consentir no lugar dela"
+ * Ou seja: o consentimento é exigido para o canal ficar ATIVO, não para PAREAR. A trava que estava
+ * aqui era só nossa, e mais dura que a do banco — parear não põe nada em movimento: o canal nasce
+ * desligado e nenhuma mensagem entra ou sai enquanto ninguém o liga. O ban que ameaça o WhatsApp
+ * pessoal dela vem do USO.
  *
- * Medido em 14/09 com o canal recém-criado na tela: `consentimento_em` nulo, sessão devolvida
- * "desconectado", e o quadro mostrando "Nenhum código ativo" sem dizer por quê. Ler uma guarda não
- * prova que ela é a guarda que decide — é a segunda vez no mesmo dia que isso me pega.
+ * A proteção continua inteira, no degrau em que ela decide: `canal_ativado` é recusado sem
+ * consentimento pela `api.registrar_evento` (ARB-16) E pela regra do web. Duas travas concordando,
+ * em vez de três em que uma discordava.
+ *
+ * O aviso do risco fica onde estava: na primeira tela, antes do botão.
  */
-type Momento = "quem" | "consentimento" | "parear";
+type Momento = "quem" | "parear";
 
 export function SheetNumeroLite({
   aberto,
@@ -112,9 +98,6 @@ export function SheetNumeroLite({
   const [canalId, setCanalId] = useState("");
   const [sessao, setSessao] = useState<EstadoSessaoNaTela | null>(null);
 
-  // o consentimento da titular — sem ele `podeCriarSessao` recusa, e está certa em recusar
-  const [meio, setMeio] = useState<MeioConsentimento | "">("");
-  const [aceite, setAceite] = useState(false);
 
   const pessoa = pessoas.find((p) => p.id === pessoaId) ?? null;
   const pronto = !!pessoa && finalidade !== "";
@@ -171,34 +154,14 @@ export function SheetNumeroLite({
         setErro(r.motivo ?? "não deu para registrar o número");
         return;
       }
-      setCanalId(await previsaoCanalId(form));
-      setMomento("consentimento");
+      const id = await previsaoCanalId(form);
+      setCanalId(id);
+      setMomento("parear");
       router.refresh();
+      setSessao(await criarSessao(id, { f8Pronto }));
     });
   }
 
-  /** Registra o aceite e SÓ ENTÃO pede a sessão — a ordem é a da porta, não a minha. */
-  function consentirEParear() {
-    if (!pessoa || meio === "" || !aceite) return;
-    setErro(null);
-    iniciar(async () => {
-      const r = await registrarConsentimento({
-        canalId,
-        titularNome: pessoa.nome,
-        meio,
-        aceitoEm: new Date().toISOString(),
-        textoVersao: TERMO_VERSAO,
-        aceiteMarcado: aceite,
-      });
-      if (!r.ok) {
-        setErro(r.motivo ?? "não deu para registrar o consentimento");
-        return;
-      }
-      setMomento("parear");
-      router.refresh();
-      setSessao(await criarSessao(canalId, { f8Pronto }));
-    });
-  }
 
   function fechar() {
     aoFechar();
@@ -210,8 +173,6 @@ export function SheetNumeroLite({
       setNumero("");
       setCanalId("");
       setSessao(null);
-      setMeio("");
-      setAceite(false);
       setErro(null);
     }, 220);
   }
@@ -221,22 +182,14 @@ export function SheetNumeroLite({
       <SheetContent className="sm:max-w-[460px]">
         <SheetHeader>
           <SheetTitle>
-            {momento === "quem"
-              ? "Conectar um número"
-              : momento === "consentimento"
-                ? `${pessoa?.nome?.split(" ")[0] ?? "Ela"} precisa concordar`
-                : conectado
-                  ? "Número conectado"
-                  : "Aponte a câmera"}
+            {momento === "quem" ? "Conectar um número" : conectado ? "Número conectado" : "Aponte a câmera"}
           </SheetTitle>
           <SheetDescription>
             {momento === "quem"
               ? "O número é de uma pessoa, e continua sendo dela. O sistema passa a ler e responder por ele."
-              : momento === "consentimento"
-                ? "O risco é do WhatsApp pessoal dela. Ninguém aqui pode consentir no lugar dela — o que se registra é que ela consentiu."
-                : conectado
-                  ? `${pessoa?.nome ?? "O número"} está conectado. Ele nasce desligado — ligar é o próximo passo, na lista.`
-                  : "No celular dela: WhatsApp › Aparelhos conectados › Conectar um aparelho."}
+              : conectado
+                ? `${pessoa?.nome ?? "O número"} está conectado. Ele nasce DESLIGADO — para ligar, o consentimento dela precisa estar registrado.`
+                : "No celular dela: WhatsApp › Aparelhos conectados › Conectar um aparelho."}
           </SheetDescription>
         </SheetHeader>
 
@@ -329,47 +282,6 @@ export function SheetNumeroLite({
                 </p>
               )}
             </>
-          ) : momento === "consentimento" ? (
-            <>
-              {/* O termo, inteiro. Não é resumo nem link: o dano que ele nomeia é o WhatsApp pessoal
-                  dela, e resumo de dano é como ninguém lê a parte que importa. */}
-              <p className="whitespace-pre-line rounded-md bg-warning-bg px-3.5 py-3 text-ui-12 leading-relaxed text-warning-ink">
-                {TERMO_CANAL_PESSOAL}
-              </p>
-
-              <FormItemLayout label="Como ela consentiu" required description="Fica no registro, com a data de hoje.">
-                <Select value={meio} onValueChange={(v) => setMeio(v as MeioConsentimento)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="escolha" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MEIOS_CONSENTIMENTO.map((m) => (
-                      <SelectItem key={m} value={m}>
-                        {ROTULO_MEIO[m]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormItemLayout>
-
-              <label className="flex cursor-pointer items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  checked={aceite}
-                  onChange={(e) => setAceite(e.target.checked)}
-                  className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
-                />
-                <span className="text-[13px] leading-snug text-foreground">
-                  {pessoa?.nome ?? "A titular"} leu isto e concordou em ceder o número.
-                </span>
-              </label>
-
-              {erro && (
-                <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
-                  {erro}
-                </p>
-              )}
-            </>
           ) : (
             <div className="flex flex-col items-center gap-4">
               <QuadroDePareamento quadro={quadro} />
@@ -400,16 +312,7 @@ export function SheetNumeroLite({
                 Cancelar
               </Button>
               <Button disabled={!pronto || gravando} onClick={registrarEParear}>
-                {gravando ? "Registrando…" : pronto ? "Continuar" : "Falta escolher a pessoa e o para quê"}
-              </Button>
-            </>
-          ) : momento === "consentimento" ? (
-            <>
-              <Button variant="outline" onClick={fechar}>
-                Agora não
-              </Button>
-              <Button disabled={meio === "" || !aceite || gravando} onClick={consentirEParear}>
-                {gravando ? "Registrando…" : meio === "" ? "Falta dizer como ela consentiu" : !aceite ? "Falta marcar que ela concordou" : "Registrar e gerar o QR"}
+                {gravando ? "Registrando…" : pronto ? "Registrar e gerar o QR" : "Falta escolher a pessoa e o para quê"}
               </Button>
             </>
           ) : (
