@@ -34,7 +34,7 @@ import {
   exigeAceiteDoTermo,
   motivoAceiteDesatualizado,
 } from "@/components/configuracoes/regras/lite-sessao.ts";
-import { desconectarNoRuntime } from "@/components/configuracoes/dados/lite-sessao";
+import { desconectarNoRuntime, apagarInstanciaNoRuntime } from "@/components/configuracoes/dados/lite-sessao";
 
 /**
  * F9 · Ações da tela de canais de WhatsApp.
@@ -271,9 +271,15 @@ export async function removerCanal(canalId: string): Promise<ResultadoAcao> {
   if (!podeRemoverCanal(papel, uid, canal)) {
     return { ok: false, motivo: "você não tem permissão para remover este canal", classe: "permissao" };
   }
-  // canal não oficial: desconectar a sessão antes de remover
+  // canal não oficial: apagar a instância no provedor ANTES de emitir canal_removido.
+  // A ordem importa: a 0349 apaga ops.canal_credencial na projeção — depois do evento o runtime
+  // não sabe mais qual instância era, e ela ficaria órfã.
   if (ehCanalNaoOficialId(canalId)) {
     await desconectarNoRuntime(canalId);
+    const teardown = await apagarInstanciaNoRuntime(canalId);
+    if (!teardown.ok) {
+      return { ok: false, motivo: teardown.motivo ?? "falha ao apagar a instância no provedor — tente de novo", classe: "indisponivel" };
+    }
   }
   return registrarEventoComReadback({
     tipo: "canal_removido",

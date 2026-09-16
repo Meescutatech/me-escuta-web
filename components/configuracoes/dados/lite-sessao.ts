@@ -140,7 +140,7 @@ function base(): { url: string; token: string } | null {
   return { url, token };
 }
 
-async function chamar(caminho: string, metodo: "GET" | "POST"): Promise<ResultadoRuntime> {
+async function chamar(caminho: string, metodo: "GET" | "POST" | "DELETE"): Promise<ResultadoRuntime> {
   const cfg = base();
   if (!cfg) return { ok: false, motivo: MOTIVO_SEM_ROTA };
   try {
@@ -192,4 +192,8 @@ export function lerEstadoNoRuntime(canalId: string): Promise<ResultadoRuntime> {
 
 export function desconectarNoRuntime(canalId: string): Promise<ResultadoRuntime> {
   return chamar(`/lite/sessao/${encodeURIComponent(canalId)}/desconectar`, "POST");
+}
+
+export function apagarInstanciaNoRuntime(canalId: string): Promise<ResultadoRuntime> {
+  return chamar(`/lite/instancia/${encodeURIComponent(canalId)}`, "DELETE");
 }

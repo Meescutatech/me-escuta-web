@@ -396,6 +396,22 @@ test("D7 · registrarComIdLivre: esgotou as tentativas → falha com motivo clar
   assert.match(res.motivo, /lite:admin-me-escuta/, "o motivo não diz qual id estava ocupado");
 });
 
+test("D7b · registrarComIdLivre: com 5 ids ocupados, grava o 6º", async () => {
+  const f = regra("registrarComIdLivre");
+  const tentados: string[] = [];
+  const res = await f(
+    formLite,
+    async (id: string) => {
+      tentados.push(id);
+      if (tentados.length <= 5) return { ok: false, classe: CONFLITO(), motivo: `canal ${id} ja existe` };
+      return { ok: true, classe: undefined, motivo: "" };
+    },
+  );
+  assert.equal(tentados.length, 6, "deveria ter tentado 6 ids");
+  assert.equal(res.ok, true, "o 6º deveria ter sido gravado");
+  assert.equal(res.canalId, "lite:admin-me-escuta-6");
+});
+
 test("D8 · registrarComIdLivre: o OFICIAL não ganha sufixo — id declarado repetido é recusa, uma tentativa só", async () => {
   const f = regra("registrarComIdLivre");
   const tentados: string[] = [];
@@ -833,4 +849,15 @@ test("F7 · o formulário do oficial mora em form-numero-oficial.tsx, registra p
   const sheet = ler(SHEET);
   assert.match(sheet, /<FormNumeroOficial\b/, "o painel não desenha o formulário do oficial");
   assert.match(sheet, /momento\s*===\s*["']oficial["']/, "o formulário do oficial não depende do momento 'oficial'");
+});
+
+// ── Card 2e · removerCanal chama teardown ANTES do evento e para se falhar ──
+
+test("N1 · removerCanal chama apagarInstanciaNoRuntime e confere o resultado antes do evento", () => {
+  const acoes = ler("../app/(app)/configuracoes/canais/actions.ts");
+  assert.match(acoes, /apagarInstanciaNoRuntime/, "removerCanal não importa/usa apagarInstanciaNoRuntime");
+  const idxTeardown = acoes.indexOf("apagarInstanciaNoRuntime");
+  const idxEvento = acoes.indexOf("canal_removido", idxTeardown);
+  assert.ok(idxTeardown < idxEvento, "teardown tem que vir ANTES do canal_removido no código");
+  assert.match(acoes, /teardown\.ok/, "removerCanal não verifica o resultado do teardown");
 });

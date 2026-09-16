@@ -811,12 +811,12 @@ export interface ResultadoDaTentativa {
 export async function registrarComIdLivre<R extends ResultadoDaTentativa>(
   f: FormCanal,
   escrever: (canalId: string) => Promise<R>,
-  maxTentativas = 5,
+  maxTentativas = 100,
 ): Promise<R & { canalId?: string }> {
   const base = canalIdDoForm(f);
   // NaN e Infinity viram o padrão: `Math.max(1, NaN)` é NaN, o laço não rodaria e a função
   // devolveria um resultado sem `ok` — pior que qualquer número de tentativas.
-  const pedidas = Number.isFinite(maxTentativas) ? Math.floor(maxTentativas) : 5;
+  const pedidas = Number.isFinite(maxTentativas) ? Math.floor(maxTentativas) : 100;
   const limite = f.provedor === "nao_oficial" ? Math.max(1, pedidas) : 1;
   let ultimo: R | null = null;
   for (let n = 1; n <= limite; n++) {
