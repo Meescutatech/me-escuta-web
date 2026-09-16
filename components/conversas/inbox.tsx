@@ -11,8 +11,10 @@ import {
   ROTULO_NAO_VISIVEL,
   chipDoNumero,
   rotuloSelo,
+  identidadeDoNumero,
   vereditoEnvio,
   type ChipNumero,
+  type IdentidadeNumero,
   type SeloChip,
 } from "./regras/numero.ts";
 import {
@@ -275,6 +277,14 @@ export function Inbox({
    * por `lead_id` e só: telefone igual sem lead não prova que é a mesma pessoa.
    */
   const irmaos = fiosIrmaos(conversas, selecionadaId);
+  /** Os quatro campos do M7 da conversa ABERTA, normalizados uma vez só (o chip e a identidade
+   *  leem os mesmos). Opcionais na lista, obrigatórios na regra — a fronteira é aqui. */
+  const origemDaSelecionada = {
+    phone_number_id: selecionada?.phone_number_id ?? null,
+    numero_apelido: selecionada?.numero_apelido ?? null,
+    numero_e164: selecionada?.numero_e164 ?? null,
+    finalidade: selecionada?.finalidade ?? null,
+  };
 
   // pendentes = bolhas otimistas locais (RF-32); a lista do servidor é sempre a verdade e a
   // reconciliação remove a pendente quando a projeção confirma a mensagem (match por corpo).
@@ -1447,12 +1457,8 @@ export function Inbox({
                   do primeiro bloco, e sem ele o segundo divisor pareceria separar o nada. */}
               {irmaos.length > 0 && selecionada && (
                 <DivisorDeNumero
-                  chip={chipDoNumero({
-                    phone_number_id: selecionada.phone_number_id ?? null,
-                    numero_apelido: selecionada.numero_apelido ?? null,
-                    numero_e164: selecionada.numero_e164 ?? null,
-                    finalidade: selecionada.finalidade ?? null,
-                  })}
+                  chip={chipDoNumero(origemDaSelecionada)}
+                  identidade={identidadeDoNumero(origemDaSelecionada)}
                 />
               )}
               {blocos.map((bloco, bi) => (
@@ -1712,7 +1718,16 @@ export function Inbox({
                     const msgs = mensagensDosIrmaos[f.id] ?? [];
                     return (
                       <section key={f.id} className="flex flex-col gap-3.5">
-                        <DivisorDeNumero chip={chip} aoAbrir={() => router.push(`/conversas?c=${f.id}`)} />
+                        <DivisorDeNumero
+                          chip={chip}
+                          identidade={identidadeDoNumero({
+                            phone_number_id: f.phone_number_id ?? null,
+                            numero_apelido: f.numero_apelido ?? null,
+                            numero_e164: f.numero_e164 ?? null,
+                            finalidade: f.finalidade ?? null,
+                          })}
+                          aoAbrir={() => router.push(`/conversas?c=${f.id}`)}
+                        />
                         {/* sem caixa e sem rolagem própria: as mensagens deste número correm no
                             MESMO fio. E é por isso que `autoRolar={false}` deixou de ser
                             acabamento — sem a caixa, o ancestral rolável do FioLead passou a ser o
@@ -2031,9 +2046,22 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
  * fio ABERTO vem em `text-tinta` enquanto os irmãos vêm em `text-suave` — a hierarquia se lê sem
  * precisar de uma palavra dizendo "você está aqui".
  */
-function DivisorDeNumero({ chip, aoAbrir }: { chip: ChipNumero; aoAbrir?: () => void }) {
+function DivisorDeNumero({
+  chip,
+  identidade,
+  aoAbrir,
+}: {
+  chip: ChipNumero;
+  identidade: IdentidadeNumero;
+  aoAbrir?: () => void;
+}) {
+  // O hover diz O NÚMERO e POR ONDE ELE SAI, depois o motivo que o chip já sabia. Duas coisas que
+  // a régua sozinha não cabe, e que mudam o que a pessoa escreve: "API oficial" × "é o WhatsApp
+  // pessoal da fono". O que ele NÃO diz é o nome exibido no WhatsApp de quem recebe — esse dado
+  // não existe no banco, e afirmar seria inventar identidade de canal.
+  const hover = `${identidade.detalhe}\n${chip.titulo}`;
   return (
-    <div className="my-1 flex items-center gap-2 self-stretch" title={chip.titulo}>
+    <div className="my-1 flex items-center gap-2 self-stretch" title={hover}>
       <span aria-hidden className="h-px flex-1 bg-linha" />
       <span
         className={cn(
@@ -2042,6 +2070,11 @@ function DivisorDeNumero({ chip, aoAbrir }: { chip: ChipNumero; aoAbrir?: () => 
         )}
       >
         {chip.rotulo}
+      </span>
+      {/* o número ao lado do nome, em mono para ler dígito a dígito. Some em tela estreita: com
+          três números e selos, ele é o primeiro a ceder espaço — o hover continua com ele. */}
+      <span className="hidden shrink-0 font-mono text-[10.5px] tabular-nums text-mute sm:inline">
+        {identidade.numero}
       </span>
       <Selos selos={chip.selos} />
       {aoAbrir && (

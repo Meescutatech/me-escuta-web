@@ -159,6 +159,29 @@ test("DIVISÃO · o fio ABERTO também é rotulado, e só quando há irmãos", (
   );
 });
 
+/** O corpo do `DivisorDeNumero`, delimitado pela função seguinte — não por janela fixa. */
+function corpoDoDivisor(): string {
+  const i = inbox.indexOf("function DivisorDeNumero");
+  assert.notEqual(i, -1, "o divisor sumiu — este teste precisa ser reescrito");
+  const fim = inbox.indexOf("\nfunction ", i + 1);
+  assert.notEqual(fim, -1, "não achei o fim do componente do divisor");
+  return inbox.slice(i, fim);
+}
+
+test("IDENTIDADE · a régua mostra o NÚMERO, não só o apelido", () => {
+  assert.match(
+    corpoDoDivisor(),
+    /\{identidade\.numero\}/,
+    "a identidade chegou e morreu: a régua voltou a dizer só 'CLARA'",
+  );
+});
+
+test("IDENTIDADE · o hover explica por onde a mensagem sai", () => {
+  const corpo = corpoDoDivisor();
+  assert.match(corpo, /identidade\.detalhe/, "o hover perdeu o número e a via (oficial × Lite)");
+  assert.match(corpo, /title=\{/, "o texto existe mas não está pendurado em lugar nenhum");
+});
+
 test("REGRESSÃO · o drawer do funil continua abrindo no presente", () => {
   // o default é `true` e o drawer NÃO passa a prop: consertar a irmã não pode calar o fio do
   // drawer, onde abrir no fim é a decisão certa desde sempre.

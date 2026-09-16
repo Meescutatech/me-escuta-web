@@ -124,6 +124,76 @@ export function chipDoNumero(o: OrigemConversa): ChipNumero {
   };
 }
 
+/* ───────────────────────────────────────────────────────────────────────────────────────────────
+ * QUAL NÚMERO É ESTE (16/09) — o que a régua entre fios mostra ao lado do rótulo, e o que o hover
+ * explica. Puro, e derivado do que a view já entrega: nada aqui pede ida nova ao banco.
+ *
+ * ⚠️ O `verified_name` — o nome que aparece no WhatsApp de quem recebe — NÃO existe em
+ * `core.canal_whatsapp`. Ele vive na Graph API e num comentário da migration `0094`. Por isso esta
+ * regra fala do NÚMERO e da VIA, e nunca do nome exibido: o dano de inventar identidade de canal é
+ * exatamente o que o M7 existe para impedir.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────── */
+
+export type ViaDoNumero = "oficial" | "lite" | "desconhecida";
+
+/**
+ * Canal não oficial tem `phone_number_id` no formato `lite:<slug-da-fono>` — é assim que o
+ * WhatsApp Lite (WuzAPI) registra o número pessoal dela. Qualquer outro id é a Cloud API.
+ */
+export function viaDoNumero(phone_number_id: string | null): ViaDoNumero {
+  const pnid = (phone_number_id ?? "").trim();
+  if (pnid.length === 0) return "desconhecida";
+  return pnid.startsWith("lite:") ? "lite" : "oficial";
+}
+
+/**
+ * E.164 em forma de leitura. Só formata o que sabe ler — BR (móvel e fixo) e NANP. Formato
+ * desconhecido volta INTEIRO, sem remendo: um número mal agrupado deixa de bater com o que a
+ * pessoa procura no WhatsApp, e ela não tem como saber que foi a tela que mexeu.
+ */
+export function numeroLegivel(e164: string | null): string | null {
+  const n = (e164 ?? "").trim();
+  if (n.length === 0) return null;
+  const br = /^\+55(\d{2})(\d{4,5})(\d{4})$/.exec(n);
+  if (br) return `+55 ${br[1]} ${br[2]}-${br[3]}`;
+  const nanp = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(n);
+  if (nanp) return `+1 ${nanp[1]}-${nanp[2]}-${nanp[3]}`;
+  return n;
+}
+
+export interface IdentidadeNumero {
+  /** O número para ler na tela, ou o texto que DIZ por que ele não está aqui. Nunca vazio. */
+  numero: string;
+  via: ViaDoNumero;
+  /** Texto do hover: por onde sai, e o que muda por causa disso. Nunca contém o `phone_number_id`. */
+  detalhe: string;
+}
+
+export function identidadeDoNumero(o: OrigemConversa): IdentidadeNumero {
+  const via = viaDoNumero(o.phone_number_id ?? null);
+  const numero = numeroLegivel(o.numero_e164 ?? null) ?? ROTULO_NAO_VISIVEL;
+
+  const porOnde =
+    via === "lite"
+      ? "WhatsApp Lite — é o número pessoal da fonoaudióloga, e a mensagem sai no nome dela"
+      : via === "oficial"
+        ? "API oficial (WhatsApp Cloud)"
+        : "sem número de origem registrado";
+
+  const consequencia =
+    o.finalidade === "teste"
+      ? "Número de teste: só entrega a quem está na lista de permissão."
+      : o.finalidade === null
+        ? "Finalidade não declarada — este número não afirma ser de produção."
+        : null;
+
+  return {
+    numero,
+    via,
+    detalhe: [`${numero} · ${porOnde}`, consequencia].filter(Boolean).join("\n"),
+  };
+}
+
 export function rotuloSelo(s: SeloChip): string {
   if (s === "teste") return "TESTE";
   if (s === "sem_identidade") return "SEM IDENTIDADE";
