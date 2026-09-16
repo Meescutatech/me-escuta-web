@@ -1082,19 +1082,23 @@ export function Composer({
             </div>
           )}
 
-          {/* W-D2 · fio novo: trocar o número NÃO responde por aqui — abre outra conversa (R3) */}
+          {/* W-D2 · fio novo: trocar o número NÃO responde por aqui — abre outra conversa (R3).
+              15/09: UMA faixa, não duas. Empilhar o aviso do número da conversa com o do fio novo
+              não era só feio — o aviso de cima fala do canal ERRADO: ele descreve o número por onde
+              a conversa entrou, enquanto a mensagem vai sair pelo número escolhido. Com fio novo,
+              quem manda é o escolhido, e é dele que a faixa fala. */}
           {!interno && fioNovo && canalEscolhido && (
             <div className="flex items-center gap-2 border-t border-nota-linha bg-nota-faixa px-3.5 py-[7px] text-[12px] text-amarelo">
-              <span className="font-[650]">Fio novo neste número:</span>
               <span className="min-w-0 flex-1 truncate">
-                a conversa com {nomeLead ?? "este cliente"} por {nomeCurtoCanal(canalEscolhido)} abre separada — esta continua como está.
+                Abre um fio novo com {nomeLead ?? "este cliente"} por{" "}
+                <span className="font-[650]">{nomeCurtoCanal(canalEscolhido)}</span> — esta conversa continua como está.
               </span>
               <button
                 type="button"
                 onClick={() => setCanalEscolhidoId(null)}
                 className="shrink-0 rounded px-1.5 py-px font-medium underline-offset-2 hover:underline"
               >
-                voltar ao número desta conversa
+                voltar
               </button>
             </div>
           )}
