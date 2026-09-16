@@ -3,6 +3,7 @@ Next.js (App Router) na Vercel. Tronco `main`. Escreve SÓ por RPC `api.*`; leit
 
 **Deploy é manual:** `vercel git connect` não funciona (zero GitHub Apps na org, E-381). Push para
 `origin/main` **não dispara build**. Deploy é `npx vercel --prod` na raiz do repo.
+**Deploy acontece junto ao commit** — não deixar para depois. Push + deploy na mesma sessão.
 
 
 ## feature: conversas
