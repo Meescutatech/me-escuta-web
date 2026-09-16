@@ -212,3 +212,22 @@ desliga canais oficiais e não oficiais. NÃO é dona da regra de quem pode escr
   0,7 s depois do `connect`, a primeira leitura saía antes e a próxima só em 5 s.
   Descartado: manter o aviso de ban separado (o risco está na própria opção); o oficial abrir o
   bloco inline (dois lugares para o mesmo botão); seletor com "Oficial" desabilitado para a fono.
+- 2026-09-16 · "Remover conexão" no dropdown do canal: gestão remove qualquer canal, membro só o
+  próprio (`podeRemoverCanal`). Para canal `lite:`, a action chama `desconectarNoRuntime` ANTES de
+  emitir `canal_removido`. A readback confere o ledger (`EXCECOES` com `conferirLedger: true`),
+  porque a view filtra o canal removido e a projeção lida voltaria vazia.
+  Motivo: a fono precisa poder desconectar o próprio número; a gestão precisa poder desconectar qualquer um.
+  Descartado: DELETE real (FK cascade quebraria conversas); desconectar pelo runtime (sem mudança de código — o reload periódico já descarta canais sem credencial).
+
+## feature: funil
+
+O que faz: board Kanban com arraste de cards entre etapas, incluindo terminais (Venda ganha / Venda perdida). NÃO é dona de moverCardEtapa (server action), do diálogo de motivo de perda, nem de filtros/busca.
+
+### Decisões
+
+- 2026-09-16 · `decidirAlvo` extraída para `lib/funil/decidir-alvo.ts` como função pura (testável em Node sem DOM). O snapshot agora grava `topo`/`base` de cada coluna e `scrollLeft` do trilho. Quando X bate em mais de uma coluna (terminais empilhados), Y desempata; X é ajustado pelo delta de scroll entre snapshot e momento do hit-test.
+  Motivo: dois bugs — (1) `find()` por X retornava sempre o 1º terminal, "Venda perdida" nunca era alcançado; (2) auto-scroll mudava a posição visual das colunas mas o snapshot ficava stale.
+  Descartado: re-snapshot a cada frame (causaria flicker por instabilidade de midpoints); lib externa de drag (já descartada na v5).
+- 2026-09-16 · Venda ganha só move, sem diálogo. Igual ao Kommo.
+  Motivo: decisão do Diogo — escopo mínimo, portões de transição (W1) ficam para card separado.
+  Descartado: diálogo de confirmação; diálogo que pede valor da venda.

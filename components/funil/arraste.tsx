@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useMotionValue, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { decidirAlvo } from "@/lib/funil/decidir-alvo";
+import type { Snapshot, CardMedido, AlvoArraste } from "@/lib/funil/decidir-alvo";
 
 /*
  * W-D6 v5 (11/09) · O MOTOR DE ARRASTE DO FUNIL — pointer events puros.
@@ -50,11 +52,7 @@ const VELOCIDADE_AUTOSCROLL = 14;
 export const MOLA_LIFT = { type: "spring" as const, stiffness: 520, damping: 34, mass: 0.7 };
 export const MOLA_FLUXO = { type: "spring" as const, stiffness: 420, damping: 36, mass: 0.9 };
 
-export interface AlvoArraste {
-  etapa: string;
-  /** posição dentro da coluna, no espaço SEM o card arrastado */
-  indice: number;
-}
+export type { AlvoArraste } from "@/lib/funil/decidir-alvo";
 
 export interface EstadoArraste {
   leadId: string;
@@ -67,14 +65,6 @@ export interface EstadoArraste {
   porTeclado: boolean;
 }
 
-interface CardMedido {
-  leadId: string;
-  meio: number;
-}
-
-interface Snapshot {
-  colunas: Array<{ etapa: string; esquerda: number; direita: number; cards: CardMedido[] }>;
-}
 
 /**
  * Mede tudo UMA vez, já no espaço sem o card arrastado. `alturaRemovida + GAP` sobe todo mundo que
@@ -98,23 +88,11 @@ function tirarSnapshot(raiz: HTMLElement, leadArrastado: string, alturaRemovida:
       const deslocamento = passouPeloRemovido ? alturaRemovida + GAP_CARDS : 0;
       cards.push({ leadId: id, meio: cr.top + cr.height / 2 - deslocamento });
     }
-    colunas.push({ etapa, esquerda: r.left, direita: r.right, cards });
+    colunas.push({ etapa, esquerda: r.left, direita: r.right, topo: r.top, base: r.bottom, cards });
   }
-  return { colunas };
+  return { colunas, scrollLeft: raiz.scrollLeft };
 }
 
-function decidirAlvo(snap: Snapshot, x: number, y: number, atual: AlvoArraste | null): AlvoArraste | null {
-  const col = snap.colunas.find((c) => x >= c.esquerda && x <= c.direita);
-  if (!col) return atual; // fora de qualquer coluna: mantém o último alvo (não some o placeholder)
-  let indice = col.cards.length;
-  for (let i = 0; i < col.cards.length; i++) {
-    if (y < col.cards[i].meio) {
-      indice = i;
-      break;
-    }
-  }
-  return { etapa: col.etapa, indice };
-}
 
 export interface UseArrasteFunil {
   arraste: EstadoArraste | null;
@@ -211,7 +189,7 @@ export function useArrasteFunil({
     function mover(e: PointerEvent) {
       x.set(e.clientX - pegaRef.current.dx);
       y.set(e.clientY - pegaRef.current.dy);
-      if (snapRef.current) setAlvo((a) => decidirAlvo(snapRef.current!, e.clientX, e.clientY, a));
+      if (snapRef.current) setAlvo((a) => decidirAlvo(snapRef.current!, e.clientX, e.clientY, trilhoRef.current?.scrollLeft ?? 0, a));
       const el = trilhoRef.current;
       if (el) {
         const r = el.getBoundingClientRect();

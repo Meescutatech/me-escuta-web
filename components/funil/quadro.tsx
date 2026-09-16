@@ -210,7 +210,6 @@ function Terminal({ etapa, quantidade, alvo }: { etapa: EtapaFunil; quantidade: 
       <div className="mt-1 text-2xl font-[650] tracking-[-0.02em] tabular-nums text-tinta">
         {quantidade.toLocaleString("pt-BR")}
       </div>
-      <div className="mt-1 font-mono text-[10.5px] text-mute">snapshot · sync futuro</div>
     </div>
   );
 }
