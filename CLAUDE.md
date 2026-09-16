@@ -236,3 +236,4 @@ O que faz: board Kanban com arraste de cards entre etapas, incluindo terminais (
 - 2026-09-16 · Venda ganha só move, sem diálogo. Igual ao Kommo.
   Motivo: decisão do Diogo — escopo mínimo, portões de transição (W1) ficam para card separado.
   Descartado: diálogo de confirmação; diálogo que pede valor da venda.
+- 2026-09-16 · Busca 9º dígito: `variantesNonoDigito` decide pela CONTAGEM de dígitos (10 = sem 9, 11 = com 9), não pelo valor do 3º dígito. Motivo: "3196890099" tem "9" na posição 2, mas é um número de 10 dígitos sem o nono — decidir pelo caractere geraria a variante errada. Descartado: heurística pelo valor do dígito; normalização na gravação (banco guarda o que a Meta manda).
