@@ -70,6 +70,40 @@ test("DEFEITO 1 · o FioLead OBEDECE — a saída vem ANTES de mexer no scroll",
   );
 });
 
+test("DEFEITO 2 · a âncora do fim do fio vem ANTES do bloco das irmãs", () => {
+  // A ordem é a regra inteira, e são TRÊS pontos: a âncora tem de estar dentro do contêiner de
+  // rolagem e antes das irmãs. Pôr o `<div ref={fimRef}/>` antes do contêiner passaria num teste
+  // de dois pontos e continuaria rolando a coisa errada.
+  const container = inbox.indexOf("ref={rolagemRef}");
+  const ancora = inbox.indexOf("ref={fimRef}");
+  const irmas = inbox.indexOf("irmaos.length > 0 &&");
+  assert.notEqual(container, -1, "o contêiner de rolagem sumiu — este teste precisa ser reescrito");
+  assert.notEqual(ancora, -1, "a âncora do fim do fio sumiu");
+  assert.notEqual(irmas, -1, "o bloco das irmãs sumiu");
+  assert.ok(container < ancora, "a âncora ficou fora do contêiner de rolagem");
+  assert.ok(
+    ancora < irmas,
+    "com a âncora depois das irmãs, abrir a conversa rola até as irmãs e o fio aberto sai de vista",
+  );
+});
+
+test("DEFEITO 2 · a ABERTURA mira o fim do fio, não o fim do documento", () => {
+  // ⚠️ ESTA GUARDA NASCEU FURADA E A MUTAÇÃO A PEGOU — 16/09, sétimo caso da sessão.
+  // A primeira janela ia até `totalAnteriorRef.current = total` e ENGOLIA O RAMO `else`, onde
+  // `fimRef.current` aparece outra vez (mensagem nova rola se já estava no fim). Trocar o alvo da
+  // ABERTURA por `null` deixava o teste verde: o `fimRef` do outro ramo respondia por ele.
+  // A janela certa é só o ramo da abertura — do `if` até o `} else if` que o fecha.
+  const i = inbox.indexOf("if (totalAnteriorRef.current === -1)");
+  assert.notEqual(i, -1, "o efeito de abertura mudou — este teste precisa ser reescrito");
+  const fim = inbox.indexOf("} else if", i);
+  assert.notEqual(fim, -1, "não achei o fim do ramo de abertura");
+  assert.match(
+    inbox.slice(i, fim),
+    /fimRef\.current/,
+    "a abertura deixou de mirar a âncora do fio; se for de propósito, reescreva esta guarda",
+  );
+});
+
 test("REGRESSÃO · o drawer do funil continua abrindo no presente", () => {
   // o default é `true` e o drawer NÃO passa a prop: consertar a irmã não pode calar o fio do
   // drawer, onde abrir no fim é a decisão certa desde sempre.

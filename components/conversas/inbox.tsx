@@ -1663,6 +1663,14 @@ export function Inbox({
               )}
               {propostaManual && propostaManual !== "lendo" && notaDoJarvis(propostaManual, true, "prop-manual")}
 
+              {/* O FIM DO FIO ABERTO — e ele fica ACIMA das irmãs de propósito (16/09). Os cinco
+                  que miram esta âncora (abertura, mensagem nova, envio, "ver no fio", proposta do
+                  Jarvis) querem a última mensagem DESTA conversa, nenhum quer o fim do documento.
+                  Com a âncora lá embaixo, abrir a conversa rolava até as irmãs e o fio aberto saía
+                  de vista por cima — medido na tela viva: `scrollTop 1087 de 1104`. As irmãs
+                  continuam depois, alcançáveis rolando. */}
+              <div ref={fimRef} />
+
               {/* OS FIOS IRMÃOS (15/09) — a pessoa é uma, os números são vários. Vêm DEPOIS do fio
                   aberto, que continua sendo o centro: cada bloco diz por qual número aquela
                   conversa corre, mostra a última mensagem, e abre com um clique. Sem irmãos não
@@ -1732,7 +1740,6 @@ export function Inbox({
                   })}
                 </div>
               )}
-              <div ref={fimRef} />
             </div>
 
             {/* v7 · PULAR RÁPIDO É O CORAÇÃO: um alvo grande, fixo no canto, e três teclas (J,
