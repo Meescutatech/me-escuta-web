@@ -2,14 +2,15 @@
 
 import { randomUUID } from "crypto";
 import {
+  lerNomeAtual,
   lerPapelAtual,
+  lerUidAtual,
   registrarEventoComReadback,
   type ResultadoAcao,
 } from "@/components/configuracoes/dados/porta";
 import { lerCanal, lerHistoricoNivel } from "@/components/configuracoes/dados/canais";
 import {
-  canalIdDoForm,
-  finalidadeDoRegistro,
+  formNumeroPessoal,
   payloadCanalAtivado,
   payloadCanalAtualizado,
   payloadCanalDesativado,
@@ -42,22 +43,45 @@ import {
 
 const ROTA = "/configuracoes/canais";
 
-export async function registrarCanal(entrada: FormCanal): Promise<ResultadoAcao> {
-  // 16/09 · "o membro registra sempre produção" vale AQUI, não só na tela: esta action é endpoint, e
-  // quem a chama direto mandaria `teste` — a 0337 não confere finalidade do membro. O papel vem do
-  // servidor. Papel sem regra (marketing, ilegível) segue com o que veio, e a porta o recusa pelo
-  // papel, que é a recusa verdadeira — não por uma finalidade apagada aqui.
-  const papel = await lerPapelAtual();
-  const form: FormCanal = {
-    ...entrada,
-    finalidade: finalidadeDoRegistro(papel, entrada.finalidade) || entrada.finalidade,
-  };
+/**
+ * Registro do número OFICIAL (WABA), pela gestão. O número pessoal NÃO entra por aqui: esta action
+ * recebe o form inteiro do cliente — `responsavelId` incluído —, e o dono de um número pessoal é
+ * sempre quem cadastra (D116). Ele tem caminho próprio, `registrarMeuNumero`.
+ */
+export async function registrarCanal(form: FormCanal): Promise<ResultadoAcao> {
+  if (form.provedor === "nao_oficial") {
+    return { ok: false, motivo: "número pessoal se registra pelo botão \"Conectar um número\"", classe: "recusa" };
+  }
   const problemas = validarRegistroCanal(form);
   if (!semProblemas(problemas)) {
     return { ok: false, motivo: Object.values(problemas)[0], classe: "recusa" };
   }
-  // 16/09 · o id `lite:` repetido não trava mais: cada tentativa monta o payload com o SEU id, e o
-  // que ficou gravado volta em `canalId`. No oficial é uma tentativa só (ver `registrarComIdLivre`).
+  // no oficial é uma tentativa só: o id é o da Meta (ver `registrarComIdLivre`)
+  return registrarComIdLivre(form, (canalId) =>
+    registrarEventoComReadback({
+      tipo: "canal_registrado",
+      payload: payloadCanalRegistrado(form, canalId).payload,
+      idExterno: randomUUID(),
+      revalidar: [ROTA],
+    }),
+  );
+}
+
+/**
+ * 16/09 · D116 — "o número é da pessoa e ela só registra". Não recebe NADA do cliente: papel, uid,
+ * nome e e-mail vêm do servidor, e `formNumeroPessoal` decide o resto (produção, sem número, sem
+ * departamento). O `lite:` repetido tenta `-2`, `-3`…, e o id que ficou gravado volta em `canalId`.
+ */
+export async function registrarMeuNumero(): Promise<ResultadoAcao> {
+  const [papel, uid, cadastro] = await Promise.all([lerPapelAtual(), lerUidAtual(), lerNomeAtual()]);
+  const form = formNumeroPessoal({ papel, uid, nome: cadastro?.nome, email: cadastro?.email });
+  if (!form) {
+    return {
+      ok: false,
+      motivo: "não deu para registrar o seu número — o seu acesso não permite, ou o seu cadastro não foi lido",
+      classe: "recusa",
+    };
+  }
   return registrarComIdLivre(form, (canalId) =>
     registrarEventoComReadback({
       tipo: "canal_registrado",
@@ -229,7 +253,3 @@ export async function souGestorDeCanais(): Promise<boolean> {
   return podeGerirCanais(await lerPapelAtual());
 }
 
-/** Reexportado para a tela montar o id antes de gravar (o `lite:<slug>` sai do nome). */
-export async function previsaoCanalId(form: FormCanal): Promise<string> {
-  return canalIdDoForm(form);
-}

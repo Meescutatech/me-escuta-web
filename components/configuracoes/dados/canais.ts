@@ -260,26 +260,6 @@ export async function lerResponsavelDoCanal(canalId: string): Promise<string | n
   }
 }
 
-/**
- * 16/09 · ONDE QUEM ESTÁ LOGADO ESTÁ LOTADO — a lista que a porta confere no registro do membro.
- *
- * Vem de `api.departamentos_do_uid`, a MESMA função que a 0337 usa para recusar com PMEE6: ler a
- * lotação crua e expandir a árvore aqui seria a regra morando em dois lugares. `p_uid` nulo é o
- * próprio chamador (a função faz `coalesce(p_uid, auth.uid())`). Falha vale `null` — "não sei" —, e
- * para o membro "não sei" não oferece departamento nenhum.
- */
-export async function lerMinhasLotacoes(): Promise<string[] | null> {
-  try {
-    const supabase = criarClienteServidor();
-    const { data, error } = await supabase.schema("api").rpc("departamentos_do_uid", { p_uid: null });
-    if (error || !Array.isArray(data)) return null;
-    return (data as unknown[])
-      .map((d) => String(typeof d === "object" && d !== null ? Object.values(d)[0] ?? "" : d ?? "").trim())
-      .filter(Boolean);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Quantas mensagens deste canal estão em voo na fila de saída.

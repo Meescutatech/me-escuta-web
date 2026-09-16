@@ -134,3 +134,26 @@ export async function lerUidAtual(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * 16/09 · D116 — nome e e-mail de quem está logado, do CADASTRO (`core.v_membro`). É de onde sai o
+ * nome do número pessoal. Nunca de `user_metadata`, que a própria pessoa edita. `null` = não leu.
+ */
+export async function lerNomeAtual(): Promise<{ nome: string | null; email: string | null } | null> {
+  try {
+    const uid = await lerUidAtual();
+    if (!uid) return null;
+    const supabase = criarClienteServidor();
+    const { data, error } = await supabase
+      .schema("core")
+      .from("v_membro")
+      .select("nome,email")
+      .eq("id", uid)
+      .maybeSingle();
+    if (error || !data) return null;
+    const linha = data as { nome?: string | null; email?: string | null };
+    return { nome: linha.nome ?? null, email: linha.email ?? null };
+  } catch {
+    return null;
+  }
+}

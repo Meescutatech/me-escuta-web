@@ -45,7 +45,7 @@ import type { Departamento } from "@/lib/departamentos/escopo";
 import { PainelSessao } from "./painel-sessao";
 import { BarraPublicacao, Dialogo } from "./kit";
 import { CascaConfig, Contagem } from "@/components/ensaio/casca-config";
-import { SheetNumeroLite, type PessoaDoNumero } from "./sheet-numero-lite";
+import { SheetNumeroLite } from "./sheet-numero-lite";
 import {
   Alert,
   AlertContent,
@@ -156,22 +156,18 @@ export function TabelaCanais({
   canais,
   meuPapel,
   meuId = null,
-  minhasLotacoes = null,
   indisponivel,
   f8Pronto,
   departamentos,
   dominioIndisponivel,
   r22Legivel,
   nivelLegivel,
-  pessoas = [],
   declaracaoLegivel,
 }: {
   canais: CanalNaTela[];
   meuPapel: Papel | null;
-  /** uid de quem está logado. O membro registra o PRÓPRIO número, e é este id que fixa o dono. */
+  /** uid de quem está logado — o portão do QR compara com o dono do canal. */
   meuId?: string | null;
-  /** onde quem está logado está lotado, já expandido pelo banco. `null` = não deu para ler. */
-  minhasLotacoes?: string[] | null;
   indisponivel: boolean;
   f8Pronto: boolean;
   /** R22/A1 · o domínio vindo de `core.v_departamento`, já ordenado. Nunca uma constante local. */
@@ -184,8 +180,6 @@ export function TabelaCanais({
   nivelLegivel: boolean;
   /** D70 · `false` = a view não expõe `nivel_declarado`; não dá para dizer se alguém escolheu. */
   declaracaoLegivel: boolean;
-  /** membros ATIVOS — é deles que sai o dono do número não oficial, que a porta exige. */
-  pessoas?: PessoaDoNumero[];
 }) {
   const router = useRouter();
   const gestor = podeGerirCanais(meuPapel);
@@ -418,12 +412,8 @@ export function TabelaCanais({
       <SheetNumeroLite
         aberto={conectando}
         aoFechar={() => setConectando(false)}
-        pessoas={pessoas}
-        departamentos={departamentos}
         f8Pronto={f8Pronto}
         meuPapel={meuPapel}
-        meuId={meuId}
-        minhasLotacoes={minhasLotacoes}
       />
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">

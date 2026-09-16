@@ -193,9 +193,8 @@ export function podeGerirCanais(papel: Papel | null): boolean {
  * ELE. A tela era o que ainda dizia "só admin e Proprietário". O que continua de gestão, e não
  * muda aqui: número oficial, ligar e desligar — `podeGerirCanais` segue intacta.
  *
- * As regras abaixo são o recorte do membro, e todas falham FECHADO: papel desconhecido, uid
- * ausente ou pessoa que não se acha na lista não registram nada. A defesa real continua na porta;
- * aqui é não oferecer o que ela recusaria.
+ * Falham FECHADO: papel desconhecido ou uid ausente não registram nada. A defesa de papel continua
+ * na porta; aqui é não oferecer o que ela recusaria.
  */
 
 /** Quem pode registrar um número NÃO oficial: a gestão (qualquer dono) e o membro (só o próprio). */
@@ -210,130 +209,45 @@ export function entradaAdicionar(papel: Papel | null): "escolher" | "nao_oficial
   return null;
 }
 
-/**
- * De quem o número pode ser. A gestão escolhe entre todos; o membro só enxerga a si mesmo — o
- * banco recusa `responsavel_id` alheio vindo dele, e oferecer os outros seria prometer a recusa.
- */
-export function pessoasDoRegistro<P extends { id: string }>(
-  papel: Papel | null,
-  uid: string | null | undefined,
-  pessoas: P[],
-): P[] {
-  if (podeGerirCanais(papel)) return pessoas;
-  if (papel !== "membro" || !uid) return [];
-  return pessoas.filter((p) => p.id === uid);
-}
+/** O nome do canal cabe em 60 caracteres (`validarRegistroCanal`). */
+const NOME_CANAL_MAX = 60;
 
 /**
- * A finalidade que viaja. O membro não escolhe: o número dele é o de trabalho, e é `producao`
- * sempre — o "Para quê" não aparece para ele. A gestão registra o que escolheu, inclusive o vazio,
- * que `validarRegistroCanal` barra (M7: finalidade não tem default para quem escolhe).
+ * 16/09 · D116 — O NÚMERO PESSOAL É DE QUEM CADASTRA, e o formulário é só o botão.
+ *
+ * Tudo sai de quem está logado, lido no servidor: dono = o uid, nome do canal = o nome do cadastro
+ * (truncado em 60; sem nome utilizável, o início do e-mail), finalidade = produção, sem número e sem
+ * departamento (a 0348 tirou a exigência). Qualquer outro campo que chegue é ignorado — a entrada
+ * não escolhe nada. Falha FECHADO (`null`): papel que não registra, uid ausente, ou nem nome nem
+ * e-mail que virem um id `lite:`.
  */
-export function finalidadeDoRegistro(papel: Papel | null, escolhida: Finalidade | ""): Finalidade | "" {
-  if (papel === "membro") return "producao";
-  if (podeGerirCanais(papel)) return escolhida;
-  return "";
-}
-
-export interface PedidoRegistro<P> {
+export function formNumeroPessoal(quem: {
   papel: Papel | null;
   uid: string | null | undefined;
-  pessoas: P[];
-  /** a escolha bruta do seletor. O membro não tem seletor, e o valor é ignorado para ele. */
-  pessoaId: string;
-  finalidade: Finalidade | "";
-}
-
-export interface EstadoRegistro<P> {
-  pessoas: P[];
-  pessoa: P | null;
-  /** true = não há o que escolher: o número é de quem está logado. */
-  pessoaFixa: boolean;
-  mostraFinalidade: boolean;
-  finalidade: Finalidade | "";
-  pronto: boolean;
-}
-
-/**
- * O estado do painel de registro numa regra só. O painel NÃO relê pessoa e finalidade brutas: com
- * o "Para quê" escondido, o membro teria `finalidade === ""` para sempre e nunca ficaria pronto.
- */
-export function estadoDoRegistro<P extends { id: string }>(pedido: PedidoRegistro<P>): EstadoRegistro<P> {
-  const pessoas = pessoasDoRegistro(pedido.papel, pedido.uid, pedido.pessoas);
-  const finalidade = finalidadeDoRegistro(pedido.papel, pedido.finalidade);
-  if (pedido.papel === "membro") {
-    const pessoa = pessoas[0] ?? null;
-    return { pessoas, pessoa, pessoaFixa: true, mostraFinalidade: false, finalidade, pronto: pessoa !== null };
-  }
-  if (!podeGerirCanais(pedido.papel)) {
-    return { pessoas, pessoa: null, pessoaFixa: false, mostraFinalidade: false, finalidade, pronto: false };
-  }
-  const pessoa = pessoas.find((p) => p.id === pedido.pessoaId) ?? null;
+  nome: string | null | undefined;
+  email?: string | null | undefined;
+}): FormCanal | null {
+  if (!podeRegistrarNumeroNaoOficial(quem.papel)) return null;
+  const uid = (quem.uid ?? "").trim();
+  if (!uid) return null;
+  const nome = nomeDoCanal(quem.nome) ?? nomeDoCanal((quem.email ?? "").split("@")[0]);
+  if (!nome) return null;
   return {
-    pessoas,
-    pessoa,
-    pessoaFixa: false,
-    mostraFinalidade: true,
-    finalidade,
-    pronto: pessoa !== null && finalidadeValida(finalidade),
+    canalId: "",
+    nome,
+    provedor: "nao_oficial",
+    numeroE164: "",
+    wabaId: "",
+    departamento: "",
+    finalidade: "producao",
+    responsavelId: uid,
   };
 }
 
-/** id → nome, no formato que o `items` do Select quer. Sem ele o gatilho mostra o UUID. */
-export function itensPessoas(pessoas: { id: string; nome: string }[]): Record<string, string> {
-  return Object.fromEntries(pessoas.map((p) => [p.id, p.nome]));
-}
-
-/**
- * 16/09 · O DEPARTAMENTO DO NÚMERO NÃO OFICIAL É OBRIGATÓRIO — para todo mundo, e para o membro só
- * entre as lotações dele.
- *
- * Medido na 0337 (`porta.validar_acesso_canal`): a Parte B recusa `canal_registrado` não oficial
- * sem departamento, inclusive da gestão ("legado novo não se fabrica"); a Parte A recusa o do membro
- * com PMEE6 quando o departamento não está em `api.departamentos_do_uid` dele. O painel dizia "Dá
- * para declarar depois", e não dá: `canal_atualizado` continua só com a gestão, e a fono que não
- * escolhesse recebia o erro cru do banco.
- *
- * `lotacoes` é a lista JÁ EXPANDIDA pelo banco (pai cobre filho, clínico só por lotação explícita) —
- * a árvore não se refaz aqui. `null` = não deu para ler, e para o membro isso vale "nenhuma": sem
- * saber onde ele está lotado, qualquer oferta seria prometer a recusa.
- */
-export interface PedidoDepartamento {
-  papel: Papel | null;
-  departamentos: Departamento[];
-  lotacoes: string[] | null;
-  /** a escolha bruta do seletor. `""` = não escolhido. */
-  departamento: string;
-}
-
-export interface EstadoDepartamento {
-  opcoes: Departamento[];
-  valido: boolean;
-  /** o que falta, dito para quem está na tela. `null` quando está tudo certo. */
-  falta: string | null;
-}
-
-export function estadoDoDepartamento(pedido: PedidoDepartamento): EstadoDepartamento {
-  const folhasAtivas = pedido.departamentos.filter((d) => d.ativo && d.nivel > 1);
-  let opcoes: Departamento[] = [];
-  if (podeGerirCanais(pedido.papel)) {
-    opcoes = folhasAtivas;
-  } else if (pedido.papel === "membro") {
-    const minhas = new Set(pedido.lotacoes ?? []);
-    opcoes = folhasAtivas.filter((d) => minhas.has(d.chave));
-  }
-  const escolhido = (pedido.departamento ?? "").trim();
-  const valido = escolhido.length > 0 && opcoes.some((d) => d.chave === escolhido);
-  let falta: string | null = null;
-  if (opcoes.length === 0) {
-    falta =
-      pedido.papel === "membro"
-        ? "Você não está lotada em nenhum departamento que receba número. Peça a um admin para conferir a sua lotação em Membros."
-        : "Nenhum departamento disponível — o domínio de departamentos não foi lido.";
-  } else if (!valido) {
-    falta = "Escolha o departamento — o número não nasce sem um.";
-  }
-  return { opcoes, valido, falta };
+/** Aparado e truncado; `null` quando não sobra letra nem número para o id `lite:`. */
+function nomeDoCanal(bruto: string | null | undefined): string | null {
+  const nome = (bruto ?? "").trim().slice(0, NOME_CANAL_MAX).trim();
+  return slugApelido(nome) ? nome : null;
 }
 
 // ═════════════════════════════ D70 · O NIVEL DO CANAL ═════════════════════════════

@@ -10,18 +10,21 @@ import type { FormCanal } from "../components/configuracoes/regras/canais.ts";
 /*
  * 16/09/2026 — A FONO REGISTRA O PRÓPRIO NÚMERO NÃO OFICIAL.
  *
- * Escopo fechado pelo Diogo, em quatro partes:
- *   A. membro registra o PRÓPRIO número não oficial (o banco já deixa: migration 0337);
- *   B. "De quem é o número" mostra NOME, não UUID;
- *   C. os contadores batem com as linhas visíveis;
- *   D. id `lite:` repetido não trava o registro ("canal lite:admin-me-escuta ja existe").
+ * Volta 1 (escopo do Diogo): A. membro registra o PRÓPRIO número não oficial; B. nome, não UUID;
+ * C. contadores = linhas visíveis; D. id `lite:` repetido não trava o registro.
+ *
+ * Volta 2 (decisão do Diogo, 16/09 — FORMULÁRIO ENXUTO): "Conectar um número" tem SÓ o aviso de ban
+ * e o botão. O dono é SEMPRE quem cadastra, lido no SERVIDOR (lerUidAtual), para todo papel que
+ * registra; o nome do canal é o nome de quem cadastra (lido no servidor); finalidade é sempre
+ * `producao`; sem Número, sem Departamento. Saíram: seletor de pessoa (pessoasDoRegistro,
+ * itensPessoas, estadoDoRegistro), "Para quê" (finalidadeDoRegistro), departamento obrigatório
+ * (estadoDoDepartamento) e o campo Número. O banco perde a exigência de departamento no não oficial
+ * (Parte B da 0337) — isso é pgTAP no me-escuta-db, não aqui.
  *
  * As regras são lidas pelo namespace (`canais.X`) de propósito: export ausente vira teste vermelho
  * com mensagem, e não um erro de carga que derruba o arquivo inteiro sem dizer qual regra falta.
- *
- * Os testes de fiação leem o fonte. Onde a leitura de fonte não consegue provar comportamento
- * (o painel do membro), a decisão foi extraída para uma regra pura (`estadoDoRegistro`) e o teste
- * de fiação só exige que a tela use ESSA regra e não releia o estado bruto.
+ * Os testes de fiação leem o fonte; a decisão de comportamento mora na regra pura
+ * `formNumeroPessoal`, e a fiação só exige que a action use ESSA regra com o que leu no servidor.
  */
 
 type Qualquer = Record<string, any>;
@@ -75,11 +78,22 @@ function corpoDaFuncao(fonte: string, assinatura: string): string {
   return fonte.slice(i, fim === -1 ? undefined : fim);
 }
 
-const pessoas = [
-  { id: "u-admin", nome: "Admin Me Escuta", email: "admin@x" },
-  { id: "u-jade", nome: "Jade Fono", email: "jade@x" },
-  { id: "u-sara", nome: "Sara", email: "sara@x" },
-];
+/**
+ * O trecho de uma função LOCAL do painel, de `nome` até `ate`, aceitando `function nome` e
+ * `const nome = …` nas duas pontas. Início ou fim ausente é falha — nunca um trecho vazio que
+ * deixaria o `doesNotMatch` passar por nada.
+ */
+function trechoLocal(fonte: string, nome: string, ate: string): string {
+  const achar = (n: string, de = 0) => {
+    const m = new RegExp(`(function\\s+${n}\\b|const\\s+${n}\\s*=)`).exec(fonte.slice(de));
+    return m ? de + m.index : -1;
+  };
+  const ini = achar(nome);
+  assert.notEqual(ini, -1, `\`${nome}\` sumiu do painel — reescrever este teste`);
+  const fim = achar(ate, ini + 1);
+  assert.notEqual(fim, -1, `\`${ate}\` sumiu do painel (ou veio antes de \`${nome}\`) — reescrever este teste`);
+  return fonte.slice(ini, fim);
+}
 
 // ═══════════════════════════════ A · a fono registra o próprio ═══════════════════════════════
 
@@ -97,91 +111,6 @@ test("A2 · podeGerirCanais NÃO muda: membro continua sem gerir canal (ligar, d
   assert.equal(canais.podeGerirCanais("marketing"), false);
   assert.equal(canais.podeGerirCanais("admin"), true);
   assert.equal(canais.podeGerirCanais("owner"), true);
-});
-
-test("A3 · pessoasDoRegistro: gestor escolhe entre todas as pessoas", () => {
-  const f = regra("pessoasDoRegistro");
-  assert.deepEqual(f("admin", "u-admin", pessoas), pessoas);
-  assert.deepEqual(f("owner", "u-admin", pessoas), pessoas);
-});
-
-test("A4 · pessoasDoRegistro: membro só enxerga a si mesmo", () => {
-  const f = regra("pessoasDoRegistro");
-  assert.deepEqual(f("membro", "u-jade", pessoas), [pessoas[1]]);
-});
-
-test("A5 · pessoasDoRegistro: membro sem uid, ou que não se acha na lista, não recebe ninguém", () => {
-  const f = regra("pessoasDoRegistro");
-  assert.deepEqual(f("membro", null, pessoas), []);
-  assert.deepEqual(f("membro", "", pessoas), []);
-  assert.deepEqual(f("membro", "u-fantasma", pessoas), []);
-});
-
-test("A6 · pessoasDoRegistro: marketing e papel desconhecido não recebem ninguém (fail-closed)", () => {
-  const f = regra("pessoasDoRegistro");
-  assert.deepEqual(f("marketing", "u-sara", pessoas), []);
-  assert.deepEqual(f(null, "u-sara", pessoas), []);
-});
-
-test("A7 · finalidadeDoRegistro: membro registra SEMPRE produção, ignorando o que vier escolhido", () => {
-  const f = regra("finalidadeDoRegistro");
-  assert.equal(f("membro", "teste"), "producao");
-  assert.equal(f("membro", ""), "producao");
-  assert.equal(f("membro", "producao"), "producao");
-});
-
-test("A8 · finalidadeDoRegistro: gestor registra a finalidade que escolheu", () => {
-  const f = regra("finalidadeDoRegistro");
-  assert.equal(f("admin", "teste"), "teste");
-  assert.equal(f("owner", "producao"), "producao");
-  assert.equal(f("admin", ""), "");
-});
-
-test("A9 · estadoDoRegistro: membro — pessoa fixa nele mesmo, sem 'Para quê', produção, pronto sem escolher nada", () => {
-  const f = regra("estadoDoRegistro");
-  const e = f({ papel: "membro", uid: "u-jade", pessoas, pessoaId: "", finalidade: "" });
-  assert.deepEqual(e.pessoas, [pessoas[1]]);
-  assert.deepEqual(e.pessoa, pessoas[1]);
-  assert.equal(e.pessoaFixa, true);
-  assert.equal(e.mostraFinalidade, false);
-  assert.equal(e.finalidade, "producao");
-  assert.equal(e.pronto, true, "membro com o 'Para quê' escondido nunca conseguiria registrar");
-});
-
-test("A10 · estadoDoRegistro: membro não troca o dono do número, mesmo com outro pessoaId no estado", () => {
-  const f = regra("estadoDoRegistro");
-  const e = f({ papel: "membro", uid: "u-jade", pessoas, pessoaId: "u-admin", finalidade: "teste" });
-  assert.deepEqual(e.pessoa, pessoas[1]);
-  assert.equal(e.finalidade, "producao");
-});
-
-test("A11 · estadoDoRegistro: membro que não se acha na lista não fica pronto", () => {
-  const f = regra("estadoDoRegistro");
-  const e = f({ papel: "membro", uid: "u-fantasma", pessoas, pessoaId: "", finalidade: "" });
-  assert.equal(e.pessoa, null);
-  assert.equal(e.pronto, false);
-});
-
-test("A12 · estadoDoRegistro: gestor escolhe pessoa e finalidade, e só fica pronto com as duas", () => {
-  const f = regra("estadoDoRegistro");
-  const nada = f({ papel: "admin", uid: "u-admin", pessoas, pessoaId: "", finalidade: "" });
-  assert.equal(nada.pessoaFixa, false);
-  assert.equal(nada.mostraFinalidade, true);
-  assert.equal(nada.pessoa, null);
-  assert.equal(nada.pronto, false);
-  const soPessoa = f({ papel: "admin", uid: "u-admin", pessoas, pessoaId: "u-sara", finalidade: "" });
-  assert.deepEqual(soPessoa.pessoa, pessoas[2]);
-  assert.equal(soPessoa.pronto, false);
-  const tudo = f({ papel: "owner", uid: "u-admin", pessoas, pessoaId: "u-sara", finalidade: "teste" });
-  assert.equal(tudo.finalidade, "teste");
-  assert.equal(tudo.pronto, true);
-});
-
-test("A13 · estadoDoRegistro: marketing não registra nada", () => {
-  const f = regra("estadoDoRegistro");
-  const e = f({ papel: "marketing", uid: "u-sara", pessoas, pessoaId: "u-sara", finalidade: "producao" });
-  assert.deepEqual(e.pessoas, []);
-  assert.equal(e.pronto, false);
 });
 
 test("A14 · entradaAdicionar: gestor escolhe o tipo; membro vai direto ao não oficial; o resto não vê", () => {
@@ -232,34 +161,6 @@ test("A17 · tela: o texto de leitura do membro diz que ele registra o próprio 
   );
 });
 
-test("A18 · painel: decide pela regra estadoDoRegistro e não relê pessoa/finalidade brutas", () => {
-  const sheet = ler(SHEET);
-  assert.match(sheet, /estadoDoRegistro\s*\(/, "o painel não usa estadoDoRegistro");
-  assert.doesNotMatch(sheet, /\bfinalidade\s*[!=]==\s*""/, "o painel ainda testa a finalidade BRUTA — o membro, sem o seletor, nunca fica pronto");
-  assert.doesNotMatch(sheet, /pessoas\.find\(\s*\(?\s*\w+\s*\)?\s*=>\s*\w+\.id\s*===\s*pessoaId\s*\)/, "o painel ainda acha a pessoa pelo pessoaId bruto — o membro nunca tem pessoa");
-});
-
-test("A19 · painel: o seletor 'Para quê' só aparece quando a regra manda (mostraFinalidade)", () => {
-  const sheet = ler(SHEET);
-  const i = sheet.indexOf('label="Para quê"');
-  assert.notEqual(i, -1, "o seletor 'Para quê' sumiu do painel — reescrever este teste");
-  const abre = sheet.lastIndexOf("<FormItemLayout", i);
-  const anterior = sheet.lastIndexOf("</FormItemLayout>", abre);
-  const entre = sheet.slice(anterior, abre);
-  assert.match(entre, /mostraFinalidade/, "o 'Para quê' é desenhado sem depender de mostraFinalidade — o membro veria o seletor");
-});
-
-test("A20 · painel: recebe o papel e o id de quem está logado", () => {
-  const tabela = ler(TABELA);
-  const i = tabela.indexOf("<SheetNumeroLite");
-  assert.notEqual(i, -1, "SheetNumeroLite sumiu da tabela");
-  const tag = tagDeAbertura(tabela, i);
-  assert.match(tag, /\bmeuPapel=\{\s*meuPapel\s*\}/, "o painel não recebe o papel");
-  const uid = /\b(meuId|meuUid|uid|usuarioId)=\{([^}]*)\}/.exec(tag);
-  assert.ok(uid, "o painel não recebe o id de quem está logado");
-  assert.doesNotMatch(uid[2], /^\s*(undefined|null|"")\s*$/, "o id vai ao painel como constante vazia");
-});
-
 test("A21 · página: lê o uid de quem está logado e o entrega à tabela", () => {
   const pagina = ler(PAGINA);
   assert.match(pagina, /lerUidAtual\s*\(\s*\)/, "page.tsx não lê o uid (lerUidAtual)");
@@ -270,12 +171,6 @@ test("A21 · página: lê o uid de quem está logado e o entrega à tabela", () 
   assert.doesNotMatch(uid[2], /^\s*(undefined|null|"")\s*$/, "o uid vai à tabela como constante vazia");
 });
 
-/*
- * ESCALADO AO DIOGO, sem decisão: `podeCriarSessao` recusa quem não é gestor
- * ("criar sessão exige admin ou owner"). Com A pronto, o membro REGISTRA o número e falha ao gerar
- * o QR. Fica como `todo` (não conta como falha) até o Diogo decidir se o escopo inclui abrir o
- * pareamento para o membro no PRÓPRIO canal.
- */
 // Decisão do Diogo (16/09): o item A inclui GERAR O QR do próprio canal — sem isso o membro registra
 // e para no passo seguinte ("criar sessão exige admin ou owner").
 test("A22 · podeCriarSessao: membro pareia o PRÓPRIO canal não oficial, e só o próprio", () => {
@@ -297,29 +192,6 @@ test("A23 · action: criarSessao lê o uid de quem está logado e o entrega ao p
   assert.match(corpo, /podeCriarSessao\s*\(\s*\{[^}]*\buid\b/, "o uid não chega a podeCriarSessao");
 });
 
-// ═══════════════════════════════ B · nome, não UUID ═══════════════════════════════
-
-test("B1 · itensPessoas: mapeia id → nome", () => {
-  const f = regra("itensPessoas");
-  assert.deepEqual(f(pessoas), { "u-admin": "Admin Me Escuta", "u-jade": "Jade Fono", "u-sara": "Sara" });
-  assert.deepEqual(f([]), {});
-});
-
-test("B2 · painel: o Select de pessoa recebe items vindos de itensPessoas (o trigger mostra o nome)", () => {
-  const sheet = ler(SHEET);
-  const i = sheet.indexOf("value={pessoaId}");
-  assert.notEqual(i, -1, "o Select de pessoa sumiu do painel — reescrever este teste");
-  const tag = tagDeAbertura(sheet, sheet.lastIndexOf("<Select", i));
-  const items = valorDoAtributo(tag, "items");
-  assert.ok(items, "o Select de pessoa não recebe `items` — o trigger mostra o UUID");
-  if (!/itensPessoas\s*\(/.test(items)) {
-    assert.match(
-      sheet,
-      new RegExp(`const\\s+${items.replace(/[^\w$]/g, "")}\\s*=[^;]*itensPessoas\\s*\\(`),
-      `\`items={${items}}\` não vem de itensPessoas`,
-    );
-  }
-});
 
 // ═══════════════════════════════ C · contadores = linhas visíveis ═══════════════════════════════
 
@@ -556,31 +428,15 @@ test("D9 · ResultadoAcao carrega o canalId gravado", () => {
   assert.match(corpo, /\bcanalId\??\s*:\s*string/, "ResultadoAcao não tem `canalId` — a tela não tem como saber o id gravado");
 });
 
-test("D10 · action: registrarCanal tenta o próximo id livre, monta o payload com o id DA TENTATIVA e devolve o gravado", () => {
-  const corpo = corpoDaFuncao(ler(ACTIONS), "export async function registrarCanal");
-  const m = /registrarComIdLivre\s*\(\s*\w+\s*,\s*(?:async\s*)?\(?\s*(\w+)(?:\s*:\s*string)?\s*\)?\s*=>/.exec(corpo);
-  assert.ok(m, "registrarCanal não chama registrarComIdLivre(form, (canalId) => ...)");
-  const param = m[1];
-  assert.match(
-    corpo,
-    new RegExp(`payloadCanalRegistrado\\(\\s*\\w+\\s*,\\s*${param}\\s*\\)`),
-    `o escrever monta o payload sem o id da tentativa (\`${param}\`) — as tentativas colidiriam todas`,
-  );
-  assert.match(
-    corpo,
-    /return\s+(await\s+)?registrarComIdLivre\s*\(|\bcanalId\s*:\s*\w+\.canalId\b/,
-    "registrarCanal não devolve o canalId gravado",
-  );
-});
-
-test("D11 · painel: cria a sessão com o canalId devolvido por registrarCanal, não com a prévia nem com o form", () => {
+test("D11 · painel: cria a sessão com o canalId devolvido pelo registro, não com a prévia", () => {
   const sheet = ler(SHEET);
-  const m = /const\s+(\w+)\s*=\s*await\s+registrarCanal\s*\(/.exec(sheet);
-  assert.ok(m, "o painel não guarda o retorno de registrarCanal");
+  const m = /const\s+(\w+)\s*=\s*await\s+registrarMeuNumero\s*\(/.exec(sheet);
+  assert.ok(m, "o painel não guarda o retorno de registrarMeuNumero");
   const res = m[1];
-  const depois = sheet.slice(m.index, sheet.indexOf("function fechar", m.index));
+  const corpo = trechoLocal(sheet, "registrarEParear", "fechar");
+  assert.ok(corpo.includes(m[0]), "a chamada a registrarMeuNumero não está dentro de registrarEParear");
+  const depois = corpo.slice(corpo.indexOf(m[0]));
   assert.doesNotMatch(depois, /previsaoCanalId\s*\(/, "depois de registrar o painel ainda recalcula o id pela prévia");
-  assert.doesNotMatch(depois, /form\.canalId/, "o painel usa o canalId do form, que é vazio no não oficial");
   const direto = new RegExp(`criarSessao\\(\\s*${res}\\.canalId\\b`).test(depois);
   const via = new RegExp(`const\\s+(\\w+)\\s*=\\s*${res}\\.canalId\\b[\\s\\S]*criarSessao\\(\\s*\\1\\b`).test(depois);
   assert.ok(direto || via, `criarSessao não recebe \`${res}.canalId\``);
@@ -618,41 +474,317 @@ test("A25 · lerResponsavelDoCanal lê o dono SÓ do canal pedido", () => {
   assert.match(corpo, /\.maybeSingle\(\s*\)/, "leitura de um só canal");
 });
 
-test("A26 · estadoDoDepartamento: o membro só escolhe onde está lotado, e não registra sem escolher", () => {
-  const f = regra("estadoDoDepartamento");
-  const deps = [
-    { chave: "comercial", rotulo: "Comercial", ativo: true, pai: null, nivel: 1 },
-    { chave: "pre_venda", rotulo: "Pré-venda", ativo: true, pai: "comercial", nivel: 2 },
-    { chave: "clinico", rotulo: "Clínico", ativo: true, pai: null, nivel: 2 },
-    { chave: "velho", rotulo: "Velho", ativo: false, pai: null, nivel: 2 },
-  ];
-  const chaves = (e: { opcoes: { chave: string }[] }) => e.opcoes.map((d) => d.chave).sort();
-  // gestão: todas as folhas ativas
-  assert.deepEqual(chaves(f({ papel: "admin", departamentos: deps, lotacoes: null, departamento: "" })), ["clinico", "pre_venda"]);
-  // membro: só as lotações dele
-  const membro = f({ papel: "membro", departamentos: deps, lotacoes: ["comercial", "pre_venda"], departamento: "" });
-  assert.deepEqual(chaves(membro), ["pre_venda"]);
-  assert.equal(membro.valido, false, "sem escolher não está pronto — a porta recusa com PMEE6");
-  assert.ok(membro.falta);
-  assert.equal(f({ papel: "membro", departamentos: deps, lotacoes: ["pre_venda"], departamento: "pre_venda" }).valido, true);
-  assert.equal(f({ papel: "membro", departamentos: deps, lotacoes: ["pre_venda"], departamento: "clinico" }).valido, false, "fora da lotação");
-  // lotação ilegível: nenhuma opção, e a tela diz por quê
-  const ilegivel = f({ papel: "membro", departamentos: deps, lotacoes: null, departamento: "" });
-  assert.deepEqual(ilegivel.opcoes, []);
-  assert.ok(ilegivel.falta);
-  // quem não é gestão nem membro não escolhe nada
-  assert.deepEqual(f({ papel: "marketing", departamentos: deps, lotacoes: ["pre_venda"], departamento: "" }).opcoes, []);
+// ═══════════════════ E · formulário enxuto: o dono e o nome saem do SERVIDOR ═══════════════════
+
+const MARIA = { papel: "membro", uid: "u-jade", nome: "Jade Fono" };
+
+test("E1 · formNumeroPessoal: o dono é quem cadastra, o nome é o dele, produção, sem número, sem departamento", () => {
+  const f = regra("formNumeroPessoal");
+  const form = f(MARIA);
+  assert.deepEqual(form, {
+    canalId: "",
+    nome: "Jade Fono",
+    provedor: "nao_oficial",
+    numeroE164: "",
+    wabaId: "",
+    departamento: "",
+    finalidade: "producao",
+    responsavelId: "u-jade",
+  });
 });
 
-test("A27 · painel: o botão só libera com o departamento válido", () => {
-  const sheet = ler(SHEET);
-  assert.match(sheet, /estadoDoDepartamento\s*\(/, "o painel não usa a regra de departamento");
-  assert.match(sheet, /const\s+pronto\s*=[^;\n]*\.valido/, "`pronto` ignora a validade do departamento");
+test("E2 · formNumeroPessoal: vale igual para admin, owner e membro — ninguém escolhe outro dono", () => {
+  const f = regra("formNumeroPessoal");
+  for (const papel of ["admin", "owner", "membro"]) {
+    const form = f({ papel, uid: "u-admin", nome: "Admin Me Escuta" });
+    assert.ok(form, `${papel} não conseguiu montar o próprio número`);
+    assert.equal(form.responsavelId, "u-admin", `${papel}: o dono não é quem cadastra`);
+    assert.equal(form.nome, "Admin Me Escuta");
+    assert.equal(form.finalidade, "producao", `${papel}: finalidade não é produção`);
+    assert.equal(form.departamento, "");
+    assert.equal(form.numeroE164, "");
+  }
 });
 
-test("A28 · action: registrarCanal força a finalidade pelo papel lido no SERVIDOR", () => {
+test("E3 · formNumeroPessoal: ignora dono, finalidade, departamento e número extras — para TODO papel, gestão inclusive", () => {
+  const f = regra("formNumeroPessoal");
+  // a gestão é o caso que importa: `gestor ? (entrada.responsavelId ?? uid) : uid` passaria só com membro
+  for (const papel of ["admin", "owner", "membro"]) {
+    const form = f({
+      papel,
+      uid: "u-jade",
+      nome: "Jade Fono",
+      responsavelId: "u-sara",
+      responsavel_id: "u-sara",
+      finalidade: "teste",
+      departamento: "pre_venda",
+      numeroE164: "+5511999998888",
+      nomeCanal: "Outro Nome",
+    });
+    assert.ok(form, `${papel} não montou o próprio número`);
+    assert.equal(form.responsavelId, "u-jade", `${papel}: o dono veio da entrada, não do uid`);
+    assert.equal(form.finalidade, "producao", `${papel}: a finalidade veio da entrada`);
+    assert.equal(form.departamento, "", `${papel}: o departamento veio da entrada`);
+    assert.equal(form.numeroE164, "", `${papel}: o número veio da entrada`);
+    assert.equal(form.nome, "Jade Fono", `${papel}: o nome não é o de quem cadastra`);
+  }
+});
+
+test("E4 · formNumeroPessoal: o nome vem aparado, e o id `lite:` sai dele", () => {
+  const f = regra("formNumeroPessoal");
+  const form = f({ papel: "membro", uid: "u-jade", nome: "  Jade Fono  " });
+  assert.equal(form.nome, "Jade Fono");
+  assert.equal(canais.canalIdDoForm(form), "lite:jade-fono");
+});
+
+test("E5 · formNumeroPessoal: falha FECHADO — marketing, papel nulo, sem uid, ou sem nome E sem e-mail não montam nada", () => {
+  const f = regra("formNumeroPessoal");
+  assert.equal(f({ papel: "marketing", uid: "u-sara", nome: "Sara" }), null, "marketing registrou número");
+  assert.equal(f({ papel: null, uid: "u-sara", nome: "Sara" }), null, "papel desconhecido registrou número");
+  assert.equal(f({ papel: "membro", uid: null, nome: "Jade" }), null, "sem uid não há dono");
+  assert.equal(f({ papel: "membro", uid: "  ", nome: "Jade" }), null, "uid em branco não é dono");
+  assert.equal(f({ papel: "membro", uid: "u-jade", nome: null, email: null }), null, "sem nome e sem e-mail não há id `lite:`");
+  assert.equal(f({ papel: "membro", uid: "u-jade", nome: "   ", email: "  " }), null, "nome e e-mail em branco não são nome");
+});
+
+// Decisão do Diogo (16/09): sem nome utilizável, o canal usa o INÍCIO do e-mail — ninguém fica travado.
+test("E23 · formNumeroPessoal: sem nome (ou nome sem letra), o nome do canal é o início do e-mail", () => {
+  const f = regra("formNumeroPessoal");
+  const semNome = f({ papel: "membro", uid: "u-jade", nome: null, email: "jade.fono@meescuta.com" });
+  assert.ok(semNome, "sem nome, mas com e-mail, a pessoa ficou travada");
+  assert.equal(semNome.nome, "jade.fono");
+  assert.equal(canais.canalIdDoForm(semNome), "lite:jade-fono");
+  const semLetra = f({ papel: "admin", uid: "u-x", nome: "🦋🦋", email: "carla@meescuta.com" });
+  assert.equal(semLetra?.nome, "carla", "nome sem letra geraria o id vazio `lite:` — cai no e-mail");
+  // com nome bom, o e-mail não entra
+  assert.equal(f({ papel: "membro", uid: "u-jade", nome: "Jade Fono", email: "outra@x.com" })?.nome, "Jade Fono");
+});
+
+/*
+ * E6 e E7 são COERÊNCIA entre a regra nova e o que já existia (validarRegistroCanal nunca exigiu
+ * departamento; payloadCanalRegistrado já omitia o vazio). O vermelho deles hoje é só a falta de
+ * formNumeroPessoal. Quem guarda "o departamento deixou de ser obrigatório" no web é E8 (a regra
+ * estadoDoDepartamento saiu), E15 (o campo saiu) e E17 (o botão não espera campo). No banco, é o
+ * pgTAP 102 do me-escuta-db.
+ */
+test("E6 · coerência: o form pessoal não é recusado pela validação que já existe (sem departamento, sem número)", () => {
+  const form = regra("formNumeroPessoal")(MARIA);
+  assert.deepEqual(canais.validarRegistroCanal(form), {}, "a validação ainda exige algo que o formulário enxuto não tem");
+});
+
+test("E7 · coerência: o payload do form pessoal leva dono, nome e produção, e não leva departamento nem numero_e164", () => {
+  const form = regra("formNumeroPessoal")(MARIA);
+  const { canalId, payload } = canais.payloadCanalRegistrado(form, "lite:jade-fono-2");
+  assert.equal(canalId, "lite:jade-fono-2");
+  assert.deepEqual(payload, {
+    canal_id: "lite:jade-fono-2",
+    nome: "Jade Fono",
+    provedor: "nao_oficial",
+    responsavel_id: "u-jade",
+    finalidade: "producao",
+  });
+  assert.ok(!("departamento" in payload), "departamento viajou no payload");
+  assert.ok(!("numero_e164" in payload), "numero_e164 viajou no payload");
+});
+
+test("E20 · formNumeroPessoal nunca devolve um form que a validação recusa — nome longo é TRUNCADO em 60", () => {
+  // A pessoa não tem campo para corrigir o nome. Decisão do Diogo (16/09): nome longo é truncado.
+  const f = regra("formNumeroPessoal");
+  const longo = f({ papel: "membro", uid: "u-jade", nome: "A".repeat(61), email: null });
+  assert.ok(longo, "nome de 61 caracteres foi recusado — a decisão é truncar");
+  assert.equal(longo.nome.length, 60);
+  const composto = f({ papel: "membro", uid: "u-jade", nome: `Maria ${"da Silva ".repeat(20)}`, email: null });
+  assert.ok(composto && composto.nome.length <= 60 && composto.nome === composto.nome.trim(), "truncou deixando espaço na ponta");
+  const casos = ["A".repeat(61), `Maria ${"da Silva ".repeat(20)}`, "🦋🦋", "---", "   🦋   "];
+  for (const nome of casos) {
+    const form = f({ papel: "membro", uid: "u-jade", nome, email: null });
+    if (form === null) continue;
+    assert.deepEqual(canais.validarRegistroCanal(form), {}, `nome ${JSON.stringify(nome)} gerou um form que a validação recusa`);
+    assert.notEqual(canais.canalIdDoForm(form), canais.PREFIXO_LITE, `nome ${JSON.stringify(nome)} gerou o id vazio \`lite:\``);
+  }
+  // nome com emoji E letra é válido hoje (o slug sai das letras): recusar seria regressão
+  const misto = f({ papel: "membro", uid: "u-ana", nome: "Ana 🦋" });
+  assert.ok(misto, "nome com emoji e letra foi recusado — a validação o aceita");
+  assert.equal(canais.canalIdDoForm(misto), "lite:ana");
+});
+
+test("E8 · as regras do formulário antigo SAÍRAM (seletor de pessoa, 'Para quê', departamento obrigatório)", () => {
+  for (const nome of ["pessoasDoRegistro", "estadoDoRegistro", "itensPessoas", "finalidadeDoRegistro", "estadoDoDepartamento"]) {
+    assert.equal(r[nome], undefined, `\`${nome}\` ainda é exportada de regras/canais.ts — é código morto do formulário antigo`);
+  }
+});
+
+// ── a action do número pessoal ──
+
+function corpoRegistrarMeuNumero(): string {
+  return corpoDaFuncao(ler(ACTIONS), "export async function registrarMeuNumero(");
+}
+
+test("E9 · action: registrarMeuNumero não aceita dono, nome nem finalidade do cliente", () => {
+  const corpo = corpoRegistrarMeuNumero();
+  const params = /registrarMeuNumero\(([^)]*)\)/.exec(corpo)![1].trim();
+  assert.equal(params, "", `registrarMeuNumero recebe \`${params}\` do cliente — o dono, o nome e a finalidade são do servidor`);
+  assert.doesNotMatch(corpo, /responsavelId/, "a action ainda mexe em responsavelId vindo de fora");
+});
+
+test("E10 · action: lê papel, uid e cadastro (nome, e-mail) NO SERVIDOR e entrega tudo a formNumeroPessoal", () => {
+  const corpo = corpoRegistrarMeuNumero();
+  const varDe = (fn: string) => {
+    const direto = new RegExp(`const\\s+(\\w+)\\s*=\\s*await\\s+${fn}\\s*\\(\\s*\\)`).exec(corpo)?.[1];
+    if (direto) return direto;
+    const m = /const\s*\[([^\]]+)\]\s*=\s*await\s+Promise\.all\(\s*\[([\s\S]*?)\]\s*\)/.exec(corpo);
+    if (!m) return undefined;
+    const nomes = m[1].split(",").map((x) => x.trim());
+    const leituras = m[2].split(",").map((x) => x.trim()).filter(Boolean);
+    const i = leituras.findIndex((x) => new RegExp(`^${fn}\\s*\\(\\s*\\)$`).test(x));
+    return i === -1 ? undefined : nomes[i];
+  };
+  const papel = varDe("lerPapelAtual");
+  const uid = varDe("lerUidAtual");
+  const nome = varDe("lerNomeAtual");
+  assert.ok(papel, "a action não lê o papel no servidor (lerPapelAtual)");
+  assert.ok(uid, "a action não lê o uid no servidor (lerUidAtual)");
+  assert.ok(nome, "a action não lê o nome de quem cadastra no servidor (lerNomeAtual)");
+  const chamada = /formNumeroPessoal\s*\(\s*\{([^}]*)\}\s*\)/.exec(corpo);
+  assert.ok(chamada, "a action não monta o form por formNumeroPessoal({ ... })");
+  const campo = (k: string) =>
+    new RegExp(`\\b${k}\\s*:\\s*(\\w+)\\b`).exec(chamada![1])?.[1] ??
+    (new RegExp(`(^|[\\s,])${k}([\\s,]|$)`).test(chamada![1]) ? k : null);
+  assert.equal(campo("papel"), papel, "o papel entregue à regra não é o lido no servidor");
+  assert.equal(campo("uid"), uid, "o uid entregue à regra não é o de lerUidAtual — o dono viria de outro lugar");
+  // lerNomeAtual devolve { nome, email } do cadastro; os dois chegam à regra (fallback do E23)
+  const esc = nome!.replace(/[$]/g, "\\$&");
+  assert.match(chamada![1], new RegExp(`\\bnome\\s*:\\s*${esc}\\??\\.nome\\b`), "o nome entregue à regra não é o lido no servidor");
+  assert.match(chamada![1], new RegExp(`\\bemail\\s*:\\s*${esc}\\??\\.email\\b`), "o e-mail entregue à regra não é o lido no servidor");
+});
+
+test("E11 · action: quem não pode registrar é recusado ANTES de qualquer escrita", () => {
+  const corpo = corpoRegistrarMeuNumero();
+  const form = /const\s+(\w+)\s*=\s*formNumeroPessoal\s*\(/.exec(corpo)?.[1];
+  assert.ok(form, "o resultado de formNumeroPessoal não é guardado");
+  const guarda = new RegExp(`if\\s*\\(\\s*!\\s*${form}\\s*\\)\\s*\\{?\\s*return\\s*\\{[^}]*ok\\s*:\\s*false`).exec(corpo);
+  assert.ok(guarda, `sem \`if (!${form}) return { ok: false, ... }\` — marketing chegaria na porta`);
+  const escrita = corpo.search(/registrarComIdLivre\s*\(|registrarEventoComReadback\s*\(/);
+  assert.notEqual(escrita, -1, "a action não escreve nada");
+  assert.ok(guarda.index < escrita, "a recusa vem DEPOIS da escrita");
+});
+
+test("E12 · action: tenta o próximo id livre com o payload DA TENTATIVA e devolve o canalId gravado", () => {
+  const corpo = corpoRegistrarMeuNumero();
+  const m = /registrarComIdLivre\s*\(\s*(\w+)\s*,\s*(?:async\s*)?\(?\s*(\w+)(?:\s*:\s*string)?\s*\)?\s*=>/.exec(corpo);
+  assert.ok(m, "registrarMeuNumero não chama registrarComIdLivre(form, (canalId) => ...)");
+  const [, form, param] = m;
+  assert.match(corpo, new RegExp(`const\\s+${form}\\s*=\\s*formNumeroPessoal\\s*\\(`), "o form da escrita não é o de formNumeroPessoal");
+  assert.match(
+    corpo,
+    new RegExp(`payloadCanalRegistrado\\(\\s*${form}\\s*,\\s*${param}\\s*\\)`),
+    `o payload não é montado com o form do servidor e o id da tentativa (\`${param}\`)`,
+  );
+  assert.match(corpo, /tipo\s*:\s*["']canal_registrado["']/);
+  assert.match(corpo, /return\s+(await\s+)?registrarComIdLivre\s*\(/, "registrarMeuNumero não devolve o canalId gravado");
+});
+
+test("E13 · lerNomeAtual existe no servidor, ao lado de lerUidAtual", () => {
+  const dados = ler(DADOS_PORTA);
+  assert.match(dados, /export\s+async\s+function\s+lerNomeAtual\s*\(\s*\)/, "dados/porta.ts não exporta lerNomeAtual()");
+  const acoes = ler(ACTIONS);
+  assert.match(acoes, /import\s*\{[^}]*\blerNomeAtual\b[^}]*\}\s*from\s*["']@\/components\/configuracoes\/dados\/porta["']/);
+});
+
+test("E21 · lerNomeAtual: nome e e-mail saem do cadastro (core), filtrados pelo uid de auth.getUser() — nunca de user_metadata", () => {
+  const dados = ler(DADOS_PORTA);
+  assert.match(dados, /export\s+async\s+function\s+lerNomeAtual\s*\(/, "dados/porta.ts não exporta lerNomeAtual() — a fonte do nome não existe");
+  const corpo = corpoDaFuncao(dados, "export async function lerNomeAtual(");
+  // o uid do filtro: variável de `await lerUidAtual()` (que lê auth.getUser()), ou o user.id que
+  // sai de `auth.getUser()` no próprio corpo — direto ou por uma variável
+  const filtro = /\.eq\(\s*["']id["']\s*,\s*([\w.?]+)\s*\)/.exec(corpo);
+  assert.ok(filtro, "o cadastro não é filtrado por id — viria o nome de outra pessoa");
+  const arg = filtro![1];
+  const ehUserId = (x: string) => /^(\w+\??\.)*user\??\.id$/.test(x);
+  const origem = new RegExp(`const\\s+${arg.replace(/[.?]/g, "\\$&")}\\s*=\\s*(await\\s+lerUidAtual\\s*\\(\\s*\\)|[\\w.?]+)`).exec(corpo)?.[1];
+  const viaLerUid = origem !== undefined && /lerUidAtual/.test(origem);
+  const viaAuth = /\.auth\.getUser\s*\(\s*\)/.test(corpo) && (ehUserId(arg) || (origem !== undefined && ehUserId(origem)));
+  assert.ok(viaLerUid || viaAuth, `o filtro usa \`${arg}\`, que não é o uid de auth.getUser() nem de lerUidAtual()`);
+  assert.match(
+    corpo,
+    /\.schema\(\s*["']core["']\s*\)\s*\.from\(\s*["'](usuario|v_membro)["']\s*\)/,
+    "o nome não é lido do cadastro (core.usuario / core.v_membro)",
+  );
+  assert.match(corpo, /\.select\(\s*["'][^"']*\bnome\b[^"']*["']\s*\)/, "a leitura não pede a coluna nome");
+  assert.match(corpo, /\.select\(\s*["'][^"']*\bemail\b[^"']*["']\s*\)/, "a leitura não pede o e-mail — o fallback do nome (E23) não teria de onde vir");
+  assert.match(corpo, /\.(maybeSingle|single)\(\s*\)/, "leitura de uma linha só");
+  assert.match(corpo, /return[^;\n]*\.nome\b/, "lerNomeAtual não devolve o nome lido — um `return null` fixo mataria a feature calada");
+  assert.doesNotMatch(corpo, /user_metadata|raw_user_meta_data/, "user_metadata é editável pelo próprio usuário — não é fonte do nome do canal");
+});
+
+test("E14 · action: registrarCanal (o do oficial) recusa não oficial — o número pessoal só entra por registrarMeuNumero", () => {
   const corpo = corpoDaFuncao(ler(ACTIONS), "export async function registrarCanal(");
-  const papel = /const\s+(\w+)\s*=\s*await\s+lerPapelAtual\s*\(\s*\)/.exec(corpo)?.[1];
-  assert.ok(papel, "registrarCanal não lê o papel no servidor — a tela é a única trava, e a action é endpoint");
-  assert.match(corpo, new RegExp(`finalidade\\s*:\\s*finalidadeDoRegistro\\(\\s*${papel}\\s*,`), "a finalidade que vai ao banco não passa pela regra");
+  const guarda = /if\s*\(\s*\w+\.provedor\s*===\s*["']nao_oficial["']\s*\)\s*\{?\s*return\s*\{[^}]*ok\s*:\s*false/.exec(corpo);
+  assert.ok(guarda, "registrarCanal aceita não oficial — o cliente escolheria o dono pelo responsavelId");
+  const escrita = corpo.search(/registrarComIdLivre\s*\(|registrarEventoComReadback\s*\(/);
+  assert.ok(escrita === -1 || guarda.index < escrita, "a recusa do não oficial vem depois da escrita");
+});
+
+// ── o painel ──
+
+test("E15 · painel: não tem seletor de pessoa, nem 'Para quê', nem Número, nem Departamento", () => {
+  const sheet = ler(SHEET);
+  for (const rotulo of ["De quem é o número", "Para quê", "Departamento", "Número"]) {
+    assert.doesNotMatch(sheet, new RegExp(`label=["']${rotulo}["']`), `o painel ainda tem o campo "${rotulo}"`);
+  }
+  assert.doesNotMatch(sheet, /<Select\b/, "o painel ainda tem um Select");
+  assert.doesNotMatch(sheet, /<Input\b/, "o painel ainda tem um campo de texto");
+  assert.doesNotMatch(sheet, /\b(pessoaId|setPessoaId|setFinalidade|setDepartamento|setNumero)\b/, "o painel ainda guarda estado de campo que saiu");
+  assert.doesNotMatch(sheet, /\b(estadoDoRegistro|estadoDoDepartamento|itensPessoas)\b/, "o painel ainda usa regra do formulário antigo");
+});
+
+test("E16 · painel: tem o aviso de ban e o botão, e o aviso vem ANTES do botão", () => {
+  const sheet = ler(SHEET);
+  const aviso = sheet.indexOf("{AVISO_RISCO_BAN}");
+  assert.notEqual(aviso, -1, "o aviso de ban sumiu do painel");
+  const botao = sheet.search(/<Button\b[^>]*onClick=\{\s*registrarEParear\s*\}/);
+  assert.notEqual(botao, -1, "o botão de registrar sumiu do painel");
+  assert.ok(aviso < botao, "o aviso de ban aparece depois do botão");
+});
+
+test("E17 · painel: o botão não fica travado esperando campo — só enquanto grava", () => {
+  const sheet = ler(SHEET);
+  const i = sheet.search(/<Button\b[^>]*onClick=\{\s*registrarEParear\s*\}/);
+  assert.notEqual(i, -1, "o botão de registrar sumiu do painel");
+  const tag = tagDeAbertura(sheet, i);
+  const disabled = valorDoAtributo(tag, "disabled");
+  assert.ok(disabled, "o botão não trava nem enquanto grava — clique duplo registraria dois canais");
+  assert.match(disabled, /\bgravando\b/);
+  assert.doesNotMatch(disabled, /pronto|pessoa|finalidade|departamento|numero|depto/, `o botão ainda espera campo: disabled={${disabled}}`);
+  const corpo = trechoLocal(sheet, "registrarEParear", "fechar");
+  assert.doesNotMatch(corpo, /if\s*\(\s*!\s*(pessoa|pronto)\b/, "registrarEParear ainda sai cedo esperando campo");
+});
+
+test("E22 · painel: sem prévia do id — a tela não monta form nem tem nome para prever", () => {
+  // Decisão do Diogo: o formulário tem SÓ o aviso e o botão. A prévia precisaria de um nome no
+  // cliente, e o nome agora é do servidor; montar um form local só para a prévia reabre a porta
+  // para o cliente decidir nome e dono.
+  const sheet = ler(SHEET);
+  assert.doesNotMatch(sheet, /\bprevisaoCanalId\b/, "o painel ainda pede a prévia do id");
+  assert.doesNotMatch(sheet, /O id deste canal será/, "o painel ainda mostra a prévia do id");
+  assert.doesNotMatch(sheet, /\bformDe\s*\(/, "o painel ainda monta um FormCanal local");
+  assert.doesNotMatch(sheet, /\bFormCanal\b/, "o painel ainda conhece FormCanal — o form é do servidor");
+  assert.doesNotMatch(sheet, /provedor\s*:\s*["']nao_oficial["']/, "o painel ainda monta um form de não oficial");
+});
+
+test("E18 · painel: registra por registrarMeuNumero(), sem mandar nada do cliente, e nunca por registrarCanal", () => {
+  const sheet = ler(SHEET);
+  assert.match(sheet, /await\s+registrarMeuNumero\s*\(\s*\)/, "o painel não chama registrarMeuNumero() sem argumentos");
+  assert.doesNotMatch(sheet, /registrarCanal\s*\(/, "o painel ainda registra pelo registrarCanal, com form montado na tela");
+  assert.doesNotMatch(sheet, /responsavelId/, "o painel ainda monta o dono do número");
+});
+
+test("E19 · tabela: não entrega ao painel pessoas, departamentos nem lotações", () => {
+  const tabela = ler(TABELA);
+  const i = tabela.indexOf("<SheetNumeroLite");
+  assert.notEqual(i, -1, "SheetNumeroLite sumiu da tabela");
+  const tag = tagDeAbertura(tabela, i);
+  for (const prop of ["pessoas", "departamentos", "minhasLotacoes"]) {
+    assert.doesNotMatch(tag, new RegExp(`\\b${prop}=`), `o painel ainda recebe \`${prop}\` — o formulário enxuto não escolhe nada`);
+  }
 });

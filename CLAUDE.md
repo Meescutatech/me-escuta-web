@@ -175,6 +175,8 @@ desliga canais oficiais e não oficiais. NÃO é dona da regra de quem pode escr
 é da porta (`me-escuta-db`, 0337) — nem da sessão do WuzAPI, que é do runtime.
 
 ### Decisões
+- ⚠️ SUPERSEDIDA em 2026-09-16 (tarde): o formulário virou só o botão, para todo papel — ver a
+  decisão "o número pessoal é de quem cadastra" abaixo. O portão do QR descrito aqui continua valendo.
 - 2026-09-16 · `membro` registra e pareia o PRÓPRIO número não oficial: dono fixo nele, finalidade
   sempre `producao` (forçada também na action, que é endpoint), departamento obrigatório e só entre
   as lotações dele (`api.departamentos_do_uid`, a mesma função da PMEE6). Oficial, ligar e desligar
@@ -192,3 +194,12 @@ desliga canais oficiais e não oficiais. NÃO é dona da regra de quem pode escr
 - 2026-09-16 · os contadores do topo contam as linhas VISÍVEIS (`contagemDaLista`); "N desligados"
   é quanto está escondido. O seletor de pessoa passa `items`, senão o Base UI mostra o UUID.
   Descartado: contar "não oficiais" sobre todos — o topo dizia o que a lista não mostrava.
+- 2026-09-16 · o número pessoal é de QUEM CADASTRA, para todo papel, e o painel é só o aviso de ban e
+  o botão (D116). `registrarMeuNumero()` não recebe nada do cliente: papel, uid, nome e e-mail vêm do
+  servidor e `formNumeroPessoal` decide (produção, sem número, sem departamento — a 0348 tirou a
+  exigência). Nome truncado em 60; sem nome utilizável, o início do e-mail. `registrarCanal` passa a
+  recusar não oficial e fica só para o oficial.
+  Motivo: "o numero é da pessoa e ela só registra" — o formulário tinha quatro campos de burocracia.
+  Descartado: admin escolher o dono; o departamento pela lotação (as fonos admin não têm); o campo
+  Número (o runtime gravar o número no pareamento virou card); prévia do id na tela (exigiria o nome
+  no cliente).
