@@ -7,7 +7,9 @@ import type { PainelLead } from "@/lib/dados/lead-painel";
 import type { Mensagem } from "@/lib/dados/conversas";
 import type { ValorCampo } from "@/lib/dados/ficha-calculos";
 import { lerPainelLeadAction, salvarCampoFicha } from "@/app/(app)/lead/actions";
-import { atribuirDono, lerConversaDoLeadAcao, registrarEventoUI } from "@/app/(app)/funil/actions";
+import { atribuirDono, lerFiosDoLeadAcao, registrarEventoUI, type ConversaDoLeadLida } from "@/app/(app)/funil/actions";
+import { rotuloDoFio } from "@/lib/conversas/fios-do-lead";
+import { rotuloSelo } from "@/components/conversas/regras/numero";
 import { classificarPrazo, escolherProximaTarefa, textoPrazoCurto, type EstadoPrazo } from "@/lib/dados/funil-calculos";
 import { dataUltimaMensagem } from "@/lib/dados/funil-ordenacao";
 import { textoTempoCurto } from "@/lib/tempo";
@@ -136,8 +138,12 @@ export function DrawerCard({
   const [carregando, setCarregando] = useState(false);
   /** v6 · a leitura do painel REJEITOU (não é "veio vazio"): separa erro de ausência de dado */
   const [falhaPainel, setFalhaPainel] = useState(false);
-  /** `undefined` = ainda não perguntamos; `null` = sem conversa (ou leitura falhou) */
-  const [conversa, setConversa] = useState<{ conversaId: string; mensagens: Mensagem[]; canal: string | null } | null | undefined>(undefined);
+  /**
+   * 15/09 · de UMA conversa para N FIOS. `undefined` = ainda não perguntamos; `[]` = lead sem
+   * conversa (vazio honesto, não erro). Com o fio novo por número, o mesmo lead tem um fio por
+   * canal — mostrar só o mais recente escondia conversa respondida, sem avisar.
+   */
+  const [fios, setFios] = useState<ConversaDoLeadLida[] | undefined>(undefined);
   const [levindoSolicitado, setLevindoSolicitado] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [versao, setVersao] = useState(0);
@@ -154,7 +160,7 @@ export function DrawerCard({
     setAbaEstreita(abaInicial && abaInicial !== "conversa" ? "dados" : "conversa");
     setLevindoSolicitado(false);
     setPainel(null);
-    setConversa(undefined);
+    setFios(undefined);
     setVersao(0);
     setMenuAberto(false);
     setDonoAberto(false);
@@ -195,25 +201,42 @@ export function DrawerCard({
 
   // conversa: a leitura mais pesada — dispara ao abrir (a conversa é o centro agora)
   useEffect(() => {
-    if (!leadId || conversa !== undefined) return;
+    if (!leadId || fios !== undefined) return;
     if (ensaio) {
-      setConversa(ensaio.conversas[leadId] ?? null);
+      // o ensaio guarda UM fio por lead, com o número já achatado em `canal`. Vira lista de um —
+      // sem cast: o que o ensaio não sabe entra como `null`, e o chip trata ausência como ausência.
+      const f = ensaio.conversas[leadId];
+      setFios(
+        f
+          ? [
+              {
+                conversaId: f.conversaId,
+                mensagens: f.mensagens,
+                phone_number_id: null,
+                numero_apelido: f.canal ?? null,
+                numero_e164: null,
+                finalidade: null,
+                atualizado_em: null,
+              },
+            ]
+          : [],
+      );
       return;
     }
     let vivo = true;
-    lerConversaDoLeadAcao(leadId)
-      .then((c) => {
-        if (vivo) setConversa(c);
+    lerFiosDoLeadAcao(leadId)
+      .then((f) => {
+        if (vivo) setFios(f);
       })
       // mesma razão do painel: sem conversa o drawer ainda serve, com a tela caída não serve nada
       .catch((e) => {
-        console.error("[drawer] falha ao ler a conversa do lead", e);
-        if (vivo) setConversa(null);
+        console.error("[drawer] falha ao ler os fios do lead", e);
+        if (vivo) setFios([]);
       });
     return () => {
       vivo = false;
     };
-  }, [leadId, conversa, ensaio]);
+  }, [leadId, fios, ensaio]);
 
   function recarregar() {
     setVersao((v) => v + 1);
@@ -276,38 +299,68 @@ export function DrawerCard({
   const ultima = lead?.ultima_mensagem ?? null;
   const fechado = lead?.etapa === "ganho" || lead?.etapa === "perdido";
   const hrefResponder = lead
-    ? conversa?.conversaId
-      ? `/conversas?c=${conversa.conversaId}`
+    ? fios?.[0]?.conversaId
+      ? `/conversas?c=${fios[0].conversaId}`
       : `/conversas?lead=${lead.lead_id}`
     : "/conversas";
   const humanos = mencionaveis.filter((m) => m.tipo === "humano" && m.ativo);
   const nomeDono = lead?.dono_nome ?? lead?.responsavel?.nome ?? null;
 
-  const mensagensFio = conversa?.mensagens ?? [];
-  const truncado = mensagensFio.length > ULTIMAS_MENSAGENS;
-  const ultimas = truncado ? mensagensFio.slice(-ULTIMAS_MENSAGENS) : mensagensFio;
-
   const painelConversa = (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto bg-board px-4 py-3">
-        {truncado && (
-          <p className="mb-2 text-center text-[11.5px] text-mute">
-            Últimas {ULTIMAS_MENSAGENS} de {mensagensFio.length} mensagens ·{" "}
-            <button type="button" onClick={() => router.push(hrefResponder)} className="text-navy underline-offset-2 hover:underline">
-              ver a conversa inteira
-            </button>
-          </p>
-        )}
-        {conversa === undefined ? (
+        {fios === undefined ? (
           <p className="py-8 text-center text-[13px] text-mute">Carregando a conversa…</p>
-        ) : conversa === null ? (
+        ) : fios.length === 0 ? (
           <p className="py-8 text-center text-[13px] leading-relaxed text-mute">
             Sem conversa registrada com este lead.
             <br />
             Quem chega por ligação ou indicação entra aqui quando responder no WhatsApp.
           </p>
         ) : (
-          <FioLead mensagens={ultimas} nomeLead={lead?.nome ?? "Lead"} />
+          /* UM BLOCO POR NÚMERO (15/09). A pessoa é uma, os fios são vários — e cada um é uma
+             conversa de verdade, com id próprio no banco. O corte de mensagens é POR BLOCO: o teto
+             existe para o custo da tela, e aplicá-lo ao conjunto esconderia o fio antigo inteiro. */
+          fios.map((f) => {
+            const chip = rotuloDoFio(f);
+            const truncado = f.mensagens.length > ULTIMAS_MENSAGENS;
+            const ultimas = truncado ? f.mensagens.slice(-ULTIMAS_MENSAGENS) : f.mensagens;
+            return (
+              <section key={f.conversaId} className="mb-3 overflow-hidden rounded-lg border border-linha bg-branco last:mb-0">
+                <header className="flex items-center gap-2 border-b border-linha px-3 py-1.5">
+                  <span
+                    title={chip.titulo}
+                    className={cn(
+                      "truncate text-[11.5px] font-semibold",
+                      chip.atencao ? "text-amarelo-esc" : "text-suave",
+                    )}
+                  >
+                    {chip.rotulo}
+                  </span>
+                  {chip.selos.map((s) => (
+                    <span key={s} className="shrink-0 rounded-full bg-amarelo-cl px-1.5 py-px text-[10px] font-medium uppercase text-amarelo-esc">
+                      {rotuloSelo(s)}
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/conversas?c=${f.conversaId}`)}
+                    className="ml-auto shrink-0 text-[11.5px] text-navy underline-offset-2 hover:underline"
+                  >
+                    abrir
+                  </button>
+                </header>
+                <div className="px-3 py-2">
+                  {truncado && (
+                    <p className="mb-2 text-center text-[11.5px] text-mute">
+                      Últimas {ULTIMAS_MENSAGENS} de {f.mensagens.length} mensagens
+                    </p>
+                  )}
+                  <FioLead mensagens={ultimas} nomeLead={lead?.nome ?? "Lead"} />
+                </div>
+              </section>
+            );
+          })
         )}
       </div>
       {/* o "composer" do drawer é um convite: escrever é em /conversas (composer, janela de 24h,
@@ -318,7 +371,7 @@ export function DrawerCard({
         className="flex shrink-0 items-center gap-2.5 border-t border-linha bg-branco px-4 py-2.5 text-left transition-colors hover:bg-hover"
       >
         <span className="min-w-0 flex-1 truncate rounded-[6px] border border-linha bg-board px-3 py-1.5 text-[13px] text-mute">
-          Responder{conversa?.canal ? ` pelo número ${conversa.canal}` : ""}…
+          Responder{fios?.[0] ? ` pelo número ${rotuloDoFio(fios[0]).rotulo}` : ""}…
         </span>
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-laranja px-3 py-1.5 text-xs font-semibold text-branco">
           Abrir conversa

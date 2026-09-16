@@ -6,6 +6,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { confirmarProjecao, type RespostaRegistrarEvento } from "@/lib/eventos/confirmar-projecao";
 import { buscarLeads, type ResultadoBusca } from "@/lib/dados/funil";
 import { lerMensagens, type Mensagem } from "@/lib/dados/conversas";
+import { ordenarFiosDoLead } from "@/lib/conversas/fios-do-lead";
 
 export interface ResultadoEvento {
   ok: boolean;
@@ -164,10 +165,28 @@ export async function buscarLeadsAcao(termo: string): Promise<ResultadoBusca> {
 export interface ConversaDoLeadLida {
   conversaId: string;
   mensagens: Mensagem[];
-  canal: string | null;
+  /**
+   * 15/09 · o que o `chipDoNumero` (M7) precisa para etiquetar o bloco. Antes existia só um
+   * `canal: string | null` já achatado, e com ele a etiqueta perde os cinco casos e os selos —
+   * inclusive o de TESTE, que é o que corrige um engano ativo.
+   */
+  phone_number_id: string | null;
+  numero_apelido: string | null;
+  numero_e164: string | null;
+  finalidade: "producao" | "teste" | null;
+  /** ordena os blocos; `null` vai para o fim sem sumir. */
+  atualizado_em: string | null;
 }
 
-export async function lerConversaDoLeadAcao(leadId: string): Promise<ConversaDoLeadLida | null> {
+/**
+ * TODOS os fios do lead, do mais recente para o mais antigo — um por número.
+ *
+ * Antes esta leitura tinha teto de um único registro, e isso deixou de ser verdade em 15/09 com o
+ * fio novo por número:
+ * o lead com 3 fios mostraria 1 e esconderia 2, em silêncio. O teto foi embora; o que segura o
+ * custo é o `ULTIMAS_MENSAGENS` do drawer, por bloco.
+ */
+export async function lerFiosDoLeadAcao(leadId: string): Promise<ConversaDoLeadLida[]> {
   try {
     const supabase = criarClienteServidor();
     const consulta = (colunas: string) =>
@@ -176,18 +195,29 @@ export async function lerConversaDoLeadAcao(leadId: string): Promise<ConversaDoL
         .from("v_conversa")
         .select(colunas)
         .eq("lead_id", leadId)
-        .order("atualizado_em", { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
-    // mesmo degrau de `lerConversas`: o apelido do número vem da 0094 e pode não existir
-    let { data, error } = await consulta("id,numero_apelido,numero_e164");
-    if (error) ({ data, error } = await consulta("id"));
-    if (error || !data) return null;
-    const linha = data as any;
-    const conversaId = String(linha.id);
-    const mensagens = await lerMensagens(conversaId);
-    return { conversaId, mensagens, canal: linha.numero_apelido ?? linha.numero_e164 ?? null };
+        .order("atualizado_em", { ascending: false, nullsFirst: false });
+    // mesmo degrau de `lerConversas`: apelido, identidade e finalidade vêm da 0094 e podem não
+    // existir no ambiente. Sem `phone_number_id` e `finalidade` o chip cai no caso errado e o selo
+    // de TESTE some justamente quando todo mundo está testando — por isso eles entram no degrau 1.
+    let { data, error } = await consulta(
+      "id,phone_number_id,numero_apelido,numero_e164,finalidade,atualizado_em",
+    );
+    if (error) ({ data, error } = await consulta("id,atualizado_em"));
+    if (error || !data) return [];
+    const linhas = (data as any[]) ?? [];
+    const fios = await Promise.all(
+      linhas.map(async (linha) => ({
+        conversaId: String(linha.id),
+        mensagens: await lerMensagens(String(linha.id)),
+        phone_number_id: linha.phone_number_id ?? null,
+        numero_apelido: linha.numero_apelido ?? null,
+        numero_e164: linha.numero_e164 ?? null,
+        finalidade: linha.finalidade ?? null,
+        atualizado_em: linha.atualizado_em ?? null,
+      })),
+    );
+    return ordenarFiosDoLead(fios);
   } catch {
-    return null;
+    return [];
   }
 }
