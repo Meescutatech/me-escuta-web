@@ -894,7 +894,12 @@ export function Composer({
                  que as 12 mensagens de 27/07 chegaram ao telefone do Diogo. Bloquear quebraria o
                  ensaio. O que não é legítimo é descobrir DEPOIS.
                · não cadastrado / desligado -> DESABILITA, com o motivo nomeado. */}
-          {!interno && origem && (origem.motivo || origem.aviso || (origem.respondePor && !canaisEnvio)) ? (
+          {/* 15/09 · `!fioNovo`: esta tarja fala do canal por onde a CONVERSA entrou. Quando a
+              pessoa escolhe outro número, quem envia é o ESCOLHIDO — e aí ela passa a descrever o
+              canal errado ("este número é de teste" sobre o teste_meta, com a mensagem saindo pelo
+              Oficial). Some, e a faixa de fio novo abaixo diz o que importa. Sem fio novo, nada
+              muda: o aviso de número de teste é o que evita descobrir depois (CA-13). */}
+          {!interno && !fioNovo && origem && (origem.motivo || origem.aviso || (origem.respondePor && !canaisEnvio)) ? (
             <div
               className={cn(
                 "flex items-start gap-2 border-b px-3.5 py-[7px] text-[12px]",
