@@ -147,8 +147,12 @@ export function Composer({
   variaveis: VariaveisTemplate;
   autorId: string | null;
   autorEmail: string | null;
-  /** templateId acompanha o texto quando o rascunho nasceu de template (§6.4). */
-  onEnviarTexto: (texto: string, templateId?: string | null) => void;
+  /**
+   * templateId acompanha o texto quando o rascunho nasceu de template (§6.4).
+   * `canalEscolhidoId` é o número marcado no seletor — `null` quando intocado. Sem ele na
+   * assinatura, o TypeScript aceitava a omissão em silêncio e o seletor virava decoração (15/09).
+   */
+  onEnviarTexto: (texto: string, templateId?: string | null, canalEscolhidoId?: string | null) => void;
   /** T2 · manda o HSM. `parametros` é POSICIONAL — o índice é a posição menos um. */
   onEnviarTemplate?: (templateId: string, parametros: string[]) => void;
   onEnviarMidia: (m: MidiaPronta) => void;
@@ -440,7 +444,9 @@ export function Composer({
         const deTemplate = templateId;
         setRascunho("");
         setTemplateId(null);
-        onEnviarTexto(texto, deTemplate);
+        // `canalEscolhido` já existia aqui desde o M7 — só nunca saía do desenho (aviso âmbar e cor
+        // do rótulo). Agora ele acompanha o texto, e quem decide o que fazer com isso é a regra pura.
+        onEnviarTexto(texto, deTemplate, canalEscolhido?.id ?? null);
       });
       if (!r.enviado && r.motivo && r.motivo !== MOTIVO_VAZIA) avisar(r.motivo);
       return;

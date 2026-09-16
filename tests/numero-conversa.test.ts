@@ -168,9 +168,17 @@ test("conversa sem contraparte não tem por onde responder", () => {
   assert.equal(v.respondePor, null);
 });
 
-test("o composer SEMPRE diz por qual número responde — e nunca oferece escolha", () => {
-  // §5.2: o sistema nunca escolhe número. O veredito não tem campo de opções, e é de propósito:
-  // enquanto responder pelo mesmo número for a regra, "respondeu pelo chip errado" não existe.
+/*
+ * ⚠️ SUPERSEDIDA EM PARTE — 2026-09-15: "nunca oferece escolha" deixou de ser a regra do produto.
+ * O seletor "Enviando por" passou a valer, e escolher outro número abre FIO NOVO
+ * (`lib/conversas/envio-canal.ts` · `tests/envio-por-canal.test.ts`).
+ *
+ * O que esta asserção ainda protege, e por isso continua aqui: `vereditoEnvio` segue SEM campo de
+ * opções. A escolha de canal não é veredito de envio — são duas decisões, e misturá-las faria a
+ * regra que diz "pode ou não pode responder" carregar também "por onde", que é o começo do nó.
+ */
+test("o composer SEMPRE diz por qual número responde — e o veredito não carrega a escolha", () => {
+  // §5.2: o veredito não tem campo de opções, e é de propósito.
   const v = vereditoEnvio(ctx({ numero_apelido: "producao" }));
   assert.equal(v.respondePor, "producao");
   assert.equal("opcoes" in v, false);

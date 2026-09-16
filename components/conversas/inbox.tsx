@@ -48,6 +48,7 @@ import { PropostaJarvisInline } from "@/components/jarvis/proposta-inline";
 import { MarcaJarvis } from "@/components/jarvis/marca";
 import type { AjusteProposta, MotivoDescarte } from "@/components/jarvis/tipos";
 import { BotaoNovaConversa } from "@/components/conversas/nova-conversa";
+import { escolherCanalDeEnvio } from "@/lib/conversas/envio-canal";
 import { BotaoFoco, ContagemFoco, FimDaFila, MolduraFoco, useAtalhosFoco } from "@/components/conversas/foco";
 import { ItemListaFoco } from "@/components/tarefas/item-lista-foco";
 import { FaixaTarefaConversa } from "@/components/tarefas/faixa-tarefa-conversa";
@@ -791,7 +792,13 @@ export function Inbox({
     });
   }
 
-  function despachar(texto: string, midia?: MidiaPronta | null, idPendente?: string, templateId?: string | null) {
+  function despachar(
+    texto: string,
+    midia?: MidiaPronta | null,
+    idPendente?: string,
+    templateId?: string | null,
+    canalEscolhidoId?: string | null,
+  ) {
     if (!selecionada) return;
     // o id da bolha é também a chave de idempotência do evento (id_externo): retry da MESMA bolha
     // reusa a chave e a porta deduplica — nunca sai duplicado no WhatsApp por retry de rede.
@@ -819,6 +826,24 @@ export function Inbox({
       ]);
       requestAnimationFrame(() => fimRef.current?.scrollIntoView({ behavior: "smooth" }));
     }
+    // POR QUAL NÚMERO ISTO SAI (15/09). A regra é pura e mora em `lib/conversas/envio-canal`;
+    // aqui só se obedece. Recusa fala antes do clique sair caro — no Lite, o número é o WhatsApp
+    // pessoal de uma fonoaudióloga.
+    const escolha = escolherCanalDeEnvio({
+      canalEscolhidoId: canalEscolhidoId ?? null,
+      canalDaConversaId: canalDaConversa ?? null,
+      telefone: selecionada.telefone ?? null,
+      canaisPermitidos: canaisEnvio ?? [],
+    });
+    if (escolha.modo === "recusado") {
+      setPendentes((p) => p.filter((m) => m.id !== id));
+      avisar(escolha.motivo);
+      return;
+    }
+    const canalDestino =
+      escolha.modo === "fio_novo"
+        ? { phone_number_id: escolha.phone_number_id, telefone: escolha.telefone }
+        : null;
     // enviar derruba o "digitando…" na Meta — zera o throttle pra próxima digitação re-sinalizar já
     gatilhoDigitando.zerar(selecionada.id);
     startTransition(async () => {
@@ -828,6 +853,7 @@ export function Inbox({
         id,
         midia ? { caminho: midia.caminho, mime: midia.mime } : undefined,
         templateId ?? undefined,
+        canalDestino,
       );
       if (r.ok) {
         router.refresh();
@@ -1681,7 +1707,9 @@ export function Inbox({
               autorId={autorId}
               autorEmail={autorEmail}
               templatesHsm={canalDaConversa ? (hsmPorCanal[canalDaConversa] ?? []) : []}
-              onEnviarTexto={(texto, templateId) => despachar(texto, undefined, undefined, templateId)}
+              onEnviarTexto={(texto, templateId, canalEscolhidoId) =>
+                despachar(texto, undefined, undefined, templateId, canalEscolhidoId)
+              }
               onEnviarTemplate={despacharTemplate}
               onEnviarMidia={(midia) => despachar(midia.legenda ?? "", midia)}
               onDigitar={aoDigitar}

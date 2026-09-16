@@ -8,6 +8,7 @@ import { criarClienteServidor } from "@/lib/supabase/server";
 import { registrarEventoUI, type ResultadoEvento } from "@/app/(app)/funil/actions";
 import { caminhoValido } from "@/lib/conversas/midia";
 import { montarPayloadProgramar } from "@/lib/conversas/envios-programados";
+import { montarPayloadEnvio } from "@/lib/conversas/envio-canal";
 import { acaoPresencaValida, montarCorpoPresenca, type AcaoPresenca } from "@/lib/conversas/presenca";
 import { lerConversas, type PaginaConversas } from "@/lib/dados/conversas";
 import { lerEstadoEscopo } from "@/lib/dados/departamentos";
@@ -66,6 +67,13 @@ export async function enviarMensagem(
   chaveIdem?: string,
   midia?: { caminho: string; mime?: string | null },
   templateId?: string,
+  /**
+   * 15/09 · FIO NOVO: quando a pessoa escolhe outro número no seletor, a saída não é "a mesma
+   * conversa com outro remetente" — a conversa É o par (número, telefone), com id
+   * `md5(phone_number_id|telefone)`. Mandando o par no lugar do `conversa_id`, a porta acha ou cria
+   * o fio daquele número. `null`/ausente = responder no fio de sempre, que é 100% do uso de hoje.
+   */
+  canalDestino?: { phone_number_id: string; telefone: string } | null,
 ): Promise<ResultadoEvento> {
   const texto = corpo.trim();
   if (!texto && !midia) return { ok: false, motivo: "mensagem vazia" };
@@ -73,7 +81,9 @@ export async function enviarMensagem(
   // corpo = legenda quando houver mídia. Texto puro segue emitindo o shape idêntico ao de antes.
   // template_id (SPEC-TEMPLATES §6.4): rastro de "partiu deste template" — a porta ignora o
   // campo, o ledger preserva; NENHUM caminho novo de envio, métrica de adoção por SQL.
-  const payload: Record<string, unknown> = { conversa_id: conversaId };
+  // A exclusividade entre "responder no fio" e "abrir fio novo" é regra única, e mora com o resto
+  // da decisão de canal — o porquê está lá, junto do código que o garante.
+  const payload: Record<string, unknown> = montarPayloadEnvio({ conversaId, canalDestino });
   if (texto) payload.corpo = texto;
   if (templateId) payload.template_id = templateId;
   if (midia) {
