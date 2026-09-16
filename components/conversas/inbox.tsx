@@ -49,6 +49,8 @@ import { MarcaJarvis } from "@/components/jarvis/marca";
 import type { AjusteProposta, MotivoDescarte } from "@/components/jarvis/tipos";
 import { BotaoNovaConversa } from "@/components/conversas/nova-conversa";
 import { escolherCanalDeEnvio } from "@/lib/conversas/envio-canal";
+import { fiosIrmaos } from "@/lib/conversas/fios-irmaos";
+import { rotuloDoFio } from "@/lib/conversas/fios-do-lead";
 import { BotaoFoco, ContagemFoco, FimDaFila, MolduraFoco, useAtalhosFoco } from "@/components/conversas/foco";
 import { ItemListaFoco } from "@/components/tarefas/item-lista-foco";
 import { FaixaTarefaConversa } from "@/components/tarefas/faixa-tarefa-conversa";
@@ -258,6 +260,12 @@ export function Inbox({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const selecionada = conversas.find((c) => c.id === selecionadaId) ?? null;
+  /**
+   * 15/09 · OS OUTROS FIOS DESTA PESSOA. Derivado da lista que já está aqui — `ConversaResumo` traz
+   * `lead_id`, a prévia e os quatro campos do número, então não há ida nova ao banco. Parentesco é
+   * por `lead_id` e só: telefone igual sem lead não prova que é a mesma pessoa.
+   */
+  const irmaos = fiosIrmaos(conversas, selecionadaId);
 
   // pendentes = bolhas otimistas locais (RF-32); a lista do servidor é sempre a verdade e a
   // reconciliação remove a pendente quando a projeção confirma a mensagem (match por corpo).
@@ -1646,6 +1654,62 @@ export function Inbox({
                 </div>
               )}
               {propostaManual && propostaManual !== "lendo" && notaDoJarvis(propostaManual, true, "prop-manual")}
+
+              {/* OS FIOS IRMÃOS (15/09) — a pessoa é uma, os números são vários. Vêm DEPOIS do fio
+                  aberto, que continua sendo o centro: cada bloco diz por qual número aquela
+                  conversa corre, mostra a última mensagem, e abre com um clique. Sem irmãos não
+                  desenha nada — lead de um fio só é a esmagadora maioria, e seção vazia vira ruído
+                  permanente para quase todo mundo. */}
+              {irmaos.length > 0 && (
+                <div className="mt-4 flex flex-col gap-2 border-t border-linha pt-3">
+                  <p className="text-[11.5px] font-medium uppercase tracking-wide text-mute">
+                    {irmaos.length === 1
+                      ? "Também falam por outro número"
+                      : `Também falam por outros ${irmaos.length} números`}
+                  </p>
+                  {irmaos.map((f) => {
+                    // os quatro do M7 são OPCIONAIS na linha da lista (a `0094` pode não existir no
+                    // ambiente) e OBRIGATÓRIOS no chip. Normaliza aqui, na fronteira: afrouxar o
+                    // tipo do chip seria ceder a guarda que impede o `phone_number_id` de virar
+                    // rótulo — e é ela que mantém `lite:<fono>` fora da tela.
+                    const chip = rotuloDoFio({
+                      phone_number_id: f.phone_number_id ?? null,
+                      numero_apelido: f.numero_apelido ?? null,
+                      numero_e164: f.numero_e164 ?? null,
+                      finalidade: f.finalidade ?? null,
+                    });
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => router.push(`/conversas?c=${f.id}`)}
+                        className="flex w-full items-center gap-2 rounded-lg border border-linha bg-branco px-3 py-2 text-left transition-colors hover:bg-hover"
+                      >
+                        <span
+                          title={chip.titulo}
+                          className={cn(
+                            "shrink-0 text-[11.5px] font-semibold",
+                            chip.atencao ? "text-amarelo" : "text-suave",
+                          )}
+                        >
+                          {chip.rotulo}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[12.5px] text-mute">
+                          {f.previa ? (
+                            <>
+                              {f.previa_saida ? "Você: " : ""}
+                              {f.previa}
+                            </>
+                          ) : (
+                            "sem mensagem"
+                          )}
+                        </span>
+                        <span className="shrink-0 text-[11.5px] text-navy">abrir</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <div ref={fimRef} />
             </div>
 
