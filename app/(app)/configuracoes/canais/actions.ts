@@ -9,11 +9,13 @@ import {
 import { lerCanal, lerHistoricoNivel } from "@/components/configuracoes/dados/canais";
 import {
   canalIdDoForm,
+  finalidadeDoRegistro,
   payloadCanalAtivado,
   payloadCanalAtualizado,
   payloadCanalDesativado,
   payloadCanalRegistrado,
   podeGerirCanais,
+  registrarComIdLivre,
   semProblemas,
   validarAtivacao,
   validarRegistroCanal,
@@ -40,18 +42,30 @@ import {
 
 const ROTA = "/configuracoes/canais";
 
-export async function registrarCanal(form: FormCanal): Promise<ResultadoAcao> {
+export async function registrarCanal(entrada: FormCanal): Promise<ResultadoAcao> {
+  // 16/09 · "o membro registra sempre produção" vale AQUI, não só na tela: esta action é endpoint, e
+  // quem a chama direto mandaria `teste` — a 0337 não confere finalidade do membro. O papel vem do
+  // servidor. Papel sem regra (marketing, ilegível) segue com o que veio, e a porta o recusa pelo
+  // papel, que é a recusa verdadeira — não por uma finalidade apagada aqui.
+  const papel = await lerPapelAtual();
+  const form: FormCanal = {
+    ...entrada,
+    finalidade: finalidadeDoRegistro(papel, entrada.finalidade) || entrada.finalidade,
+  };
   const problemas = validarRegistroCanal(form);
   if (!semProblemas(problemas)) {
     return { ok: false, motivo: Object.values(problemas)[0], classe: "recusa" };
   }
-  const { payload } = payloadCanalRegistrado(form);
-  return registrarEventoComReadback({
-    tipo: "canal_registrado",
-    payload,
-    idExterno: randomUUID(),
-    revalidar: [ROTA],
-  });
+  // 16/09 · o id `lite:` repetido não trava mais: cada tentativa monta o payload com o SEU id, e o
+  // que ficou gravado volta em `canalId`. No oficial é uma tentativa só (ver `registrarComIdLivre`).
+  return registrarComIdLivre(form, (canalId) =>
+    registrarEventoComReadback({
+      tipo: "canal_registrado",
+      payload: payloadCanalRegistrado(form, canalId).payload,
+      idExterno: randomUUID(),
+      revalidar: [ROTA],
+    }),
+  );
 }
 
 /**

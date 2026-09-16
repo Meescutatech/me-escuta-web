@@ -49,6 +49,11 @@ export interface ResultadoAcao {
    * está inventando identidade. Quem precisa referenciar o que acabou de criar usa este campo.
    */
   eventoId?: string;
+  /**
+   * 16/09 · O id do canal que FICOU gravado. No não oficial ele pode não ser o da prévia
+   * (`lite:ana-2` quando `lite:ana` já existia), e quem pede a sessão logo depois precisa deste.
+   */
+  canalId?: string;
 }
 
 export interface PedidoEscrita {

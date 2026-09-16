@@ -183,6 +183,8 @@ export function descricaoEstadoSessao(e: EstadoSessao): string {
 
 export interface ContextoCriacaoSessao {
   papel: Papel | null;
+  /** quem está logado. Só o membro precisa dele: ele pareia o canal cujo dono é ele. */
+  uid?: string | null;
   canal: Canal | null;
   /** F8 (bloco `conversa` obrigatório) em produção E verificado por V8. Gate duro. */
   f8Pronto: boolean;
@@ -204,11 +206,22 @@ export interface VereditoSessao {
  */
 export function podeCriarSessao(ctx: ContextoCriacaoSessao): VereditoSessao {
   const avisos: string[] = [];
-  if (!podeGerirCanais(ctx.papel)) {
-    return { pode: false, motivo: "criar sessão exige admin ou owner", avisos };
+  if (!podeGerirCanais(ctx.papel) && ctx.papel !== "membro") {
+    return { pode: false, motivo: "criar sessão exige admin, Proprietário ou a dona do número", avisos };
   }
   if (!ctx.canal) {
     return { pode: false, motivo: "registre o canal antes — a sessão se pendura num canal existente", avisos };
+  }
+  /*
+   * 16/09 · O MEMBRO PAREIA O PRÓPRIO CANAL, e só o próprio. Sem isto ele registrava o número e
+   * parava no passo seguinte. Dono vazio nunca casa com uid vazio: os dois precisam existir.
+   */
+  if (!podeGerirCanais(ctx.papel)) {
+    const uid = (ctx.uid ?? "").trim();
+    const dono = (ctx.canal.responsavel_id ?? "").trim();
+    if (!uid || uid !== dono) {
+      return { pode: false, motivo: "você só gera o QR do seu próprio número — os outros ficam com admin e Proprietário", avisos };
+    }
   }
   if (ctx.canal.provedor !== "nao_oficial") {
     return {

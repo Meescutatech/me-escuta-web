@@ -236,6 +236,52 @@ export async function lerCanal(canalId: string): Promise<Canal | null> {
 }
 
 /**
+ * 16/09 · O DONO do canal, lido à parte e não nos degraus da lista.
+ *
+ * Pôr `responsavel_id` nos DEGRAUS seria acorrentar a lista inteira a mais uma coluna — sem ela, o
+ * PostgREST recusaria cada degrau até o de baixo, e a tela perderia `finalidade` e `departamento`
+ * por causa de um campo que só o portão da sessão usa. Aqui a falha vale `null`, e `null` é "de
+ * ninguém": o membro não pareia; a gestão não precisa do dono para parear.
+ */
+export async function lerResponsavelDoCanal(canalId: string): Promise<string | null> {
+  try {
+    const supabase = criarClienteServidor();
+    const { data, error } = await supabase
+      .schema("core")
+      .from("v_canal_whatsapp")
+      .select("responsavel_id")
+      .eq("canal_id", canalId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const id = String((data as { responsavel_id?: unknown }).responsavel_id ?? "").trim();
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 16/09 · ONDE QUEM ESTÁ LOGADO ESTÁ LOTADO — a lista que a porta confere no registro do membro.
+ *
+ * Vem de `api.departamentos_do_uid`, a MESMA função que a 0337 usa para recusar com PMEE6: ler a
+ * lotação crua e expandir a árvore aqui seria a regra morando em dois lugares. `p_uid` nulo é o
+ * próprio chamador (a função faz `coalesce(p_uid, auth.uid())`). Falha vale `null` — "não sei" —, e
+ * para o membro "não sei" não oferece departamento nenhum.
+ */
+export async function lerMinhasLotacoes(): Promise<string[] | null> {
+  try {
+    const supabase = criarClienteServidor();
+    const { data, error } = await supabase.schema("api").rpc("departamentos_do_uid", { p_uid: null });
+    if (error || !Array.isArray(data)) return null;
+    return (data as unknown[])
+      .map((d) => String(typeof d === "object" && d !== null ? Object.values(d)[0] ?? "" : d ?? "").trim())
+      .filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Quantas mensagens deste canal estão em voo na fila de saída.
  *
  * SEMPRE `null` hoje, e isto é fato medido, não preguiça: a fila é `pgmq`, `pgmq` e `ops` estão

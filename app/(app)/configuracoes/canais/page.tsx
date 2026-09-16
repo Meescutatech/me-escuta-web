@@ -1,5 +1,5 @@
-import { lerPapelAtual } from "@/components/configuracoes/dados/porta";
-import { lerCanais } from "@/components/configuracoes/dados/canais";
+import { lerPapelAtual, lerUidAtual } from "@/components/configuracoes/dados/porta";
+import { lerCanais, lerMinhasLotacoes } from "@/components/configuracoes/dados/canais";
 import { lerSessao } from "@/components/configuracoes/dados/lite-sessao";
 import { lerDominioDepartamentos } from "@/lib/dados/departamentos";
 import { lerDadosMembros } from "@/lib/dados/membros-reais";
@@ -46,8 +46,12 @@ export default async function CanaisPage() {
   // 14/09 · as PESSOAS entram na leitura porque o número não oficial é de uma delas: a porta exige
   // `responsavel_id` e recusa o registro sem ele. Lista vazia é estado tratado na tela (o caminho é
   // convidar em Membros), nunca um seletor vazio sem explicação.
-  const [papel, lidos, dominio, membros] = await Promise.all([
+  // 16/09 · o uid entra porque o membro registra o PRÓPRIO número: é ele que fixa o dono no painel.
+  // E as lotações dele, porque a porta só aceita o número num departamento em que ele está (PMEE6).
+  const [papel, uid, lotacoes, lidos, dominio, membros] = await Promise.all([
     lerPapelAtual(),
+    lerUidAtual(),
+    lerMinhasLotacoes(),
     lerCanais(),
     lerDominioDepartamentos(),
     lerDadosMembros(),
@@ -68,6 +72,8 @@ export default async function CanaisPage() {
     <TabelaCanais
       canais={canais}
       meuPapel={papel}
+      meuId={uid}
+      minhasLotacoes={lotacoes}
       indisponivel={lidos.indisponivel}
       f8Pronto={process.env.F8_EM_PRODUCAO === "sim"}
       departamentos={dominio.departamentos}

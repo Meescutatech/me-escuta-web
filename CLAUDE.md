@@ -166,3 +166,29 @@ só vale como prova quando ela própria seria um defeito de verdade.
   reenvio entrega. Não existe allow list nossa de destinatário (medido em 16/09).
   Descartado: pôr 131030 em `ERRO_PERMANENTE` — tiraria o "Tentar de novo" de quem acabou de ser
   incluído na lista.
+
+## feature: canais e números
+
+### O que faz
+A tela de números de WhatsApp (`/configuracoes/canais`): lista, registra, pareia (QR) e liga ou
+desliga canais oficiais e não oficiais. NÃO é dona da regra de quem pode escrever — a guarda de papel
+é da porta (`me-escuta-db`, 0337) — nem da sessão do WuzAPI, que é do runtime.
+
+### Decisões
+- 2026-09-16 · `membro` registra e pareia o PRÓPRIO número não oficial: dono fixo nele, finalidade
+  sempre `producao` (forçada também na action, que é endpoint), departamento obrigatório e só entre
+  as lotações dele (`api.departamentos_do_uid`, a mesma função da PMEE6). Oficial, ligar e desligar
+  continuam da gestão. O portão do QR (`podeCriarSessao`) compara o uid lido no servidor com o dono
+  lido do banco, nunca com o que a tela manda.
+  Motivo: o roteiro de 17/09 manda cada fono cadastrar o seu número; a tela abria em leitura e a saída
+  usada em 15/09 foi promover as três a `admin`. A 0337 já aceitava o membro — a trava era só nossa.
+  Descartado: deixar a fono escolher Teste/Produção; deixar o membro pareá-lo sem ser o dono.
+- 2026-09-16 · id `lite:` repetido tenta `-2`, `-3`… só quando a porta devolve `unique_violation`
+  (classe nova `conflito_id`, que não pede recarregar); cada tentativa leva o seu id no payload, e a
+  tela usa o id GRAVADO para criar a sessão.
+  Motivo: "canal lite:admin-me-escuta ja existe" — uma pessoa não conseguia ter dois números.
+  Descartado: ler a lista de canais para deduplicar antes (o membro não enxerga os canais alheios);
+  trocar o formato do id (mudaria a chave de conversas que já existem).
+- 2026-09-16 · os contadores do topo contam as linhas VISÍVEIS (`contagemDaLista`); "N desligados"
+  é quanto está escondido. O seletor de pessoa passa `items`, senão o Base UI mostra o UUID.
+  Descartado: contar "não oficiais" sobre todos — o topo dizia o que a lista não mostrava.

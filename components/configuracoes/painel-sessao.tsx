@@ -53,12 +53,15 @@ import { Dialogo } from "./dialogo";
 export function PainelSessao({
   canal,
   meuPapel,
+  meuId = null,
   f8Pronto,
   nivelLegivel,
   declaracaoLegivel,
 }: {
   canal: Canal;
   meuPapel: Papel | null;
+  /** 16/09 · sem o uid, o portão diria à dona que o número dela não é dela. */
+  meuId?: string | null;
   f8Pronto: boolean;
   /**
    * D70. `false` = a view não expõe `nivel` nesta base. O bloco de nível DIZ que não leu, em vez
@@ -75,7 +78,7 @@ export function PainelSessao({
    */
   declaracaoLegivel: boolean;
 }) {
-  const veredito = podeCriarSessao({ papel: meuPapel, canal, f8Pronto });
+  const veredito = podeCriarSessao({ papel: meuPapel, uid: meuId, canal, f8Pronto });
   const [estado, setEstado] = useState<EstadoSessaoNaTela | null>(null);
   const [descartes, setDescartes] = useState<PainelDescartes | null>(null);
   const [pendente, iniciar] = useTransition();

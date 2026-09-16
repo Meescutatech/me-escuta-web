@@ -4,10 +4,11 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import {
   lerPapelAtual,
+  lerUidAtual,
   registrarEventoComReadback,
   type ResultadoAcao,
 } from "@/components/configuracoes/dados/porta";
-import { lerCanal } from "@/components/configuracoes/dados/canais";
+import { lerCanal, lerResponsavelDoCanal } from "@/components/configuracoes/dados/canais";
 import {
   contarConversasTocadas24h,
   criarSessaoNoRuntime,
@@ -86,8 +87,16 @@ export async function criarSessao(
   canalId: string,
   ctx: { f8Pronto: boolean },
 ): Promise<EstadoSessaoNaTela> {
-  const [canal, papel] = await Promise.all([lerCanal(canalId), lerPapelAtual()]);
-  const veredito = podeCriarSessao({ papel, canal, f8Pronto: ctx.f8Pronto });
+  // 16/09 · o uid e o dono entram porque o membro pareia o PRÓPRIO canal. Os dois vêm do servidor —
+  // nunca da tela, que poderia dizer que o número é de quem quisesse.
+  const [lido, papel, uid, responsavel] = await Promise.all([
+    lerCanal(canalId),
+    lerPapelAtual(),
+    lerUidAtual(),
+    lerResponsavelDoCanal(canalId),
+  ]);
+  const canal = lido ? { ...lido, responsavel_id: responsavel } : null;
+  const veredito = podeCriarSessao({ papel, uid, canal, f8Pronto: ctx.f8Pronto });
   if (!veredito.pode) {
     return {
       estado: "desconectado",

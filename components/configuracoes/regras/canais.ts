@@ -37,7 +37,13 @@
  *     alguém escolheu um). Limite honesto da guarda: ver `ehFaixaTesteMeta`.
  */
 
-import { montarEnvelope, payloadSeguro, type EnvelopeEvento, type VereditoEscrita } from "./porta.ts";
+import {
+  montarEnvelope,
+  payloadSeguro,
+  type ClasseErroPorta,
+  type EnvelopeEvento,
+  type VereditoEscrita,
+} from "./porta.ts";
 import { ehFolha, ordenar, type Departamento } from "../../../lib/departamentos/escopo.ts";
 
 export type Provedor = "waba" | "nao_oficial";
@@ -157,6 +163,12 @@ export interface Canal {
    * houve — o engano do M7 outra vez.
    */
   nivel_declarado: boolean;
+  /**
+   * 16/09 · DE QUEM É O NÚMERO (`core.usuario.id`). Opcional porque a lista não o lê — só o portão
+   * da sessão precisa dele, e ele o busca à parte (`lerResponsavelDoCanal`). Ausente vale "de
+   * ninguém": o membro não pareia canal cujo dono não se conseguiu ler.
+   */
+  responsavel_id?: string | null;
 }
 
 export const PROVEDORES: Provedor[] = ["waba", "nao_oficial"];
@@ -172,6 +184,156 @@ export function rotuloProvedor(p: Provedor): string {
 /** Gerir canais é ação de gestão. A defesa real é a guarda da porta; aqui é ergonomia. */
 export function podeGerirCanais(papel: Papel | null): boolean {
   return papel === "admin" || papel === "owner";
+}
+
+/*
+ * ════════════════════ 16/09 · A FONO REGISTRA O PRÓPRIO NÚMERO NÃO OFICIAL ════════════════════
+ *
+ * O banco já deixa (migration 0337): `membro` registra canal não oficial cujo `responsavel_id` é
+ * ELE. A tela era o que ainda dizia "só admin e Proprietário". O que continua de gestão, e não
+ * muda aqui: número oficial, ligar e desligar — `podeGerirCanais` segue intacta.
+ *
+ * As regras abaixo são o recorte do membro, e todas falham FECHADO: papel desconhecido, uid
+ * ausente ou pessoa que não se acha na lista não registram nada. A defesa real continua na porta;
+ * aqui é não oferecer o que ela recusaria.
+ */
+
+/** Quem pode registrar um número NÃO oficial: a gestão (qualquer dono) e o membro (só o próprio). */
+export function podeRegistrarNumeroNaoOficial(papel: Papel | null): boolean {
+  return podeGerirCanais(papel) || papel === "membro";
+}
+
+/** O que o "Adicionar número" abre: a escolha de tipo (gestão), direto o não oficial (membro), ou nada. */
+export function entradaAdicionar(papel: Papel | null): "escolher" | "nao_oficial" | null {
+  if (podeGerirCanais(papel)) return "escolher";
+  if (podeRegistrarNumeroNaoOficial(papel)) return "nao_oficial";
+  return null;
+}
+
+/**
+ * De quem o número pode ser. A gestão escolhe entre todos; o membro só enxerga a si mesmo — o
+ * banco recusa `responsavel_id` alheio vindo dele, e oferecer os outros seria prometer a recusa.
+ */
+export function pessoasDoRegistro<P extends { id: string }>(
+  papel: Papel | null,
+  uid: string | null | undefined,
+  pessoas: P[],
+): P[] {
+  if (podeGerirCanais(papel)) return pessoas;
+  if (papel !== "membro" || !uid) return [];
+  return pessoas.filter((p) => p.id === uid);
+}
+
+/**
+ * A finalidade que viaja. O membro não escolhe: o número dele é o de trabalho, e é `producao`
+ * sempre — o "Para quê" não aparece para ele. A gestão registra o que escolheu, inclusive o vazio,
+ * que `validarRegistroCanal` barra (M7: finalidade não tem default para quem escolhe).
+ */
+export function finalidadeDoRegistro(papel: Papel | null, escolhida: Finalidade | ""): Finalidade | "" {
+  if (papel === "membro") return "producao";
+  if (podeGerirCanais(papel)) return escolhida;
+  return "";
+}
+
+export interface PedidoRegistro<P> {
+  papel: Papel | null;
+  uid: string | null | undefined;
+  pessoas: P[];
+  /** a escolha bruta do seletor. O membro não tem seletor, e o valor é ignorado para ele. */
+  pessoaId: string;
+  finalidade: Finalidade | "";
+}
+
+export interface EstadoRegistro<P> {
+  pessoas: P[];
+  pessoa: P | null;
+  /** true = não há o que escolher: o número é de quem está logado. */
+  pessoaFixa: boolean;
+  mostraFinalidade: boolean;
+  finalidade: Finalidade | "";
+  pronto: boolean;
+}
+
+/**
+ * O estado do painel de registro numa regra só. O painel NÃO relê pessoa e finalidade brutas: com
+ * o "Para quê" escondido, o membro teria `finalidade === ""` para sempre e nunca ficaria pronto.
+ */
+export function estadoDoRegistro<P extends { id: string }>(pedido: PedidoRegistro<P>): EstadoRegistro<P> {
+  const pessoas = pessoasDoRegistro(pedido.papel, pedido.uid, pedido.pessoas);
+  const finalidade = finalidadeDoRegistro(pedido.papel, pedido.finalidade);
+  if (pedido.papel === "membro") {
+    const pessoa = pessoas[0] ?? null;
+    return { pessoas, pessoa, pessoaFixa: true, mostraFinalidade: false, finalidade, pronto: pessoa !== null };
+  }
+  if (!podeGerirCanais(pedido.papel)) {
+    return { pessoas, pessoa: null, pessoaFixa: false, mostraFinalidade: false, finalidade, pronto: false };
+  }
+  const pessoa = pessoas.find((p) => p.id === pedido.pessoaId) ?? null;
+  return {
+    pessoas,
+    pessoa,
+    pessoaFixa: false,
+    mostraFinalidade: true,
+    finalidade,
+    pronto: pessoa !== null && finalidadeValida(finalidade),
+  };
+}
+
+/** id → nome, no formato que o `items` do Select quer. Sem ele o gatilho mostra o UUID. */
+export function itensPessoas(pessoas: { id: string; nome: string }[]): Record<string, string> {
+  return Object.fromEntries(pessoas.map((p) => [p.id, p.nome]));
+}
+
+/**
+ * 16/09 · O DEPARTAMENTO DO NÚMERO NÃO OFICIAL É OBRIGATÓRIO — para todo mundo, e para o membro só
+ * entre as lotações dele.
+ *
+ * Medido na 0337 (`porta.validar_acesso_canal`): a Parte B recusa `canal_registrado` não oficial
+ * sem departamento, inclusive da gestão ("legado novo não se fabrica"); a Parte A recusa o do membro
+ * com PMEE6 quando o departamento não está em `api.departamentos_do_uid` dele. O painel dizia "Dá
+ * para declarar depois", e não dá: `canal_atualizado` continua só com a gestão, e a fono que não
+ * escolhesse recebia o erro cru do banco.
+ *
+ * `lotacoes` é a lista JÁ EXPANDIDA pelo banco (pai cobre filho, clínico só por lotação explícita) —
+ * a árvore não se refaz aqui. `null` = não deu para ler, e para o membro isso vale "nenhuma": sem
+ * saber onde ele está lotado, qualquer oferta seria prometer a recusa.
+ */
+export interface PedidoDepartamento {
+  papel: Papel | null;
+  departamentos: Departamento[];
+  lotacoes: string[] | null;
+  /** a escolha bruta do seletor. `""` = não escolhido. */
+  departamento: string;
+}
+
+export interface EstadoDepartamento {
+  opcoes: Departamento[];
+  valido: boolean;
+  /** o que falta, dito para quem está na tela. `null` quando está tudo certo. */
+  falta: string | null;
+}
+
+export function estadoDoDepartamento(pedido: PedidoDepartamento): EstadoDepartamento {
+  const folhasAtivas = pedido.departamentos.filter((d) => d.ativo && d.nivel > 1);
+  let opcoes: Departamento[] = [];
+  if (podeGerirCanais(pedido.papel)) {
+    opcoes = folhasAtivas;
+  } else if (pedido.papel === "membro") {
+    const minhas = new Set(pedido.lotacoes ?? []);
+    opcoes = folhasAtivas.filter((d) => minhas.has(d.chave));
+  }
+  const escolhido = (pedido.departamento ?? "").trim();
+  const valido = escolhido.length > 0 && opcoes.some((d) => d.chave === escolhido);
+  let falta: string | null = null;
+  if (opcoes.length === 0) {
+    falta =
+      pedido.papel === "membro"
+        ? "Você não está lotada em nenhum departamento que receba número. Peça a um admin para conferir a sua lotação em Membros."
+        : "Nenhum departamento disponível — o domínio de departamentos não foi lido.";
+  } else if (!valido) {
+    falta = "Escolha o departamento — o número não nasce sem um.";
+  }
+  return { opcoes, valido, falta };
 }
 
 // ═════════════════════════════ D70 · O NIVEL DO CANAL ═════════════════════════════
@@ -371,6 +533,15 @@ export function slugApelido(nome: string): string {
 
 export function canalIdNaoOficial(nome: string): string {
   return `${PREFIXO_LITE}${slugApelido(nome)}`;
+}
+
+/**
+ * 16/09 · A N-ÉSIMA tentativa de id. `lite:<slug>` é derivado do nome, e nome repete: duas Anas,
+ * ou o mesmo número registrado de novo depois de desligado (não há evento de remoção). A primeira
+ * tentativa é a base, e o sufixo só aparece quando a base está ocupada — o id de sempre não muda.
+ */
+export function proximoCanalIdLite(base: string, tentativa: number): string {
+  return tentativa <= 1 ? base : `${base}-${tentativa}`;
 }
 
 export function ehCanalNaoOficialId(id: string): boolean {
@@ -660,8 +831,12 @@ export interface PayloadECanalId {
   payload: Record<string, unknown>;
 }
 
-export function payloadCanalRegistrado(f: FormCanal): PayloadECanalId {
-  const canalId = canalIdDoForm(f);
+/**
+ * `canalId` explícito é o da TENTATIVA (`registrarComIdLivre`). Sem ele, o id sai do form, como
+ * sempre saiu — derivar de novo aqui faria as três tentativas gravarem a mesma chave.
+ */
+export function payloadCanalRegistrado(f: FormCanal, canalIdTentado?: string): PayloadECanalId {
+  const canalId = (canalIdTentado ?? "").trim() || canalIdDoForm(f);
   const payload: Record<string, unknown> = {
     canal_id: canalId,
     nome: (f.nome ?? "").trim(),
@@ -685,6 +860,53 @@ export function payloadCanalRegistrado(f: FormCanal): PayloadECanalId {
   // e a omissão só acontece num ambiente onde a coluna ainda não existe.
   if (finalidadeValida(f.finalidade)) payload.finalidade = f.finalidade;
   return { canalId, payload };
+}
+
+/** O mínimo que `registrarComIdLivre` precisa ler da escrita — o `ResultadoAcao` do servidor cabe. */
+export interface ResultadoDaTentativa {
+  ok: boolean;
+  motivo?: string;
+  classe?: ClasseErroPorta;
+}
+
+/**
+ * 16/09 · REGISTRAR COM O PRÓXIMO ID LIVRE — só no não oficial, e só por conflito de id.
+ *
+ * Medido: "canal lite:admin-me-escuta ja existe" travava o cadastro, e a pessoa não tinha o que
+ * mudar na tela (o id sai do nome dela). Aqui a escrita é tentada com `base`, `base-2`, `base-3`…
+ * e para na primeira que não for `conflito_id`. Qualquer outra falha volta na hora: tentar outro id
+ * depois de uma recusa de permissão só repetiria a recusa.
+ *
+ * O oficial NÃO ganha sufixo: o id dele é o `phone_number_id` da Meta, declarado. Id declarado
+ * repetido é recusa, e inventar `waba-principal-2` seria criar um número que a Meta não conhece.
+ *
+ * Quem escreve recebe o id da tentativa e é obrigado a montar o payload COM ELE; o id gravado volta
+ * em `canalId`, e é esse que a tela usa para pedir a sessão — não a prévia.
+ */
+export async function registrarComIdLivre<R extends ResultadoDaTentativa>(
+  f: FormCanal,
+  escrever: (canalId: string) => Promise<R>,
+  maxTentativas = 5,
+): Promise<R & { canalId?: string }> {
+  const base = canalIdDoForm(f);
+  // NaN e Infinity viram o padrão: `Math.max(1, NaN)` é NaN, o laço não rodaria e a função
+  // devolveria um resultado sem `ok` — pior que qualquer número de tentativas.
+  const pedidas = Number.isFinite(maxTentativas) ? Math.floor(maxTentativas) : 5;
+  const limite = f.provedor === "nao_oficial" ? Math.max(1, pedidas) : 1;
+  let ultimo: R | null = null;
+  for (let n = 1; n <= limite; n++) {
+    const canalId = proximoCanalIdLite(base, n);
+    const r = await escrever(canalId);
+    if (r.ok) return { ...r, canalId };
+    // o `provedor` aqui NÃO repete o `limite`: sem ele, o conflito do oficial cairia no motivo de
+    // "mude o nome", que não se aplica a id declarado
+    if (r.classe !== "conflito_id" || f.provedor !== "nao_oficial") return r;
+    ultimo = r;
+  }
+  return {
+    ...(ultimo as R),
+    motivo: `os ids de ${base} até ${proximoCanalIdLite(base, limite)} já estão em uso — mude o nome do canal e tente de novo`,
+  };
 }
 
 /**
@@ -865,4 +1087,34 @@ export function ordenarCanais(canais: Canal[]): Canal[] {
       a.provedor.localeCompare(b.provedor) ||
       a.nome.localeCompare(b.nome, "pt-BR"),
   );
+}
+
+/**
+ * 16/09 · OS CONTADORES DO TOPO saem daqui, e contam o que a pessoa VÊ.
+ *
+ * O card: "2 números · 1 não oficial" com duas linhas na tela, ambas oficiais — o não oficial era
+ * o desligado escondido, contado entre os visíveis. Agora `numeros` e `naoOficiais` contam as
+ * linhas visíveis, e o escondido aparece uma vez só, como escondido.
+ *
+ * `desligadosEscondidos` é zero com busca (a busca ignora o filtro de desligados) e com os
+ * desligados à mostra — nos dois casos nada está escondido.
+ */
+export interface ContagemDaLista {
+  numeros: number;
+  desligadosEscondidos: number;
+  naoOficiais: number;
+}
+
+export function contagemDaLista(pedido: {
+  todos: { ativo: boolean; provedor: Provedor }[];
+  visiveis: { ativo: boolean; provedor: Provedor }[];
+  busca: string;
+  verDesligados: boolean;
+}): ContagemDaLista {
+  const escondendo = !pedido.verDesligados && (pedido.busca ?? "").trim().length === 0;
+  return {
+    numeros: pedido.visiveis.length,
+    desligadosEscondidos: escondendo ? pedido.todos.filter((c) => !c.ativo).length : 0,
+    naoOficiais: pedido.visiveis.filter((c) => c.provedor === "nao_oficial").length,
+  };
 }

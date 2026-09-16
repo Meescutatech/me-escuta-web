@@ -23,6 +23,8 @@ import {
   canalIdDoForm,
   colunasVisiveis,
   avisoDesativacao,
+  contagemDaLista,
+  entradaAdicionar,
   estadoDoCanal,
   opcoesDepartamento,
   ordenarCanais,
@@ -153,6 +155,8 @@ const SELETOR =
 export function TabelaCanais({
   canais,
   meuPapel,
+  meuId = null,
+  minhasLotacoes = null,
   indisponivel,
   f8Pronto,
   departamentos,
@@ -164,6 +168,10 @@ export function TabelaCanais({
 }: {
   canais: CanalNaTela[];
   meuPapel: Papel | null;
+  /** uid de quem está logado. O membro registra o PRÓPRIO número, e é este id que fixa o dono. */
+  meuId?: string | null;
+  /** onde quem está logado está lotado, já expandido pelo banco. `null` = não deu para ler. */
+  minhasLotacoes?: string[] | null;
   indisponivel: boolean;
   f8Pronto: boolean;
   /** R22/A1 · o domínio vindo de `core.v_departamento`, já ordenado. Nunca uma constante local. */
@@ -181,6 +189,9 @@ export function TabelaCanais({
 }) {
   const router = useRouter();
   const gestor = podeGerirCanais(meuPapel);
+  /* 16/09 · "Adicionar número" deixou de ser só da gestão: a gestão escolhe o tipo, o membro vai
+     direto ao próprio número não oficial. Oficial, ligar e desligar continuam com `gestor`. */
+  const entrada = entradaAdicionar(meuPapel);
   const [busca, setBusca] = useState("");
   const [abrindo, setAbrindo] = useState(false);
   /* 14/09 · o número NÃO OFICIAL saiu do formulário inline e virou um painel lateral com o QR.
@@ -210,7 +221,6 @@ export function TabelaCanais({
    * por ele, e sumir com o resultado da busca seria a tela dizendo que ele não existe.
    */
   const [verDesligados, setVerDesligados] = useState(false);
-  const desligados = ordenados.filter((c) => !c.ativo).length;
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -222,7 +232,10 @@ export function TabelaCanais({
     return verDesligados ? ordenados : ordenados.filter((c) => c.ativo);
   }, [ordenados, busca, verDesligados]);
 
-  const naoOficiais = ordenados.filter((c) => c.provedor === "nao_oficial").length;
+  // 16/09 · os contadores contam o que está NA TELA, numa regra só. Antes o "1 não oficial" contava
+  // o desligado escondido, e o topo dizia uma coisa que a lista abaixo não mostrava.
+  const { numeros, desligadosEscondidos, naoOficiais } = contagemDaLista({ todos: ordenados, visiveis: filtrados, busca, verDesligados });
+  const podeEsconder = verDesligados && !busca.trim() && filtrados.some((c) => !c.ativo);
 
   // Uma coluna escondida some da grade inteira — cabeçalho, célula e largura saem juntos.
   const larguras = [
@@ -266,8 +279,8 @@ export function TabelaCanais({
       titulo="Números de WhatsApp"
       descricao="Os números por onde a operação fala, e o que cada um está autorizado a fazer. Registrar um número não exige deploy; ele nasce desligado."
       acao={
-        gestor ? (
-          <Button onClick={() => setAbrindo(true)}>
+        entrada ? (
+          <Button onClick={() => (entrada === "escolher" ? setAbrindo(true) : setConectando(true))}>
             <PlusIcon data-icon="inline-start" />
             Adicionar número
           </Button>
@@ -291,11 +304,11 @@ export function TabelaCanais({
         </label>
         <Contagem>
           {busca.trim()
-            ? `${filtrados.length} de ${ordenados.length} ${ordenados.length === 1 ? "número" : "números"}`
-            : `${filtrados.length} ${filtrados.length === 1 ? "número" : "números"}`}
+            ? `${numeros} de ${ordenados.length} ${ordenados.length === 1 ? "número" : "números"}`
+            : `${numeros} ${numeros === 1 ? "número" : "números"}`}
           {/* A lista nunca mente sobre quantos existem: o que está escondido é dito, e se traz de
               volta com um clique. */}
-          {!busca.trim() && desligados > 0 ? (
+          {desligadosEscondidos > 0 || podeEsconder ? (
             <>
               {" · "}
               <button
@@ -303,7 +316,9 @@ export function TabelaCanais({
                 onClick={() => setVerDesligados((v) => !v)}
                 className="underline-offset-2 hover:text-foreground hover:underline"
               >
-                {verDesligados ? "esconder os desligados" : `${desligados} desligado${desligados === 1 ? "" : "s"}`}
+                {verDesligados
+                  ? "esconder os desligados"
+                  : `${desligadosEscondidos} desligado${desligadosEscondidos === 1 ? "" : "s"}`}
               </button>
             </>
           ) : null}
@@ -313,10 +328,15 @@ export function TabelaCanais({
         </Contagem>
       </div>
 
-      {!gestor ? (
+      {entrada === "nao_oficial" ? (
         <p className="text-ui-13 leading-relaxed text-muted-foreground">
-          Você está vendo esta tela em leitura. Só <b>admin</b> e <b>Proprietário</b> registram
-          números e ligam ou desligam canais.
+          Você pode registrar o seu próprio número pessoal e gerar o QR dele. Número oficial e ligar
+          ou desligar canais ficam com <b>admin</b> e <b>Proprietário</b>.
+        </p>
+      ) : !gestor ? (
+        <p className="text-ui-13 leading-relaxed text-muted-foreground">
+          Você está vendo esta tela em leitura. Números e canais são geridos por <b>admin</b> e{" "}
+          <b>Proprietário</b>.
         </p>
       ) : null}
 
@@ -381,7 +401,7 @@ export function TabelaCanais({
         </Alert>
       ) : null}
 
-      {abrindo ? (
+      {gestor && abrindo ? (
         <BlocoAdicionar
           aoFechar={() => setAbrindo(false)}
           aoErro={setErro}
@@ -401,6 +421,9 @@ export function TabelaCanais({
         pessoas={pessoas}
         departamentos={departamentos}
         f8Pronto={f8Pronto}
+        meuPapel={meuPapel}
+        meuId={meuId}
+        minhasLotacoes={minhasLotacoes}
       />
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -447,8 +470,8 @@ export function TabelaCanais({
                     Nenhum número registrado.
                   </span>
                   <span>Registre o primeiro para a operação começar a falar por aqui.</span>
-                  {gestor ? (
-                    <Button onClick={() => setAbrindo(true)}>
+                  {entrada ? (
+                    <Button onClick={() => (entrada === "escolher" ? setAbrindo(true) : setConectando(true))}>
                       <PlusIcon data-icon="inline-start" />
                       Adicionar número
                     </Button>
@@ -473,6 +496,7 @@ export function TabelaCanais({
                   aoDesativar={() => setConfirmar(c)}
                   aoAtivar={(corte) => ativar(c, corte)}
                   meuPapel={meuPapel}
+                  meuId={meuId}
                   f8Pronto={f8Pronto}
                 />
               ))
@@ -558,6 +582,7 @@ function LinhaCanal({
   aoDesativar,
   aoAtivar,
   meuPapel,
+  meuId,
   f8Pronto,
   departamentos,
   r22Legivel,
@@ -578,6 +603,7 @@ function LinhaCanal({
   aoDesativar: () => void;
   aoAtivar: (corte: string) => void;
   meuPapel: Papel | null;
+  meuId: string | null;
   f8Pronto: boolean;
 }) {
   const [corte, setCorte] = useState("");
@@ -866,6 +892,7 @@ function LinhaCanal({
             <PainelSessao
               canal={canal}
               meuPapel={meuPapel}
+              meuId={meuId}
               f8Pronto={f8Pronto}
               nivelLegivel={nivelLegivel}
               declaracaoLegivel={declaracaoLegivel}

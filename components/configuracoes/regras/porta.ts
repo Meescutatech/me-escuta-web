@@ -27,6 +27,8 @@ export interface VereditoEscrita {
  *  - `sem_bloco_conversa`→ PMEE2: evento de mensagem sem o bloco `conversa` (F8)
  *  - `permissao`         → papel insuficiente: degradar a tela para leitura
  *  - `recusa`            → a porta recusou o conteúdo com motivo legível: manter o form aberto
+ *  - `conflito_id`       → a chave que eu escolhi já existe (unique_violation). Quem deriva a chave
+ *                          tenta a próxima; quem a declarou (o oficial) mostra o motivo e para
  *  - `indisponivel`      → o objeto do banco ainda não existe neste ambiente (migration não subiu)
  *  - `outro`             → o resto
  */
@@ -36,6 +38,7 @@ export type ClasseErroPorta =
   | "sem_bloco_conversa"
   | "permissao"
   | "recusa"
+  | "conflito_id"
   | "indisponivel"
   | "outro";
 
@@ -50,7 +53,14 @@ const POR_SQLSTATE: Record<string, ClasseErroPorta> = {
   "42501": "permissao", // insufficient_privilege
   "23514": "recusa", // check_violation
   "22023": "recusa", // invalid_parameter_value
-  "23505": "recusa", // unique_violation
+  /*
+   * 16/09 · unique_violation SAIU de `recusa`. A porta levanta esse errcode quando o `canal_id` já
+   * existe (0098: "canal % ja existe"), e o id `lite:` é DERIVADO do nome — duas pessoas com o mesmo
+   * nome, ou o mesmo número registrado de novo, travavam o cadastro sem saída. Com classe própria,
+   * `registrarComIdLivre` distingue "o id está ocupado, tente o próximo" de "a porta recusou o
+   * conteúdo". Não pede recarregar: não é versão velha, é chave repetida.
+   */
+  "23505": "conflito_id", // unique_violation
   "23503": "recusa", // foreign_key_violation
   PMEE3: "descarte_esperado", // contraparte desconhecida em canal não oficial
   PMEE2: "sem_bloco_conversa",
@@ -77,7 +87,7 @@ const POR_NOME: Record<string, ClasseErroPorta> = {
   insufficient_privilege: "permissao",
   check_violation: "recusa",
   invalid_parameter_value: "recusa",
-  unique_violation: "recusa",
+  unique_violation: "conflito_id",
   foreign_key_violation: "recusa",
   undefined_function: "indisponivel",
   undefined_table: "indisponivel",
