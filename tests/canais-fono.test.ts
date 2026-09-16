@@ -122,31 +122,22 @@ test("A14 · entradaAdicionar: gestor escolhe o tipo; membro vai direto ao não 
   assert.equal(f(null), null);
 });
 
-test("A15 · tela: o botão 'Adicionar número' não depende só de `gestor` e abre o painel do não oficial para o membro", () => {
+test("A15 · tela: 'Adicionar número' abre o PAINEL para todo papel que registra — a escolha de tipo mora nele", () => {
   const tabela = ler(TABELA);
   assert.match(tabela, /entradaAdicionar\s*\(\s*meuPapel\s*\)/, "tabela-canais não decide a entrada por entradaAdicionar(meuPapel)");
   const i = tabela.indexOf("<CascaConfig");
   assert.notEqual(i, -1, "CascaConfig sumiu da tabela — reescrever este teste");
   const acao = valorDoAtributo(tagDeAbertura(tabela, i), "acao");
   assert.ok(acao, "CascaConfig sem `acao` — o botão de adicionar sumiu");
-  assert.doesNotMatch(acao, /^gestor\s*\?/, "o botão ainda só aparece para gestor");
   assert.match(acao, /Adicionar número/);
-  assert.match(acao, /setAbrindo\(\s*true\s*\)/, "gestor perdeu o formulário de escolha");
-  assert.match(acao, /setConectando\(\s*true\s*\)/, "membro não abre direto o painel do não oficial");
+  assert.match(acao, /setConectando\(\s*true\s*\)/, "o botão não abre o painel");
+  assert.doesNotMatch(acao, /setAbrindo/, "o botão ainda abre o formulário inline");
 });
-
-test("A16 · tela: o formulário do OFICIAL (BlocoAdicionar) só se desenha para gestor", () => {
+test("A16 · tela: o formulário do OFICIAL saiu da tabela — mora no painel (FormNumeroOficial)", () => {
   const tabela = ler(TABELA);
-  const i = tabela.indexOf("<BlocoAdicionar");
-  assert.notEqual(i, -1, "o formulário do oficial (BlocoAdicionar) sumiu da tabela — reescrever este teste");
-  const condicao = tabela.slice(tabela.lastIndexOf("{", i), i).replace(/\s+/g, " ").trim();
-  assert.match(
-    condicao,
-    /^\{ ?(gestor && abrindo|abrindo && gestor) \? \($/,
-    `BlocoAdicionar precisa de \`gestor && abrindo\` na própria condição — achei: ${condicao}`,
-  );
+  assert.doesNotMatch(tabela, /<BlocoAdicionar\b/, "a tabela ainda desenha o formulário inline");
+  assert.doesNotMatch(tabela, /function\s+BlocoAdicionar\b/, "BlocoAdicionar ficou na tabela sem uso");
 });
-
 test("A17 · tela: o texto de leitura do membro diz que ele registra o próprio número, e não que só gestor registra", () => {
   const tabela = ler(TABELA);
   assert.doesNotMatch(
@@ -738,28 +729,20 @@ test("E15 · painel: não tem seletor de pessoa, nem 'Para quê', nem Número, n
   assert.doesNotMatch(sheet, /\b(estadoDoRegistro|estadoDoDepartamento|itensPessoas)\b/, "o painel ainda usa regra do formulário antigo");
 });
 
-test("E16 · painel: tem o aviso de ban e o botão, e o aviso vem ANTES do botão", () => {
+test("E16 · painel: sem o aviso de ban — o seletor já diz o risco do não oficial", () => {
   const sheet = ler(SHEET);
-  const aviso = sheet.indexOf("{AVISO_RISCO_BAN}");
-  assert.notEqual(aviso, -1, "o aviso de ban sumiu do painel");
-  const botao = sheet.search(/<Button\b[^>]*onClick=\{\s*registrarEParear\s*\}/);
-  assert.notEqual(botao, -1, "o botão de registrar sumiu do painel");
-  assert.ok(aviso < botao, "o aviso de ban aparece depois do botão");
+  assert.doesNotMatch(sheet, /\{AVISO_RISCO_BAN\}/, "o aviso de ban ainda aparece no painel");
+  assert.match(sheet, /Oficial \(WhatsApp Cloud API\)/, "o painel não oferece o oficial");
+  assert.match(sheet, /Não oficial \(biblioteca\)/, "o painel não oferece o não oficial");
+  assert.match(sheet, /pode ser banido/i, "o risco do não oficial sumiu da opção");
 });
-
-test("E17 · painel: o botão não fica travado esperando campo — só enquanto grava", () => {
+test("E17 · painel: escolher 'Não oficial' registra NA HORA — sem botão esperando campo", () => {
   const sheet = ler(SHEET);
-  const i = sheet.search(/<Button\b[^>]*onClick=\{\s*registrarEParear\s*\}/);
-  assert.notEqual(i, -1, "o botão de registrar sumiu do painel");
-  const tag = tagDeAbertura(sheet, i);
-  const disabled = valorDoAtributo(tag, "disabled");
-  assert.ok(disabled, "o botão não trava nem enquanto grava — clique duplo registraria dois canais");
-  assert.match(disabled, /\bgravando\b/);
-  assert.doesNotMatch(disabled, /pronto|pessoa|finalidade|departamento|numero|depto/, `o botão ainda espera campo: disabled={${disabled}}`);
+  assert.match(sheet, /onClick=\{\s*registrarEParear\s*\}|onClick=\{\s*\(\)\s*=>\s*registrarEParear\(\s*\)\s*\}/, "a opção não oficial não dispara o registro");
   const corpo = trechoLocal(sheet, "registrarEParear", "fechar");
   assert.doesNotMatch(corpo, /if\s*\(\s*!\s*(pessoa|pronto)\b/, "registrarEParear ainda sai cedo esperando campo");
+  assert.match(corpo, /if\s*\(\s*gravando\s*\)\s*return/, "clique duplo registraria dois canais — falta `if (gravando) return`");
 });
-
 test("E22 · painel: sem prévia do id — a tela não monta form nem tem nome para prever", () => {
   // Decisão do Diogo: o formulário tem SÓ o aviso e o botão. A prévia precisaria de um nome no
   // cliente, e o nome agora é do servidor; montar um form local só para a prévia reabre a porta
@@ -779,12 +762,75 @@ test("E18 · painel: registra por registrarMeuNumero(), sem mandar nada do clien
   assert.doesNotMatch(sheet, /responsavelId/, "o painel ainda monta o dono do número");
 });
 
-test("E19 · tabela: não entrega ao painel pessoas, departamentos nem lotações", () => {
+// 16/09 (tarde): o formulário do OFICIAL foi para o painel e precisa do domínio de departamentos.
+// O que continua proibido é o painel escolher DONO ou lotação do número pessoal.
+test("E19 · tabela: não entrega ao painel pessoas nem lotações", () => {
   const tabela = ler(TABELA);
   const i = tabela.indexOf("<SheetNumeroLite");
   assert.notEqual(i, -1, "SheetNumeroLite sumiu da tabela");
   const tag = tagDeAbertura(tabela, i);
-  for (const prop of ["pessoas", "departamentos", "minhasLotacoes"]) {
+  for (const prop of ["pessoas", "minhasLotacoes"]) {
     assert.doesNotMatch(tag, new RegExp(`\\b${prop}=`), `o painel ainda recebe \`${prop}\` — o formulário enxuto não escolhe nada`);
   }
+});
+
+// ═══════════ F · painel com seletor, carregando e QR rápido (16/09, tarde) ═══════════
+
+const FORM_OFICIAL = "../components/configuracoes/form-numero-oficial.tsx";
+
+test("F1 · momentoInicialDoPainel: gestão escolhe o tipo; a fono vai direto para 'gerando'; quem não registra não abre", () => {
+  const f = regra("momentoInicialDoPainel");
+  assert.equal(f("admin"), "escolher");
+  assert.equal(f("owner"), "escolher");
+  assert.equal(f("membro"), "gerando");
+  assert.equal(f("marketing"), null);
+  assert.equal(f(null), null);
+});
+
+test("F2 · intervaloRelituraMs: sem QR ainda, relê a cada 1 s; com QR, a cada 5 s", () => {
+  const f = regra("intervaloRelituraMs", ls, "components/configuracoes/regras/lite-sessao.ts");
+  assert.equal(f("aguardando_qr", false, false), 1_000, "sem QR a tela esperava o ciclo de 5 s (medido: QR pronto às :23, mostrado às :29)");
+  assert.equal(f("aguardando_qr", false, true), 5_000);
+  assert.equal(f("aguardando_qr"), 5_000, "sem o terceiro argumento, o comportamento de antes");
+  assert.equal(f("conectado", false, false), null, "conectado para de reler");
+});
+
+test("F3 · telaDoQr: 'gerando' enquanto grava ou enquanto o QR não chegou; depois qr, conectado ou erro", () => {
+  const f = regra("telaDoQr", ls, "components/configuracoes/regras/lite-sessao.ts");
+  assert.equal(f({ gravando: true, sessao: null, erro: null }), "gerando");
+  assert.equal(f({ gravando: false, sessao: null, erro: null }), "gerando", "antes da primeira resposta do runtime");
+  assert.equal(f({ gravando: false, sessao: { estado: "aguardando_qr", temQr: false, motivo: null }, erro: null }), "gerando");
+  assert.equal(f({ gravando: false, sessao: { estado: "aguardando_qr", temQr: true, motivo: null }, erro: null }), "qr");
+  assert.equal(f({ gravando: false, sessao: { estado: "conectado", temQr: false, motivo: null }, erro: null }), "conectado");
+  assert.equal(f({ gravando: false, sessao: { estado: "desconectado", temQr: false, motivo: "recusado" }, erro: null }), "erro");
+  assert.equal(f({ gravando: false, sessao: null, erro: "falhou" }), "erro");
+});
+
+test("F4 · painel: a primeira tela vem de momentoInicialDoPainel, e a fono já começa registrando", () => {
+  const sheet = ler(SHEET);
+  assert.match(sheet, /momentoInicialDoPainel\s*\(\s*meuPapel\s*\)/, "o painel não decide a primeira tela pelo papel");
+  assert.match(sheet, /useEffect\([\s\S]{0,400}?registrarEParear\(\s*\)/, "a fono não começa a registrar ao abrir o painel");
+});
+
+test("F5 · painel: a tela 'gerando' diz que o QR está sendo gerado, e a tela vem de telaDoQr", () => {
+  const sheet = ler(SHEET);
+  assert.match(sheet, /telaDoQr\s*\(/, "o painel não usa telaDoQr");
+  assert.match(sheet, /Gerando o QR/, "não há tela de carregamento do QR");
+});
+
+test("F6 · painel: a releitura sabe se o QR já chegou", () => {
+  const sheet = ler(SHEET);
+  const v = /const\s+(\w+)\s*=\s*Boolean\(\s*sessao\?\.qr\b[^)]*\)/.exec(sheet)?.[1];
+  assert.ok(v, "o painel não deriva da sessão se o QR já chegou");
+  assert.match(sheet, new RegExp(`intervaloRelituraMs\\(\\s*[^,)]+,\\s*[^,)]+,\\s*${v}\\s*\\)`), "o painel relê sem dizer se já tem QR — volta a esperar 5 s");
+});
+
+test("F7 · o formulário do oficial mora em form-numero-oficial.tsx, registra por registrarCanal e só oferece oficial", () => {
+  const form = ler(FORM_OFICIAL);
+  assert.match(form, /export\s+function\s+FormNumeroOficial\b/);
+  assert.match(form, /registrarCanal\s*\(/);
+  assert.doesNotMatch(form, /nao_oficial/, "o formulário do oficial ainda conhece o não oficial");
+  const sheet = ler(SHEET);
+  assert.match(sheet, /<FormNumeroOficial\b/, "o painel não desenha o formulário do oficial");
+  assert.match(sheet, /momento\s*===\s*["']oficial["']/, "o formulário do oficial não depende do momento 'oficial'");
 });

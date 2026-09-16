@@ -87,6 +87,11 @@ export function proximoEstado(atual: EstadoSessao, evento: EventoSessao): Estado
 }
 
 export const INTERVALO_RELEITURA_MS = 5_000;
+/**
+ * 16/09 · enquanto o PRIMEIRO QR não chegou. Medido: o WuzAPI gera o QR ~0,7 s depois do `connect`,
+ * a primeira leitura sai antes disso, e com 5 s o QR pronto às :23 só aparecia às :29.
+ */
+export const INTERVALO_RELEITURA_SEM_QR_MS = 1_000;
 
 /**
  * EARS: relê a cada 5 s ENQUANTO aguarda pareamento; PARA de reler quando conecta. Devolver
@@ -96,6 +101,8 @@ export const INTERVALO_RELEITURA_MS = 5_000;
 export function intervaloRelituraMs(
   estado: EstadoSessao,
   provedorIndisponivel = false,
+  /** `false` = aguardando e o QR ainda não veio: relê rápido até ele chegar. */
+  temQr = true,
 ): number | null {
   // ⚠️ NÃO SEI ≠ DESCONECTADO. Enquanto o runtime não conseguir falar com o provedor, continuar
   // relendo é a ÚNICA forma de a tela voltar sozinha quando a rede voltar. Parar aqui é o defeito
@@ -103,7 +110,29 @@ export function intervaloRelituraMs(
   // com a instância viva esperando o scan, e só um F5 desfaz. O estado que chega junto é o último
   // conhecido — reler sobre ele é barato e converge; parar é definitivo.
   if (provedorIndisponivel) return INTERVALO_RELEITURA_MS;
-  return estado === "aguardando_qr" ? INTERVALO_RELEITURA_MS : null;
+  if (estado !== "aguardando_qr") return null;
+  return temQr ? INTERVALO_RELEITURA_MS : INTERVALO_RELEITURA_SEM_QR_MS;
+}
+
+export type TelaDoQr = "gerando" | "qr" | "conectado" | "erro";
+
+/**
+ * 16/09 · o que o painel mostra depois de escolher "Não oficial". "Gerando o QR…" cobre o registro,
+ * o provisionamento e a espera do primeiro QR — antes, o quadro vazio dizia "nenhum código ativo"
+ * nesses segundos, que é mentira: o código está a caminho.
+ */
+export function telaDoQr(pedido: {
+  gravando: boolean;
+  sessao: { estado: EstadoSessao; temQr: boolean; motivo: string | null } | null;
+  erro: string | null;
+}): TelaDoQr {
+  if (pedido.erro) return "erro";
+  if (pedido.gravando || !pedido.sessao) return "gerando";
+  const { estado, temQr, motivo } = pedido.sessao;
+  if (estado === "conectado") return "conectado";
+  if (motivo) return "erro";
+  if (estado === "aguardando_qr") return temQr ? "qr" : "gerando";
+  return "erro";
 }
 
 export function devoRelerEstado(estado: EstadoSessao, provedorIndisponivel = false): boolean {

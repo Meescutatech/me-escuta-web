@@ -15,31 +15,24 @@ import {
 import {
   ativarCanal,
   desativarCanal,
-  registrarCanal,
 } from "@/app/(app)/configuracoes/canais/actions";
 import {
   AVISO_APLICACAO_RUNTIME,
   AVISO_RISCO_BAN,
-  canalIdDoForm,
   colunasVisiveis,
   avisoDesativacao,
   contagemDaLista,
   entradaAdicionar,
   estadoDoCanal,
-  opcoesDepartamento,
   ordenarCanais,
   podeGerirCanais,
   rotuloDepartamento,
   rotuloEstadoCanal,
   rotuloFinalidade,
-  semProblemas,
-  validarRegistroCanal,
   TEXTO_FINALIDADE_AUSENTE,
   TEXTO_NUMERO_DE_TESTE,
   type Canal,
-  type FormCanal,
   type Papel,
-  type Provedor,
 } from "./regras/canais.ts";
 import type { Departamento } from "@/lib/departamentos/escopo";
 import { PainelSessao } from "./painel-sessao";
@@ -62,7 +55,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FormItemLayout } from "@/components/ui/form-item-layout";
 import { HintTooltip } from "@/components/ui/hint-tooltip";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -148,9 +140,6 @@ export interface CanalNaTela extends Canal {
  * humana, porque isto já aconteceu uma vez.
  */
 
-/** `<select>` nativo com a pele do `Input` do preset. Nativo de propósito: ver `CampoDepartamento`. */
-const SELETOR =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function TabelaCanais({
   canais,
@@ -187,7 +176,6 @@ export function TabelaCanais({
      direto ao próprio número não oficial. Oficial, ligar e desligar continuam com `gestor`. */
   const entrada = entradaAdicionar(meuPapel);
   const [busca, setBusca] = useState("");
-  const [abrindo, setAbrindo] = useState(false);
   /* 14/09 · o número NÃO OFICIAL saiu do formulário inline e virou um painel lateral com o QR.
      O oficial continua aqui: ele é mesmo um formulário — três dados técnicos que se copiam do
      painel da Meta. O não oficial não é: é uma pessoa, um celular e uma espera. */
@@ -274,7 +262,7 @@ export function TabelaCanais({
       descricao="Os números por onde a operação fala, e o que cada um está autorizado a fazer. Registrar um número não exige deploy; ele nasce desligado."
       acao={
         entrada ? (
-          <Button onClick={() => (entrada === "escolher" ? setAbrindo(true) : setConectando(true))}>
+          <Button onClick={() => setConectando(true)}>
             <PlusIcon data-icon="inline-start" />
             Adicionar número
           </Button>
@@ -395,25 +383,14 @@ export function TabelaCanais({
         </Alert>
       ) : null}
 
-      {gestor && abrindo ? (
-        <BlocoAdicionar
-          aoFechar={() => setAbrindo(false)}
-          aoErro={setErro}
-          aoAviso={setAviso}
-          departamentos={departamentos}
-          dominioIndisponivel={dominioIndisponivel}
-          aoEscolherNaoOficial={() => {
-            setAbrindo(false);
-            setConectando(true);
-          }}
-        />
-      ) : null}
-
       <SheetNumeroLite
         aberto={conectando}
         aoFechar={() => setConectando(false)}
         f8Pronto={f8Pronto}
         meuPapel={meuPapel}
+        departamentos={departamentos}
+        dominioIndisponivel={dominioIndisponivel}
+        aoAviso={setAviso}
       />
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -461,7 +438,7 @@ export function TabelaCanais({
                   </span>
                   <span>Registre o primeiro para a operação começar a falar por aqui.</span>
                   {entrada ? (
-                    <Button onClick={() => (entrada === "escolher" ? setAbrindo(true) : setConectando(true))}>
+                    <Button onClick={() => setConectando(true)}>
                       <PlusIcon data-icon="inline-start" />
                       Adicionar número
                     </Button>
@@ -891,339 +868,6 @@ function LinhaCanal({
         </TableRow>
       ) : null}
     </>
-  );
-}
-
-/** Campo → como chamá-lo na linha "ainda falta", em voz de gente. */
-const NOME_DO_CAMPO: Record<string, string> = {
-  nome: "o nome",
-  canalId: "o phone_number_id",
-  wabaId: "o WABA id",
-  numeroE164: "o número",
-  finalidade: "a finalidade",
-  provedor: "o tipo de número",
-  departamento: "o departamento",
-};
-
-/**
- * O bloco de adição mora NA PÁGINA, não num modal: o padrão do convite de Membros já é este, e
- * modal rouba o contexto da lista que a pessoa acabou de ler.
- *
- * ── O QUE MUDOU EM 11/09 ───────────────────────────────────────────────────────────────────────
- *
- * 1. AJUDA É CINZA, ERRO É VERMELHO, e o vermelho só entra depois que a pessoa mexeu no campo.
- *    Antes, `validarRegistroCanal` era desenhada assim que o bloco abria: seis parágrafos
- *    vermelhos num formulário em branco, nenhum deles um erro de verdade. A validação está
- *    intacta — ela continua sendo a mesma função, e o botão continua desabilitado até passar.
- *    O que mudou é o MOMENTO: `tocados` guarda em que campos a pessoa já mexeu.
- *
- * 2. O TIPO DE NÚMERO DECIDE O QUE APARECE. Oficial pede três dados técnicos da Meta, e eles
- *    ganham um bloco próprio; não oficial não pede nenhum — e o bloco inteiro some, em vez de
- *    ficar na tela desabilitado ou vazio pedindo para ser ignorado.
- *
- * 3. Os `placeholder` de id continuam sendo exemplos reais de formato, mas agora o que explica o
- *    campo é a linha cinza embaixo dele — antes o exemplo tinha de fazer os dois trabalhos, e
- *    parecia valor já preenchido.
- */
-function BlocoAdicionar({
-  aoFechar,
-  aoErro,
-  aoAviso,
-  departamentos,
-  dominioIndisponivel,
-  aoEscolherNaoOficial,
-}: {
-  aoFechar: () => void;
-  aoErro: (m: string | null) => void;
-  aoAviso: (m: string) => void;
-  departamentos: Departamento[];
-  dominioIndisponivel: boolean;
-  /** escolher "não oficial" SAI daqui e abre o painel de conectar — ver a nota em `setConectando`. */
-  aoEscolherNaoOficial: () => void;
-}) {
-  const router = useRouter();
-  const [provedor, setProvedor] = useState<Provedor>("waba");
-  const [form, setForm] = useState<FormCanal>({
-    canalId: "",
-    nome: "",
-    provedor: "waba",
-    numeroE164: "",
-    wabaId: "",
-    // vazio no oficial, e ali é legítimo: o número é da empresa, não de uma pessoa
-    responsavelId: "",
-    // R22/A1 · NASCE VAZIO, como `finalidade`. `"comercial"` era o valor de antes — e `comercial` é
-    // nó de agrupamento, que a porta RECUSA desde o M8. O default conveniente não era só feio:
-    // era o único valor que o banco não aceita.
-    departamento: "",
-    // sem valor: quem cadastra é quem sabe. Ver o campo lá embaixo.
-    finalidade: "",
-  });
-  /** Em que campos a pessoa já mexeu. É só isto que separa "ajuda" de "erro" na tela. */
-  const [tocados, setTocados] = useState<Record<string, boolean>>({});
-  const [pendente, iniciar] = useTransition();
-  const atual: FormCanal = { ...form, provedor };
-  const problemas = validarRegistroCanal(atual);
-  const idPrevisto = canalIdDoForm(atual);
-  const lite = provedor === "nao_oficial";
-
-  const tocar = (campo: string) => setTocados((t) => ({ ...t, [campo]: true }));
-  const erroDe = (campo: keyof FormCanal) =>
-    tocados[campo] ? (problemas[campo] as string | undefined) : undefined;
-
-  const faltando = Object.keys(problemas).map((k) => NOME_DO_CAMPO[k] ?? k);
-
-  function enviar() {
-    aoErro(null);
-    iniciar(async () => {
-      const r = await registrarCanal(atual);
-      if (!r.ok) aoErro(r.motivo ?? "não deu para registrar");
-      else {
-        aoAviso("Número registrado. Ele nasce DESLIGADO — ligar é um segundo passo, com data de corte.");
-        aoFechar();
-        router.refresh(); // B1: o primeiro número TEM de aparecer na lista e no contador
-      }
-    });
-  }
-
-  return (
-    <section className="rounded-xl border border-border bg-card p-5">
-      <h2 className="text-ui-14 font-semibold text-foreground">Adicionar número</h2>
-      <p className="mt-1 max-w-[620px] text-ui-13 leading-relaxed text-muted-foreground">
-        Registrar é declarar um número que já existe do outro lado. Ele nasce desligado, e ligar é
-        um segundo passo.
-      </p>
-
-      <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
-        {(
-          [
-            {
-              v: "waba" as Provedor,
-              t: "Oficial (WhatsApp Cloud API)",
-              e: "Número da empresa aprovado na Meta. Sem risco de bloqueio.",
-            },
-            {
-              v: "nao_oficial" as Provedor,
-              t: "Não oficial (biblioteca)",
-              e: "Número pessoal de alguém, conectado por QR. Pode ser banido pelo WhatsApp — e o ban atinge o WhatsApp pessoal dela.",
-            },
-          ] as const
-        ).map((o) => (
-          <button
-            key={o.v}
-            type="button"
-            aria-pressed={provedor === o.v}
-            onClick={() => {
-              if (o.v === "nao_oficial") return aoEscolherNaoOficial();
-              setProvedor(o.v);
-            }}
-            className={cn(
-              "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors",
-              provedor === o.v
-                ? "border-primary/50 bg-primary/[0.06]"
-                : "border-border hover:bg-muted",
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "mt-0.5 grid size-3.5 flex-none place-items-center rounded-full border",
-                provedor === o.v ? "border-primary" : "border-muted-foreground/50",
-              )}
-            >
-              {provedor === o.v ? <span className="size-1.5 rounded-full bg-primary" /> : null}
-            </span>
-            <span className="min-w-0">
-              <span className="block text-ui-13 font-medium text-foreground">{o.t}</span>
-              <span className="mt-0.5 block text-ui-12 leading-relaxed text-muted-foreground">
-                {o.e}
-              </span>
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <FormItemLayout
-          label={lite ? "Nome de quem cedeu o número" : "Nome do canal"}
-          description={
-            lite
-              ? "É dele que sai o id do canal — legível, e nunca o número dela."
-              : "Como a operação chama este número. Só aparece aqui dentro."
-          }
-          error={erroDe("nome")}
-        >
-          <Input
-            value={form.nome}
-            onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            onBlur={() => tocar("nome")}
-            placeholder={lite ? "Jade" : "Produção"}
-            aria-invalid={erroDe("nome") ? true : undefined}
-          />
-        </FormItemLayout>
-
-        {/* M7 · finalidade: NASCE SEM ESCOLHA. A opção vazia não é placeholder decorativo — é o
-            que impede o default por conveniência, que foi o que produziu dois números vivos que
-            ninguém ligou. Enquanto ninguém escolher, `validarRegistroCanal` recusa. */}
-        <FormItemLayout
-          label="Finalidade"
-          description="Teste só entrega a destinatários em lista. Produção fala com paciente."
-          error={erroDe("finalidade")}
-        >
-          <select
-            className={SELETOR}
-            value={form.finalidade}
-            onChange={(e) => {
-              tocar("finalidade");
-              setForm({ ...form, finalidade: e.target.value as FormCanal["finalidade"] });
-            }}
-            aria-invalid={erroDe("finalidade") ? true : undefined}
-          >
-            <option value="">— escolha —</option>
-            <option value="teste">Teste</option>
-            <option value="producao">Produção</option>
-          </select>
-        </FormItemLayout>
-
-        {/* R22/A1 · O `<select>` que lê o BANCO, e é NATIVO de propósito.
-            Os nós aparecem com a hierarquia inteira, e só as FOLHAS são escolhíveis — os nós de
-            agrupamento entram desabilitados, como cabeçalho. Não é enfeite: a porta recusa nó de
-            agrupamento (GUARDA:M8:escrita_so_em_folha, herdada pela VD1 da 0130), e oferecer o que
-            será recusado faria a recusa ser a primeira notícia. Esconder os pais também não serve:
-            sem eles, as folhas chegam como uma lista plana e a árvore que explica os nomes some. */}
-        <FormItemLayout
-          label="Departamento"
-          description="Quem responde por este número. Pode ficar em branco e ser declarado depois."
-        >
-          {dominioIndisponivel ? (
-            <p className="text-ui-12 leading-relaxed text-warning-ink">
-              Não deu para ler os departamentos do banco agora. O número pode ser cadastrado sem
-              departamento — “não declarado” é um estado honesto; escolher às cegas não é.
-            </p>
-          ) : (
-            <select
-              className={SELETOR}
-              value={form.departamento}
-              onChange={(e) => setForm({ ...form, departamento: e.target.value })}
-            >
-              <option value="">— não declarado —</option>
-              {opcoesDepartamento(departamentos).map((o) => (
-                <option key={o.chave} value={o.chave} disabled={!o.selecionavel}>
-                  {o.nivel > 1 ? `\u00a0\u00a0\u00a0\u00a0${o.rotulo}` : o.rotulo}
-                  {o.selecionavel ? "" : " (agrupamento)"}
-                </option>
-              ))}
-            </select>
-          )}
-        </FormItemLayout>
-      </div>
-
-      {/* ── O BLOCO QUE SÓ O OFICIAL PEDE ──────────────────────────────────────────────────────
-          Três dados técnicos, e nenhum deles se inventa: todos vêm da mesma tela do painel da
-          Meta. Juntá-los num bloco com um título diz de onde ir buscar, o que seis campos soltos
-          numa grade não diziam. No não oficial o bloco não existe — o número é da fono. */}
-      {!lite ? (
-        <div className="mt-5 border-t border-border pt-4">
-          <p className="text-ui-13 font-medium text-foreground">Dados da Meta</p>
-          <p className="mt-0.5 text-ui-12 text-muted-foreground">
-            Os três saem do painel da Meta, em WhatsApp › Configuração da API.
-          </p>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <FormItemLayout
-              label="phone_number_id"
-              description="A chave da conversa do lado da Meta. Não dá para preencher depois."
-              error={erroDe("canalId")}
-            >
-              <Input
-                className="font-mono text-ui-12"
-                value={form.canalId}
-                onChange={(e) => setForm({ ...form, canalId: e.target.value })}
-                onBlur={() => tocar("canalId")}
-                placeholder="627327023793464"
-                aria-invalid={erroDe("canalId") ? true : undefined}
-              />
-            </FormItemLayout>
-
-            {/* M7 · O CAMPO QUE NÃO EXISTIA. `wabaId` estava no estado inicial do form e não tinha
-                entrada nenhuma na tela — logo o `if (waba)` de `payloadCanalRegistrado` era
-                inalcançável com valor, e TODO canal cadastrado pela tela nasceria sem identidade,
-                calado. É a assinatura exata do `canal_registrado` do `627327023793464` no ledger.
-                Registrado em ERROS-E-BLOQUEIOS como E-142. */}
-            <FormItemLayout
-              label="WABA id"
-              description="A conta do WhatsApp Business de onde este número saiu."
-              error={erroDe("wabaId")}
-            >
-              <Input
-                className="font-mono text-ui-12"
-                value={form.wabaId}
-                onChange={(e) => setForm({ ...form, wabaId: e.target.value })}
-                onBlur={() => tocar("wabaId")}
-                placeholder="966114259004051"
-                aria-invalid={erroDe("wabaId") ? true : undefined}
-              />
-            </FormItemLayout>
-
-            <FormItemLayout
-              label="Número (E.164)"
-              description="Com + e DDI, sem espaços nem traços."
-              error={erroDe("numeroE164")}
-            >
-              <Input
-                className="font-mono text-ui-12"
-                value={form.numeroE164}
-                onChange={(e) => setForm({ ...form, numeroE164: e.target.value })}
-                onBlur={() => tocar("numeroE164")}
-                placeholder="+5511999998888"
-                aria-invalid={erroDe("numeroE164") ? true : undefined}
-              />
-            </FormItemLayout>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-5 border-t border-border pt-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <FormItemLayout
-              label="Número (opcional)"
-              description="O número é dela e pode não ser conhecido agora. Dá para deixar em branco."
-              error={erroDe("numeroE164")}
-            >
-              <Input
-                className="font-mono text-ui-12"
-                value={form.numeroE164}
-                onChange={(e) => setForm({ ...form, numeroE164: e.target.value })}
-                onBlur={() => tocar("numeroE164")}
-                placeholder="+5511999998888"
-                aria-invalid={erroDe("numeroE164") ? true : undefined}
-              />
-            </FormItemLayout>
-          </div>
-          {idPrevisto ? (
-            <p className="mt-3 text-ui-12 leading-relaxed text-muted-foreground">
-              O id deste canal será{" "}
-              <span className="font-mono text-foreground">{idPrevisto}</span> — legível, estável, e
-              nunca o número dela.
-            </p>
-          ) : null}
-        </div>
-      )}
-
-      <div className="mt-5 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-border pt-4">
-        {/* Em vez de vermelho por antecipação: uma linha cinza que diz o que ainda falta. Ela
-            existe porque o botão fica desabilitado até a validação passar, e botão desabilitado
-            sem motivo visível é um beco. */}
-        {faltando.length > 0 ? (
-          <p className="mr-auto text-ui-12 text-muted-foreground">
-            Ainda falta {faltando.join(", ")}.
-          </p>
-        ) : null}
-        <Button variant="ghost" onClick={aoFechar}>
-          Cancelar
-        </Button>
-        <Button disabled={pendente || !semProblemas(problemas)} loading={pendente} onClick={enviar}>
-          Registrar número
-        </Button>
-      </div>
-    </section>
   );
 }
 

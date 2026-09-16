@@ -213,6 +213,17 @@ export function entradaAdicionar(papel: Papel | null): "escolher" | "nao_oficial
 const NOME_CANAL_MAX = 60;
 
 /**
+ * A primeira tela do painel de "Adicionar número": a gestão escolhe o tipo; quem só registra o
+ * próprio número não oficial (a fono) não tem o que escolher e já começa gerando o QR.
+ */
+export function momentoInicialDoPainel(papel: Papel | null): "escolher" | "gerando" | null {
+  const entrada = entradaAdicionar(papel);
+  if (entrada === "escolher") return "escolher";
+  if (entrada === "nao_oficial") return "gerando";
+  return null;
+}
+
+/**
  * 16/09 · D116 — O NÚMERO PESSOAL É DE QUEM CADASTRA, e o formulário é só o botão.
  *
  * Tudo sai de quem está logado, lido no servidor: dono = o uid, nome do canal = o nome do cadastro

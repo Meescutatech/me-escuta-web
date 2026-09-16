@@ -1,19 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 import { registrarMeuNumero } from "@/app/(app)/configuracoes/canais/actions";
 import {
   criarSessao,
   lerEstadoSessao,
   type EstadoSessaoNaTela,
 } from "@/app/(app)/configuracoes/canais/lite/actions";
-import { AVISO_RISCO_BAN, podeGerirCanais, type Papel } from "./regras/canais.ts";
+import { momentoInicialDoPainel, podeGerirCanais, type Papel } from "./regras/canais.ts";
+import type { Departamento } from "@/lib/departamentos/escopo";
 import { decidirQuadro } from "./regras/qr-pareamento.ts";
-import { descricaoEstadoSessao, intervaloRelituraMs, rotuloEstadoSessao } from "./regras/lite-sessao.ts";
+import { descricaoEstadoSessao, intervaloRelituraMs, rotuloEstadoSessao, telaDoQr } from "./regras/lite-sessao.ts";
 import { QuadroDePareamento } from "./painel-sessao";
+import { FormNumeroOficial } from "./form-numero-oficial";
 
 /**
  * CONECTAR UM NÚMERO NÃO OFICIAL — um fluxo só, num painel lateral.
@@ -43,6 +47,12 @@ import { QuadroDePareamento } from "./painel-sessao";
  * exigido (0348). Tudo isso é decidido no SERVIDOR (`registrarMeuNumero`) — a tela não monta form,
  * e por isso não tem como escolher o dono de ninguém. O número do WhatsApp virou card (o runtime
  * passa a gravá-lo no pareamento).
+ *
+ * ── 16/09 (tarde) · o painel é a porta única de "Adicionar número" ────────────────────────────
+ * A primeira tela é o SELETOR (oficial × não oficial); o formulário do oficial mora aqui
+ * (`FormNumeroOficial`), e escolher "Não oficial" registra na hora. A fono não tem o que escolher e
+ * o painel já abre gerando. Enquanto o QR não chega, "Gerando o QR…" (`telaDoQr`) — antes o quadro
+ * vazio dizia "nenhum código ativo" nesses segundos. O aviso de ban saiu: o risco está na opção.
  */
 
 /*
@@ -59,46 +69,84 @@ import { QuadroDePareamento } from "./painel-sessao";
  * A proteção continua inteira, no degrau em que ela decide: `canal_ativado` é recusado sem
  * consentimento pela `api.registrar_evento` (ARB-16) E pela regra do web. Duas travas concordando,
  * em vez de três em que uma discordava.
- *
- * O aviso do risco fica onde estava: na primeira tela, antes do botão.
  */
-type Momento = "quem" | "parear";
+type Momento = "escolher" | "oficial" | "parear";
+
+/** Uma opção do seletor de tipo. O texto diz o que é e o risco — não há aviso separado. */
+function OpcaoTipo({ titulo, explicacao, onClick }: { titulo: string; explicacao: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-start gap-0.5 rounded-lg border border-border p-3 text-left transition-colors",
+        "hover:border-primary/50 hover:bg-primary/[0.04] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+      )}
+    >
+      <span className="text-ui-13 font-medium text-foreground">{titulo}</span>
+      <span className="text-ui-12 leading-relaxed text-muted-foreground">{explicacao}</span>
+    </button>
+  );
+}
 
 export function SheetNumeroLite({
   aberto,
   aoFechar,
   f8Pronto,
   meuPapel,
+  departamentos,
+  dominioIndisponivel,
+  aoAviso,
 }: {
   aberto: boolean;
   aoFechar: () => void;
   f8Pronto: boolean;
-  /** só para o aviso de "fechar sem parear": a gestão reabre o QR pela lista, o membro não. */
   meuPapel: Papel | null;
+  /** só o formulário do OFICIAL usa — o número pessoal não escolhe departamento. */
+  departamentos: Departamento[];
+  dominioIndisponivel: boolean;
+  aoAviso: (m: string) => void;
 }) {
   const router = useRouter();
-  const [momento, setMomento] = useState<Momento>("quem");
+  const inicial = momentoInicialDoPainel(meuPapel);
+  const [momento, setMomento] = useState<Momento>(inicial === "gerando" ? "parear" : "escolher");
   const [erro, setErro] = useState<string | null>(null);
   const [gravando, iniciar] = useTransition();
   const [canalId, setCanalId] = useState("");
   const [sessao, setSessao] = useState<EstadoSessaoNaTela | null>(null);
   const reabrePelaLista = podeGerirCanais(meuPapel);
+  const temQr = Boolean(sessao?.qr || sessao?.qrImagem);
 
-  // ENQUANTO espera o pareamento, relê; ao conectar, PARA. O intervalo é regra pura e testada —
-  // um laço que não sabe parar sozinho é o que transforma uma tela aberta em carga no runtime.
+  // ENQUANTO espera o pareamento, relê — rápido até o primeiro QR chegar, depois a cada 5 s — e
+  // PARA ao conectar. Um laço que não sabe parar sozinho vira carga no runtime.
   const conectado = sessao?.estado === "conectado";
   useEffect(() => {
     if (momento !== "parear" || !canalId || conectado) return;
-    const ms = intervaloRelituraMs(sessao?.estado ?? "desconectado");
+    const ms = intervaloRelituraMs(sessao?.estado ?? "desconectado", false, temQr);
     if (!ms) return;
     const t = setInterval(() => void lerEstadoSessao(canalId).then(setSessao), ms);
     return () => clearInterval(t);
-  }, [momento, canalId, conectado, sessao?.estado]);
+  }, [momento, canalId, conectado, sessao?.estado, temQr]);
 
   // conectou: a lista lá atrás tem de mostrar o número novo sem a pessoa recarregar
   useEffect(() => {
     if (conectado) router.refresh();
   }, [conectado, router]);
+
+  // A fono não tem o que escolher: abrir o painel JÁ é pedir o número. Uma vez por abertura.
+  const disparou = useRef(false);
+  useEffect(() => {
+    if (!aberto) {
+      disparou.current = false;
+      return;
+    }
+    if (inicial === "gerando" && !disparou.current) {
+      disparou.current = true;
+      registrarEParear();
+    }
+    // registrarEParear é estável o bastante: só lê estado dentro da transição
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto, inicial]);
 
   const quadro = useMemo(
     () =>
@@ -113,8 +161,17 @@ export function SheetNumeroLite({
     [sessao, conectado],
   );
 
+  const tela = telaDoQr({
+    gravando,
+    sessao: sessao ? { estado: sessao.estado, temQr, motivo: sessao.motivo ?? null } : null,
+    erro,
+  });
+
   function registrarEParear() {
+    if (gravando) return;
     setErro(null);
+    setSessao(null);
+    setMomento("parear");
     iniciar(async () => {
       const r = await registrarMeuNumero();
       if (!r.ok) {
@@ -128,7 +185,6 @@ export function SheetNumeroLite({
         return;
       }
       setCanalId(id);
-      setMomento("parear");
       router.refresh();
       setSessao(await criarSessao(id, { f8Pronto }));
     });
@@ -137,66 +193,95 @@ export function SheetNumeroLite({
   function fechar() {
     aoFechar();
     setTimeout(() => {
-      setMomento("quem");
+      setMomento(inicial === "gerando" ? "parear" : "escolher");
       setCanalId("");
       setSessao(null);
       setErro(null);
     }, 220);
   }
 
+  const titulo =
+    momento === "escolher"
+      ? "Adicionar número"
+      : momento === "oficial"
+        ? "Número oficial"
+        : tela === "conectado"
+          ? "Número conectado"
+          : tela === "qr"
+            ? "Aponte a câmera"
+            : tela === "erro"
+              ? "Não deu para gerar o QR"
+              : "Gerando o QR…";
+  const descricao =
+    momento === "escolher"
+      ? "Ele nasce desligado; ligar é um segundo passo."
+      : momento === "oficial"
+        ? "Os dados saem do painel da Meta."
+        : tela === "conectado"
+          ? "Seu número está conectado. Ele nasce desligado: quem liga é admin ou Proprietário."
+          : tela === "qr"
+            ? "No seu celular: WhatsApp › Aparelhos conectados › Conectar um aparelho."
+            : tela === "erro"
+              ? "O motivo está abaixo."
+              : "Registrando o seu número e preparando a conexão. Leva alguns segundos.";
+
   return (
     <Sheet open={aberto} onOpenChange={(o) => !o && fechar()}>
       <SheetContent className="sm:max-w-[460px]">
         <SheetHeader>
-          <SheetTitle>
-            {momento === "quem" ? "Conectar o seu número" : conectado ? "Número conectado" : "Aponte a câmera"}
-          </SheetTitle>
-          <SheetDescription>
-            {momento === "quem"
-              ? "Registre o seu WhatsApp e gere o QR. O número continua sendo seu; o sistema passa a ler e responder por ele."
-              : conectado
-                ? "Seu número está conectado. Ele nasce desligado: quem liga é admin ou Proprietário."
-                : "No seu celular: WhatsApp › Aparelhos conectados › Conectar um aparelho."}
-          </SheetDescription>
+          <SheetTitle>{titulo}</SheetTitle>
+          <SheetDescription>{descricao}</SheetDescription>
         </SheetHeader>
 
         <SheetBody className="flex flex-col gap-5">
-          {momento === "quem" ? (
-            <>
-              {/* O aviso fica ANTES do botão: depois dele o número já está registrado, e o risco é
-                  sobre o WhatsApp PESSOAL — não é aviso que se dá em retrospecto. */}
-              <p className="rounded-md bg-warning-bg px-3.5 py-3 text-ui-12 leading-relaxed text-warning-ink">
-                {AVISO_RISCO_BAN}
-              </p>
-
-              {erro && (
-                <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
-                  {erro}
-                </p>
-              )}
-            </>
+          {momento === "escolher" ? (
+            <div className="flex flex-col gap-2.5">
+              <OpcaoTipo
+                titulo="Oficial (WhatsApp Cloud API)"
+                explicacao="Número da empresa aprovado na Meta. Sem risco de bloqueio."
+                onClick={() => setMomento("oficial")}
+              />
+              <OpcaoTipo
+                titulo="Não oficial (biblioteca)"
+                explicacao="O seu WhatsApp, conectado por QR. Pode ser banido pelo WhatsApp — e o ban atinge a sua conta pessoal."
+                onClick={registrarEParear}
+              />
+            </div>
+          ) : momento === "oficial" ? (
+            <FormNumeroOficial
+              departamentos={departamentos}
+              dominioIndisponivel={dominioIndisponivel}
+              aoCancelar={() => setMomento("escolher")}
+              aoRegistrar={(m) => {
+                aoAviso(m);
+                fechar();
+              }}
+            />
+          ) : tela === "gerando" ? (
+            <div className="flex flex-col items-center gap-3 py-10" role="status" aria-live="polite">
+              <Loader2Icon className="size-6 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />
+              <p className="text-[13.5px] font-medium text-foreground">Gerando o QR…</p>
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-4">
-              <QuadroDePareamento quadro={quadro} />
-              <div className="text-center">
-                <p className="text-[13.5px] font-medium text-foreground">{rotuloEstadoSessao(sessao?.estado ?? "desconectado")}</p>
-                <p className="mt-0.5 max-w-[34ch] text-ui-12 leading-relaxed text-muted-foreground">
-                  {descricaoEstadoSessao(sessao?.estado ?? "desconectado")}
-                </p>
-              </div>
-              {/* 🔴 O MOTIVO. Sem esta linha o quadro vazio dizia "Nenhum código ativo. Peça uma
-                  sessão para gerar." — um texto genérico sobre uma recusa ESPECÍFICA que o servidor
-                  já tinha explicado. Foi assim que o consentimento faltando virou "o QR não
-                  aparece": a tela sabia por quê e não contava. */}
-              {sessao?.motivo && (
+              {tela !== "erro" && <QuadroDePareamento quadro={quadro} />}
+              {tela !== "erro" && (
+                <div className="text-center">
+                  <p className="text-[13.5px] font-medium text-foreground">{rotuloEstadoSessao(sessao?.estado ?? "desconectado")}</p>
+                  <p className="mt-0.5 max-w-[34ch] text-ui-12 leading-relaxed text-muted-foreground">
+                    {descricaoEstadoSessao(sessao?.estado ?? "desconectado")}
+                  </p>
+                </div>
+              )}
+              {(erro || sessao?.motivo) && (
                 <p role="alert" className="max-w-[40ch] rounded-md bg-destructive/10 px-3 py-2 text-center text-[12.5px] leading-relaxed text-destructive">
-                  {sessao.motivo}
+                  {erro ?? sessao?.motivo}
                 </p>
               )}
               {canalId && <p className="text-ui-11 font-mono text-muted-foreground">{canalId}</p>}
               {/* Quem não é gestão não tem a ação da linha na lista: fechar antes de parear é deixar o
                   QR para admin ou Proprietário gerar de novo. Dito antes, não depois. */}
-              {!reabrePelaLista && !conectado && (
+              {!reabrePelaLista && tela === "qr" && (
                 <p className="max-w-[40ch] text-center text-ui-12 leading-relaxed text-muted-foreground">
                   Se fechar agora, o QR não reabre por aqui: peça a um admin ou Proprietário para
                   gerá-lo de novo pela lista.
@@ -206,22 +291,19 @@ export function SheetNumeroLite({
           )}
         </SheetBody>
 
-        <SheetFooter>
-          {momento === "quem" ? (
-            <>
-              <Button variant="outline" onClick={fechar}>
-                Cancelar
-              </Button>
-              <Button disabled={gravando} onClick={registrarEParear}>
-                {gravando ? "Registrando…" : "Registrar e gerar o QR"}
-              </Button>
-            </>
-          ) : (
-            <Button onClick={fechar}>
-              {conectado ? "Pronto" : reabrePelaLista ? "Fechar e parear depois" : "Fechar sem parear"}
+        {momento !== "oficial" && (
+          <SheetFooter>
+            <Button variant={tela === "conectado" ? "default" : "outline"} onClick={fechar}>
+              {momento === "escolher"
+                ? "Cancelar"
+                : tela === "conectado"
+                  ? "Pronto"
+                  : reabrePelaLista
+                    ? "Fechar e parear depois"
+                    : "Fechar sem parear"}
             </Button>
-          )}
-        </SheetFooter>
+          </SheetFooter>
+        )}
       </SheetContent>
     </Sheet>
   );

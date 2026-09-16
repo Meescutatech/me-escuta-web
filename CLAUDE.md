@@ -203,3 +203,12 @@ desliga canais oficiais e não oficiais. NÃO é dona da regra de quem pode escr
   Descartado: admin escolher o dono; o departamento pela lotação (as fonos admin não têm); o campo
   Número (o runtime gravar o número no pareamento virou card); prévia do id na tela (exigiria o nome
   no cliente).
+- 2026-09-16 · "Adicionar número" abre SEMPRE o painel lateral, e a primeira tela dele é o seletor
+  (oficial × não oficial); o formulário do oficial mora no painel (`form-numero-oficial.tsx`) e o
+  bloco inline da tabela saiu. "Não oficial" registra na hora; a fono (`momentoInicialDoPainel`) não
+  vê o seletor e o painel já abre gerando. "Gerando o QR…" até o primeiro QR (`telaDoQr`), e a
+  releitura é de 1 s enquanto o QR não chegou (depois 5 s).
+  Motivo: pedido do Diogo com print ("aviso ridículo"); e o QR levava ~10 s — medido: WuzAPI gera
+  0,7 s depois do `connect`, a primeira leitura saía antes e a próxima só em 5 s.
+  Descartado: manter o aviso de ban separado (o risco está na própria opção); o oficial abrir o
+  bloco inline (dois lugares para o mesmo botão); seletor com "Oficial" desabilitado para a fono.
