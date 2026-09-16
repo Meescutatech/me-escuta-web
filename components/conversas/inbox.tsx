@@ -1720,7 +1720,7 @@ export function Inbox({
                         </header>
                         <div className="max-h-[420px] overflow-y-auto bg-board px-3 py-2">
                           {msgs.length > 0 ? (
-                            <FioLead mensagens={msgs} nomeLead={titulo ?? "Lead"} />
+                            <FioLead mensagens={msgs} nomeLead={titulo ?? "Lead"} autoRolar={false} />
                           ) : (
                             <p className="py-3 text-center text-[12px] text-mute">
                               {f.previa ? `${f.previa_saida ? "Você: " : ""}${f.previa}` : "sem mensagem"}

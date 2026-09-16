@@ -88,9 +88,17 @@ function Conteudo({ m }: { m: Mensagem }) {
 export function FioLead({
   mensagens,
   nomeLead,
+  autoRolar = true,
 }: {
   mensagens: Mensagem[];
   nomeLead: string;
+  /**
+   * Abrir no presente é a decisão certa quando o fio é O ASSUNTO da tela (o drawer do funil) — daí
+   * o default. Quando ele é um fio IRMÃO dentro da conversa de outro número, não: a caixa tem
+   * altura fixa, rolar ao fim come os primeiros pixels e a primeira bolha fica cortada atrás do
+   * cabeçalho. Medido em 16/09 na tela viva — `scrollTop 61 de 61`.
+   */
+  autoRolar?: boolean;
 }) {
   const fimRef = useRef<HTMLDivElement>(null);
   const blocos = montarBlocos(mensagens);
@@ -99,6 +107,7 @@ export function FioLead({
   // contêiner de rolagem mais próximo (o da aba), nunca a página nem o corpo do drawer — senão as
   // abas e o botão de responder somem para cima.
   useEffect(() => {
+    if (!autoRolar) return;
     const el = fimRef.current;
     if (!el) return;
     let pai: HTMLElement | null = el.parentElement;
@@ -111,7 +120,7 @@ export function FioLead({
     // foto e vídeo carregam depois e empurram o fim para baixo — rola de novo quando assentar
     const t = setTimeout(rolar, 350);
     return () => clearTimeout(t);
-  }, [mensagens]);
+  }, [mensagens, autoRolar]);
 
   if (mensagens.length === 0) {
     return <p className="py-6 text-center text-[13px] text-mute">Sem mensagens nesta conversa.</p>;
