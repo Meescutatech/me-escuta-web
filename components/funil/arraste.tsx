@@ -474,7 +474,17 @@ export function TrilhoRolagem({ alvoRef }: { alvoRef: React.RefObject<HTMLDivEle
 
   if (!estado.visivel) return null;
   return (
-    <div className="relative mx-6 mb-2 h-1.5 shrink-0 rounded-full bg-hover">
+    <div
+      className="relative mx-6 mb-2 h-1.5 shrink-0 rounded-full bg-hover"
+      onPointerDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        const el = alvoRef.current;
+        if (!el) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const ratio = (e.clientX - rect.left) / rect.width;
+        el.scrollLeft = ratio * (el.scrollWidth - el.clientWidth);
+      }}
+    >
       <div
         role="scrollbar"
         aria-orientation="horizontal"

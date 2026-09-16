@@ -1,5 +1,6 @@
 import type { CardLead } from "./funil";
 import type { FaixaPrioridade } from "./funil-ordenacao";
+import { variantesNonoDigito } from "./funil-calculos.ts";
 
 /**
  * Filtros do board do FUNIL (paridade Kommo — GO 25/07): busca nome/telefone, responsável,
@@ -144,7 +145,13 @@ export function buscaCasa(card: Pick<CardLead, "nome" | "telefone">, busca: stri
   const tel = (card.telefone ?? "").toLowerCase();
   if (tel.includes(q)) return true;
   const qDigitos = q.replace(/\D/g, "");
-  return qDigitos.length >= 3 && tel.replace(/\D/g, "").includes(qDigitos);
+  if (qDigitos.length < 3) return false;
+  const telDigitos = tel.replace(/\D/g, "");
+  if (telDigitos.includes(qDigitos)) return true;
+  for (const v of variantesNonoDigito(qDigitos)) {
+    if (telDigitos.includes(v)) return true;
+  }
+  return false;
 }
 
 /** Período inclusivo sobre timestamp ISO, no fuso da operação. Sem data → não casa período definido. */

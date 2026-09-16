@@ -252,3 +252,26 @@ test("a regra de dígitos do servidor é a MESMA de buscaCasa (filtro do cliente
   }
   assert.equal(buscaCasa(card, "zzz"), false);
 });
+
+// ─────────────── 9º dígito: celular BR com e sem o 9 depois do DDD ───────────────
+
+test("9º dígito: planoBusca('31996890099') gera condição que casaria '3196890099'", () => {
+  const p = planoBusca("31996890099")!;
+  assert.ok(p, "devia virar plano");
+  assert.ok(p.or.includes("3196890099"), `variante sem 9 ausente: ${p.or}`);
+});
+
+test("9º dígito: planoBusca('3196890099') gera condição que casaria '31996890099'", () => {
+  const p = planoBusca("3196890099")!;
+  assert.ok(p, "devia virar plano");
+  assert.ok(p.or.includes("31996890099"), `variante com 9 ausente: ${p.or}`);
+});
+
+test("9º dígito: concordância planoBusca ↔ buscaCasa para variantes de celular", () => {
+  const card = { nome: "Maria", telefone: "5531996890099" };
+  for (const termo of ["31996890099", "3196890099"]) {
+    const p = planoBusca(termo)!;
+    assert.ok(p, `${termo} devia virar plano`);
+    assert.equal(buscaCasa(card, termo), true, `buscaCasa recusou "${termo}" que o servidor acharia`);
+  }
+});

@@ -73,6 +73,14 @@ test("busca vazia passa tudo; nome e telefone null não explodem", () => {
   assert.ok(!buscaCasa(base({ nome: null, telefone: null }), "maria"));
 });
 
+test("9º dígito: busca '3196890099' acha telefone '5531996890099' (variante com 9)", () => {
+  assert.ok(buscaCasa(base({ telefone: "5531996890099" }), "3196890099"));
+});
+
+test("9º dígito: busca '31996890099' acha telefone '553196890099' (variante sem 9)", () => {
+  assert.ok(buscaCasa(base({ telefone: "553196890099" }), "31996890099"));
+});
+
 // ─────────────── período (entrou_etapa_em, UTC-3, inclusivo) ───────────────
 
 test("período inclusivo nas duas pontas, no fuso da operação (UTC-3)", () => {

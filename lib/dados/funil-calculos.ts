@@ -142,6 +142,22 @@ export function termoSeguro(termo: string): string {
   return termo.replace(/[(),*\\]/g, " ").trim();
 }
 
+export function variantesNonoDigito(digitos: string): string[] {
+  let corpo = digitos;
+  let prefixo = "";
+  if (corpo.startsWith("55") && corpo.length >= 12) {
+    prefixo = "55";
+    corpo = corpo.slice(2);
+  }
+  const ddd = parseInt(corpo.slice(0, 2), 10);
+  if (ddd < 11 || ddd > 99) return [];
+  if (corpo.length === 11 && corpo[2] === "9")
+    return [prefixo + corpo.slice(0, 2) + corpo.slice(3)];
+  if (corpo.length === 10)
+    return [prefixo + corpo.slice(0, 2) + "9" + corpo.slice(2)];
+  return [];
+}
+
 /**
  * O que perguntar ao banco para achar um lead por nome ou telefone. `null` = termo curto demais,
  * não vale a ida.
@@ -158,6 +174,7 @@ export function planoBusca(termo: string, comUltimaMensagem = true): PlanoBusca 
   // 3+ dígitos: "(31) 99981" acha "3199981…". Abaixo disso o dígito solto casaria quase todo
   // telefone e só faria barulho.
   if (digitos.length >= 3 && digitos !== limpo) condicoes.push(`telefone.ilike.*${digitos}*`);
+  for (const v of variantesNonoDigito(digitos)) condicoes.push(`telefone.ilike.*${v}*`);
   return {
     colunas: comUltimaMensagem ? COLUNAS_CARD : COLUNAS_CARD_BASE,
     or: condicoes.join(","),
