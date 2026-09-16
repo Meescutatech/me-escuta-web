@@ -221,6 +221,8 @@ desliga canais oficiais e não oficiais. NÃO é dona da regra de quem pode escr
   porque a view filtra o canal removido e a projeção lida voltaria vazia.
   Motivo: a fono precisa poder desconectar o próprio número; a gestão precisa poder desconectar qualquer um.
   Descartado: DELETE real (FK cascade quebraria conversas); desconectar pelo runtime (sem mudança de código — o reload periódico já descarta canais sem credencial).
+- 2026-09-16 · teardown (DELETE /lite/instancia/:canal) antes de canal_removido — a ordem importa porque a 0349 apaga a credencial na projeção, e sem ela o runtime não sabe qual instância apagar (`03febdb`). Limite de tentativas de registrarComIdLivre elevado de 5 para 100 — o teto de 5 era artificial e impedia orgs com mais de 5 fonos.
+  Descartado: limite 200 (desperdício); sem limite (loop infinito num bug de unicidade).
 
 ## feature: funil
 
