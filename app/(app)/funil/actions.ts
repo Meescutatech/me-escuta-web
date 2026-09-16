@@ -176,6 +176,8 @@ export interface ConversaDoLeadLida {
   finalidade: "producao" | "teste" | null;
   /** ordena os blocos; `null` vai para o fim sem sumir. */
   atualizado_em: string | null;
+  /** 0352 — pushname do WhatsApp. */
+  nome_contato: string | null;
 }
 
 /**
@@ -200,8 +202,9 @@ export async function lerFiosDoLeadAcao(leadId: string): Promise<ConversaDoLeadL
     // existir no ambiente. Sem `phone_number_id` e `finalidade` o chip cai no caso errado e o selo
     // de TESTE some justamente quando todo mundo está testando — por isso eles entram no degrau 1.
     let { data, error } = await consulta(
-      "id,phone_number_id,numero_apelido,numero_e164,finalidade,atualizado_em",
+      "id,phone_number_id,numero_apelido,numero_e164,finalidade,atualizado_em,nome_contato",
     );
+    if (error) ({ data, error } = await consulta("id,phone_number_id,numero_apelido,numero_e164,finalidade,atualizado_em"));
     if (error) ({ data, error } = await consulta("id,atualizado_em"));
     if (error || !data) return [];
     const linhas = (data as any[]) ?? [];
@@ -214,6 +217,7 @@ export async function lerFiosDoLeadAcao(leadId: string): Promise<ConversaDoLeadL
         numero_e164: linha.numero_e164 ?? null,
         finalidade: linha.finalidade ?? null,
         atualizado_em: linha.atualizado_em ?? null,
+        nome_contato: linha.nome_contato ?? null,
       })),
     );
     return ordenarFiosDoLead(fios);

@@ -217,6 +217,7 @@ export function DrawerCard({
                 numero_e164: null,
                 finalidade: null,
                 atualizado_em: null,
+                nome_contato: null,
               },
             ]
           : [],
@@ -363,23 +364,21 @@ export function DrawerCard({
           })
         )}
       </div>
-      {/* o "composer" do drawer é um convite: escrever é em /conversas (composer, janela de 24h,
-          número de saída). O botão diz exatamente o que acontece. */}
-      <button
-        type="button"
-        onClick={() => router.push(hrefResponder)}
-        className="flex shrink-0 items-center gap-2.5 border-t border-linha bg-branco px-4 py-2.5 text-left transition-colors hover:bg-hover"
-      >
+      <div className="flex shrink-0 items-center gap-2.5 border-t border-linha bg-branco px-4 py-2.5">
         <span className="min-w-0 flex-1 truncate rounded-[6px] border border-linha bg-board px-3 py-1.5 text-[13px] text-mute">
           Responder{fios?.[0] ? ` pelo número ${rotuloDoFio(fios[0]).rotulo}` : ""}…
         </span>
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-laranja px-3 py-1.5 text-xs font-semibold text-branco">
+        <button
+          type="button"
+          onClick={() => router.push(hrefResponder)}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-laranja px-3 py-1.5 text-xs font-semibold text-branco transition-colors hover:bg-laranja/90"
+        >
           Abrir conversa
           <svg viewBox="0 0 24 24" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 stroke-current" fill="none" aria-hidden>
             <path d="M5 12h14M13 6l6 6-6 6" />
           </svg>
-        </span>
-      </button>
+        </button>
+      </div>
     </div>
   );
 
@@ -507,6 +506,16 @@ export function DrawerCard({
                   {lead.idade != null && <span>{lead.idade} anos</span>}
                   {lead.idade != null && lead.telefone && <span aria-hidden className="text-mute">·</span>}
                   {lead.telefone && <span className="tabular-nums">{fmtTelefone(lead.telefone)}</span>}
+                  {(() => {
+                    const pushname = fios?.[0]?.nome_contato;
+                    if (!pushname || pushname === lead.nome?.trim()) return null;
+                    return (
+                      <>
+                        <span aria-hidden className="text-mute">·</span>
+                        <span>WhatsApp: {pushname}</span>
+                      </>
+                    );
+                  })()}
                   {lead.cidade && (lead.idade != null || lead.telefone) && <span aria-hidden className="text-mute">·</span>}
                   {lead.cidade && <span>{lead.cidade}</span>}
                   {lead.origem && (

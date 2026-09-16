@@ -89,6 +89,8 @@ export interface ConversaResumo {
   previa_saida?: boolean; // última msg foi de saída (Você/Clara)
   nao_lida?: boolean; // proxy: última msg foi do cliente (entrada), sem resposta
   nao_lidas_qtd?: number; // proxy: qtde de mensagens de entrada após a última saída (RF-30/31)
+  /** 0352 — pushname do WhatsApp (contacts[].profile.name). Autodeclarado, volátil. */
+  nome_contato?: string | null;
   /**
    * M6 — o carimbo de roteamento congelado (`core.conversa.area`, imutável). Vem para a lista por
    * UM motivo só: separar a faixa "Sem departamento" (D6-g) do resto. NÃO vira rótulo na linha da
@@ -422,6 +424,7 @@ const PAGINA_VAZIA: PaginaConversas = {
 // diferentes falhando por motivos diferentes.
 const COLUNAS_LISTA_BASE = "id,telefone,lead_id,mode,dono_atual,status,atualizado_em,ultima_entrada_em,area";
 const COLUNAS_LISTA_M7 = `${COLUNAS_LISTA_BASE},phone_number_id,numero_apelido,numero_e164,finalidade,janela_livre_ate`;
+const COLUNAS_LISTA_0352 = `${COLUNAS_LISTA_M7},nome_contato`;
 
 export async function lerConversas(
   opcoes: {
@@ -499,7 +502,10 @@ export async function lerConversas(
         .limit(limite);
     };
     let origemLegivel = true;
-    let { data, error } = await montar(COLUNAS_LISTA_M7);
+    let { data, error } = await montar(COLUNAS_LISTA_0352);
+    if (error) {
+      ({ data, error } = await montar(COLUNAS_LISTA_M7));
+    }
     if (error) {
       origemLegivel = false;
       ({ data, error } = await montar(COLUNAS_LISTA_BASE));

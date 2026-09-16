@@ -158,6 +158,9 @@ export function PainelLead({
         </div>
         <p className="mt-0.5 text-[12px] text-suave">
           <span className="font-mono tabular-nums">{fmtTelefone(conversa.telefone)}</span>
+          {conversa.nome_contato && conversa.nome_contato !== conversa.nome?.trim() && (
+            <span> · WhatsApp: {conversa.nome_contato}</span>
+          )}
           {cidade && <span> · {cidade}</span>}
           {conversa.idade != null && <span> · {conversa.idade} anos</span>}
         </p>
