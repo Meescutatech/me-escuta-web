@@ -76,7 +76,11 @@ test("DEFEITO 2 · a âncora do fim do fio vem ANTES do bloco das irmãs", () =>
   // de dois pontos e continuaria rolando a coisa errada.
   const container = inbox.indexOf("ref={rolagemRef}");
   const ancora = inbox.indexOf("ref={fimRef}");
-  const irmas = inbox.indexOf("irmaos.length > 0 &&");
+  // ⚠️ `irmaos.length > 0` NÃO serve mais de âncora: desde o divisor do fio aberto (16/09) ele
+  // aparece DUAS vezes, e a primeira está acima das mensagens. O que marca o bloco das irmãs, e
+  // só ele, é o `map`. Oitavo caso da série: âncora que envelhece porque o arquivo cresceu à
+  // volta dela — o teste acusou na hora, que é para o que ele existe.
+  const irmas = inbox.indexOf("irmaos.map(");
   assert.notEqual(container, -1, "o contêiner de rolagem sumiu — este teste precisa ser reescrito");
   assert.notEqual(ancora, -1, "a âncora do fim do fio sumiu");
   assert.notEqual(irmas, -1, "o bloco das irmãs sumiu");
@@ -101,6 +105,57 @@ test("DEFEITO 2 · a ABERTURA mira o fim do fio, não o fim do documento", () =>
     inbox.slice(i, fim),
     /fimRef\.current/,
     "a abertura deixou de mirar a âncora do fio; se for de propósito, reescreva esta guarda",
+  );
+});
+
+/*
+ * ── DIVISÃO SIMPLES, NO MESMO FIO (16/09, decisão do Diogo pelo print do Kommo) ───────────────
+ *
+ * A caixa com borda, cabeçalho e rolagem própria foi recusada: *"gostaria que fosse uma divisão
+ * mais simples na mesma tela de conversa… uma linha que mostra onde acabou a conversa de um número
+ * e onde começou do novo"*. O fio passa a ser UM só, e cada número abre com um divisor.
+ *
+ * E há uma dependência dura entre isto e o DEFEITO 1: sem a caixa, o ancestral rolável mais
+ * próximo do `FioLead` deixa de ser a caixa de 420px e passa a ser o contêiner do fio inteiro. Se
+ * o `autoRolar={false}` cair, o fio irmão rola a TELA TODA ao montar — o dano sobe de "bolha
+ * cortada" para "a conversa da Sara salta sozinha".
+ */
+
+/** O bloco de UM fio irmão, delimitado pelo fechamento real da `<section>`. */
+function blocoDoIrmao(): string {
+  const i = inbox.indexOf("irmaos.map(");
+  assert.notEqual(i, -1, "o map dos irmãos sumiu — este teste precisa ser reescrito");
+  const fim = inbox.indexOf("</section>", i);
+  assert.notEqual(fim, -1, "não achei o fim do bloco da thread irmã");
+  return inbox.slice(i, fim);
+}
+
+test("DIVISÃO · a thread irmã corre no MESMO fio — sem caixa de rolagem própria", () => {
+  const bloco = blocoDoIrmao();
+  assert.doesNotMatch(bloco, /max-h-\[/, "a caixa de altura fixa voltou: rolagem dentro de rolagem");
+  assert.doesNotMatch(bloco, /overflow-y-auto/, "o fio irmão voltou a ter rolagem própria");
+});
+
+test("DIVISÃO · cada número irmão abre com o divisor", () => {
+  assert.match(
+    blocoDoIrmao(),
+    /<DivisorDeNumero/,
+    "sem o divisor não se vê onde acabou um número e começou o outro",
+  );
+});
+
+test("DIVISÃO · o fio ABERTO também é rotulado, e só quando há irmãos", () => {
+  // o divisor do fio aberto vive FORA do map (é o primeiro do fio) e é condicionado: lead de um
+  // número só — a esmagadora maioria — não ganha rótulo nenhum, que viraria ruído permanente.
+  const i = inbox.indexOf("<DivisorDeNumero");
+  assert.notEqual(i, -1, "o divisor sumiu — este teste precisa ser reescrito");
+  const mapDosIrmaos = inbox.indexOf("irmaos.map(");
+  assert.ok(i < mapDosIrmaos, "o único divisor é o dos irmãos; o fio aberto ficou sem rótulo");
+  // a condição tem de estar coladinha nele, não em qualquer lugar do arquivo
+  assert.match(
+    inbox.slice(Math.max(0, i - 260), i),
+    /irmaos\.length > 0/,
+    "o rótulo do fio aberto apareceria também para quem só tem um número",
   );
 });
 

@@ -12,6 +12,7 @@ import {
   chipDoNumero,
   rotuloSelo,
   vereditoEnvio,
+  type ChipNumero,
   type SeloChip,
 } from "./regras/numero.ts";
 import {
@@ -1438,6 +1439,22 @@ export function Inbox({
               {visiveis.length === 0 && props_.length === 0 && (
                 <div className="m-auto max-w-sm text-center text-sm text-mute">Sem mensagens ainda nesta conversa.</div>
               )}
+
+              {/* O RÓTULO DO FIO ABERTO — só quando o lead fala por mais de um número (16/09).
+                  Sem irmãos ele não aparece: um número só é a esmagadora maioria dos leads, e
+                  carimbar o óbvio em toda conversa é ruído permanente para quase todo mundo. O
+                  cabeçalho já diz "recebida por". Aqui ele volta porque agora DIVIDE: é o começo
+                  do primeiro bloco, e sem ele o segundo divisor pareceria separar o nada. */}
+              {irmaos.length > 0 && selecionada && (
+                <DivisorDeNumero
+                  chip={chipDoNumero({
+                    phone_number_id: selecionada.phone_number_id ?? null,
+                    numero_apelido: selecionada.numero_apelido ?? null,
+                    numero_e164: selecionada.numero_e164 ?? null,
+                    finalidade: selecionada.finalidade ?? null,
+                  })}
+                />
+              )}
               {blocos.map((bloco, bi) => (
                 <div key={bi} className="flex flex-col gap-3.5">
                   {/* separador de dia — chip sticky durante o scroll (RF-29) */}
@@ -1677,12 +1694,7 @@ export function Inbox({
                   desenha nada — lead de um fio só é a esmagadora maioria, e seção vazia vira ruído
                   permanente para quase todo mundo. */}
               {irmaos.length > 0 && (
-                <div className="mt-4 flex flex-col gap-2 border-t border-linha pt-3">
-                  <p className="text-[11.5px] font-medium uppercase tracking-wide text-mute">
-                    {irmaos.length === 1
-                      ? "Também falam por outro número"
-                      : `Também falam por outros ${irmaos.length} números`}
-                  </p>
+                <div className="flex flex-col gap-3.5">
                   {irmaos.map((f) => {
                     // os quatro do M7 são OPCIONAIS na linha da lista (a `0094` pode não existir no
                     // ambiente) e OBRIGATÓRIOS no chip. Normaliza aqui, na fronteira: afrouxar o
@@ -1699,42 +1711,19 @@ export function Inbox({
                     // entrega. Resumo de uma linha foi a primeira entrega, e foi recusada.
                     const msgs = mensagensDosIrmaos[f.id] ?? [];
                     return (
-                      <section key={f.id} className="overflow-hidden rounded-lg border border-linha bg-branco">
-                        <header className="flex items-center gap-2 border-b border-linha px-3 py-1.5">
-                          <span
-                            title={chip.titulo}
-                            className={cn(
-                              "shrink-0 text-[11.5px] font-semibold",
-                              chip.atencao ? "text-amarelo" : "text-suave",
-                            )}
-                          >
-                            {chip.rotulo}
-                          </span>
-                          {chip.selos.map((s) => (
-                            <span
-                              key={s}
-                              className="shrink-0 rounded-full bg-nota-faixa px-1.5 py-px text-[10px] font-medium uppercase text-amarelo"
-                            >
-                              {rotuloSelo(s)}
-                            </span>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => router.push(`/conversas?c=${f.id}`)}
-                            className="ml-auto shrink-0 text-[11.5px] text-navy underline-offset-2 hover:underline"
-                          >
-                            abrir
-                          </button>
-                        </header>
-                        <div className="max-h-[420px] overflow-y-auto bg-board px-3 py-2">
-                          {msgs.length > 0 ? (
-                            <FioLead mensagens={msgs} nomeLead={titulo ?? "Lead"} autoRolar={false} />
-                          ) : (
-                            <p className="py-3 text-center text-[12px] text-mute">
-                              {f.previa ? `${f.previa_saida ? "Você: " : ""}${f.previa}` : "sem mensagem"}
-                            </p>
-                          )}
-                        </div>
+                      <section key={f.id} className="flex flex-col gap-3.5">
+                        <DivisorDeNumero chip={chip} aoAbrir={() => router.push(`/conversas?c=${f.id}`)} />
+                        {/* sem caixa e sem rolagem própria: as mensagens deste número correm no
+                            MESMO fio. E é por isso que `autoRolar={false}` deixou de ser
+                            acabamento — sem a caixa, o ancestral rolável do FioLead passou a ser o
+                            fio inteiro, e auto-rolar aqui saltaria a tela da Sara. */}
+                        {msgs.length > 0 ? (
+                          <FioLead mensagens={msgs} nomeLead={titulo ?? "Lead"} autoRolar={false} />
+                        ) : (
+                          <p className="text-center text-[12px] text-mute">
+                            {f.previa ? `${f.previa_saida ? "Você: " : ""}${f.previa}` : "sem mensagem"}
+                          </p>
+                        )}
                       </section>
                     );
                   })}
@@ -2028,6 +2017,46 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
 //     `core.conversa` é legível por todo `authenticated` — usar o id como rótulo contornaria a RLS
 //     que existe para esconder o nome dela (CA-9).
 // ═══════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A DIVISÃO ENTRE NÚMEROS (16/09) — a linha que diz onde acabou a conversa de um número e onde
+ * começou a do outro. Um bloco por número, e o divisor abre cada um.
+ *
+ * Por que uma régua e não uma caixa: a caixa com borda, cabeçalho e rolagem própria foi a entrega
+ * recusada — rolagem dentro de rolagem cortava a primeira bolha e roubava a tela do fio aberto. O
+ * pedido foi *"uma divisão mais simples na mesma tela"*, com o print do Kommo do lado.
+ *
+ * O desenho não é novo: é o separador de dia que esta tela já usa (chip centrado, `text-mute`),
+ * um degrau mais forte, porque divide mais. A régua atravessa o fio, o rótulo fica no meio, e o
+ * fio ABERTO vem em `text-tinta` enquanto os irmãos vêm em `text-suave` — a hierarquia se lê sem
+ * precisar de uma palavra dizendo "você está aqui".
+ */
+function DivisorDeNumero({ chip, aoAbrir }: { chip: ChipNumero; aoAbrir?: () => void }) {
+  return (
+    <div className="my-1 flex items-center gap-2 self-stretch" title={chip.titulo}>
+      <span aria-hidden className="h-px flex-1 bg-linha" />
+      <span
+        className={cn(
+          "shrink-0 text-[11.5px]",
+          chip.atencao ? "font-semibold text-amarelo" : aoAbrir ? "font-medium text-suave" : "font-semibold text-tinta",
+        )}
+      >
+        {chip.rotulo}
+      </span>
+      <Selos selos={chip.selos} />
+      {aoAbrir && (
+        <button
+          type="button"
+          onClick={aoAbrir}
+          className="shrink-0 text-[11.5px] text-navy underline-offset-2 hover:underline"
+        >
+          abrir
+        </button>
+      )}
+      <span aria-hidden className="h-px flex-1 bg-linha" />
+    </div>
+  );
+}
 
 function Selos({ selos }: { selos: SeloChip[] }) {
   return (
