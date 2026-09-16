@@ -302,7 +302,7 @@ test("confirmarProjecao: exceção declarada sem evento_id passa sem tocar no ba
  * existem nesta branch: a lista dos 10 tipos é declarada aqui em vez de importada.
  */
 
-/** Os 11 tipos que a Web-B escreve (a lista viva mora em components/configuracoes/regras/porta.ts). */
+/** Os 12 tipos que a Web-B escreve (a lista viva mora em components/configuracoes/regras/porta.ts). */
 const TIPOS_ESCRITOS_WEB_B = [
   "canal_registrado",
   "canal_atualizado",
@@ -310,6 +310,7 @@ const TIPOS_ESCRITOS_WEB_B = [
   "canal_desativado",
   "canal_consentimento_registrado",
   "canal_nivel_alterado",
+  "canal_removido",
   "config_publicada",
   "suporte_ticket_aberto",
   "suporte_ticket_comentado",
@@ -327,7 +328,8 @@ test("enxerto · todo tipo escrito pela Web-B tem conferência OU exceção decl
   for (const tipo of TIPOS_ESCRITOS_WEB_B) {
     assert.ok(temConferencia(tipo) || excecaoDe(tipo), tipo);
   }
-  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 11);
+  // 11 → 12 em 16/09: `canal_removido` (458ccc6).
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 12);
 });
 
 test("enxerto · o fail-closed NÃO atinge as 10: com a linha na tabela, elas são conhecidas", () => {
@@ -407,9 +409,10 @@ test("enxerto · aceite_contato_registrado é exceção DECLARADA (ledger-only),
   assert.ok(e.conferirLedger);
   assert.match(e.motivo, /Ledger-only|CONTRATO-C/);
   assert.ok(!temConferencia("aceite_contato_registrado"));
-  // duas exceções: a da web-b (ledger-only por desenho) e levindo_acionado (só no ledger, para o
-  // runtime consumir). Ambas com motivo escrito — ausência de conferência nunca por esquecimento.
-  assert.equal(Object.keys(EXCECOES).length, 2);
+  // três exceções: aceite_contato_registrado (ledger-only por desenho), levindo_acionado (só no
+  // ledger, para o runtime consumir), e canal_removido (view exclui removido_em IS NOT NULL).
+  // Todas com motivo escrito — ausência de conferência nunca por esquecimento.
+  assert.equal(Object.keys(EXCECOES).length, 3);
   for (const [tipo, ex] of Object.entries(EXCECOES)) assert.ok(ex.motivo.length > 40, tipo);
 });
 

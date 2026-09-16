@@ -414,7 +414,9 @@ test("todo tipo escrito pela Web-B tem conferência OU exceção declarada", () 
   // 15 → 16 em 14/09: `autonomia_alterada`. A régua de autonomia deixou de ser leitura — o
   // caminho de gravação existia desde a 0104/0165 e eu o declarara inexistente lendo o projetor
   // ERRADO (`proj_config_agente` em vez de `proj_autonomia_agente`).
-  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 16);
+  // 16 → 17 em 16/09: `canal_removido` (458ccc6). Exceção ledger-only: a view filtra
+  // `removido_em IS NOT NULL`, então a linha SOME da projeção e não há row para conferir.
+  assert.equal(TIPOS_ESCRITOS_WEB_B.length, 17);
   for (const t of ["config_atualizada", "template_whatsapp_criado", "template_whatsapp_submetido", "template_whatsapp_arquivado"]) {
     assert.ok(TIPOS_ESCRITOS_WEB_B.includes(t), t);
   }
@@ -520,7 +522,8 @@ test("aceite_contato_registrado é exceção DECLARADA (ledger-only), com motivo
   assert.ok(!Object.prototype.hasOwnProperty.call(CONFERENCIA, "aceite_contato_registrado"));
   // a tabela do F6 agora tem DUAS exceções: a minha (ledger-only por desenho) e a do Agent 1
   // (levindo_acionado, que vive só no ledger para o runtime consumir). Ambas com motivo escrito.
-  assert.equal(Object.keys(EXCECOES).length, 2);
+  // 2 → 3 em 16/09: `canal_removido` (ledger-only, view exclui `removido_em IS NOT NULL`).
+  assert.equal(Object.keys(EXCECOES).length, 3);
   for (const [tipo, e] of Object.entries(EXCECOES)) assert.ok(e.motivo.length > 40, tipo);
 });
 
