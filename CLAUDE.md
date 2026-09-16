@@ -43,12 +43,43 @@ NÃO é dona do envio em si — quem fala com a Meta/WuzAPI é o sender, no `me-
   antes de virar código; (b) parentesco por telefone — sem `lead_id` não há prova de ser a mesma
   pessoa, e o erro mostraria a conversa de um desconhecido dentro da de outro.
 
+- 2026-09-16 · Cada fio irmão é uma **thread inteira** na tela de conversas — `<section>` com
+  cabeçalho (chip M7 + selos + "abrir") e o `FioLead` dentro, com as últimas 20 mensagens daquele
+  número. A página lê as mensagens dos irmãos no `Promise.all` que já existia.
+  Motivo: a primeira entrega mostrava uma linha de prévia por irmão e foi recusada — *"teria que ter
+  realmente uma divisão de thread de onde foi cada conversa"*. O print do Kommo mostra blocos de
+  mensagens, não resumos.
+  Descartado: (a) resumo de uma linha com a prévia; (b) reescrever o render de fio no inbox — o
+  `FioLead` do drawer já resolve blocos por dia, áudio, imagem e estado de entrega; (c) trazer a
+  thread inteira de cada irmão: `lerMensagens` traz até 500, e um lead de 3 fios pediria 1.500 numa
+  tela que já lê o fio aberto.
+
 ### Como se escreve guarda aqui (aprendido no dia, doendo)
 Teste sobre texto-fonte tem de ancorar **no que muda quando o defeito entra**, e a única forma de
-saber isso é **mutar**. Três guardas minhas passaram no estado quebrado em 15/09:
-1. o payload do fio novo — só virou guarda quando deixou de ser ternário na action e virou função
-   pura, testada por comportamento;
-2. a faixa única — a âncora era a linha exata que o próprio conserto alterava;
-3. o render dos fios irmãos — passava 9/0 com a tela desligada por `{false && …}`, porque olhava se
-   as chamadas existiam, não a condição.
+saber isso é **mutar**. Em 15-16/09, **seis** guardas minhas passaram no estado quebrado:
+
+1. **o payload do fio novo** — só virou guarda quando deixou de ser ternário na action e virou
+   função pura, testada por comportamento;
+2. **a faixa única** — a âncora era a linha exata que o próprio conserto alterava (`{!interno &&
+   origem &&` deixou de existir ao ganhar o `!fioNovo`, e o `indexOf` devolveu −1);
+3. **o render dos fios irmãos** — passava 9/0 com a tela desligada por `{false && …}`, porque
+   olhava se as chamadas existiam, não a **condição**;
+4. **a leitura das mensagens dos irmãos** — ancorada no **nome da variável**: trocar a leitura real
+   por `Promise.resolve({})` mantinha `mensagensDosIrmaos` no arquivo, e passava 7/0;
+5. **o desenho da thread** — ancorado em `/FioLead/` no arquivo inteiro: o **import** sobrevive
+   quando o uso some do render, e passava 7/0;
+6. **a correção do nº 5** — usou **janela fixa** de 2600 caracteres onde a distância real era 2689.
+   A guarda voltou a não distinguir: a mutação deu o mesmo resultado que o controle.
+
+Os três padrões que se repetem, e o que fazer:
+
+| padrão do erro | o conserto |
+|---|---|
+| ancorar no **nome** (variável, símbolo, import) | ancorar na **chamada** ou no **uso**, dentro do bloco que importa |
+| ancorar na **linha exata** que o conserto altera | ancorar no **miolo** da regra, que sobrevive ao conserto |
+| **janela fixa** de N caracteres | delimitar pelo **fechamento real** (`</section>`, fim do bloco) |
+
+E um sinal que denuncia guarda furada sem precisar pensar: **se a mutação devolve o mesmo placar do
+controle, o teste não está medindo nada.** Foi assim que os casos 5 e 6 apareceram.
+
 Verde não é guarda. **Guarda é o que fica vermelho quando você quebra de propósito.**
