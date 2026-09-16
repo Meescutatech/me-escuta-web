@@ -34,3 +34,21 @@ NÃO é dona do envio em si — quem fala com a Meta/WuzAPI é o sender, no `me-
   o alias `@/`. Motivo: `node --test` não resolve o alias do tsconfig e falha com
   ERR_MODULE_NOT_FOUND **com o typecheck verde** — o TS resolve, o runtime não.
   Descartado: ensinar o runner a resolver o alias; custo desproporcional para um import.
+- 2026-09-15 · Os fios irmãos (outras conversas do mesmo lead, por outros números) aparecem em
+  `/conversas`, abaixo do fio aberto — não no drawer do funil, onde eu os construí primeiro por ter
+  lido errado o pedido. A regra é `lib/conversas/fios-irmaos.ts` e DERIVA da lista que a página já
+  carrega: `ConversaResumo` traz `lead_id`, `previa`, `atualizado_em` e os quatro campos do M7.
+  Motivo: o dado já está no cliente; consultar de novo seria pagar duas vezes pelo mesmo.
+  Descartado: (a) leitura nova no servidor — a primeira versão do teste a exigia, e foi reescrita
+  antes de virar código; (b) parentesco por telefone — sem `lead_id` não há prova de ser a mesma
+  pessoa, e o erro mostraria a conversa de um desconhecido dentro da de outro.
+
+### Como se escreve guarda aqui (aprendido no dia, doendo)
+Teste sobre texto-fonte tem de ancorar **no que muda quando o defeito entra**, e a única forma de
+saber isso é **mutar**. Três guardas minhas passaram no estado quebrado em 15/09:
+1. o payload do fio novo — só virou guarda quando deixou de ser ternário na action e virou função
+   pura, testada por comportamento;
+2. a faixa única — a âncora era a linha exata que o próprio conserto alterava;
+3. o render dos fios irmãos — passava 9/0 com a tela desligada por `{false && …}`, porque olhava se
+   as chamadas existiam, não a condição.
+Verde não é guarda. **Guarda é o que fica vermelho quando você quebra de propósito.**
