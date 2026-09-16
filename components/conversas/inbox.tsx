@@ -50,6 +50,7 @@ import type { AjusteProposta, MotivoDescarte } from "@/components/jarvis/tipos";
 import { BotaoNovaConversa } from "@/components/conversas/nova-conversa";
 import { escolherCanalDeEnvio } from "@/lib/conversas/envio-canal";
 import { fiosIrmaos } from "@/lib/conversas/fios-irmaos";
+import { FioLead } from "@/components/funil/fio-lead";
 import { rotuloDoFio } from "@/lib/conversas/fios-do-lead";
 import { BotaoFoco, ContagemFoco, FimDaFila, MolduraFoco, useAtalhosFoco } from "@/components/conversas/foco";
 import { ItemListaFoco } from "@/components/tarefas/item-lista-foco";
@@ -176,6 +177,7 @@ export function Inbox({
   ancoraEm = null,
   alvoNaoEncontrado = false,
   canaisEnvio = null,
+  mensagensDosIrmaos = {},
   jarvisSobDemanda = false,
   propostas = [],
   tarefasPorProposta = null,
@@ -234,6 +236,12 @@ export function Inbox({
    * o seletor — segue a regra M7 de "responde pelo número que recebeu".
    */
   canaisEnvio?: CanalEnvioComposer[] | null;
+  /**
+   * 16/09 · as ÚLTIMAS mensagens de cada fio irmão, por `conversa_id`, lidas no servidor com teto.
+   * Vazio = lead de um fio só (a maioria) ou leitura que não trouxe nada — nos dois casos a seção
+   * das threads irmãs não é desenhada.
+   */
+  mensagensDosIrmaos?: Record<string, Mensagem[]>;
   /** W-D3 · gatilho manual "Pedir sugestão ao Jarvis" no menu ⋯ do cabeçalho (só ensaio). */
   jarvisSobDemanda?: boolean;
   /** W-D3 · as propostas do Jarvis desta conversa, no ponto do fio em que nasceram. */
@@ -1678,34 +1686,48 @@ export function Inbox({
                       numero_e164: f.numero_e164 ?? null,
                       finalidade: f.finalidade ?? null,
                     });
+                    // A THREAD daquele número, não um resumo: o `FioLead` é o mesmo componente que
+                    // o drawer do funil usa, e já resolve blocos por dia, áudio, imagem e estado de
+                    // entrega. Resumo de uma linha foi a primeira entrega, e foi recusada.
+                    const msgs = mensagensDosIrmaos[f.id] ?? [];
                     return (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => router.push(`/conversas?c=${f.id}`)}
-                        className="flex w-full items-center gap-2 rounded-lg border border-linha bg-branco px-3 py-2 text-left transition-colors hover:bg-hover"
-                      >
-                        <span
-                          title={chip.titulo}
-                          className={cn(
-                            "shrink-0 text-[11.5px] font-semibold",
-                            chip.atencao ? "text-amarelo" : "text-suave",
-                          )}
-                        >
-                          {chip.rotulo}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-[12.5px] text-mute">
-                          {f.previa ? (
-                            <>
-                              {f.previa_saida ? "Você: " : ""}
-                              {f.previa}
-                            </>
+                      <section key={f.id} className="overflow-hidden rounded-lg border border-linha bg-branco">
+                        <header className="flex items-center gap-2 border-b border-linha px-3 py-1.5">
+                          <span
+                            title={chip.titulo}
+                            className={cn(
+                              "shrink-0 text-[11.5px] font-semibold",
+                              chip.atencao ? "text-amarelo" : "text-suave",
+                            )}
+                          >
+                            {chip.rotulo}
+                          </span>
+                          {chip.selos.map((s) => (
+                            <span
+                              key={s}
+                              className="shrink-0 rounded-full bg-nota-faixa px-1.5 py-px text-[10px] font-medium uppercase text-amarelo"
+                            >
+                              {rotuloSelo(s)}
+                            </span>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/conversas?c=${f.id}`)}
+                            className="ml-auto shrink-0 text-[11.5px] text-navy underline-offset-2 hover:underline"
+                          >
+                            abrir
+                          </button>
+                        </header>
+                        <div className="max-h-[420px] overflow-y-auto bg-board px-3 py-2">
+                          {msgs.length > 0 ? (
+                            <FioLead mensagens={msgs} nomeLead={titulo ?? "Lead"} />
                           ) : (
-                            "sem mensagem"
+                            <p className="py-3 text-center text-[12px] text-mute">
+                              {f.previa ? `${f.previa_saida ? "Você: " : ""}${f.previa}` : "sem mensagem"}
+                            </p>
                           )}
-                        </span>
-                        <span className="shrink-0 text-[11.5px] text-navy">abrir</span>
-                      </button>
+                        </div>
+                      </section>
                     );
                   })}
                 </div>

@@ -246,16 +246,34 @@ export default async function ConversasPage({
 
   // mensagens + sugestões + painel do lead (ficha/tarefas/anotações/menções, R8/R13) em
   // paralelo: todos dependem só da conversa selecionada, não uns dos outros
-  const [mensagens, sugestoes, painel, programadas]: [
+  /**
+   * 16/09 · AS THREADS IRMÃS. A primeira versão mostrava uma linha de prévia por irmão, e o Diogo
+   * recusou: *"teria que ter realmente uma divisão de thread de onde foi cada conversa"*. Então a
+   * página passa a ler as mensagens de cada fio do mesmo lead.
+   *
+   * TETO no servidor: `lerMensagens` traz até 500, e um lead com 3 fios pediria 1.500 numa tela que
+   * já lê o fio aberto inteiro. Vão as ÚLTIMAS 20 por irmão — o mesmo corte que o drawer do funil
+   * já usa, com "ver a conversa inteira" levando ao fio.
+   */
+  const ULTIMAS_DO_IRMAO = 20;
+  const idsIrmaos = selecionada?.lead_id
+    ? conversas.filter((c) => c.lead_id === selecionada.lead_id && c.id !== selecionadaId).map((c) => c.id)
+    : [];
+
+  const [mensagens, sugestoes, painel, programadas, mensagensDosIrmaos]: [
     Mensagem[],
     SugestaoMensagem[],
     PainelLead | null,
     EnvioProgramadoLinha[],
+    Record<string, Mensagem[]>,
   ] = await Promise.all([
     selecionadaId ? lerMensagens(selecionadaId) : Promise.resolve([]),
     selecionadaId ? lerSugestoesConversa(selecionadaId) : Promise.resolve([]),
     selecionada?.lead_id ? lerPainelLead(selecionada.lead_id) : Promise.resolve(null),
     selecionadaId ? lerEnviosProgramados(selecionadaId) : Promise.resolve([]), // R27/F1
+    Promise.all(idsIrmaos.map((id) => lerMensagens(id))).then((listas) =>
+      Object.fromEntries(listas.map((ms, i) => [idsIrmaos[i], ms.slice(-ULTIMAS_DO_IRMAO)])),
+    ),
   ]);
 
   return (
@@ -282,6 +300,7 @@ export default async function ConversasPage({
           : null
       }
       programadas={programadas}
+      mensagensDosIrmaos={mensagensDosIrmaos}
       ancoraEm={searchParams.em ?? null}
       alvoNaoEncontrado={alvoNaoEncontrado}
       canaisEnvio={canaisEnvio.length > 0 ? canaisEnvio : null}
