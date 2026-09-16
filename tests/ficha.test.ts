@@ -92,6 +92,104 @@ test("parseTags: array de strings e de objetos; lixo vira []", () => {
   assert.deepEqual(parseTags(null), []);
 });
 
+// ─────────────── card 3: grupos da ficha devem ser editáveis ───────────────
+
+// recorte que espelha a config REAL de produção (v3): 5 grupos com editavel:false
+const CONFIG_PRODUCAO_V3 = {
+  grupos: [
+    {
+      nome: "Principal",
+      editavel: true,
+      campos: [
+        { slug: "estado", tipo: "selecao", opcoes: ["Minas Gerais", "São Paulo"], rotulo: "Estado" },
+        { slug: "cidade", tipo: "texto", rotulo: "Cidade" },
+      ],
+    },
+    {
+      nome: "Qualificação",
+      editavel: true,
+      campos: [
+        { slug: "desejo", tipo: "selecao", opcoes: ["Não", "Sim"], rotulo: "Desejo" },
+      ],
+    },
+    {
+      nome: "Paciente",
+      editavel: true,
+      campos: [
+        { slug: "nome_completo", tipo: "texto", rotulo: "Nome Completo" },
+        { slug: "cpf", tipo: "texto", rotulo: "CPF" },
+        { slug: "endereco_completo_com_cep", tipo: "endereco", rotulo: "Endereço Completo com CEP" },
+      ],
+    },
+    {
+      nome: "Teste",
+      editavel: true,
+      campos: [
+        { slug: "inicio_do_teste", tipo: "data", rotulo: "Início do Teste" },
+        { slug: "teste_finalizado", tipo: "selecao", opcoes: ["Não", "Sim"], rotulo: "Teste Finalizado?" },
+      ],
+    },
+    {
+      nome: "AASI",
+      editavel: true,
+      campos: [
+        { slug: "plano", tipo: "selecao", opcoes: ["Plano Unilateral", "Plano Bilateral"], rotulo: "Plano" },
+        { slug: "no_de_serie_oe", tipo: "texto", rotulo: "Nº de Série OE" },
+        { slug: "programacao", tipo: "arquivo", rotulo: "Programação" },
+      ],
+    },
+    {
+      nome: "Venda",
+      editavel: true,
+      campos: [
+        { slug: "parcelamento", tipo: "selecao", opcoes: ["3", "6", "12"], rotulo: "Parcelamento" },
+        { slug: "vendeu", tipo: "selecao", opcoes: ["Não", "Sim"], rotulo: "Vendeu?" },
+        { slug: "data_da_venda", tipo: "data", rotulo: "Data da Venda" },
+      ],
+    },
+    {
+      nome: "Pós-Venda",
+      editavel: true,
+      campos: [
+        { slug: "ultimo_nps_csat_feedback", tipo: "numero", rotulo: "Último NPS/CSAT/Feedback" },
+        { slug: "feedback", tipo: "texto_longo", rotulo: "Feedback" },
+      ],
+    },
+  ],
+};
+
+test("parseConfigFicha: grupos Paciente/Teste/AASI/Venda/Pós-Venda devem ter campos editáveis (exceto tipo sem editor)", () => {
+  const grupos = parseConfigFicha(CONFIG_PRODUCAO_V3)!;
+  assert.equal(grupos.length, 7);
+
+  // Paciente: texto é editável, endereço (tipo outro) não
+  const paciente = grupos.find((g) => g.nome === "Paciente")!;
+  assert.equal(paciente.campos.find((c) => c.slug === "nome_completo")!.editavel, true, "nome_completo deve ser editável");
+  assert.equal(paciente.campos.find((c) => c.slug === "cpf")!.editavel, true, "cpf deve ser editável");
+  assert.equal(paciente.campos.find((c) => c.slug === "endereco_completo_com_cep")!.editavel, false, "endereço nunca edita");
+
+  // Teste: data e seleção são editáveis
+  const teste = grupos.find((g) => g.nome === "Teste")!;
+  assert.equal(teste.campos.find((c) => c.slug === "inicio_do_teste")!.editavel, true, "inicio_do_teste deve ser editável");
+  assert.equal(teste.campos.find((c) => c.slug === "teste_finalizado")!.editavel, true, "teste_finalizado deve ser editável");
+
+  // AASI: texto/seleção editáveis, arquivo não
+  const aasi = grupos.find((g) => g.nome === "AASI")!;
+  assert.equal(aasi.campos.find((c) => c.slug === "plano")!.editavel, true, "plano deve ser editável");
+  assert.equal(aasi.campos.find((c) => c.slug === "no_de_serie_oe")!.editavel, true, "no_de_serie_oe deve ser editável");
+  assert.equal(aasi.campos.find((c) => c.slug === "programacao")!.editavel, false, "programação (arquivo) nunca edita");
+
+  // Venda: tudo editável
+  const venda = grupos.find((g) => g.nome === "Venda")!;
+  assert.equal(venda.campos.find((c) => c.slug === "vendeu")!.editavel, true, "vendeu deve ser editável");
+  assert.equal(venda.campos.find((c) => c.slug === "data_da_venda")!.editavel, true, "data_da_venda deve ser editável");
+
+  // Pós-Venda: número e texto_longo editáveis
+  const posVenda = grupos.find((g) => g.nome === "Pós-Venda")!;
+  assert.equal(posVenda.campos.find((c) => c.slug === "ultimo_nps_csat_feedback")!.editavel, true, "nps deve ser editável");
+  assert.equal(posVenda.campos.find((c) => c.slug === "feedback")!.editavel, true, "feedback deve ser editável");
+});
+
 // ─────────────── valor ⇄ exibição/editor ───────────────
 
 test("valorParaTexto: vazio honesto, seleção crua, data e data_hora no fuso SP", () => {
