@@ -159,3 +159,10 @@ quebra a coisa**: "mover" é remover de um lado E inserir no outro, numa troca s
 
 Verde não é guarda. **Guarda é o que fica vermelho quando você quebra de propósito** — e a mutação
 só vale como prova quando ela própria seria um defeito de verdade.
+- 2026-09-16 · "não entregue" com `131030` diz **"número fora da lista de permissão do número de
+  teste — inclua na Meta e tente de novo"**, e o retry fica. O texto vem de `motivoErroEnvio`
+  (`lib/conversas/thread.ts`), usado pelo inbox e pelo fio do funil.
+  Motivo: a equipe via "erro 131030" e não sabia que era a lista da Meta; incluído o número, o
+  reenvio entrega. Não existe allow list nossa de destinatário (medido em 16/09).
+  Descartado: pôr 131030 em `ERRO_PERMANENTE` — tiraria o "Tentar de novo" de quem acabou de ser
+  incluído na lista.

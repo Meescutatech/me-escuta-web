@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { Mensagem } from "@/lib/dados/conversas";
-import { montarBlocos } from "@/lib/conversas/thread";
+import { montarBlocos, motivoErroEnvio } from "@/lib/conversas/thread";
 import { ehAudio, temImagemVisivel } from "@/lib/conversas/midia";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
@@ -170,7 +170,9 @@ export function FioLead({
                       </div>
                       {m.reacoes && m.reacoes.length > 0 && <ReacoesChips reacoes={m.reacoes} saida={saida} />}
                       {falhou ? (
-                        <div className="px-1 text-[0.68rem] text-vermelho">não entregue{m.erro_codigo ? ` · erro ${m.erro_codigo}` : ""}</div>
+                        <div className="px-1 text-[0.68rem] text-vermelho">
+                          não entregue{motivoErroEnvio(m.erro_codigo) ? ` · ${motivoErroEnvio(m.erro_codigo)}` : m.erro_codigo ? ` · erro ${m.erro_codigo}` : ""}
+                        </div>
                       ) : programada ? (
                         <div className="px-1 text-[0.66rem] tabular-nums text-mute">
                           <RotuloProgramada quando={m.programada_para!} />

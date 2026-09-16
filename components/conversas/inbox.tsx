@@ -80,7 +80,7 @@ import {
   dataDaLista,
   fronteiraNaoLidas,
   montarBlocos,
-  motivoErroPermanente,
+  motivoErroEnvio,
   pendentesVivas,
   podeTentarDeNovo,
 } from "@/lib/conversas/thread";
@@ -1506,7 +1506,7 @@ export function Inbox({
                             const primeira = mi === 0;
                             const ultima = mi === grupo.itens.length - 1;
                             const falhou = m.status_entrega === "falhou" || m.falha_local;
-                            const motivo = motivoErroPermanente(m.erro_codigo);
+                            const motivo = motivoErroEnvio(m.erro_codigo);
                             const podeRetry = podeTentarDeNovo(m);
                             const ehAncora = ancora?.id === m.id;
                             const figurinha = ehFigurinha(m);

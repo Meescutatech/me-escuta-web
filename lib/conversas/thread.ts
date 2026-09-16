@@ -153,6 +153,20 @@ export function motivoErroPermanente(codigo: string | null | undefined): string 
 }
 
 /**
+ * Erros que se EXPLICAM mas continuam com retry. 131030: o destinatário não está na lista de
+ * permissão de um número de TESTE da Meta — incluído na lista, o reenvio entrega (16/09).
+ */
+const ERRO_COM_RETRY: Record<string, string> = {
+  "131030": "número fora da lista de permissão do número de teste (131030) — inclua na Meta e tente de novo",
+};
+
+/** O texto que a bolha mostra depois de "não entregue". `null` ⇒ a tela cai no "erro <código>". */
+export function motivoErroEnvio(codigo: string | null | undefined): string | null {
+  if (!codigo) return null;
+  return motivoErroPermanente(codigo) ?? ERRO_COM_RETRY[codigo] ?? null;
+}
+
+/**
  * RF-28/32 — quando a mensagem falhada ganha o botão "Tentar de novo": tem CONTEÚDO reenviável
  * (corpo OU mídia já no bucket — rodada 6) E a falha é local (a action recusou o enfileiramento)
  * OU a projeção confirmou 'falhou' com erro NÃO permanente. Sem janela de tempo: falha retriável

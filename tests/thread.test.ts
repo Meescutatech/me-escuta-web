@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   dataDaLista,
+  motivoErroEnvio,
   motivoErroPermanente,
   pendentesVivas,
   podeTentarDeNovo,
@@ -236,4 +238,27 @@ test("F21 · a assinatura NÃO aceita atualizado_em — o que não entra não po
     ultima_entrada_em: string | null;
   };
   assert.equal(dataDaLista(comLixo), null);
+});
+
+// ─────────── motivoErroEnvio (16/09) ───────────
+// A equipe via "não entregue — erro 131030" e não sabia que era a lista de permissão do número de
+// teste da Meta. O texto diz o que fazer; o retry FICA, porque depois de incluir o número na lista o
+// reenvio entrega.
+
+test("131030 diz que o número está fora da lista de permissão — e continua com retry", () => {
+  assert.match(motivoErroEnvio("131030") ?? "", /fora da lista de permissão/);
+  assert.equal(podeTentarDeNovo(msg({ status_entrega: "falhou", erro_codigo: "131030" })), true);
+});
+
+test("erro permanente usa o mesmo motivo de antes; código desconhecido fica sem texto", () => {
+  assert.equal(motivoErroEnvio("131047"), motivoErroPermanente("131047"));
+  assert.equal(motivoErroEnvio("999999"), null);
+  assert.equal(motivoErroEnvio(null), null);
+});
+
+test("as duas telas que mostram 'não entregue' usam motivoErroEnvio", () => {
+  for (const arq of ["../components/conversas/inbox.tsx", "../components/funil/fio-lead.tsx"]) {
+    const fonte = readFileSync(new URL(arq, import.meta.url), "utf8");
+    assert.match(fonte, /motivoErroEnvio\(m\.erro_codigo\)/, arq);
+  }
 });
