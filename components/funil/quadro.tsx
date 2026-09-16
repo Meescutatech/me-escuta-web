@@ -53,6 +53,7 @@ import { useProjecaoViva } from "@/components/projecao-viva";
 import { novosIds } from "@/lib/tempo-real";
 import { INTERVALOS, PISO_SEM_TEMPO_REAL } from "@/lib/intervalos-vivos";
 import { cn } from "@/lib/utils";
+import { NovoLead } from "./novo-lead";
 
 /*
  * Board do FUNIL — redesign R9 (mockup r9-funil.html): colunas de 236px com cabeçalho
@@ -414,6 +415,10 @@ export function Quadro({
     () => new Set(dados.etapas.filter((e) => e.tipo === "aberto").map((e) => e.chave)),
     [dados.etapas],
   );
+  const etapaPadrao = useMemo(
+    () => dados.etapas.find((e) => e.tipo === "aberto")?.chave ?? "",
+    [dados.etapas],
+  );
   const leadsAtivos = useMemo(
     () => cards.filter((c) => chavesAbertas.has(c.etapa)).length,
     [cards, chavesAbertas],
@@ -642,6 +647,7 @@ export function Quadro({
             idPorNome={idPorNome}
           />
           <div className="ml-auto flex items-center gap-2">
+            <NovoLead etapas={dados.etapas} etapaPadrao={etapaPadrao} autorId={autorId ?? null} />
             <VisoesSalvas
               filtros={filtros}
               ordem={ordem}
