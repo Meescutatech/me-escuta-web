@@ -83,3 +83,23 @@ E um sinal que denuncia guarda furada sem precisar pensar: **se a mutação devo
 controle, o teste não está medindo nada.** Foi assim que os casos 5 e 6 apareceram.
 
 Verde não é guarda. **Guarda é o que fica vermelho quando você quebra de propósito.**
+
+### Pendência técnica — threads irmãs (16/09, feature quase concluída)
+
+O que está no ar (`4ec6780`) e funciona: leitura das mensagens por irmão com teto de 20, `<section>`
+por número com cabeçalho (chip M7 + selos + "abrir"), `FioLead` desenhando a thread. 7 testes,
+1227/1227, 4 mutações reprovando.
+
+**Falta acabamento, e são dois defeitos de layout — não de dado:**
+
+1. **A primeira bolha fica cortada pelo cabeçalho.** O `FioLead` rola para o fim ao montar
+   (`scrollIntoView` no `fimRef` dele) e, dentro do contêiner de `max-h-[420px]`, encosta no topo:
+   a mensagem mais antiga aparece pela metade atrás da faixa do número. Conserto provável: o
+   `FioLead` só deve auto-rolar quando é o fio principal — hoje ele o faz sempre.
+2. **A ordem visual saiu invertida.** A seção das irmãs aparece ACIMA do fio aberto, quando a
+   conversa aberta é o centro e as irmãs vêm depois. O bloco foi inserido antes do
+   `<div ref={fimRef} />`, mas o resultado na tela ficou no topo — investigar o contêiner de
+   rolagem antes de mover o JSX.
+
+**Como retomar:** teste primeiro, mutação antes de chamar de guarda, e conferir na TELA — nesta
+feature dez instrumentos deram conclusão errada e só o screenshot acertou.
