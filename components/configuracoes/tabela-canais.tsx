@@ -10,11 +10,13 @@ import {
   SearchIcon,
   ShieldCheckIcon,
   SmartphoneIcon,
+  Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
 import {
   ativarCanal,
   desativarCanal,
+  removerCanal,
 } from "@/app/(app)/configuracoes/canais/actions";
 import {
   AVISO_APLICACAO_RUNTIME,
@@ -26,6 +28,7 @@ import {
   estadoDoCanal,
   ordenarCanais,
   podeGerirCanais,
+  podeRemoverCanal,
   rotuloDepartamento,
   rotuloEstadoCanal,
   rotuloFinalidade,
@@ -46,6 +49,7 @@ import {
   AlertIcon,
   AlertTitle,
 } from "@/components/ui/alert";
+import { AlertDialogModal } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -573,9 +577,13 @@ function LinhaCanal({
   meuId: string | null;
   f8Pronto: boolean;
 }) {
+  const router = useRouter();
   const [corte, setCorte] = useState("");
+  const [confirmarRemocao, setConfirmarRemocao] = useState(false);
+  const [removendo, iniciarRemocao] = useTransition();
   const estado = estadoDoCanal(canal);
   const lite = canal.provedor === "nao_oficial";
+  const mostraRemover = podeRemoverCanal(meuPapel, meuId, canal);
 
   const situacao: { txt: string; tom: "ok" | "atencao" | "ruim" | "neutro" } = lite
     ? canal.sessao?.status === "conectado"
@@ -640,6 +648,19 @@ function LinhaCanal({
               ao: aoExpandir,
               abre: true,
             };
+
+  function confirmarERemover() {
+    iniciarRemocao(async () => {
+      const r = await removerCanal(canal.canal_id);
+      setConfirmarRemocao(false);
+      if (!r.ok) {
+        toast.error(r.motivo ?? "Não foi possível remover a conexão.");
+      } else {
+        toast("Conexão removida.", { description: `${canal.nome} não aparece mais na lista.` });
+        router.refresh();
+      }
+    });
+  }
 
   function copiar(valor: string, oque: string) {
     void navigator.clipboard
@@ -819,6 +840,18 @@ function LinhaCanal({
                   </DropdownMenuItem>
                 </>
               ) : null}
+              {mostraRemover ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setConfirmarRemocao(true)}
+                  >
+                    <Trash2Icon />
+                    Remover conexão
+                  </DropdownMenuItem>
+                </>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         </TableCell>
@@ -867,6 +900,19 @@ function LinhaCanal({
           </TableCell>
         </TableRow>
       ) : null}
+
+      <AlertDialogModal
+        open={confirmarRemocao}
+        onOpenChange={setConfirmarRemocao}
+        icon={<Trash2Icon className="size-5" />}
+        title={`Remover a conexão de ${canal.nome}?`}
+        description="O canal não aparecerá mais na lista. As conversas antigas continuam no histórico."
+        cancelLabel="Cancelar"
+        confirmLabel="Remover conexão"
+        confirmVariant="destructive"
+        onConfirm={confirmarERemover}
+        loading={removendo}
+      />
     </>
   );
 }

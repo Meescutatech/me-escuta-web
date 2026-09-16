@@ -875,11 +875,31 @@ export function payloadCanalDesativado(canalId: string, motivo?: string): Record
   return payload;
 }
 
+export function payloadCanalRemovido(canalId: string): Record<string, unknown> {
+  return { canal_id: canalId, removido_em: new Date().toISOString() };
+}
+
+/**
+ * Quem pode remover a conexão de um canal.
+ *
+ * A gestão (admin/owner) remove qualquer canal. O membro remove somente o PRÓPRIO canal não oficial
+ * (`lite:`). Qualquer outro papel, uid ausente ou canal oficial de membro: false. Falha FECHADO: a
+ * defesa real é a porta, e aqui é não oferecer o que ela recusaria.
+ */
+export function podeRemoverCanal(papel: Papel | null, meuId: string | null, canal: Canal): boolean {
+  if (podeGerirCanais(papel)) return true;
+  if (papel !== "membro") return false;
+  const uid = (meuId ?? "").trim();
+  if (!uid) return false;
+  return ehCanalNaoOficialId(canal.canal_id) && canal.responsavel_id === uid;
+}
+
 export type TipoEventoCanal =
   | "canal_registrado"
   | "canal_atualizado"
   | "canal_ativado"
-  | "canal_desativado";
+  | "canal_desativado"
+  | "canal_removido";
 
 /**
  * Envelope pronto + guarda antissegredo aplicada ANTES de sair da máquina. A porta também

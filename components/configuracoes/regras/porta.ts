@@ -190,6 +190,9 @@ export const TIPOS_ESCRITOS_WEB_B: string[] = [
   // inconferivel. Foi o portao `tipos_declarados` que exigiu esta linha aqui: sem ela, o literal
   // "canal_nivel_alterado" na action reprova estaticamente antes de chegar a producao.
   "canal_nivel_alterado",
+  // Remoção de conexão. A view filtra `removido_em IS NOT NULL`, então o canal some da projeção —
+  // conferência por EXCECAO (ledger-only: não há linha na view para checar).
+  "canal_removido",
   // 14/09 · ligar/desligar agente pela tela de Agentes. Estreia com a linha em CONFERENCIA
   // (por EFEITO: o `ativo` resultante em core.agente), nunca com exceção — o efeito é legível.
   // Depois do mesmo dia ele ganhou uma SEGUNDA variante (`config_patch.responsavel_padrao`):

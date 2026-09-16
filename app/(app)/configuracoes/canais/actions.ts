@@ -10,12 +10,15 @@ import {
 } from "@/components/configuracoes/dados/porta";
 import { lerCanal, lerHistoricoNivel } from "@/components/configuracoes/dados/canais";
 import {
+  ehCanalNaoOficialId,
   formNumeroPessoal,
   payloadCanalAtivado,
   payloadCanalAtualizado,
   payloadCanalDesativado,
   payloadCanalRegistrado,
+  payloadCanalRemovido,
   podeGerirCanais,
+  podeRemoverCanal,
   registrarComIdLivre,
   semProblemas,
   validarAtivacao,
@@ -31,6 +34,7 @@ import {
   exigeAceiteDoTermo,
   motivoAceiteDesatualizado,
 } from "@/components/configuracoes/regras/lite-sessao.ts";
+import { desconectarNoRuntime } from "@/components/configuracoes/dados/lite-sessao";
 
 /**
  * F9 · Ações da tela de canais de WhatsApp.
@@ -246,6 +250,37 @@ export async function definirNivelCanal(
  */
 export async function lerTrocasDeNivel(canalId: string): Promise<HistoricoNivel> {
   return lerHistoricoNivel(canalId);
+}
+
+/**
+ * Remover a conexão de um canal. O canal sai da lista (a view filtra `removido_em`), mas as
+ * conversas antigas continuam no histórico.
+ *
+ * Se o canal é não oficial (`lite:`), desconecta a sessão no runtime ANTES de emitir o evento —
+ * para não deixar uma sessão viva apontando para um canal que a tela não mostra mais.
+ */
+export async function removerCanal(canalId: string): Promise<ResultadoAcao> {
+  const [canal, papel, uid] = await Promise.all([
+    lerCanal(canalId),
+    lerPapelAtual(),
+    lerUidAtual(),
+  ]);
+  if (!canal) {
+    return { ok: false, motivo: "canal não encontrado (ou sem permissão para lê-lo)", classe: "recusa" };
+  }
+  if (!podeRemoverCanal(papel, uid, canal)) {
+    return { ok: false, motivo: "você não tem permissão para remover este canal", classe: "permissao" };
+  }
+  // canal não oficial: desconectar a sessão antes de remover
+  if (ehCanalNaoOficialId(canalId)) {
+    await desconectarNoRuntime(canalId);
+  }
+  return registrarEventoComReadback({
+    tipo: "canal_removido",
+    payload: payloadCanalRemovido(canalId),
+    idExterno: randomUUID(),
+    revalidar: [ROTA, "/conversas"],
+  });
 }
 
 /** Só para a UI decidir o que mostrar. A defesa real é a guarda de papel na porta. */

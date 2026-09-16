@@ -654,6 +654,14 @@ export const EXCECOES: Readonly<Record<string, ExcecaoConferencia>> = {
       "tipo deliberadamente SEM projetor: o acionamento vive só no ledger, para o runtime consumir. Ausência de projeção aqui é o desenho, não um ramo perdido.",
     conferirLedger: true,
   },
+  canal_removido: {
+    motivo:
+      "a view filtra `removido_em IS NOT NULL`: depois do evento a linha SOME de `v_canal_whatsapp`, " +
+      "então não há row para conferir por posição. O projetor carimba `removido_em` na tabela " +
+      "e a view a exclui — a prova é a ausência, e a infraestrutura de conferência confere PRESENÇA. " +
+      "Conferir no ledger é o caminho seguro.",
+    conferirLedger: true,
+  },
 };
 
 /** true = a ação tem conferência de projeção; false = é exceção declarada ou tipo não mapeado. */
