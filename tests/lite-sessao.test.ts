@@ -8,6 +8,7 @@ import {
   TERMO_CANAL_PESSOAL,
   TERMO_EXIGE_DIZER,
   TERMO_VERSAO,
+  corpoRuntimeIndicaFalha,
   exigeAceiteDoTermo,
   motivoAceiteDesatualizado,
   descricaoEstadoSessao,
@@ -513,4 +514,29 @@ test("D72 · semAcento compara FATO, não ortografia — os dois arquivos escrev
   assert.equal(semAcento("Família CONDOMÍNIO médico"), "familia condominio medico");
   // e a tela realmente escreve sem acento: se um dia passar a escrever com, nada aqui pode quebrar
   assert.match(semAcento(consequenciaNivel("aberto")), /familia/);
+});
+
+// ═══════════ 2h · chamar() com 200 + {ok: false} vira falha ═══════════
+
+test("corpo com ok:false indica falha — chamar() não deve tratar 200 como sucesso cego", () => {
+  const r = corpoRuntimeIndicaFalha({ ok: false, motivo: "canal xyz: credencial ausente" });
+  assert.equal(r.falhou, true);
+  assert.ok("motivo" in r && /credencial ausente/.test(r.motivo));
+});
+
+test("corpo com ok:false sem motivo usa mensagem padrão", () => {
+  const r = corpoRuntimeIndicaFalha({ ok: false });
+  assert.equal(r.falhou, true);
+  assert.ok("motivo" in r && r.motivo.length > 0);
+});
+
+test("corpo com ok:true não indica falha", () => {
+  assert.equal(corpoRuntimeIndicaFalha({ ok: true }).falhou, false);
+  assert.equal(corpoRuntimeIndicaFalha({ ok: true, resposta: {} }).falhou, false);
+});
+
+test("corpo sem campo ok (resposta normal do runtime) não indica falha", () => {
+  assert.equal(corpoRuntimeIndicaFalha({ estado: "conectado" }).falhou, false);
+  assert.equal(corpoRuntimeIndicaFalha(null).falhou, false);
+  assert.equal(corpoRuntimeIndicaFalha({}).falhou, false);
 });

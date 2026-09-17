@@ -21,6 +21,7 @@ import {
   MOTIVO_RUNTIME_MUDO,
   MOTIVO_SEM_ROTA,
   TIMEOUT_RUNTIME_MS,
+  corpoRuntimeIndicaFalha,
   estadoSessaoValido,
   normalizarRespostaRuntime,
   sanitizarLinhaDescarte,
@@ -154,7 +155,10 @@ async function chamar(caminho: string, metodo: "GET" | "POST" | "DELETE"): Promi
       return { ok: false, motivo: MOTIVO_CREDENCIAL_PROVEDOR };
     }
     if (!resp.ok) return { ok: false, motivo: `o runtime respondeu ${resp.status}` };
-    return { ok: true, resposta: normalizarRespostaRuntime(await resp.json()) };
+    const corpo = await resp.json();
+    const veredicto = corpoRuntimeIndicaFalha(corpo);
+    if (veredicto.falhou) return { ok: false, motivo: veredicto.motivo };
+    return { ok: true, resposta: normalizarRespostaRuntime(corpo) };
   } catch (err) {
     const abortou = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
     return { ok: false, motivo: abortou ? MOTIVO_RUNTIME_MUDO : `falha ao falar com o runtime: ${String(err)}` };

@@ -695,6 +695,15 @@ export const MOTIVO_CREDENCIAL_PROVEDOR =
 export const MOTIVO_SEM_ROTA =
   "a rota interna de sessão do runtime não está configurada neste ambiente — sem ela não há como criar sessão nem obter QR";
 
+/** O runtime responde 200 com `{ok: false, motivo}` quando a operação falhou no servidor. */
+export function corpoRuntimeIndicaFalha(corpo: unknown): { falhou: false } | { falhou: true; motivo: string } {
+  if (corpo && typeof corpo === "object" && "ok" in corpo && (corpo as Record<string, unknown>).ok === false) {
+    const m = (corpo as Record<string, unknown>).motivo;
+    return { falhou: true, motivo: typeof m === "string" ? m : "o runtime respondeu ok: false" };
+  }
+  return { falhou: false };
+}
+
 /** Normaliza a resposta do runtime; qualquer coisa fora do contrato vira desconectado + motivo. */
 export function normalizarRespostaRuntime(bruta: unknown): RespostaSessaoRuntime {
   const b = (bruta ?? {}) as Record<string, unknown>;
