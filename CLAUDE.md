@@ -238,3 +238,12 @@ O que faz: board Kanban com arraste de cards entre etapas, incluindo terminais (
   Motivo: decisão do Diogo — escopo mínimo, portões de transição (W1) ficam para card separado.
   Descartado: diálogo de confirmação; diálogo que pede valor da venda.
 - 2026-09-16 · Busca 9º dígito: `variantesNonoDigito` decide pela CONTAGEM de dígitos (10 = sem 9, 11 = com 9), não pelo valor do 3º dígito. Motivo: "3196890099" tem "9" na posição 2, mas é um número de 10 dígitos sem o nono — decidir pelo caractere geraria a variante errada. Descartado: heurística pelo valor do dígito; normalização na gravação (banco guarda o que a Meta manda).
+
+## Contra regressão (E-449, 16/09/2026) — vale para toda mudança aqui
+
+- **Sem causa medida, não há conserto nem deploy.** Primeiro log, dado ou reprodução; "tentar e ver" em produção é proibido.
+- **O teste vermelho escrito antes cobre também** os caminhos de erro das chamadas externas (404, 401, 5xx, timeout, "já não existe") e o que o conserto pode quebrar ao lado.
+- **Ação destrutiva nasce com o desfazer.** Apagar em produção começa listando o que vai sair, cruzado com o banco.
+- **Antes de pedir deploy:** CI verde no SHA, `revisor-de-codigo` no diff, SHA anterior anotado para rollback, e o estado de produção conferido antes e depois. **Um deploy por hipótese**: se não resolveu, volta primeiro.
+- **Um clone, uma sessão.** Alteração que não é sua no `git status` → pare e pergunte.
+- **Documenta só depois de validado.**
