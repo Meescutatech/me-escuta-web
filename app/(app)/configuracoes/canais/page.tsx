@@ -55,7 +55,7 @@ export default async function CanaisPage() {
     lidos.canais.map(async (c) => {
       if (c.provedor !== "nao_oficial") return c;
       const { sessao } = await lerSessao(c.canal_id);
-      return { ...c, sessao: sessao ? { status: sessao.status, viva: false } : null };
+      return { ...c, sessao: sessao ? { status: sessao.status, vistoEm: sessao.atualizado_em } : null };
     }),
   );
 

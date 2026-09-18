@@ -31,6 +31,7 @@ import {
   podeRemoverCanal,
   rotuloDepartamento,
   rotuloEstadoCanal,
+  estadoLiteNaTela,
   rotuloFinalidade,
   TEXTO_FINALIDADE_AUSENTE,
   TEXTO_NUMERO_DE_TESTE,
@@ -117,8 +118,17 @@ import { cn } from "@/lib/utils";
  */
 
 export interface CanalNaTela extends Canal {
-  /** estado da sessão, quando o canal é não oficial e já houve pareamento. */
-  sessao?: { status: string; viva?: boolean } | null;
+  /**
+   * estado da sessão, quando o canal é não oficial e já houve pareamento.
+   *
+   * ⚠️ Não há campo `viva` aqui de propósito (card 2j). `core.v_sessao_canal.viva` depende de
+   * `ultimo_batimento`, que só avança quando ALGUÉM ABRE A TELA — não existe batimento de fundo.
+   * Um canal que ninguém olhou há seis minutos apareceria como morto estando de pé. Enquanto o
+   * batimento não existir, o campo só teria como mentir, e a página cravava `viva: false` para
+   * todo canal. A tela conta a sessão pelo `status` e o canal pelo `ativo`, e diz QUANDO leu
+   * (`vistoEm` = `ops.sessao_canal.atualizado_em`): o status é uma foto, não um batimento.
+   */
+  sessao?: { status: string; vistoEm: string | null } | null;
 }
 
 /**
@@ -585,17 +595,26 @@ function LinhaCanal({
   const lite = canal.provedor === "nao_oficial";
   const mostraRemover = podeRemoverCanal(meuPapel, meuId, canal);
 
-  const situacao: { txt: string; tom: "ok" | "atencao" | "ruim" | "neutro" } = lite
-    ? canal.sessao?.status === "conectado"
-      ? { txt: "Conectado", tom: "ok" }
-      : canal.sessao?.status === "aguardando_qr"
-        ? { txt: "Aguardando o QR", tom: "atencao" }
-        : canal.sessao?.status === "banido"
-          ? { txt: "Banido pelo WhatsApp", tom: "ruim" }
-          : { txt: "Desconectado", tom: "neutro" }
-    : canal.ativo
-      ? { txt: "Ativo", tom: "ok" }
-      : { txt: rotuloEstadoCanal(estado), tom: "neutro" };
+  /**
+   * CARD 2j · O LITE TEM DOIS ESTADOS, E ELES NÃO COINCIDEM.
+   *
+   * O que havia aqui mostrava, para o Lite, SÓ o status da sessão — e foi por isso que um canal
+   * "Conectado" que não aparecia no seletor de envio pareceu defeito de outra coisa por meio dia
+   * (relato de 17/09). A sessão é o aparelho pareado no WuzAPI; `ativo` é o que faz o runtime
+   * ingerir e o número entrar no seletor. A regra pura decide as palavras; a célula só as desenha.
+   */
+  const estadoLite = lite
+    ? estadoLiteNaTela({
+        ativo: canal.ativo,
+        statusSessao: canal.sessao?.status,
+        pareadoEm: canal.pareado_em,
+        vistoEm: canal.sessao?.vistoEm,
+      })
+    : null;
+
+  const situacao: { txt: string; tom: "ok" | "atencao" | "ruim" | "neutro" } = canal.ativo
+    ? { txt: "Ativo", tom: "ok" }
+    : { txt: rotuloEstadoCanal(estado), tom: "neutro" };
 
   /**
    * A AÇÃO PRIMÁRIA DA LINHA — uma só, e o rótulo muda com o estado em vez de mentir um fixo:
@@ -782,10 +801,38 @@ function LinhaCanal({
         ) : null}
 
         <TableCell>
-          <div className="flex items-center gap-1.5">
-            <Ponto tom={situacao.tom} />
-            <span className="text-ui-13 text-foreground">{situacao.txt}</span>
-          </div>
+          {estadoLite ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                <Ponto tom={estadoLite.sessao.tom} />
+                <span className="text-ui-13 text-foreground">{estadoLite.sessao.txt}</span>
+              </div>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <Ponto tom={estadoLite.canal.tom} />
+                <span className="text-ui-13 text-foreground">{estadoLite.canal.txt}</span>
+              </div>
+              {/* A frase só aparece quando há o que explicar: com os dois selos verdes ela seria
+                  ruído. Ela é a resposta à pergunta que a tela antiga deixava no ar — este número
+                  aparece para enviar, ou não, e por quê. */}
+              {!estadoLite.apareceParaEnviar || estadoLite.sessao.tom !== "ok" ? (
+                <div className="mt-1 max-w-[34ch] text-ui-11 text-muted-foreground">
+                  {estadoLite.porQue}
+                </div>
+              ) : null}
+              {/* A sessão é uma foto tirada quando alguém abriu o número — não há batimento de
+                  fundo. Sem a hora, "Sessão conectada" em verde depois de um deploy seria mentira. */}
+              {estadoLite.visto ? (
+                <div className="mt-0.5 text-ui-11 text-muted-foreground">
+                  sessão lida às {estadoLite.visto}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <Ponto tom={situacao.tom} />
+              <span className="text-ui-13 text-foreground">{situacao.txt}</span>
+            </div>
+          )}
           {estado === "bloqueado_sem_consentimento" ? (
             <div className="mt-0.5 text-ui-11 text-warning-ink">
               falta o consentimento da titular

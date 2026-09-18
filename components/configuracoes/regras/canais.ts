@@ -931,6 +931,120 @@ export function rotuloEstadoCanal(e: EstadoCanal): string {
   return "Desligado";
 }
 
+export type TomSelo = "ok" | "atencao" | "ruim" | "neutro";
+export interface SeloTela {
+  txt: string;
+  tom: TomSelo;
+}
+
+export interface EstadoLiteNaTela {
+  /** o WhatsApp do aparelho está de pé no WuzAPI. */
+  sessao: SeloTela;
+  /** `core.canal_whatsapp.ativo` — quem decide ingestão e seletor de envio. */
+  canal: SeloTela;
+  /**
+   * `ativo`, que é a condição que `api.canais_de_envio` exige de TODO papel. Não é o filtro inteiro:
+   * para `membro` a função também exige ser dona ou estar no departamento (0337:1011-1016). A frase
+   * vale para a gestão e para a dona, que são quem vê esta tabela com poder de agir.
+   */
+  apareceParaEnviar: boolean;
+  /** a frase que fecha a ambiguidade: o que dá e o que não dá para fazer com este número, e por quê. */
+  porQue: string;
+  /**
+   * quando a sessão foi lida pela última vez, em Brasília (`HH:MM de DD/MM`); `null` sem leitura.
+   * O status é uma FOTO: `ops.sessao_canal` só é escrito quando alguém abre o painel, e não há
+   * batimento de fundo. Sem a hora, "Sessão conectada" seria afirmação sem data.
+   */
+  visto: string | null;
+}
+
+const HORA_BRASILIA = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  hour: "2-digit",
+  minute: "2-digit",
+  day: "2-digit",
+  month: "2-digit",
+});
+
+function quandoFoiLido(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const p = Object.fromEntries(HORA_BRASILIA.formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.hour}:${p.minute} de ${p.day}/${p.month}`;
+}
+
+/**
+ * CARD 2j · DUAS VERDADES, DOIS SELOS — e por que juntá-las custou meio dia em 17/09/2026.
+ *
+ * A célula "Estado" mostrava, para o Lite, SÓ o status da sessão; para o oficial, SÓ `ativo`. São
+ * coisas independentes: a sessão é o aparelho pareado no WuzAPI, e `ativo` é o que faz o runtime
+ * ingerir (`ingestao-lite.ts:197`) e o número entrar no seletor "Número desta conversa"
+ * (`api.canais_de_envio`, `where k.ativo`). Um canal ligado com a sessão caída e um desligado com a
+ * sessão de pé desenhavam IGUAL — e o relato "a tela diz Conectado e o número não aparece para
+ * enviar" era exatamente esse par sendo confundido.
+ *
+ * As quatro combinações, e o que cada uma significa de verdade:
+ *
+ *   sessão viva  + canal ligado    → recebe e envia. É o único estado bom.
+ *   sessão viva  + canal desligado → não recebe, não aparece no seletor. Foi calado de propósito.
+ *   sessão caída + canal ligado    → APARECE no seletor (o banco só olha `ativo`) e o envio falha.
+ *                                    É o pior dos quatro, porque parece bom.
+ *   sessão caída + canal desligado → inerte.
+ *
+ * ⚠️ A frase da sessão caída sai do FATO (`pareadoEm` existe × está desconectado agora), nunca de
+ * um texto cravado sobre infra. O container do WuzAPI não tem volume hoje (medido 18/09), então a
+ * sessão morre a cada deploy DO WUZAPI (não do runtime) enquanto `pareado_em` sobrevive na projeção. No dia em que
+ * o volume for montado, a causa muda — e uma frase cravada viraria mentira em silêncio. Quem nunca
+ * pareou não é convidado a "parear de novo".
+ *
+ * KISS (Diogo, 18/09): esta regra só DESCREVE. Ligar/desligar, reparear, derrubar sessão e uptime
+ * ficam de fora do card.
+ */
+export function estadoLiteNaTela(e: {
+  ativo: boolean;
+  statusSessao?: string | null;
+  pareadoEm?: string | null;
+  /** `ops.sessao_canal.atualizado_em` — a hora da foto. */
+  vistoEm?: string | null;
+}): EstadoLiteNaTela {
+  const jaPareou = !!e.pareadoEm;
+  const s = e.statusSessao ?? null;
+
+  const sessao: SeloTela =
+    s === "conectado"
+      ? { txt: "Sessão conectada", tom: "ok" }
+      : s === "aguardando_qr"
+        ? { txt: "Aguardando o QR", tom: "atencao" }
+        : s === "banido"
+          ? { txt: "Banido pelo WhatsApp", tom: "ruim" }
+          : s === null && jaPareou
+            ? { txt: "Sessão sem leitura", tom: "neutro" }
+            : jaPareou
+              ? { txt: "Sessão caída", tom: "atencao" }
+              : { txt: "Nunca pareado", tom: "neutro" };
+
+  const canal: SeloTela = e.ativo
+    ? { txt: "Canal ligado", tom: "ok" }
+    : { txt: "Canal desligado", tom: "neutro" };
+
+  const porQue = !e.ativo
+    ? "Canal desligado: não aparece no seletor de envio e não recebe mensagem."
+    : s === "conectado"
+      ? "Recebe e aparece no seletor de envio."
+      : s === "banido"
+        ? "Aparece no seletor, mas o WhatsApp baniu este número: o envio falha."
+        : s === "aguardando_qr"
+          ? "Aparece no seletor, mas a sessão ainda não terminou de parear: o envio falha até o QR ser lido."
+          : s === null && jaPareou
+            ? "Aparece no seletor. Não foi possível ler o estado da sessão: abra o número para conferir."
+            : jaPareou
+              ? "Aparece no seletor, mas a sessão está caída: o envio vai falhar até parear de novo."
+              : "Aparece no seletor, mas este número nunca foi pareado: o envio falha.";
+
+  return { sessao, canal, apareceParaEnviar: e.ativo, porQue, visto: quandoFoiLido(e.vistoEm) };
+}
+
 /**
  * Credencial: presença ou ausência, NUNCA o valor — nem mascarado. A web não tem como saber se o
  * token existe (ele é env do RUNTIME), então a tela diz o que sabe e não finge.
