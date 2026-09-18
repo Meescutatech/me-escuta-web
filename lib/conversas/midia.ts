@@ -40,6 +40,43 @@ export function temPlayerDeAudio(
   return ehAudio(m.tipo_conteudo) && !!m.midia_caminho?.trim();
 }
 
+/** Tipos de documento: PT do contrato do ingestor (parser TIPO_PT) + EN de linhas históricas. */
+const TIPOS_DOCUMENTO = new Set(["document", "documento"]);
+
+export function ehDocumento(tipo: string | null | undefined): boolean {
+  return TIPOS_DOCUMENTO.has((tipo ?? "").toLowerCase());
+}
+
+/**
+ * Download só quando é documento E a mídia já está no bucket — mesma regra do player e da foto.
+ *
+ * Sem caminho a bolha degrada para o rótulo "Documento recebido", e isso é a guarda funcionando:
+ * um botão de download apontando para lugar nenhum é pior que o rótulo honesto. Foi exatamente o
+ * defeito do `BolhaDocumento` antigo — ícone de download com ZERO `onClick`.
+ */
+export function temDocumentoBaixavel(
+  m: Pick<Mensagem, "tipo_conteudo" | "midia_caminho">,
+): m is Pick<Mensagem, "tipo_conteudo" | "midia_caminho"> & { midia_caminho: string } {
+  return ehDocumento(m.tipo_conteudo) && !!m.midia_caminho?.trim();
+}
+
+/**
+ * NOME DO ARQUIVO no download, derivado do CAMINHO (D-B1-c, decisão do Diogo em 18/09/2026).
+ *
+ * O WhatsApp manda o nome original (`documentMessage.fileName`) e o parser do Lite passou a retê-lo
+ * — mas guardá-lo exigiria coluna nova em `core.mensagem`, projetor novo e retenção nos DOIS canais.
+ * Isso ficou medido no card para depois. Até lá o nome é `<id>.pdf`: feio e honesto.
+ *
+ * ⚠️ Vai no atributo `download` de uma âncora, então ele NUNCA pode carregar caminho: o basename é
+ * a regra, e `..` e `/` saem fora. Não é paranoia de segurança — é que `download="../x"` faz o
+ * navegador salvar com um nome que a pessoa não pediu.
+ */
+export function nomeDoDocumento(caminho: string | null | undefined): string {
+  const c = (caminho ?? "").trim();
+  const base = c.split("/").pop()?.replaceAll("..", "").trim() ?? "";
+  return base || "documento";
+}
+
 /**
  * Caminhos de mídia que a thread VAI renderizar (player/imagem), únicos e na ordem de aparição —
  * entrada do batch de signed URLs no servidor (1 round-trip pra thread toda, em vez de 1 server
@@ -50,7 +87,7 @@ export function caminhosParaAssinar(
 ): string[] {
   const unicos = new Set<string>();
   for (const m of mensagens) {
-    if (temPlayerDeAudio(m) || temImagemVisivel(m)) unicos.add(m.midia_caminho!.trim());
+    if (temPlayerDeAudio(m) || temImagemVisivel(m) || temDocumentoBaixavel(m)) unicos.add(m.midia_caminho!.trim());
   }
   return [...unicos];
 }

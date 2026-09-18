@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckIcon,
   ClockIcon,
@@ -13,6 +13,8 @@ import {
   PlayIcon,
   UserRoundIcon,
 } from "lucide-react";
+import { obterUrlMidia } from "@/app/(app)/conversas/actions";
+import { nomeDoDocumento, temDocumentoBaixavel } from "@/lib/conversas/midia";
 import { cn } from "@/lib/utils";
 import type { Mensagem } from "@/lib/dados/conversas";
 
@@ -26,7 +28,12 @@ import type { Mensagem } from "@/lib/dados/conversas";
  * `message-reaction-chips.tsx` (chip `rounded-full border px-2 py-1 text-xs`, `reactedByMe`).
  *
  * Só desenha quando o campo tipado existe na `Mensagem`. Sem ele, o inbox mantém o rótulo antigo
- * ("Documento recebido") — a projeção real ainda não expõe o payload.
+ * ("Documento recebido").
+ *
+ * EXCEÇÃO, e é o conserto do B1 (18/09/2026): `BolhaDocumento` NÃO depende mais do campo tipado.
+ * Ela lê a projeção real (`midia_caminho`/`midia_mime`), que é o que o runtime preenche, e baixa de
+ * verdade. Antes disto ela exigia `m.documento` — populado APENAS em `lib/ensaio/fixtures` — e o
+ * botão de download não tinha `onClick`: parecia um download e não era um.
  */
 
 export const CAIXA_MIDIA = "w-[260px] max-w-full";
@@ -144,27 +151,97 @@ const ICONE_FAMILIA: Array<[RegExp, typeof FileIcon, string]> = [
   [/word|document/, FileTextIcon, "Documento"],
 ];
 
+/**
+ * BOLHA DE DOCUMENTO — a única bolha de mídia que BAIXA em vez de tocar ou mostrar.
+ *
+ * Conserta os 15 documentos do canal OFICIAL junto com os do Lite: os dois estavam no mesmo buraco,
+ * e é por isso que a fono não abria o PDF por canal nenhum.
+ *
+ * Três estados, e nenhum deles mente:
+ *   · sem `midia_caminho` — não renderiza; o inbox mantém "Documento recebido". A guarda funcionando.
+ *   · assinando a URL — o botão fica desabilitado e diz que está preparando. Âncora sem `href` é
+ *     um link que não navega, e um link que não navega é o defeito que estamos consertando.
+ *   · pronto — âncora de verdade, com `download`, que salva o arquivo.
+ */
 export function BolhaDocumento({ m }: { m: Mensagem }) {
-  const doc = m.documento!;
-  const [Icone, familia] = ICONE_FAMILIA.find(([re]) => re.test(doc.mime))?.slice(1) as [typeof FileIcon, string] | undefined ?? [FileIcon, "Arquivo"];
+  const baixavel = temDocumentoBaixavel(m);
+  const caminho = m.midia_caminho?.trim() ?? "";
+  // O nome do campo tipado (ensaio) ganha do derivado; na projeção real ele não existe e o nome sai
+  // do caminho — `<id>.pdf` (D-B1-c: sem migration para o nome original, por enquanto).
+  const nome = m.documento?.nome ?? nomeDoDocumento(caminho);
+  const mime = m.documento?.mime ?? m.midia_mime ?? "";
+  const [Icone, familia] = ICONE_FAMILIA.find(([re]) => re.test(mime))?.slice(1) as [typeof FileIcon, string] | undefined ?? [FileIcon, "Arquivo"];
+
+  const [url, setUrl] = useState<string | null>(m.midia_url ?? null);
+  const [erro, setErro] = useState(false);
+
+  useEffect(() => {
+    if (!baixavel) return;
+    let vivo = true;
+    setErro(false);
+    // Pré-assinada no servidor pelo batch da thread (`caminhosParaAssinar`): usa direto, sem uma
+    // server action por bolha — que o React roda em SÉRIE no cliente.
+    if (m.midia_url) {
+      setUrl(m.midia_url);
+      return;
+    }
+    setUrl(null);
+    obterUrlMidia(caminho)
+      .then((r) => {
+        if (!vivo) return;
+        if (r.ok && r.url) setUrl(r.url);
+        else setErro(true);
+      })
+      .catch(() => {
+        if (vivo) setErro(true);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [baixavel, caminho, m.midia_url]);
+
+  // Sem caminho não há o que baixar: o inbox mantém o rótulo honesto. Ver o cabeçalho.
+  if (!baixavel && !m.documento) return null;
+
+  const conteudo = (
+    <>
+      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-hover text-suave">
+        <Icone className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[0.84rem] font-medium text-tinta">{nome}</span>
+        <span className="block text-[0.7rem] text-mute">
+          {erro
+            ? "não deu pra preparar o download — reabra a conversa"
+            : !url && baixavel
+              ? "preparando o download…"
+              : [familia, m.documento?.tamanho].filter(Boolean).join(" · ")}
+        </span>
+      </span>
+      <DownloadIcon className={cn("size-4 shrink-0", url ? "text-suave" : "text-mute")} />
+    </>
+  );
+
+  const caixa = "flex w-full items-center gap-2.5 rounded-[9px] border border-linha bg-branco/70 px-2.5 py-2 text-left";
+
   return (
     <span className={cn("flex flex-col gap-1.5", CAIXA_MIDIA)}>
-      <button
-        type="button"
-        className="flex w-full items-center gap-2.5 rounded-[9px] border border-linha bg-branco/70 px-2.5 py-2 text-left transition-colors hover:bg-branco"
-        aria-label={`Baixar ${doc.nome}`}
-      >
-        <span className="grid size-8 shrink-0 place-items-center rounded-md bg-hover text-suave">
-          <Icone className="size-4" />
+      {url ? (
+        <a
+          href={url}
+          download={nome}
+          // A signed URL é de outra origem; sem isto o navegador pode abrir no lugar de salvar.
+          rel="noopener"
+          className={cn(caixa, "transition-colors hover:bg-branco focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy")}
+          aria-label={`Baixar ${nome}`}
+        >
+          {conteudo}
+        </a>
+      ) : (
+        <span className={cn(caixa, "opacity-70")} aria-busy={!erro} aria-label={erro ? `${nome}: download indisponível` : `Preparando ${nome}`}>
+          {conteudo}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[0.84rem] font-medium text-tinta">{doc.nome}</span>
-          <span className="block text-[0.7rem] text-mute">
-            {familia} · {doc.tamanho}
-          </span>
-        </span>
-        <DownloadIcon className="size-4 shrink-0 text-mute" />
-      </button>
+      )}
       {m.corpo && <span className="text-[0.84rem] leading-relaxed">{m.corpo}</span>}
     </span>
   );

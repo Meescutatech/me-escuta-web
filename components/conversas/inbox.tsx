@@ -69,7 +69,7 @@ import {
 import type { CanalEnvioComposer } from "@/components/conversas/composer";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
-import { ehAudio, ehImagem, temImagemVisivel } from "@/lib/conversas/midia";
+import { ehAudio, ehImagem, temDocumentoBaixavel, temImagemVisivel } from "@/lib/conversas/midia";
 import { resolverReacoes, textoDoSelo } from "@/lib/conversas/reacoes";
 import { BolhaBotao } from "@/components/conversas/bolha-botao";
 import { ehBotaoRecebido } from "@/lib/conversas/interativa";
@@ -1931,9 +1931,17 @@ function SeloReacao({ emojis, saida }: { emojis: string[]; saida: boolean }) {
 }
 
 /**
- * Conteúdo da bolha por tipo (RF-33, degradação HONESTA): a pipeline de mídia (container
- * me-escuta-midia) ainda não existe — áudio/imagem/documento aparecem nomeados, com a
- * transcrição/visualização anunciada como pendente em vez de player quebrado ou URL da Meta.
+ * Conteúdo da bolha por tipo (RF-33, degradação HONESTA).
+ *
+ * ⚠️ CORRIGIDO em 18/09/2026 (card B1). Este comentário dizia que "a pipeline de mídia (container
+ * me-escuta-midia) ainda não existe", e isso era FALSO desde a migration 0026 — a pipeline existe,
+ * roda, e o canal oficial está em 329 de 330 mídias armazenadas. Foi esta frase que alimentou a
+ * suspeita de "provavelmente não construímos isso" quando a fono não conseguiu abrir as mídias.
+ * O que não existia era a ingestão de mídia do canal LITE, que é outra coisa e mora no runtime.
+ *
+ * O degrade honesto abaixo continua sendo o desenho certo: sem `midia_caminho`, a bolha nomeia o
+ * tipo em vez de mostrar player quebrado ou URL da Meta. Ele aparece quando a mídia não entrou —
+ * não porque a tela não saiba desenhá-la.
  */
 function ehFigurinha(m: Mensagem): boolean {
   const tipo = (m.tipo_conteudo ?? "").toLowerCase();
@@ -1947,7 +1955,9 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
   }
   // W-D2 · corpos tipados — só quando o campo tipado existe (fixture hoje; projeção amanhã)
   if (m.interativo) return <BolhaInterativa m={m} />;
-  if (m.documento) return <BolhaDocumento m={m} />;
+  // B1 · documento: o campo tipado (ensaio) OU a projeção real. Antes só o primeiro, que a
+  // projeção nunca preenche — por isso todo documento caía no rótulo, nos DOIS canais.
+  if (m.documento || temDocumentoBaixavel(m)) return <BolhaDocumento m={m} />;
   if (m.localizacao) return <BolhaLocalizacao m={m} />;
   if (m.contato) return <BolhaContato m={m} />;
   if (tipo === "video" && m.midia_url) return <BolhaVideo m={m} />;
