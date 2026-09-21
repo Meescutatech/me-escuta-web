@@ -198,6 +198,23 @@ só vale como prova quando ela própria seria um defeito de verdade.
   Descartado: montar o corpo na tela a partir de `core.template_whatsapp` — a definição pode ter
   mudado depois do envio, e a bolha mostraria um texto que ninguém recebeu.
 
+- 2026-09-21 · a lista de HSM do menu `/` segue o canal ESCOLHIDO no composer, não o da conversa
+  (`onCanalEscolhido` sobe do composer, `canalDosTemplates` no inbox).
+  Motivo: reportado em produção — a pessoa estava numa conversa que entrou por canal Lite, trocou o
+  número para `teste_meta` (que é o gesto de quem vai abrir fio novo com template) e o menu
+  continuou vazio. Medido no mesmo dia: 322 HSM aprovados no canal da CLARA, 2 no teste_meta, ZERO
+  em qualquer canal `lite:*` — HSM é objeto da Meta e canal não oficial não tem nenhum.
+  Descartado: buscar os HSM de todos os canais de uma vez (é o que o comentário de
+  `lerTemplatesDoCanal` já recusa, ~100 KB para uma tela que usa um canal só).
+
+- 2026-09-21 · `/template` (e prefixos de 3+ letras) é ALIAS que lista os HSM do canal, em vez de
+  casar por nome; e o pedido sem nenhum HSM renderiza aviso em vez de menu mudo.
+  Motivo: o menu tinha `/nota`, `/tarefa` e um comando por template, cada um pelo próprio nome —
+  digitar a palavra que nomeia a coisa não achava a coisa, e o painel inteiro é escondido por
+  `comandos.length > 0`, então a tela ficava muda e reportaram como quebrada.
+  Descartado: disparar o alias já em `/t` e `/te` — é o caminho de quem vai digitar `/tarefa`, e
+  jogaria a lista de HSM (e o aviso de canal sem template) na cara de quem quer abrir uma tarefa.
+
 ## feature: canais e números
 
 ### O que faz

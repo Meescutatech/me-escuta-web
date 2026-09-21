@@ -13,6 +13,7 @@ import {
 import {
   despacharAoCliente,
   efeitoDoComando,
+  ehComandoTemplate,
   ehModoInterno,
   menuComandos,
   MOTIVO_VAZIA,
@@ -113,6 +114,7 @@ export function Composer({
   janelaAteMs,
   onCancelarProgramado,
   canaisEnvio = null,
+  onCanalEscolhido,
   canalConversaId = null,
   onPedirAoJarvis = null,
 }: {
@@ -177,6 +179,13 @@ export function Composer({
   canaisEnvio?: CanalEnvioComposer[] | null;
   canalConversaId?: string | null;
   /**
+   * 21/09 · o canal EFETIVO de envio, avisado ao inbox a cada troca. Existe por um motivo só: os
+   * templates aprovados (HSM) são POR CANAL, e até aqui a lista vinha presa ao canal da CONVERSA.
+   * Quem trocava o número para abrir fio novo com template não tinha template nenhum para escolher
+   * — reportado em produção neste dia. O inbox é quem busca a lista, então ele precisa saber.
+   */
+  onCanalEscolhido?: (canalId: string | null) => void;
+  /**
    * W-D3 v6 (Diogo, 00:45) · `@jarvis` DENTRO DE NOTA INTERNA aciona ele nesta conversa: a nota é
    * salva como qualquer outra (fica o registro de quem pediu) e o pedido segue para o Jarvis, que
    * responde no fio como nota dele. `null` = a tela não sabe pedir (fora do ensaio) e a menção
@@ -191,6 +200,11 @@ export function Composer({
   const canalEscolhido =
     canaisEnvio?.find((c) => c.id === (canalEscolhidoId ?? canalConversaId)) ?? canalDaConversa ?? canaisEnvio?.find((c) => c.producao) ?? canaisEnvio?.[0] ?? null;
   const fioNovo = !!canaisEnvio && !!canalEscolhido && canalEscolhido.id !== canalConversaId;
+  // Um efeito, e não um aviso dentro de cada `onEscolher`: o canal EFETIVO também muda sozinho —
+  // quando a conversa troca, quando a lista de canais chega, quando o fallback de produção entra.
+  // Avisar só no clique deixaria a lista de templates certa no clique e errada em todo o resto.
+  const canalEfetivoId = canalEscolhido?.id ?? null;
+  useEffect(() => { onCanalEscolhido?.(canalEfetivoId); }, [canalEfetivoId, onCanalEscolhido]);
   const [rascunho, setRascunho] = useState("");
   // W-D3 (Diogo, 22:40) · a dica do rodapé só aparece com o campo em foco
   const [focado, setFocado] = useState(false);
@@ -248,9 +262,20 @@ export function Composer({
    */
   const primeiroNomeDoLead = (variaveis.nome ?? "").trim().split(/\s+/)[0] || undefined;
   const comandos = useMemo(
+    // `templatesHsm` nas dependências desde 21/09: a lista chega depois do primeiro render (e agora
+    // TROCA quando a atendente troca o número), e sem ela aqui o menu ficava com a lista velha.
+    // Até aqui isso passava despercebido porque `rascunho` muda a cada tecla e forçava o recálculo.
     () => (modo === "mensagem" && podeComandar && !anexo ? menuComandos(rascunho, templates, templatesHsm) : []),
-    [modo, podeComandar, anexo, rascunho, templates],
+    [modo, podeComandar, anexo, rascunho, templates, templatesHsm],
   );
+  /**
+   * Pediu template e não veio nenhum. O menu inteiro é escondido por `comandos.length > 0`, então
+   * sem isto a tela fica MUDA — foi o que fez reportarem "o /template não está funcionando" em
+   * 21/09, numa conversa de canal Lite (que nunca tem HSM: template aprovado é objeto da Meta).
+   */
+  const pediuTemplateSemNenhum =
+    modo === "mensagem" && podeComandar && !anexo &&
+    ehComandoTemplate(rascunho) && !comandos.some((c) => c.acao === "template_hsm");
   // §5.3: placeholder que sobrou trava o envio (a trava mora em despacharAoCliente; isto é o aviso)
   const pendentes = useMemo(
     () => (modo === "mensagem" && rascunho.includes("{{") ? placeholdersPendentes(rascunho) : []),
@@ -810,6 +835,28 @@ export function Composer({
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Pediu template, o número não tem nenhum. MESMA caixa e MESMO cabeçalho do menu: isto é a
+            lista, vazia — não é erro, e pintar de âmbar diria que algo quebrou quando não quebrou.
+            A frase termina na ação, porque a saída existe e está logo abaixo: trocar o número. */}
+        {pediuTemplateSemNenhum && (
+          <div
+            role="status"
+            className="absolute bottom-full left-0 z-30 mb-2 w-[340px] max-w-full rounded-lg border border-linha bg-branco p-[5px] shadow-forte"
+          >
+            <Cabecalho>Templates aprovados (WhatsApp)</Cabecalho>
+            <p className="px-2.5 pb-2 pt-0.5 text-[12.5px] leading-[1.45] text-suave">
+              {canalEscolhido ? (
+                <>
+                  <span className="font-[650] text-tinta">{nomeCurtoCanal(canalEscolhido)}</span> não tem template
+                  aprovado. Troque o número em “Enviando por” para usar um.
+                </>
+              ) : (
+                <>Este número não tem template aprovado. Troque o número em “Enviando por” para usar um.</>
+              )}
+            </p>
           </div>
         )}
 

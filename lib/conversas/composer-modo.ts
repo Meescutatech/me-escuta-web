@@ -83,6 +83,28 @@ export function termoComando(texto: string): string | null {
 }
 
 /**
+ * `/template` PEDE A LISTA INTEIRA — reportado em produção, 21/09/2026.
+ *
+ * O menu nunca teve um comando com esse nome: tinha `/nota`, `/tarefa` e um comando por template,
+ * cada um pelo próprio nome. Quem digitou a palavra que nomeia a coisa não achou a coisa, e
+ * reportou a tela como quebrada. Aqui `template` (e seus prefixos) passa a ser um ALIAS: em vez de
+ * casar por nome, devolve os HSM do canal.
+ *
+ * O corte em 3 letras é a colisão com `/tarefa`: `t` e `te` também são prefixo de "template", e
+ * disparar ali jogaria a lista de HSM na cara de quem está indo abrir uma tarefa. De `tem` em
+ * diante nenhum comando fixo passa, e a intenção deixa de ser ambígua.
+ */
+const ALIAS_TEMPLATE = "template";
+const MIN_ALIAS = 3;
+
+export function ehComandoTemplate(texto: string): boolean {
+  const termo = termoComando(texto);
+  if (termo === null) return false;
+  const alvo = normalizar(termo);
+  return alvo.length >= MIN_ALIAS && ALIAS_TEMPLATE.startsWith(alvo);
+}
+
+/**
  * Comandos que casam com o termo (prefixo, sem acento/caixa). `[]` = menu fechado.
  * Templates entram como seção própria depois dos comandos fixos: casam por prefixo do
  * atalho OU substring do título (SPEC-TEMPLATES §6.1).
@@ -95,6 +117,8 @@ export function menuComandos(
   const termo = termoComando(texto);
   if (termo === null) return [];
   const alvo = normalizar(termo);
+  // o alias pede a lista do canal; `filtrarHsm("")` é exatamente "sem termo, traga os primeiros".
+  const termoHsm = ehComandoTemplate(texto) ? "" : termo;
   const fixos = COMANDOS.filter((c) => normalizar(c.comando.slice(1)).startsWith(alvo));
   const deTemplate: ComandoTemplate[] = filtrarTemplates(templates, termo).map((t) => ({
     acao: "template",
@@ -105,7 +129,7 @@ export function menuComandos(
   // Os HSM vêm POR ÚLTIMO, e o motivo é de custo: nota e tarefa são internas, a mensagem pronta é
   // de graça, e o template é a única opção do menu que gasta dinheiro e abre uma janela de 24h.
   // A ordem do menu é a ordem do risco.
-  const deHsm: ComandoTemplateHsm[] = filtrarHsm(hsm, termo).map((t) => ({
+  const deHsm: ComandoTemplateHsm[] = filtrarHsm(hsm, termoHsm).map((t) => ({
     acao: "template_hsm",
     template: t,
     comando: `/${t.nome}`,

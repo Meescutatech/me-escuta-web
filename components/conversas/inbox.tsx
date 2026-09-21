@@ -795,16 +795,31 @@ export function Inbox({
    */
   const [hsmPorCanal, setHsmPorCanal] = useState<Record<string, TemplateHsmNoChat[]>>({});
   const canalDaConversa = selecionada?.phone_number_id ?? null;
+  /**
+   * 21/09 · O CANAL DOS TEMPLATES É O ESCOLHIDO NO COMPOSER, não o da conversa.
+   *
+   * Reportado em produção: *"o /template não está funcionando"*. A pessoa estava numa conversa que
+   * entrou por canal Lite, trocou o número para `teste_meta` — que é exatamente o gesto de quem vai
+   * abrir fio novo com template — e o menu continuou vazio, porque a lista era buscada para
+   * `canalDaConversa`. Medido no mesmo dia: 322 HSM aprovados no canal da CLARA, 2 no teste_meta e
+   * ZERO em qualquer canal `lite:*` — HSM é objeto da Meta, canal não oficial não tem nenhum.
+   *
+   * O composer avisa (`onCanalEscolhido`); até o primeiro aviso vale o canal da conversa, que é o
+   * comportamento de antes. O mapa continua por canal, então trocar de ida e volta não busca duas
+   * vezes.
+   */
+  const [canalEscolhidoComposer, setCanalEscolhidoComposer] = useState<string | null>(null);
+  const canalDosTemplates = canalEscolhidoComposer ?? canalDaConversa;
   useEffect(() => {
-    if (!canalDaConversa || hsmPorCanal[canalDaConversa]) return;
+    if (!canalDosTemplates || hsmPorCanal[canalDosTemplates]) return;
     let vivo = true;
-    void lerTemplatesDoCanal(canalDaConversa).then((lista) => {
-      if (vivo) setHsmPorCanal((m) => ({ ...m, [canalDaConversa]: lista }));
+    void lerTemplatesDoCanal(canalDosTemplates).then((lista) => {
+      if (vivo) setHsmPorCanal((m) => ({ ...m, [canalDosTemplates]: lista }));
     });
     return () => {
       vivo = false;
     };
-  }, [canalDaConversa, hsmPorCanal]);
+  }, [canalDosTemplates, hsmPorCanal]);
 
   /** Manda o HSM. Caminho SEPARADO do texto: `template_id` + parâmetros, nunca o corpo montado. */
   function despacharTemplate(templateId: string, parametros: string[]) {
@@ -1803,7 +1818,8 @@ export function Inbox({
               variaveis={variaveis}
               autorId={autorId}
               autorEmail={autorEmail}
-              templatesHsm={canalDaConversa ? (hsmPorCanal[canalDaConversa] ?? []) : []}
+              templatesHsm={canalDosTemplates ? (hsmPorCanal[canalDosTemplates] ?? []) : []}
+              onCanalEscolhido={setCanalEscolhidoComposer}
               onEnviarTexto={(texto, templateId, canalEscolhidoId) =>
                 despachar(texto, undefined, undefined, templateId, canalEscolhidoId)
               }
