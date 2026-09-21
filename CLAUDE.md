@@ -171,6 +171,18 @@ só vale como prova quando ela própria seria um defeito de verdade.
   Descartado: pôr 131030 em `ERRO_PERMANENTE` — tiraria o "Tentar de novo" de quem acabou de ser
   incluído na lista.
 
+- 2026-09-21 · `ConteudoBolha` ganha galho para `tipo_conteudo = 'template'`, ANTES do fallback de
+  mídia; com corpo mostra o corpo, sem corpo diz que o texto não ficou registrado.
+  Motivo: reportado em produção — o template saía no chat com ÍCONE DE FOTO, rótulo
+  `Mensagem (template)` e "visualização chega com a pipeline de mídia". Não era mídia: sem galho
+  próprio, `template` escorria até o fallback, cujo rótulo genérico é `Mensagem (${tipo})`. Mesma
+  classe que já tinha mordido em `reaction` e em `botao`. Medido em `core.mensagem`: os dois
+  templates de 21/09 com `corpo` vazio e `status_entrega='lido'` — chegaram e foram lidos. O runtime
+  passou a gravar o corpo a partir dali; as linhas anteriores ficam vazias para sempre, e é por isso
+  que o galho tem dois lados.
+  Descartado: montar o corpo na tela a partir de `core.template_whatsapp` — a definição pode ter
+  mudado depois do envio, e a bolha mostraria um texto que ninguém recebeu.
+
 ## feature: canais e números
 
 ### O que faz

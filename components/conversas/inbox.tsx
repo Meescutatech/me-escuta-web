@@ -1953,6 +1953,26 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
   if (tipo === "text" || tipo === "texto") {
     return m.corpo ? <>{m.corpo}</> : <span className="italic opacity-70">[mensagem vazia]</span>;
   }
+  /**
+   * TEMPLATE — texto, não mídia. Reportado em produção em 21/09: *"os templates ainda não aparecem
+   * no chat"*. Sem galho próprio, `template` caía no fallback lá embaixo e a bolha virava ícone de
+   * FOTO com `Mensagem (template)` e "visualização chega com a pipeline de mídia". Mídia não tem
+   * nada a ver: o que falta é texto.
+   *
+   * Com corpo, a bolha é a de texto — o corpo montado que o sender passou a gravar no ledger no
+   * mesmo dia. SEM corpo, é uma linha do passado e vai continuar vazia para sempre (medido: as de
+   * 18:38 e 18:39 de 21/09 nasceram assim). Aí a bolha diz isso, em vez de nomear um tipo e
+   * prometer uma pipeline que não vem.
+   */
+  if (tipo === "template") {
+    return m.corpo ? (
+      <>{m.corpo}</>
+    ) : (
+      <span className="italic opacity-70">
+        Template enviado — o texto não ficou registrado nesta mensagem.
+      </span>
+    );
+  }
   // W-D2 · corpos tipados — só quando o campo tipado existe (fixture hoje; projeção amanhã)
   if (m.interativo) return <BolhaInterativa m={m} />;
   // B1 · documento: o campo tipado (ensaio) OU a projeção real. Antes só o primeiro, que a
