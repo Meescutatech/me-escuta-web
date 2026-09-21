@@ -69,7 +69,7 @@ import {
 import type { CanalEnvioComposer } from "@/components/conversas/composer";
 import { Composer, type MidiaPronta } from "@/components/conversas/composer";
 import { EstadoEntregaIcone } from "@/components/conversas/estado-entrega";
-import { ehAudio, ehImagem, temDocumentoBaixavel, temImagemVisivel } from "@/lib/conversas/midia";
+import { ehAudio, ehImagem, temDocumentoBaixavel, temFigurinhaVisivel, temImagemVisivel, temVideoVisivel } from "@/lib/conversas/midia";
 import { resolverReacoes, textoDoSelo } from "@/lib/conversas/reacoes";
 import { BolhaBotao } from "@/components/conversas/bolha-botao";
 import { ehBotaoRecebido } from "@/lib/conversas/interativa";
@@ -1944,8 +1944,9 @@ function SeloReacao({ emojis, saida }: { emojis: string[]; saida: boolean }) {
  * não porque a tela não saiba desenhá-la.
  */
 function ehFigurinha(m: Mensagem): boolean {
-  const tipo = (m.tipo_conteudo ?? "").toLowerCase();
-  return (tipo === "sticker" || tipo === "figurinha") && !!m.midia_url;
+  // Layout: figurinha vai SEM balão. A regra é a MESMA do portão do conteúdo (temFigurinhaVisivel),
+  // e tem de ser: se divergirem, ou o rótulo de texto fica sem balão, ou a figurinha ganha um.
+  return temFigurinhaVisivel(m);
 }
 
 function ConteudoBolha({ m }: { m: Mensagem }) {
@@ -1980,8 +1981,12 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
   if (m.documento || temDocumentoBaixavel(m)) return <BolhaDocumento m={m} />;
   if (m.localizacao) return <BolhaLocalizacao m={m} />;
   if (m.contato) return <BolhaContato m={m} />;
-  if (tipo === "video" && m.midia_url) return <BolhaVideo m={m} />;
-  if (ehFigurinha(m)) return <BolhaFigurinha m={m} />;
+  // 21/09 · vídeo e figurinha: o portão era `&& m.midia_url`, e `caminhosParaAssinar` nunca
+  // assinava esses dois caminhos — condição que NUNCA era verdadeira, com o mp4 já no bucket. A
+  // régua agora é a mesma da foto e do documento: tipo + caminho. Quem não tem caminho segue no
+  // rótulo lá embaixo, que é a guarda funcionando.
+  if (temVideoVisivel(m)) return <BolhaVideo m={m} />;
+  if (temFigurinhaVisivel(m)) return <BolhaFigurinha m={m} />;
   if (ehAudio(tipo)) {
     // player quando a mídia já está no bucket; degrade honesto quando não (bolha-audio.tsx)
     return <BolhaAudio m={m} />;

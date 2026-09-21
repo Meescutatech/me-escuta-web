@@ -728,8 +728,23 @@ function AbaMidias({ mensagens }: { mensagens: Mensagem[] }) {
                   title={m.corpo ?? (video ? "Vídeo" : "Foto")}
                   className="relative block aspect-square w-full overflow-hidden rounded-md border border-border/60 bg-muted/40 transition-colors hover:border-border"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={m.midia_url!} alt={m.corpo ?? ""} className="size-full object-cover" loading="lazy" />
+                  {/* 21/09 · vídeo não é foto: `.mp4` dentro de `<img>` é imagem quebrada, e este
+                      galho ficou inalcançável até o vídeo entrar no batch de signed URLs — acordou
+                      quebrado. O fragmento de tempo no `src` faz o navegador buscar UM quadro, em vez
+                      de mostrar caixa preta; `preload="metadata"` mantém o corpo do arquivo fora. */}
+                  {video ? (
+                    <video
+                      src={`${m.midia_url!}#t=0.1`}
+                      preload="metadata"
+                      muted
+                      playsInline
+                      className="size-full object-cover"
+                      aria-label={m.corpo ?? "Vídeo da conversa"}
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={m.midia_url!} alt={m.corpo ?? ""} className="size-full object-cover" loading="lazy" />
+                  )}
                   {video && (
                     <span className="absolute inset-0 grid place-items-center">
                       <span className="grid size-7 place-items-center rounded-full bg-branco/90 text-navy">
@@ -760,8 +775,20 @@ function AbaMidias({ mensagens }: { mensagens: Mensagem[] }) {
       )}
       {aberta && (
         <span role="dialog" aria-label="Mídia ampliada — clique para fechar" onClick={() => setAberta(null)} className="fixed inset-0 z-50 grid cursor-zoom-out place-items-center bg-navy/80 p-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={aberta.midia_url!} alt={aberta.corpo ?? ""} className="max-h-full max-w-full rounded-lg shadow-forte" />
+          {(aberta.tipo_conteudo ?? "").toLowerCase() === "video" ? (
+            <video
+              src={aberta.midia_url!}
+              controls
+              autoPlay
+              playsInline
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-full max-w-full rounded-lg shadow-forte"
+              aria-label={aberta.corpo ?? "Vídeo da conversa"}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={aberta.midia_url!} alt={aberta.corpo ?? ""} className="max-h-full max-w-full rounded-lg shadow-forte" />
+          )}
         </span>
       )}
     </div>

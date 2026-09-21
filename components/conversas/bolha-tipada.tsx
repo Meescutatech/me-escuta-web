@@ -14,7 +14,7 @@ import {
   UserRoundIcon,
 } from "lucide-react";
 import { obterUrlMidia } from "@/app/(app)/conversas/actions";
-import { nomeDoDocumento, temDocumentoBaixavel } from "@/lib/conversas/midia";
+import { nomeDoDocumento, temDocumentoBaixavel, temVideoVisivel } from "@/lib/conversas/midia";
 import { cn } from "@/lib/utils";
 import type { Mensagem } from "@/lib/dados/conversas";
 
@@ -113,32 +113,90 @@ export function RotuloProgramada({ quando }: { quando: string }) {
 
 // ─────────────────────────── corpos por tipo ───────────────────────────
 
+/**
+ * BOLHA DE VÍDEO — toca o arquivo, não desenha um play.
+ *
+ * O que ela era até 21/09/2026: um `<img src={m.midia_url}>` dentro de um botão cujo `onClick` só
+ * alternava um estado local. Nasceu no ensaio (`4888fe7`, 10/09), onde `midia_url` era um POSTER
+ * `.svg` — ali a imagem fazia sentido e o play era enfeite. Com o mp4 real da projeção, `<img>` é
+ * imagem quebrada, e o play que não toca é o MESMO defeito da bolha de documento (`98de376`).
+ *
+ * Três estados, e nenhum deles mente (a régua é a do documento):
+ *   · sem `midia_caminho` — não renderiza; o inbox mantém "Vídeo recebido". A guarda funcionando.
+ *   · assinando a URL — caixa com aviso de que está preparando, sem `<video>` sem `src`.
+ *   · pronto — `<video controls>` de verdade, com `preload="metadata"` (a thread traz até 500
+ *     mensagens; baixar o corpo de todo vídeo ao montar é o erro que a foto já corrigiu com
+ *     `loading="lazy"`).
+ */
 export function BolhaVideo({ m }: { m: Mensagem }) {
-  const [tocando, setTocando] = useState(false);
+  const visivel = temVideoVisivel(m);
+  const caminho = m.midia_caminho?.trim() ?? "";
   const dur = m.duracao_s ? `${Math.floor(m.duracao_s / 60)}:${String(m.duracao_s % 60).padStart(2, "0")}` : null;
+  const [url, setUrl] = useState<string | null>(m.midia_url ?? null);
+  const [erro, setErro] = useState(false);
+
+  useEffect(() => {
+    if (!visivel) return;
+    let vivo = true;
+    setErro(false);
+    // Pré-assinada no servidor pelo batch da thread (`caminhosParaAssinar`): usa direto. O caminho
+    // lazy existe porque o batch tem `catch` e segue em frente — sem ele, batch que falha vira
+    // bolha vazia e silenciosa.
+    if (m.midia_url) {
+      setUrl(m.midia_url);
+      return;
+    }
+    setUrl(null);
+    obterUrlMidia(caminho)
+      .then((r) => {
+        if (!vivo) return;
+        if (r.ok && r.url) setUrl(r.url);
+        else setErro(true);
+      })
+      .catch(() => {
+        if (vivo) setErro(true);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [visivel, caminho, m.midia_url]);
+
+  // Sem caminho não há o que tocar: o inbox mantém o rótulo honesto. Ver o cabeçalho.
+  if (!visivel && !m.midia_url) return null;
+
   return (
     <span className={cn("flex flex-col gap-1.5", CAIXA_MIDIA)}>
-      <button
-        type="button"
-        onClick={() => setTocando((v) => !v)}
-        className="group relative block aspect-video w-full overflow-hidden rounded-[9px] bg-navy"
-        aria-label={tocando ? "Pausar vídeo" : "Reproduzir vídeo"}
-      >
-        {m.midia_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={m.midia_url} alt="" className={cn("size-full object-cover transition-opacity", tocando && "opacity-60")} />
-        ) : null}
-        <span className="absolute inset-0 grid place-items-center">
-          <span className="grid size-11 place-items-center rounded-full bg-branco/90 text-navy shadow-forte transition-transform group-hover:scale-105">
-            {tocando ? <span className="h-3.5 w-3 border-x-[3px] border-navy" aria-hidden /> : <PlayIcon className="ml-0.5 size-5 fill-current" />}
-          </span>
+      {erro ? (
+        <span className="text-[0.76rem] italic text-mute">
+          não deu pra carregar o vídeo — reabra a conversa pra tentar de novo
         </span>
-        {dur && (
-          <span className="absolute bottom-1.5 right-1.5 rounded bg-tinta/70 px-1.5 py-px font-mono text-[0.66rem] tabular-nums text-branco">
-            {dur}
+      ) : url ? (
+        <span className="relative block overflow-hidden rounded-[9px] bg-navy">
+          {/* signed URL efêmera do bucket privado; `playsInline` para o vídeo não abrir em tela
+              cheia sozinho no iOS. Legenda e duração ficam fora do elemento. */}
+          <video
+            src={url}
+            controls
+            preload="metadata"
+            playsInline
+            onError={() => setErro(true)}
+            className="block max-h-72 w-full rounded-[9px]"
+            aria-label={m.corpo ? `Vídeo: ${m.corpo}` : "Vídeo da conversa"}
+          />
+        </span>
+      ) : (
+        <span className="relative grid aspect-video w-full place-items-center overflow-hidden rounded-[9px] bg-hover" aria-busy>
+          <span className="grid size-11 place-items-center rounded-full bg-branco/90 text-navy shadow-forte">
+            <PlayIcon className="ml-0.5 size-5 fill-current" />
           </span>
-        )}
-      </button>
+          <span className="absolute bottom-1.5 left-1.5 text-[0.7rem] italic text-mute">preparando o vídeo…</span>
+          {dur && (
+            <span className="absolute bottom-1.5 right-1.5 rounded bg-tinta/70 px-1.5 py-px font-mono text-[0.66rem] tabular-nums text-branco">
+              {dur}
+            </span>
+          )}
+        </span>
+      )}
       {m.corpo && <span className="text-[0.84rem] leading-relaxed">{m.corpo}</span>}
     </span>
   );

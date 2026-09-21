@@ -86,9 +86,10 @@ test("só mídias renderizáveis entram no batch, únicas e com trim", () => {
     { tipo_conteudo: "audio", midia_caminho: "a.ogg" }, // duplicada
     { tipo_conteudo: "audio", midia_caminho: null }, // sem caminho → degrade, não assina
     { tipo_conteudo: "text", midia_caminho: "b.ogg" }, // texto nunca assina
-    { tipo_conteudo: "video", midia_caminho: "v.mp4" }, // tipo sem bolha de mídia
+    { tipo_conteudo: "video", midia_caminho: "v.mp4" }, // 21/09: vídeo AGORA assina (tem bolha)
+    { tipo_conteudo: "reacao", midia_caminho: "r.bin" }, // tipo sem bolha de mídia
   ]);
-  assert.deepEqual(caminhos, ["a.ogg", "foto.jpg"]);
+  assert.deepEqual(caminhos, ["a.ogg", "foto.jpg", "v.mp4"]);
 });
 
 test("thread sem mídia → batch vazio (nenhum round-trip de Storage)", () => {

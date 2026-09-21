@@ -13,6 +13,21 @@ A caixa de entrada, o fio da conversa e o composer. É dona de POR QUAL NÚMERO 
 NÃO é dona do envio em si — quem fala com a Meta/WuzAPI é o sender, no `me-escuta-runtime`.
 
 ### Decisões
+- 2026-09-21 · Vídeo e figurinha entram no batch de signed URLs (`caminhosParaAssinar`), e o portão
+  do conteúdo passa a ser tipo + `midia_caminho` (`temVideoVisivel` / `temFigurinhaVisivel`), nunca
+  `midia_url`. A `BolhaVideo` virou `<video controls preload="metadata">` com caminho lazy e estado
+  de erro; a galeria do painel do lead desenha miniatura com `<video src=...#t=0.1>` e amplia em
+  `<video controls>`.
+  Motivo: relato de produção *"vídeo recebido não aparece no chat"*. O portão era
+  `tipo === "video" && m.midia_url` e o batch nunca assinava vídeo — condição que NUNCA era
+  verdadeira. Medido na conversa `ba52c2d3`: `midia_armazenada` às 18:49:41Z com
+  `1504463128372791.mp4`, `video/mp4`, 1.518.458 bytes, e a projeção com o caminho preenchido — o
+  runtime tinha feito a parte dele. Mesma classe de defeito de `98de376` (documento, 18/09).
+  Descartado: (a) só consertar o batch — a `BolhaVideo` do ensaio põe a URL num `<img>`, e mp4 em
+  `<img>` troca o rótulo honesto por imagem quebrada; (b) manter `midia_url` no portão — o batch
+  tem `catch` que segue em frente, e aí a bolha precisa poder pedir a URL sozinha, como a foto e o
+  documento já fazem; (c) `<video poster>` com quadro gerado no servidor — exigiria pipeline de
+  thumbnail; o fragmento `#t=` resolve no navegador, sem infra nova.
 - 2026-09-15 · O seletor "Enviando por" passa a valer: escolher outro número manda
   `{telefone, phone_number_id, corpo}` no lugar de `{conversa_id, corpo}`, e a porta acha ou cria o
   fio daquele número (`md5(phone_number_id|telefone)`). A decisão é pura, em

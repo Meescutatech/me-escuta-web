@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { Mensagem } from "@/lib/dados/conversas";
 import { montarBlocos, motivoErroEnvio } from "@/lib/conversas/thread";
-import { ehAudio, temImagemVisivel } from "@/lib/conversas/midia";
+import { ehAudio, temFigurinhaVisivel, temImagemVisivel, temVideoVisivel } from "@/lib/conversas/midia";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
 import {
@@ -43,8 +43,8 @@ function hhmm(iso: string): string {
 }
 
 function ehFigurinha(m: Mensagem): boolean {
-  const tipo = (m.tipo_conteudo ?? "").toLowerCase();
-  return (tipo === "sticker" || tipo === "figurinha") && !!m.midia_url;
+  // Espelho do inbox: a regra é a de lá (tipo + caminho), não `midia_url`. Ver `temFigurinhaVisivel`.
+  return temFigurinhaVisivel(m);
 }
 
 /** Espelho de `ConteudoBolha` do inbox (privado lá). Degradação honesta para tipo sem mídia. */
@@ -57,7 +57,7 @@ function Conteudo({ m }: { m: Mensagem }) {
   if (m.documento) return <BolhaDocumento m={m} />;
   if (m.localizacao) return <BolhaLocalizacao m={m} />;
   if (m.contato) return <BolhaContato m={m} />;
-  if (tipo === "video" && m.midia_url) return <BolhaVideo m={m} />;
+  if (temVideoVisivel(m)) return <BolhaVideo m={m} />;
   if (ehFigurinha(m)) return <BolhaFigurinha m={m} />;
   if (ehAudio(tipo)) return <BolhaAudio m={m} />;
   if (temImagemVisivel(m)) return <BolhaImagem m={m} />;

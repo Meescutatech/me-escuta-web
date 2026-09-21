@@ -60,6 +60,43 @@ export function temDocumentoBaixavel(
   return ehDocumento(m.tipo_conteudo) && !!m.midia_caminho?.trim();
 }
 
+/** Tipos de vídeo: `video` é o mesmo em PT e EN no TIPO_PT do ingestor; `vídeo` cobre digitação. */
+const TIPOS_VIDEO = new Set(["video", "vídeo"]);
+
+export function ehVideo(tipo: string | null | undefined): boolean {
+  return TIPOS_VIDEO.has((tipo ?? "").toLowerCase());
+}
+
+/**
+ * `<video>` só quando é vídeo E a mídia já está no bucket — a mesma régua do player de áudio.
+ *
+ * Sem caminho a bolha degrada para "Vídeo recebido", e isso é a guarda funcionando. Foi o que
+ * esteve NA TELA até 21/09 sobre um mp4 de 1,5 MB que já estava no bucket: o portão exigia
+ * `midia_url`, e `caminhosParaAssinar` nunca assinava vídeo — condição que nunca era verdadeira.
+ */
+export function temVideoVisivel(
+  m: Pick<Mensagem, "tipo_conteudo" | "midia_caminho">,
+): m is Pick<Mensagem, "tipo_conteudo" | "midia_caminho"> & { midia_caminho: string } {
+  return ehVideo(m.tipo_conteudo) && !!m.midia_caminho?.trim();
+}
+
+/** Figurinha: PT do contrato do ingestor (`sticker` → `figurinha`) + EN das linhas históricas. */
+const TIPOS_FIGURINHA = new Set(["sticker", "figurinha"]);
+
+export function ehFigurinhaTipo(tipo: string | null | undefined): boolean {
+  return TIPOS_FIGURINHA.has((tipo ?? "").toLowerCase());
+}
+
+/**
+ * Figurinha visível — mesmo buraco do vídeo, mesmo conserto. O portão antigo (`&& m.midia_url`)
+ * vivia só no ensaio, onde a fixture injeta a URL na mão.
+ */
+export function temFigurinhaVisivel(
+  m: Pick<Mensagem, "tipo_conteudo" | "midia_caminho">,
+): m is Pick<Mensagem, "tipo_conteudo" | "midia_caminho"> & { midia_caminho: string } {
+  return ehFigurinhaTipo(m.tipo_conteudo) && !!m.midia_caminho?.trim();
+}
+
 /**
  * NOME DO ARQUIVO no download, derivado do CAMINHO (D-B1-c, decisão do Diogo em 18/09/2026).
  *
@@ -87,7 +124,15 @@ export function caminhosParaAssinar(
 ): string[] {
   const unicos = new Set<string>();
   for (const m of mensagens) {
-    if (temPlayerDeAudio(m) || temImagemVisivel(m) || temDocumentoBaixavel(m)) unicos.add(m.midia_caminho!.trim());
+    if (
+      temPlayerDeAudio(m) ||
+      temImagemVisivel(m) ||
+      temDocumentoBaixavel(m) ||
+      temVideoVisivel(m) ||
+      temFigurinhaVisivel(m)
+    ) {
+      unicos.add(m.midia_caminho!.trim());
+    }
   }
   return [...unicos];
 }
