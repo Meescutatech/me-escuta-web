@@ -14,7 +14,6 @@ import {
 } from "./arraste";
 import type { DadosFunil, CardLead, EtapaFunil } from "@/lib/dados/funil";
 import { moverCardEtapa } from "@/app/(app)/funil/actions";
-import { podeTransicionar } from "@/lib/funil/portoes";
 import { CartaoLead } from "./card-lead";
 import { DrawerCard } from "./drawer-card";
 import { FaixaBuscaServidor, useBuscaServidor } from "./busca-servidor";
@@ -301,15 +300,6 @@ export function Quadro({
     nomeLead: string;
     etapaNome: string;
   } | null>(null);
-  /**
-   * 4f · portão de transição bloqueou o movimento (ex.: proposta sem audiometria). O card NÃO se
-   * move; um aviso explica o que falta. `null` = nenhum bloqueio aberto. Espelha `perdaPendente`.
-   */
-  const [bloqueioPendente, setBloqueioPendente] = useState<{
-    nomeLead: string;
-    etapaNome: string;
-    exige: string;
-  } | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setAgora(Date.now()), 60000);
@@ -479,20 +469,6 @@ export function Quadro({
         entrouAntes: atual.entrou_etapa_em,
         nomeLead: atual.nome ?? "Este lead",
         etapaNome: alvo.nome,
-      });
-      return;
-    }
-
-    // 4f · PORTÃO DE TRANSIÇÃO — a entrada em certas etapas exige pré-requisito (piloto: proposta
-    // exige audiometria). Se o portão barra, o card NÃO se move e um aviso diz o que falta. Como a
-    // guarda de perda acima, o estado inválido não chega a existir na UI. Nunca bloqueia no escuro:
-    // dado ausente (audiometria undefined) → `podeTransicionar` libera.
-    const portao = podeTransicionar(atual.etapa, etapaAlvo, { audiometria: atual.audiometria });
-    if (!portao.permitido) {
-      setBloqueioPendente({
-        nomeLead: atual.nome ?? "Este lead",
-        etapaNome: alvo?.nome ?? etapaAlvo,
-        exige: portao.exige ?? "um pré-requisito",
       });
       return;
     }
@@ -841,39 +817,6 @@ export function Quadro({
             void aplicarMovimento(p.leadId, p.etapaDe, p.etapaAlvo, p.entrouAntes, motivo);
           }}
         />
-      )}
-
-      {bloqueioPendente && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="bloqueio-titulo"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setBloqueioPendente(null)}
-        >
-          <div
-            className="w-full max-w-sm rounded-lg border border-linha-forte bg-branco p-5 shadow-forte"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 id="bloqueio-titulo" className="text-sm font-semibold text-tinta">
-              Não dá para mover ainda
-            </h2>
-            <p className="mt-2 text-sm text-suave">
-              {bloqueioPendente.nomeLead} não pode ir para{" "}
-              <span className="font-medium text-tinta">{bloqueioPendente.etapaNome}</span> sem{" "}
-              <span className="font-medium text-tinta">{bloqueioPendente.exige}</span>.
-            </p>
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setBloqueioPendente(null)}
-                className="rounded-md bg-navy px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
-              >
-                Entendi
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {toast && (
