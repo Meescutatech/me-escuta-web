@@ -7,7 +7,7 @@ import type { PainelLead } from "@/lib/dados/lead-painel";
 import type { Mensagem } from "@/lib/dados/conversas";
 import type { ValorCampo } from "@/lib/dados/ficha-calculos";
 import { lerPainelLeadAction, salvarCampoFicha } from "@/app/(app)/lead/actions";
-import { atribuirDono, lerFiosDoLeadAcao, registrarEventoUI, arquivarLead, type ConversaDoLeadLida } from "@/app/(app)/funil/actions";
+import { atribuirDono, lerFiosDoLeadAcao, registrarEventoUI, type ConversaDoLeadLida } from "@/app/(app)/funil/actions";
 import { rotuloDoFio } from "@/lib/conversas/fios-do-lead";
 import { rotuloSelo } from "@/components/conversas/regras/numero";
 import { classificarPrazo, escolherProximaTarefa, textoPrazoCurto, type EstadoPrazo } from "@/lib/dados/funil-calculos";
@@ -145,8 +145,6 @@ export function DrawerCard({
    */
   const [fios, setFios] = useState<ConversaDoLeadLida[] | undefined>(undefined);
   const [levindoSolicitado, setLevindoSolicitado] = useState(false);
-  const [arquivando, setArquivando] = useState(false);
-  const [confirmarArquivo, setConfirmarArquivo] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [versao, setVersao] = useState(0);
   const [atribuindo, setAtribuindo] = useState(false);
@@ -161,7 +159,6 @@ export function DrawerCard({
     setAbaDados(dados.includes(abaInicial as AbaDados) ? (abaInicial as AbaDados) : "ficha");
     setAbaEstreita(abaInicial && abaInicial !== "conversa" ? "dados" : "conversa");
     setLevindoSolicitado(false);
-    setConfirmarArquivo(false);
     setPainel(null);
     setFios(undefined);
     setVersao(0);
@@ -293,36 +290,6 @@ export function DrawerCard({
     else {
       setLevindoSolicitado(false);
       avisar(`Não foi possível registrar: ${res.motivo ?? "erro"}`);
-    }
-  }
-
-  /**
-   * 4i · ARQUIVAR LEAD — a "exclusão" que faltava, no modelo event-sourced (nunca deleta; move para
-   * a etapa `arquivado`, reversível: a ingestão desarquiva sozinha se o lead voltar a falar). Duplo
-   * passo: o primeiro clique arma a confirmação, o segundo executa — arquivar por engano tira o lead
-   * do board. A action valida (lead já arquivado / sem id) e grava pela porta.
-   */
-  async function arquivar() {
-    if (!leadId || arquivando) return;
-    if (!confirmarArquivo) {
-      setConfirmarArquivo(true);
-      return;
-    }
-    setConfirmarArquivo(false);
-    setMenuAberto(false);
-    setArquivando(true);
-    if (ensaio) {
-      setArquivando(false);
-      return avisar("Lead arquivado (ensaio — nada foi ao banco).");
-    }
-    const res = await arquivarLead(leadId, lead?.etapa ?? "");
-    setArquivando(false);
-    if (res.ok) {
-      avisar("Lead arquivado.");
-      onFechar();
-      router.refresh();
-    } else {
-      avisar(`Não foi possível arquivar: ${res.motivo ?? "erro"}`);
     }
   }
 
@@ -635,13 +602,6 @@ export function DrawerCard({
                       }}
                     >
                       Copiar telefone
-                    </ItemMenu>
-                  )}
-                  {lead.etapa !== "arquivado" && (
-                    <ItemMenu onClick={arquivar} desabilitado={arquivando}>
-                      <span className="text-vermelho">
-                        {confirmarArquivo ? "Confirmar: arquivar lead" : "Arquivar lead"}
-                      </span>
                     </ItemMenu>
                   )}
                 </PopoverContent>
