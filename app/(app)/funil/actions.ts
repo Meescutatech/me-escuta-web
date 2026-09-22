@@ -7,6 +7,7 @@ import { confirmarProjecao, type RespostaRegistrarEvento } from "@/lib/eventos/c
 import { buscarLeads, type ResultadoBusca } from "@/lib/dados/funil";
 import { lerMensagens, type Mensagem } from "@/lib/dados/conversas";
 import { ordenarFiosDoLead } from "@/lib/conversas/fios-do-lead";
+import { decidirArquivamento } from "@/lib/funil/arquivar";
 
 export interface ResultadoEvento {
   ok: boolean;
@@ -93,6 +94,28 @@ export async function moverCardEtapa(
     if (motivo.detalhe?.trim()) payload.motivo_detalhe = motivo.detalhe.trim();
   }
   return registrarEventoUI("etapa_alterada", payload, leadId);
+}
+
+/**
+ * 4i · ARQUIVAR LEAD À MÃO — a "exclusão" que faltava, no modelo event-sourced.
+ *
+ * Num ledger append-only não se DELETA um lead (o fato não se apaga; só se compensa). O sistema já
+ * modela isso: `arquivado` é uma etapa real (582 dos 679 leads vivem lá) e a ingestão DESARQUIVA
+ * sozinha quando o lead volta a falar (migration 0029). Então "excluir da mão" = mover para
+ * `arquivado` via `etapa_alterada`, com motivo — o mesmo caminho da perda, reversível por natureza.
+ *
+ * Recebe a etapa atual para gravar `etapa_de` correto (o ledger conta de-para, não só o destino).
+ * O `motivo` é opcional mas recomendado: arquivar sem dizer por quê é a operação que a auditoria
+ * mais reclama de não ter rastro.
+ */
+export async function arquivarLead(
+  leadId: string,
+  etapaDe: string,
+  motivo?: string,
+): Promise<ResultadoEvento> {
+  const decisao = decidirArquivamento(leadId, etapaDe, motivo);
+  if (!decisao.ok) return { ok: false, motivo: decisao.motivo };
+  return registrarEventoUI("etapa_alterada", decisao.payload, leadId);
 }
 
 /** Campos do lead criado à mão. Só `nome` é obrigatório — telefone entra depois, pela ficha. */
