@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { Mensagem } from "@/lib/dados/conversas";
 import { montarBlocos, motivoErroEnvio } from "@/lib/conversas/thread";
+import { textoDaBolha } from "@/lib/conversas/texto-da-bolha";
 import { ehAudio, temFigurinhaVisivel, temImagemVisivel, temVideoVisivel } from "@/lib/conversas/midia";
 import { BolhaAudio } from "@/components/conversas/bolha-audio";
 import { BolhaImagem } from "@/components/conversas/bolha-imagem";
@@ -50,8 +51,11 @@ function ehFigurinha(m: Mensagem): boolean {
 /** Espelho de `ConteudoBolha` do inbox (privado lá). Degradação honesta para tipo sem mídia. */
 function Conteudo({ m }: { m: Mensagem }) {
   const tipo = (m.tipo_conteudo ?? "text").toLowerCase();
-  if (tipo === "text" || tipo === "texto") {
-    return m.corpo ? <>{m.corpo}</> : <span className="italic opacity-70">[mensagem vazia]</span>;
+  // texto e template: a regra é a MESMA do inbox, numa função só — o espelho divergiu uma vez
+  // (template virava `Mensagem (template)` aqui depois do conserto de 21/09 no inbox).
+  const texto = textoDaBolha(m.tipo_conteudo, m.corpo);
+  if (texto) {
+    return texto.tipo === "corpo" ? <>{texto.texto}</> : <span className="italic opacity-70">{texto.texto}</span>;
   }
   if (m.interativo) return <BolhaInterativa m={m} />;
   if (m.documento) return <BolhaDocumento m={m} />;

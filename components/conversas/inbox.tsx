@@ -73,6 +73,7 @@ import { ehAudio, ehImagem, temDocumentoBaixavel, temFigurinhaVisivel, temImagem
 import { resolverReacoes, textoDoSelo } from "@/lib/conversas/reacoes";
 import { BolhaBotao } from "@/components/conversas/bolha-botao";
 import { ehBotaoRecebido } from "@/lib/conversas/interativa";
+import { textoDaBolha } from "@/lib/conversas/texto-da-bolha";
 import { useConversaViva } from "@/components/conversas/tempo-real";
 import { criarClienteBrowser } from "@/lib/supabase/client";
 import { montarEnvelopeAtividade } from "@/lib/presenca";
@@ -1967,10 +1968,10 @@ function ehFigurinha(m: Mensagem): boolean {
 
 function ConteudoBolha({ m }: { m: Mensagem }) {
   const tipo = (m.tipo_conteudo ?? "text").toLowerCase();
-  if (tipo === "text" || tipo === "texto") {
-    return m.corpo ? <>{m.corpo}</> : <span className="italic opacity-70">[mensagem vazia]</span>;
-  }
   /**
+   * TEXTO e TEMPLATE — a regra mora em `textoDaBolha` (lib/conversas/texto-da-bolha.ts), a MESMA
+   * que o `FioLead` do funil usa. Em 25/09 o espelho do funil não tinha o galho de template.
+   *
    * TEMPLATE — texto, não mídia. Reportado em produção em 21/09: *"os templates ainda não aparecem
    * no chat"*. Sem galho próprio, `template` caía no fallback lá embaixo e a bolha virava ícone de
    * FOTO com `Mensagem (template)` e "visualização chega com a pipeline de mídia". Mídia não tem
@@ -1981,14 +1982,9 @@ function ConteudoBolha({ m }: { m: Mensagem }) {
    * 18:38 e 18:39 de 21/09 nasceram assim). Aí a bolha diz isso, em vez de nomear um tipo e
    * prometer uma pipeline que não vem.
    */
-  if (tipo === "template") {
-    return m.corpo ? (
-      <>{m.corpo}</>
-    ) : (
-      <span className="italic opacity-70">
-        Template enviado — o texto não ficou registrado nesta mensagem.
-      </span>
-    );
+  const texto = textoDaBolha(m.tipo_conteudo, m.corpo);
+  if (texto) {
+    return texto.tipo === "corpo" ? <>{texto.texto}</> : <span className="italic opacity-70">{texto.texto}</span>;
   }
   // W-D2 · corpos tipados — só quando o campo tipado existe (fixture hoje; projeção amanhã)
   if (m.interativo) return <BolhaInterativa m={m} />;
