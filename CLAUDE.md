@@ -1,9 +1,17 @@
 # me-escuta-web — as telas
-Next.js (App Router) na Vercel. Tronco `main`. Escreve SÓ por RPC `api.*`; leitura em `core` com RLS.
+Next.js (App Router) na Vercel. Escreve SÓ por RPC `api.*`; leitura em `core` com RLS.
 
-**Deploy é manual:** `vercel git connect` não funciona (zero GitHub Apps na org, E-381). Push para
-`origin/main` **não dispara build**. Deploy é `npx vercel --prod` na raiz do repo.
-**Deploy acontece junto ao commit** — não deixar para depois. Push + deploy na mesma sessão.
+**Deploy é pela integração Vercel ↔ GitHub (D128, 25/09/2026).** Branches: `development` (padrão;
+integração, CI + preview) e `production` (o que está no ar). `main` é legado.
+- Trabalho entra por PR em `development`, com CI verde.
+- Produção = PR `development → production`. O push em `production` faz a Vercel buildar e publicar em
+  `me-escuta-web.vercel.app`; o carimbo de build mostra o SHA.
+- Rollback: no painel da Vercel, Deployments → o deploy anterior → Promote to Production (ou revert em
+  `production`).
+- ⚠️ A Vercel **não espera o CI**: só promova `development` com CI verde. Nunca push direto em
+  `production` (org no free, sem branch protection — é honra, D75).
+- `npx vercel --prod` à mão está aposentado: ele publica o que estiver na pasta, fora do git, e foi
+  assim que um deploy de terceiro apagou três fixes em 22/09.
 
 
 ## feature: conversas
