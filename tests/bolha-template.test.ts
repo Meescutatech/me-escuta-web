@@ -16,34 +16,23 @@ import { readFileSync } from "node:fs";
  * sempre, e é por isso que o galho tem dois lados e o lado vazio diz o que houve.
  *
  * ── Por que asserção de FONTE ────────────────────────────────────────────────────────────────
- * `ConteudoBolha` é um componente dentro de `inbox.tsx` e a decisão é uma cadeia de `if` sobre
- * `tipo`; não há função pura para chamar, e este repo não monta React nos testes. Então o que dá
- * para provar aqui é a ORDEM da cadeia — que é exatamente o que estava errado. É guarda mais fraca
- * que um render de verdade, e está escrito assim de propósito para ninguém confundir as duas.
- * VERIFICADA POR MUTAÇÃO em 21/09: apagar o galho deixa estes testes vermelhos.
+ * Desde 25/09 a decisão do texto é pura, em `lib/conversas/texto-da-bolha.ts`, e é provada em
+ * `tests/texto-da-bolha.test.ts`. Este arquivo continua guardando a ORDEM no `inbox.tsx` — que o
+ * template chega à função antes do fallback de mídia —, porque este repo não monta React nos testes.
+ * É guarda mais fraca que um render de verdade, e está escrito assim de propósito.
  */
 
 const inbox = readFileSync(new URL("../components/conversas/inbox.tsx", import.meta.url), "utf8");
 
-test("existe um galho para `template` em ConteudoBolha", () => {
-  assert.match(inbox, /if \(tipo === "template"\) \{/, "template não tem galho — cai no fallback de mídia");
-});
-
-test("o galho do template vem ANTES do fallback de mídia — ordem é a causa do defeito", () => {
-  const galho = inbox.indexOf('if (tipo === "template") {');
+// 25/09 · o galho saiu do componente para `textoDaBolha` (lib/conversas/texto-da-bolha.ts), que o
+// inbox e o `FioLead` do funil chamam — o espelho do funil não tinha o galho. As guardas de
+// comportamento e de ordem (chamada ANTES do fallback, nos dois componentes) moram agora em
+// tests/texto-da-bolha.test.ts. Aqui fica só a âncora do inbox.
+test("ConteudoBolha decide template por textoDaBolha, antes do fallback de mídia", () => {
+  const galho = inbox.indexOf("textoDaBolha(m.tipo_conteudo, m.corpo)");
   const fallback = inbox.indexOf("`Mensagem (${tipo})`");
   assert.ok(galho > -1 && fallback > -1, "âncoras sumiram — reescreva este teste junto com o render");
   assert.ok(galho < fallback, "o galho está DEPOIS do fallback: a mensagem nunca chega nele");
-});
-
-test("com corpo mostra o corpo; sem corpo DIZ que o texto não ficou registrado", () => {
-  const trecho = inbox.slice(inbox.indexOf('if (tipo === "template") {'));
-  assert.match(trecho.slice(0, 700), /m\.corpo \?/, "não distingue a linha com corpo da sem corpo");
-  assert.match(
-    trecho.slice(0, 700),
-    /Template enviado — o texto não ficou registrado/,
-    "o lado vazio não explica o que houve",
-  );
 });
 
 test("o fallback de mídia continua existindo para tipo DESCONHECIDO de verdade", () => {
