@@ -133,7 +133,7 @@ export function registrarFerramentas(servidor: McpServer, cliente: ClienteLeitur
         "Todos os toques de captação registrados para um lead: fonte, plataforma, campanha, anúncio, utm e " +
         "identificadores de clique (gclid/fbclid). Use quando a pergunta for sobre UM lead.",
       inputSchema: {
-        lead_id: z.string().uuid().describe("O identificador do lead (uuid)."),
+        lead_id: z.guid().describe("O identificador do lead (uuid; aceita ids 8-4-4-4-12 fora do padrão RFC, como os da réplica)."),
       },
     },
     async ({ lead_id }: { lead_id: string }) => {
